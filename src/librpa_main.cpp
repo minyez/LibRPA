@@ -6,7 +6,11 @@
 #include "scalapack_connector.h"
 
 #include <algorithm>
+#if defined(__MACH__)
+#include <malloc/malloc.h> // for malloc_zone_pressure_relief and malloc_default_zone
+#else
 #include <malloc.h>
+#endif
 #include <set>
 
 void librpa_main(MPI_Comm comm_in)
@@ -120,7 +124,7 @@ void librpa_main(MPI_Comm comm_in)
         for(auto &iap:trangular_loc_atpair)
             local_atpair.push_back(iap);
         printf("| process %d , local_atom_pair size:  %zu\n", mpi_comm_world_h.myid, local_atpair.size());
-        
+
         printf("| process %d, size of Cs from local_atpair: %lu\n", LIBRPA::mpi_comm_world_h.myid, Cs.size());
         // for(auto &ap:local_atpair)
         //     printf("   |process %d , local_atom_pair:  %d,  %d\n", mpi_comm_world_h.myid,ap.first,ap.second);
@@ -163,12 +167,12 @@ void librpa_main(MPI_Comm comm_in)
         /* cal_chi0.chi0_main(argv[1],argv[2]);  */
     /* return 0; */
     // try the new version
-    
+
     Chi0 chi0(meanfield, klist, Params::nfreq);
     chi0.gf_R_threshold = Params::gf_R_threshold;
 
     // build ABF IJ and qlist from Vq
-    
+
     vector<Vector3_Order<double>> qlist;
 
     for ( auto q_weight: irk_weight)
@@ -211,7 +215,7 @@ void librpa_main(MPI_Comm comm_in)
         }
     }
     //malloc_trim(0);
-    
+
     // para_mpi.mpi_barrier();
     // if(para_mpi.is_master())
     //     system("free -m");
@@ -226,7 +230,11 @@ void librpa_main(MPI_Comm comm_in)
         Cs.clear();
     }
 
+    #ifndef __MACH__
     malloc_trim(0);
+    #else
+    malloc_zone_pressure_relief(malloc_default_zone(), 0);
+    #endif
     // RPA total energy
     if ( Params::task == "rpa" )
     {
@@ -262,7 +270,7 @@ void librpa_main(MPI_Comm comm_in)
         Profiler::start("g0w0", "G0W0 quasi-particle calculation");
 
         Profiler::start("read_vq_cut", "Load truncated Coulomb");
-        //READ_Vq_Full("./", "coulomb_cut_", Params::vq_threshold, Vq_cut); 
+        //READ_Vq_Full("./", "coulomb_cut_", Params::vq_threshold, Vq_cut);
         const auto VR = FT_Vq(Vq_cut, Rlist, true);
         Profiler::stop("read_vq_cut");
 
@@ -420,7 +428,7 @@ void librpa_main(MPI_Comm comm_in)
     }
     else if ( Params::task == "exx" )
     {
-        READ_Vq_Full("./", "coulomb_cut_", Params::vq_threshold, Vq_cut); 
+        READ_Vq_Full("./", "coulomb_cut_", Params::vq_threshold, Vq_cut);
         const auto VR = FT_Vq(Vq_cut, Rlist, true);
         auto exx = LIBRPA::Exx(meanfield, kfrac_list);
         exx.build_exx_orbital_energy(Cs, Rlist, period, VR);
@@ -451,6 +459,6 @@ void librpa_main(MPI_Comm comm_in)
     }
 
     //MPI_Wrapper::finalize();
-    
+
     return;
 }
