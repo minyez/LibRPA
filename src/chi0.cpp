@@ -348,6 +348,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     for(int i=0;i!=atom_mu.size();i++)
         atoms_pos.insert(pair<int,std::array<double,3>>{i,{0,0,0}});
 
+    // Preapre relevant ComplexMatrix objects
     for ( auto freq: tfg.get_freq_nodes() )
         for ( auto q: qlist)
         {
@@ -435,50 +436,58 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
             // parse back to chi0
             Profiler::start("chi0_libri_routing_ft_ct", "Fourier and Cosine transform");
             // a simple vector container for OpenMP parallel
-            vector<pair<pair<Vector3_Order<double>, int>, atpair_t>> qifreq_atpair_all;
-            for (auto q: qlist)
+            vector<pair<std::array<int, 4>, std::vector<std::array<int, 3>>>> ifreq_iq_mu_nu_to_Rs;
+            map<int, vector<pair<int, std::array<int, 3>>>> Mu_NuRs;
+            for (int ifreq = 0; ifreq < tfg.get_n_grids(); ++ifreq)
             {
-                for (auto ifreq = 0; ifreq < tfg.size(); ifreq++)
+                for (int iq = 0; iq < qlist.size(); iq++)
                 {
                     for (const auto &atpair: atpairs_ABF)
                     {
-                        // pre-filter non-existing blocks
-                        if (chi0s_IJR.count(atpair.first) == 0) continue;
-                        qifreq_atpair_all.push_back({{q, ifreq}, atpair});
+                        const auto &Mu = atpair.first;
+                        const auto &Nu = atpair.second;
+                        std::vector<std::array<int, 3>> Rs;
+                        if (chi0s_IJR.count(Mu) == 0) continue;
+                        for (const auto &chi0s_JR: chi0s_IJR.at(Mu))
+                        {
+                            if (chi0s_JR.first.first == Nu)
+                            {
+                                Rs.push_back(chi0s_JR.first.second);
+                            }
+                        }
+                        ifreq_iq_mu_nu_to_Rs.push_back({{ifreq, iq, static_cast<int>(Mu), static_cast<int>(Nu)}, Rs});
                     }
                 }
             }
-            cout << "is: " << isp << " tau: " << tau << "  qifreq_atpair_all.size()" << qifreq_atpair_all.size() << endl;
+
+            cout << "is: " << isp << " tau: " << tau << "  qifreq_atpair_all.size()" << ifreq_iq_mu_nu_to_Rs.size() << endl;
 #pragma omp parallel for schedule(dynamic)
-            for (int i = 0; i < qifreq_atpair_all.size(); ++i)
+            for (const auto &index_Rs: ifreq_iq_mu_nu_to_Rs)
             {
-                auto qifreq_atpair = qifreq_atpair_all[i];
-                const auto &q = qifreq_atpair.first.first;
-                const auto &ifreq = qifreq_atpair.first.second;
+                const auto &ifreq = index_Rs.first[0];
+                const auto &iq = index_Rs.first[1];
+                const auto &q = qlist[iq];
+                const auto &Mu = index_Rs.first[2];
+                const auto &Nu = index_Rs.first[3];
                 const double freq = tfg.get_freq_nodes()[ifreq];
                 const double trans = tfg.get_costrans_t2f()(ifreq, it);
-                const auto &Mu = qifreq_atpair.second.first;
-                const auto &Nu = qifreq_atpair.second.second;
-                for (const auto &JR_chi0 : chi0s_IJR.at(Mu))
+                auto &chi = chi0_q[freq][q][Mu][Nu];
+                for (const auto &R: index_Rs.second)
                 {
-                    if (Nu != JR_chi0.first.first) continue;
-                    const auto &R = JR_chi0.first.second;
+                    const auto &chi_tensor = chi0s_IJR.at(Mu).at({Nu, R});
                     Vector3_Order<int> Rint(R[0], R[1], R[2]);
-                    const auto &chi0_Rtau = JR_chi0.second;
-                    ComplexMatrix cm_chi0(chi0_Rtau.shape[0], chi0_Rtau.shape[1]);
-                    for (int i = 0; i < cm_chi0.size; i++) cm_chi0.c[i] = *(chi0_Rtau.ptr() + i);
+                    ComplexMatrix cm_chi0(chi_tensor.shape[0], chi_tensor.shape[1]);
+                    // Profiler::start("chi0_libri_routing_ft_ct_1");
+                    for (int i = 0; i < cm_chi0.size; i++)
+                    {
+                        cm_chi0.c[i] = *(chi_tensor.ptr() + i);
+                    }
+                    // Profiler::stop("chi0_libri_routing_ft_ct_1");
 
                     const double arg = q * (Rint * latvec) * TWO_PI;
                     const complex<double> kphase = complex<double>(cos(arg), sin(arg));
-                    // if(freq==tfg.get_freq_nodes()[10] && tau == tfg.get_time_nodes()[10])
-                    //     cout <<"freq:  "<<freq<<"   Mu Nu:"<<Mu<<", "<<Nu<<";
-                    //     "<<complex<double>(cos(arg), sin(arg)) << " * " << trans <<"   chi0_tau:
-                    //     "<<cm_chi0(0,0)<<"   chi0_freq:"<<chi0_q[freq][q][Mu][Nu](0,0)<<endl;
-                    cm_chi0 *= 2.0 / mf.get_n_spins() * (trans * kphase);
-                    // omp_set_lock(&lock_chi0_fourier_cosine);
-
-                    chi0_q[freq][q][Mu][Nu] += cm_chi0;
-                    // omp_unset_lock(&lock_chi0_fourier_cosine);
+                    LapackConnector::axpy(cm_chi0.size, 2.0 / mf.get_n_spins() * (trans * kphase),
+                            cm_chi0.c, 1, chi.c, 1);
                 }
             }
             Profiler::stop("chi0_libri_routing_ft_ct");
