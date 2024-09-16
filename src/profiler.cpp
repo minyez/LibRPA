@@ -91,7 +91,7 @@ void Profiler::start(const char *tname, const char *tnote, int level) noexcept
     {
         add(tname, tnote, level);
     }
-#ifdef LIBRPA_DEBUG
+#ifdef LIBRPA_VERBOSE
     LIBRPA::envs::ofs_myid << get_timestamp() <<" Timer start: " << tname << "\n";
 #endif
     sd_map_timer.at(tname).start();
@@ -102,7 +102,7 @@ void Profiler::stop(const char *tname) noexcept
     if(omp_get_thread_num()!=0) return;
     if (sd_map_timer.count(tname))
     {
-#ifdef LIBRPA_DEBUG
+#ifdef LIBRPA_VERBOSE
         LIBRPA::envs::ofs_myid << get_timestamp() << " Timer stop:  " << tname << "\n";
 #endif
         sd_map_timer.at(tname).stop();

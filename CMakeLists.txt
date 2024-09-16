@@ -27,6 +27,7 @@ option(USE_EXTERNAL_GREENX  "Use external GreenX library rather than the package
 option(ENABLE_TEST          "Flag to build unit tests" ON)
 option(ENABLE_DRIVER        "Flag to build driver executables" ON)
 option(ENABLE_FORTRAN_BIND  "Flag to build Fotran binding" OFF)
+option(VERBOSE_OUTPUT       "Flag to print verbose information in stdout and process output" OFF)
 # NOTE: static library not tested
 option(BUILD_LIBRPA_SHARED  "Flag to build shared libraries" ON)
 
@@ -183,6 +184,11 @@ endif()
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
   message(STATUS "Build type set to Debug, adding LIBRPA_DEBUG preprocessor directive")
   add_compile_definitions("LIBRPA_DEBUG")
+  set(VERBOSE_OUTPUT ON)
+endif()
+
+if(VERBOSE_OUTPUT)
+  add_compile_definitions("LIBRPA_VERBOSE")
 endif()
 
 # Switch on GreenX
