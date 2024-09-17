@@ -29,6 +29,7 @@ int main (int argc, char *argv[])
     int provided;
     MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
     initialize_mpi(MPI_COMM_WORLD);
+    initialize_blacs(MPI_COMM_WORLD);
     initialize_io();
     if ( size_global != 4 )
         throw runtime_error("test imposes 4 MPI processes");
@@ -36,6 +37,7 @@ int main (int argc, char *argv[])
     test_arraydesc();
 
     finalize_io();
+    finalize_blacs();
     finalize_mpi();
     MPI_Finalize();
 
