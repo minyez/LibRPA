@@ -8,7 +8,9 @@
 #include "pbc.h"
 #include "libri_utils.h"
 #include "envs_mpi.h"
+#include "envs_blacs.h"
 #include "utils_io.h"
+#include "utils_blacs.h"
 
 #include <map>
 #include <functional>
@@ -291,9 +293,8 @@ void G0W0::build_sigc_matrix_KS(const std::vector<std::vector<ComplexMatrix>> &w
     auto sigc_nao_nao = init_local_mat<complex<double>>(desc_nao_nao, MAJOR::COL);
     auto sigc_nband_nband = init_local_mat<complex<double>>(desc_nband_nband, MAJOR::COL);
 
-    const auto set_IJ_nao_nao = get_necessary_IJ_from_block_2D(atomic_basis_wfc,
-                                                               atomic_basis_wfc,
-                                                               desc_nao_nao);
+    const auto set_IJ_nao_nao = LIBRPA::utils::get_necessary_IJ_from_block_2D(
+        atomic_basis_wfc, atomic_basis_wfc, desc_nao_nao);
     const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao);
 
     // NOTE: With many MPI tasks, matrix at a particular k point

@@ -27,9 +27,6 @@ extern MPI_Comm mpi_comm_global;
 //! Handler of the global communicator
 extern LIBRPA::MPI_COMM_handler mpi_comm_global_h;
 
-//! Handler of the global BLACS context
-extern LIBRPA::BLACS_CTXT_handler blacs_ctxt_global_h;
-
 //! Rank of process in the global communciator
 extern int myid_global;
 

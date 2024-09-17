@@ -2,6 +2,7 @@
 
 #include "envs_io.h"
 #include "envs_mpi.h"
+#include "envs_blacs.h"
 #include "timefreq.h"
 #include "librpa.h"
 #include "inputfile.h"

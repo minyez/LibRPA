@@ -18,6 +18,8 @@
 #include "libri_utils.h"
 #include "matrix_m_parallel_utils.h"
 #include "parallel_mpi.h"
+#include "envs_blacs.h"
+#include "utils_blacs.h"
 #include "params.h"
 #include "pbc.h"
 #include "atoms.h"
@@ -54,7 +56,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only( Chi0 &chi0, atpair_k_cpl
     Array_Desc desc_nabf_nabf(blacs_ctxt_global_h);
     // use a square blocksize instead max block, otherwise heev and inversion will complain about illegal parameter
     desc_nabf_nabf.init_square_blk(n_abf, n_abf, 0, 0);
-    const auto set_IJ_nabf_nabf = LIBRPA::get_necessary_IJ_from_block_2D_sy('U', LIBRPA::atomic_basis_abf, desc_nabf_nabf);
+    const auto set_IJ_nabf_nabf = LIBRPA::utils::get_necessary_IJ_from_block_2D_sy('U', LIBRPA::atomic_basis_abf, desc_nabf_nabf);
     const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nabf_nabf);
     auto chi0_block = init_local_mat<double>(desc_nabf_nabf, MAJOR::COL);
     auto coul_block = init_local_mat<double>(desc_nabf_nabf, MAJOR::COL);
@@ -274,7 +276,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d( Chi0 &chi0,  atpair_k_cplx_mat_t &c
     Array_Desc desc_nabf_nabf(blacs_ctxt_global_h);
     // use a square blocksize instead max block, otherwise heev and inversion will complain about illegal parameter
     desc_nabf_nabf.init_square_blk(n_abf, n_abf, 0, 0);
-    const auto set_IJ_nabf_nabf = LIBRPA::get_necessary_IJ_from_block_2D_sy('U', LIBRPA::atomic_basis_abf, desc_nabf_nabf);
+    const auto set_IJ_nabf_nabf = LIBRPA::utils::get_necessary_IJ_from_block_2D_sy('U', LIBRPA::atomic_basis_abf, desc_nabf_nabf);
     const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nabf_nabf);
     auto chi0_block = init_local_mat<complex<double>>(desc_nabf_nabf, MAJOR::COL);
     auto coul_block = init_local_mat<complex<double>>(desc_nabf_nabf, MAJOR::COL);
@@ -1636,7 +1638,7 @@ compute_Wc_freq_q_blacs(const Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps
     // use a square blocksize instead max block, otherwise heev and inversion will complain about illegal parameter
     desc_nabf_nabf.init_square_blk(n_abf, n_abf, 0, 0);
     // obtain the indices of atom-pair block necessary to build 2D block of a Hermitian/symmetric matrix
-    const auto set_IJ_nabf_nabf = LIBRPA::get_necessary_IJ_from_block_2D_sy('U', LIBRPA::atomic_basis_abf, desc_nabf_nabf);
+    const auto set_IJ_nabf_nabf = LIBRPA::utils::get_necessary_IJ_from_block_2D_sy('U', LIBRPA::atomic_basis_abf, desc_nabf_nabf);
     const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nabf_nabf);
     auto chi0_block = init_local_mat<complex<double>>(desc_nabf_nabf, MAJOR::COL);
     auto coul_block = init_local_mat<complex<double>>(desc_nabf_nabf, MAJOR::COL);
@@ -1924,6 +1926,7 @@ compute_Wc_freq_q_blacs(const Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps
             Profiler::start("epsilon_convert_wc_communicate", "Communicate");
             {
                 std::map<int, std::map<std::pair<int, std::array<double, 3>>, RI::Tensor<complex<double>>>> Wc_libri;
+                Profiler::start("epsilon_convert_wc_communicate_1");
                 for (const auto &M_NWc: Wc_MNmap)
                 {
                     const auto &M = M_NWc.first;
@@ -1939,8 +1942,13 @@ compute_Wc_freq_q_blacs(const Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps
                         Wc_libri[M][{N, qa}] = RI::Tensor<complex<double>>({n_mu, n_nu}, Wc.sptr());
                     }
                 }
+                Profiler::stop("epsilon_convert_wc_communicate_1");
+                Profiler::start("epsilon_convert_wc_communicate_2");
+                // main timing
                 // cout << Wc_libri;
                 const auto IJq_Wc = RI::Communicate_Tensors_Map_Judge::comm_map2_first(mpi_comm_global_h.comm, Wc_libri, Iset_Jset_Wc.first, Iset_Jset_Wc.second);
+                Profiler::stop("epsilon_convert_wc_communicate_2");
+                Profiler::start("epsilon_convert_wc_communicate_3");
                 // parse collected to
                 for (const auto &MN: atpair_local)
                 {
@@ -1952,6 +1960,7 @@ compute_Wc_freq_q_blacs(const Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps
                     Wc_freq_q[freq][M][N][q] = matrix_m<complex<double>>(
                         n_mu, n_nu, IJq_Wc.at(M).at({N, qa}).data, MAJOR::ROW);
                 }
+                Profiler::stop("epsilon_convert_wc_communicate_3");
                 // for ( int i_mu = 0; i_mu != n_mu; i_mu++ )
                 //     for ( int i_nu = 0; i_nu != n_nu; i_nu++ )
                 //     {
@@ -2219,7 +2228,7 @@ void test_libcomm_for_system(const atpair_k_cplx_mat_t &coulmat)
     Array_Desc desc_nabf_nabf(blacs_ctxt_global_h);
     // use a square blocksize instead max block, otherwise heev and inversion will complain about illegal parameter
     desc_nabf_nabf.init_square_blk(n_abf, n_abf, 0, 0);
-    const auto set_IJ_nabf_nabf = LIBRPA::get_necessary_IJ_from_block_2D_sy('U', LIBRPA::atomic_basis_abf, desc_nabf_nabf);
+    const auto set_IJ_nabf_nabf = LIBRPA::utils::get_necessary_IJ_from_block_2D_sy('U', LIBRPA::atomic_basis_abf, desc_nabf_nabf);
     const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nabf_nabf);
     
     auto coul_block = init_local_mat<complex<double>>(desc_nabf_nabf, MAJOR::COL);

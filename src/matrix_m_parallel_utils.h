@@ -2,7 +2,8 @@
 #include "matrix_m.h"
 #include "constants.h"
 #include "profiler.h"
-#include "parallel_mpi.h"
+#include "base_blacs.h"
+#include "atomic_basis.h"
 #include <omp.h>
 #include <functional>
 #include "scalapack_connector.h"
@@ -324,16 +325,18 @@ void map_block_to_IJ_storage(map<int, map<int, matrix_m<T>>> &IJmap,
     assert(desc.m() == atbasis_row.nb_total && desc.n() == atbasis_col.nb_total);
     int I, J, iI, jJ;
     for (int i_lo = 0; i_lo != desc.m_loc(); i_lo++)
+    {
+        int i_glo = desc.indx_l2g_r(i_lo);
+        atbasis_row.get_local_index(i_glo, I, iI);
         for (int j_lo = 0; j_lo != desc.n_loc(); j_lo++)
         {
-            int i_glo = desc.indx_l2g_r(i_lo);
             int j_glo = desc.indx_l2g_c(j_lo);
-            atbasis_row.get_local_index(i_glo, I, iI);
             atbasis_col.get_local_index(j_glo, J, jJ);
             if (IJmap.count(I) == 0 || IJmap.at(I).count(J) == 0 || IJmap.at(I).at(J).size() == 0)
                 IJmap[I][J] = matrix_m<T>{static_cast<int>(atbasis_row.get_atom_nb(I)), static_cast<int>(atbasis_col.get_atom_nb(J)), major_map};
             IJmap[I][J](iI, jJ) = mat_lo(i_lo, j_lo);
         }
+    }
 }
 
 template <typename T>
@@ -400,11 +403,13 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
             n, A_local_opt.ptr(), 1, 1, ad_A_opt.desc,
             W, Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc, work, lwork, rwork, lrwork, info);
     delete [] work, rwork;
+    Profiler::stop("power_hemat_blacs_2");
     // Optimized A no longer used
+    Profiler::start("power_hemat_blacs_3");
     A_local_opt.clear();
     ScalapackConnector::pgemr2d_f(n, n, Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc,
                                   Z_local.ptr(), 1, 1, ad_Z.desc, ad_Z.ictxt());
-    Profiler::stop("power_hemat_blacs_2");
+    Profiler::stop("power_hemat_blacs_3");
 
     // check the number of non-singular eigenvalues,
     // using the fact that W is in ascending order
@@ -417,7 +422,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
         }
 
     // filter and scale the eigenvalues, store in a temp array
-    Profiler::start("power_hemat_blacs_3");
+    Profiler::start("power_hemat_blacs_4");
     T W_temp[n];
     for (int i = 0; i != n_filtered; i++)
         W_temp[i] = 0.0;
@@ -433,14 +438,14 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
         }
         W_temp[i] = std::pow(W[i], power);
     }
-    Profiler::stop("power_hemat_blacs_3");
+    Profiler::stop("power_hemat_blacs_4");
     // debug print
     // for (int i = 0; i != n; i++)
     // {
     //     LIBRPA::utils::lib_printf("%d %f %f\n", i, W[i], W_temp[i]);
     // }
 
-    Profiler::start("power_hemat_blacs_4");
+    Profiler::start("power_hemat_blacs_5");
     // create scaled eigenvectors
     auto scaled = Z_local_opt.copy();
     for (int i = 0; i != n; i++)
@@ -448,7 +453,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
         ScalapackConnector::pscal_f(n, W_temp[i], scaled.ptr(), 1, 1+i, ad_Z_opt.desc, 1);
     }
     ScalapackConnector::pgemm_f('N', 'C', n, n, n, 1.0, Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc, scaled.ptr(), 1, 1, ad_Z_opt.desc, 0.0, A_local.ptr(), 1, 1, ad_A.desc);
-    Profiler::stop("power_hemat_blacs_4");
+    Profiler::stop("power_hemat_blacs_5");
     return scaled;
 }
 

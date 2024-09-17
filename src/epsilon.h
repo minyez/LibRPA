@@ -3,7 +3,9 @@
 #include "ri.h"
 #include "atoms.h"
 #include "matrix_m.h"
+#include "base_blacs.h"
 #include "parallel_mpi.h"
+
 struct CorrEnergy
 {
     enum type { RPA, MP2 };
