@@ -304,6 +304,7 @@ int main (int argc, char *argv[])
     int provided;
     MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
     initialize_mpi(MPI_COMM_WORLD);
+    initialize_blacs(MPI_COMM_WORLD);
     initialize_io();
 
     // test_pgemm<float>(-2, 1);
@@ -323,6 +324,7 @@ int main (int argc, char *argv[])
     // test_collect_block_from_IJ_storage<complex<double>>();
 
     finalize_io();
+    finalize_blacs();
     finalize_mpi();
     MPI_Finalize();
     return 0;
