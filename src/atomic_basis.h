@@ -30,6 +30,7 @@ public:
     int get_local_index(const std::size_t& i_glo_b, const int& i_atom) const;
     std::pair<int, int> get_local_index(const std::size_t& i_glo_b) const;
     std::size_t get_atom_nb(const int& i_atom) const { return nbs_[i_atom]; }
+    std::vector<std::size_t> get_atom_nbs() const { return nbs_; }
     const std::vector<std::size_t>& get_part_range() const { return part_range; }
 };
 
