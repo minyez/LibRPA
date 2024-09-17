@@ -25,6 +25,7 @@ list(APPEND lib_sources
         app_rpa.cpp
         app_exx.cpp
         atomic_basis.cpp
+        base_blacs.cpp
         # cal_periodic_chi0.cpp
         chi0.cpp
         complexmatrix.cpp
@@ -34,6 +35,7 @@ list(APPEND lib_sources
         ${CMAKE_CURRENT_BINARY_DIR}/envs_dir.cpp
         envs_io.cpp
         envs_mpi.cpp
+        envs_blacs.cpp
         epsilon.cpp
         exx.cpp
         fitting.cpp
@@ -53,6 +55,7 @@ list(APPEND lib_sources
         ri.cpp
         timefreq.cpp
         utils_mem.cpp
+        utils_blacs.cpp
         utils_timefreq.cpp
         vector3_order.cpp
         )

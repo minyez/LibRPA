@@ -16,8 +16,6 @@ MPI_Comm mpi_comm_global;
 
 LIBRPA::MPI_COMM_handler mpi_comm_global_h;
 
-LIBRPA::BLACS_CTXT_handler blacs_ctxt_global_h;
-
 std::string procname = "not-init";
 
 static bool librpa_mpi_initialized = false;
@@ -46,16 +44,6 @@ void initialize_mpi(const MPI_Comm &mpi_comm_global_in)
     // Initialize handlers of global MPI communicator and BLACS context
     mpi_comm_global_h.reset_comm(mpi_comm_global);
     mpi_comm_global_h.init();
-
-    blacs_ctxt_global_h.reset_comm(mpi_comm_global);
-    blacs_ctxt_global_h.init();
-
-    /*
-     * HACK: A close-to-square process grid is imposed.
-     *       This might subject to performance issue when
-     *       the number of processes is not dividable.
-     */
-    blacs_ctxt_global_h.set_square_grid();
 
     librpa_mpi_initialized = true;
 }

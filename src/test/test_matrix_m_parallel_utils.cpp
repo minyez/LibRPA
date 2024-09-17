@@ -1,11 +1,16 @@
 #include "../matrix_m_parallel_utils.h"
+
 #include "../envs_mpi.h"
+#include "../envs_blacs.h"
 #include "../envs_io.h"
+
+#include "../utils_blacs.h"
 
 #include "testutils.h"
 
 using namespace LIBRPA;
 using namespace LIBRPA::envs;
+using namespace LIBRPA::utils;
 
 template <typename T>
 void test_pgemm(const T &m1_lb, const T &m1_ub)

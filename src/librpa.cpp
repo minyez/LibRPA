@@ -14,6 +14,7 @@
 #include <cstring>
 
 #include "envs_mpi.h"
+#include "envs_blacs.h"
 #include "envs_io.h"
 #include "utils_io.h"
 
@@ -55,6 +56,7 @@ void initialize_librpa_environment(
     }
 
     LIBRPA::envs::initialize_mpi(comm_global);
+    LIBRPA::envs::initialize_blacs(comm_global);
     LIBRPA::envs::initialize_io(redirect_stdout, output_filename);
 
     mpi_comm_global_h.init();
@@ -64,6 +66,7 @@ void initialize_librpa_environment(
 void finalize_librpa_environment()
 {
     LIBRPA::envs::finalize_io();
+    LIBRPA::envs::finalize_blacs();
     LIBRPA::envs::finalize_mpi();
 }
 

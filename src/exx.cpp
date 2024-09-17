@@ -2,6 +2,8 @@
 
 #include "envs_io.h"
 #include "envs_mpi.h"
+#include "envs_blacs.h"
+#include "utils_blacs.h"
 #include "profiler.h"
 #include "matrix_m_parallel_utils.h"
 #include "params.h"
@@ -297,9 +299,8 @@ void Exx::build_KS(const std::vector<std::vector<ComplexMatrix>> &wfc_target,
     auto Hexx_nband_nband = init_local_mat<complex<double>>(desc_nband_nband, MAJOR::COL);
     auto Hexx_nband_nband_fb = init_local_mat<complex<double>>(desc_nband_nband_fb, MAJOR::COL);
 
-    const auto set_IJ_naonao = get_necessary_IJ_from_block_2D(atomic_basis_wfc,
-                                                              atomic_basis_wfc,
-                                                              desc_nao_nao);
+    const auto set_IJ_naonao = LIBRPA::utils::get_necessary_IJ_from_block_2D(
+        atomic_basis_wfc, atomic_basis_wfc, desc_nao_nao);
     const auto Iset_Jset = convert_IJset_to_Iset_Jset(set_IJ_naonao);
 
     for (int isp = 0; isp < n_spins; isp++)
