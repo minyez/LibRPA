@@ -74,3 +74,6 @@ build*/
 .clangd
 # personal build script
 mybuild*.sh
+
+# extracted test input data
+input_librpa/
