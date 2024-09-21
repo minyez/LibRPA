@@ -1660,6 +1660,23 @@ compute_Wc_freq_q_blacs(const Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps
         Iset_Jset_Wc.first.insert(ap.first);
         Iset_Jset_Wc.second.insert(ap.second);
     }
+    
+    // Prepare local basis indices for 2D->IJ map
+    int I, iI;
+    map<int, vector<int>> map_lor_v;
+    map<int, vector<int>> map_loc_v;
+    for (int i_lo = 0; i_lo != desc_nabf_nabf.m_loc(); i_lo++)
+    {
+        int i_glo = desc_nabf_nabf.indx_l2g_r(i_lo);
+        LIBRPA::atomic_basis_abf.get_local_index(i_glo, I, iI);
+        map_lor_v[I].push_back(iI);
+    }
+    for (int i_lo = 0; i_lo != desc_nabf_nabf.n_loc(); i_lo++)
+    {
+        int i_glo = desc_nabf_nabf.indx_l2g_c(i_lo);
+        LIBRPA::atomic_basis_abf.get_local_index(i_glo, I, iI);
+        map_loc_v[I].push_back(iI);
+    }
 
     vector<Vector3_Order<double>> qpts;
     for (const auto &q_weight: irk_weight)
@@ -1674,7 +1691,7 @@ compute_Wc_freq_q_blacs(const Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps
         coulwc_block.zero_out();
         // lib_printf("coul_block\n%s", str(coul_block).c_str());
 
-        int iq = std::distance(klist.begin(), std::find(klist.begin(), klist.end(), q));
+        // int iq = std::distance(klist.begin(), std::find(klist.begin(), klist.end(), q));
         std::array<double, 3> qa = {q.x, q.y, q.z};
 
         // collect the block elements of truncated coulomb matrices first
@@ -1918,9 +1935,11 @@ compute_Wc_freq_q_blacs(const Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps
             Profiler::start("epsilon_convert_wc_2d_to_ij", "Convert Wc, 2D -> IJ");
             Profiler::start("epsilon_convert_wc_map_block", "Initialize Wc atom-pair map");
             map<int, map<int, matrix_m<complex<double>>>> Wc_MNmap;
-            map_block_to_IJ_storage(Wc_MNmap, LIBRPA::atomic_basis_abf,
-                                    LIBRPA::atomic_basis_abf, chi0_block,
-                                    desc_nabf_nabf, MAJOR::ROW);
+            // map_block_to_IJ_storage(Wc_MNmap, LIBRPA::atomic_basis_abf,
+            //                         LIBRPA::atomic_basis_abf, chi0_block,
+            //                         desc_nabf_nabf, MAJOR::ROW);
+            map_block_to_IJ_storage_new(Wc_MNmap, LIBRPA::atomic_basis_abf, map_lor_v, map_loc_v,
+                                        chi0_block, desc_nabf_nabf, MAJOR::ROW);
             Profiler::stop("epsilon_convert_wc_map_block");
 
             Profiler::start("epsilon_convert_wc_communicate", "Communicate");
