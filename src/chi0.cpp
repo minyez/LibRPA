@@ -288,14 +288,19 @@ static void build_gf_Rt_libri(
         const std::array<int,3> Ra{R.x,R.y,R.z};
 
         // Compute the full G(R, tau) matrix
+#pragma omp parallel for schedule(dynamic)
         for (int ik = 0; ik != nkpts; ik++)
         {
             double ang = - klist[ik] * (R * latvec) * TWO_PI;
             complex<double> kphase = complex<double>(cos(ang), sin(ang));
             auto scaled_wfc_conj = conj(mf.get_eigenvectors()[ispin][ik]);
-            for ( int ib = 0; ib != nbands; ib++)
+            for (int ib = 0; ib != nbands; ib++)
                 LapackConnector::scal(naos, scale(ik, ib), scaled_wfc_conj.c + naos * ib, 1);
-            gf_global += (kphase * transpose(mf.get_eigenvectors()[ispin][ik], false) * scaled_wfc_conj).real();
+            auto mat = (kphase * transpose(mf.get_eigenvectors()[ispin][ik], false) * scaled_wfc_conj).real();
+#pragma omp critical
+            {
+                gf_global += mat;
+            }
         }
         if ( tau < 0 ) gf_global *= -1.;
 
