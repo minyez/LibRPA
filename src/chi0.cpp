@@ -483,10 +483,11 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                     Vector3_Order<int> Rint(R[0], R[1], R[2]);
                     ComplexMatrix cm_chi0(chi_tensor.shape[0], chi_tensor.shape[1]);
                     // Profiler::start("chi0_libri_routing_ft_ct_1");
-                    for (int i = 0; i < cm_chi0.size; i++)
-                    {
-                        cm_chi0.c[i] = *(chi_tensor.ptr() + i);
-                    }
+                    // for (int i = 0; i < cm_chi0.size; i++)
+                    // {
+                    //     cm_chi0.c[i] = *(chi_tensor.ptr() + i);
+                    // }
+                    LapackConnector::copy(cm_chi0.size, chi_tensor.ptr(), 1, reinterpret_cast<double*>(cm_chi0.c), 2);
                     // Profiler::stop("chi0_libri_routing_ft_ct_1");
 
                     const double arg = q * (Rint * latvec) * TWO_PI;
