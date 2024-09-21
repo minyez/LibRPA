@@ -5,6 +5,7 @@
 #include "base_blacs.h"
 #include "atomic_basis.h"
 #include <omp.h>
+#include <map>
 #include <functional>
 #include "scalapack_connector.h"
 #include "utils_io.h"
@@ -337,6 +338,103 @@ void map_block_to_IJ_storage(map<int, map<int, matrix_m<T>>> &IJmap,
             IJmap[I][J](iI, jJ) = mat_lo(i_lo, j_lo);
         }
     }
+}
+
+
+template <typename T>
+void map_block_to_IJ_storage_new(map<int, map<int, matrix_m<T>>> &IJmap,
+                                 const LIBRPA::AtomicBasis &atbasis,
+                                 const map<int, vector<int>> &map_lor_I_is,
+                                 const map<int, vector<int>> &map_loc_J_js,
+                                 const matrix_m<T> &mat_lo, const LIBRPA::Array_Desc &desc, MAJOR major_map)
+{
+    // map<int, map<int, matrix_m<T>>> IJmap_local;
+    int max_threads = omp_get_max_threads(); // Get the total number of available threads
+
+    std::vector<int> Is;
+    std::vector<int> Js;
+    for (const auto &I_is: map_lor_I_is)
+    {
+        Is.push_back(I_is.first);
+    }
+    for (const auto &J_js: map_loc_J_js)
+    {
+        Js.push_back(J_js.first);
+    }
+    const auto n_pairs_total = Is.size() * Js.size();
+
+    // Create necessay atom-pair blocks
+#pragma omp parallel for collapse(2) schedule(dynamic)
+    for (int i_I = 0; i_I != Is.size(); i_I++)
+    {
+        for (int j_J = 0; j_J != Js.size(); j_J++)
+        {
+            const auto &I = Is[i_I];
+            const auto &J = Js[j_J];
+            const auto n_i = static_cast<int>(atbasis.get_atom_nb(I));
+            const auto n_j = static_cast<int>(atbasis.get_atom_nb(J));
+            auto mat = matrix_m<T>(n_i, n_j, major_map);
+#pragma omp critical
+            {
+                // IJmap_local[I][J] = std::move(mat);
+                IJmap[I][J] = std::move(mat);
+            }
+        }
+    }
+
+    int subdiv = max_threads / n_pairs_total;
+    if (subdiv * n_pairs_total < max_threads)
+    {
+        subdiv += 1;
+    }
+
+    // Compute starting and ending j indices
+    std::vector<std::array<int, 4>> blocks;
+    for (const auto &I: Is)
+    {
+        for (const auto &J: Js)
+        {
+            const auto n_j = static_cast<int>(atbasis.get_atom_nb(J));
+            const auto step = n_j / subdiv;
+            const auto resi = n_j % subdiv;
+            for (int j_subdiv = 0; j_subdiv < subdiv; j_subdiv++)
+            {
+                int st = j_subdiv * step + j_subdiv * int(j_subdiv < resi) + resi * int(j_subdiv >= resi);
+                int ed = std::min(n_j, st + step + int(j_subdiv < resi));
+                blocks.push_back({I, J, st, ed});
+            }
+        }
+    }
+
+#pragma omp parallel for schedule(dynamic)
+    for (int i_block = 0; i_block != blocks.size(); i_block++)
+    {
+        const auto &index = blocks[i_block];
+        const auto &I = index[0];
+        const auto &J = index[1];
+        const auto &i_indices = map_lor_I_is.at(I);
+        const auto &j_indices = map_loc_J_js.at(J);
+
+        // auto mat = IJmap_local[I][J];
+        auto mat = IJmap[I][J];
+
+        const auto &j_st = index[2];
+        const auto &j_ed = index[3];
+        for (int i_idx = 0; i_idx < i_indices.size(); i_idx++)
+        {
+            int i = i_indices[i_idx];
+            for (int j_idx = j_st; j_idx < j_ed; j_idx++)
+            {
+                int j = j_indices[j_idx];
+                const auto i_loc = desc.indx_g2l_r(atbasis.get_global_index(I, i));
+                const auto l_loc = desc.indx_g2l_c(atbasis.get_global_index(J, j));
+                mat(i, j) = mat_lo(i_loc, l_loc);
+            }
+        }
+    }
+
+    // Merge local map into the global map
+    // IJmap.merge(IJmap_local);
 }
 
 template <typename T>
