@@ -19,11 +19,11 @@ bool is_gamma_point(const Vector3_Order<double> &kpt);
 bool is_gamma_point(const Vector3_Order<int> &kpt);
 
 extern int kv_nmp[3];
-//! lattice vectors as a 3D-matrix, each row as a lattice vector
+//! lattice vectors as a 3D-matrix, each row as a lattice vector. Unit: Bohr
 extern Matrix3 latvec;
 //! same as latvec, but a nested array for LibRI call
 extern std::array<std::array<double, 3>, 3> lat_array;
-//! reciprocal lattice vectors as a 3D-matrix, each row as a reciprocal vector
+//! reciprocal lattice vectors as a 3D-matrix, each row as a reciprocal vector. Unit: 2pi/Bohr
 extern Matrix3 G;
 extern std::vector<Vector3_Order<double>> klist;
 extern std::vector<Vector3_Order<double>> klist_ibz;
