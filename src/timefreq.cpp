@@ -205,33 +205,17 @@ void TFGrids::generate_minimax(double emin, double emax)
     grid_type = TFGrids::GRID_TYPES::Minimax;
     set_time();
 
-    double * omega_points = new double [n_grids];
-    double * tau_points = new double [n_grids];
-    double * omega_weights = new double [n_grids];
-    double * tau_weights = new double [n_grids];
     double max_errors[3];
     double cosft_duality_error;
     int ierr;
 
-    get_minimax_grid(n_grids, emin, emax, tau_points, tau_weights, omega_points, omega_weights,
+    auto n = static_cast<int>(n_grids);
+    get_minimax_grid(n, emin, emax, time_nodes.data(), time_weights.data(), freq_nodes.data(), freq_weights.data(),
                      costrans_t2f.c, costrans_f2t.c, sintrans_t2f.c, max_errors, cosft_duality_error, ierr);
 
     if (ierr != 0)
         throw invalid_argument(string("minimax grids failed, return code: ") + to_string(ierr));
     LIBRPA::utils::lib_printf("Cosine transform duality error: %20.12f\n", cosft_duality_error);
-
-    for (int ig = 0; ig != n_grids; ig++)
-    {
-        freq_nodes[ig] = omega_points[ig];
-        freq_weights[ig] = omega_weights[ig];
-        time_nodes[ig] = tau_points[ig];
-        time_weights[ig] = tau_weights[ig];
-    }
-
-    delete [] omega_points;
-    delete [] omega_weights;
-    delete [] tau_points;
-    delete [] tau_weights;
 
     // zmy debug
     // cout << "Cos transform time -> freq (freq each row)" << endl;
