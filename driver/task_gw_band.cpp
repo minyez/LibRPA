@@ -272,6 +272,7 @@ void task_g0w0_band()
             for (int i_kpoint = 0; i_kpoint < mf.get_n_kpoints(); i_kpoint++)
             {
                 const auto &k = kfrac_band[i_kpoint];
+                ofs_ks << std::setw(5) << i_kpoint + 1 << std::setw(15) << std::setprecision(7) << k.x << std::setw(15) << std::setprecision(7) << k.y << std::setw(15) << std::setprecision(7) << k.z;
                 ofs_gw << std::setw(5) << i_kpoint + 1 << std::setw(15) << std::setprecision(7) << k.x << std::setw(15) << std::setprecision(7) << k.y << std::setw(15) << std::setprecision(7) << k.z;
                 ofs_hf << std::setw(5) << i_kpoint + 1 << std::setw(15) << std::setprecision(7) << k.x << std::setw(15) << std::setprecision(7) << k.y << std::setw(15) << std::setprecision(7) << k.z;
                 for (int i_state = 0; i_state < meanfield.get_n_bands(); i_state++)
