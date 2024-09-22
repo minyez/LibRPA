@@ -7,6 +7,7 @@
 #include "profiler.h"
 #include "chi0.h"
 #include "libri_utils.h"
+#include "atomic_basis.h"
 #include "stl_io_helper.h"
 #include "utils_io.h"
 #include "utils_mem.h"
@@ -474,19 +475,17 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                 const auto &q = qlist[iq];
                 const auto &Mu = index_Rs.first[2];
                 const auto &Nu = index_Rs.first[3];
+                const auto &n_mu = LIBRPA::atomic_basis_abf.get_atom_nb(Mu);
+                const auto &n_nu = LIBRPA::atomic_basis_abf.get_atom_nb(Nu);
                 const double freq = tfg.get_freq_nodes()[ifreq];
                 const double trans = tfg.get_costrans_t2f()(ifreq, it);
                 auto &chi = chi0_q[freq][q][Mu][Nu];
+                ComplexMatrix cm_chi0(n_mu, n_nu);
                 for (const auto &R: index_Rs.second)
                 {
                     const auto &chi_tensor = chi0s_IJR.at(Mu).at({Nu, R});
                     Vector3_Order<int> Rint(R[0], R[1], R[2]);
-                    ComplexMatrix cm_chi0(chi_tensor.shape[0], chi_tensor.shape[1]);
                     // Profiler::start("chi0_libri_routing_ft_ct_1");
-                    // for (int i = 0; i < cm_chi0.size; i++)
-                    // {
-                    //     cm_chi0.c[i] = *(chi_tensor.ptr() + i);
-                    // }
                     LapackConnector::copy(cm_chi0.size, chi_tensor.ptr(), 1, reinterpret_cast<double*>(cm_chi0.c), 2);
                     // Profiler::stop("chi0_libri_routing_ft_ct_1");
 
