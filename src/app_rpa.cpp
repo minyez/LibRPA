@@ -9,7 +9,7 @@
 #include "params.h"
 #include "pbc.h"
 #include "profiler.h"
-#include "timefreq.h"
+#include "utils_timefreq.h"
 #include "ri.h"
 
 #include "stl_io_helper.h"
@@ -34,26 +34,8 @@ void get_rpa_correlation_energy_(std::complex<double> &rpa_corr,
 
     set_parallel_routing(Params::parallel_routing, tot_atpair.size(), Rt_num, LIBRPA::parallel_routing);
 
-    TFGrids tfg(Params::nfreq);
-    // prepare the time-freq grids
-    switch (TFGrids::get_grid_type(Params::tfgrids_type))
-    {
-        case (TFGrids::GRID_TYPES::Minimax):
-        {
-            double emin, emax;
-            meanfield.get_E_min_max(emin, emax);
-            tfg.generate_minimax(emin, emax);
-            break;
-        }
-        case (TFGrids::GRID_TYPES::EvenSpaced_TF):
-        {
-            // WARN: only used to debug, adjust emin and interval manually
-            tfg.generate_evenspaced_tf(0.005, 0.0, 0.005, 0.0);
-            break;
-        }
-        default:
-            throw invalid_argument("requested time-frequency grid is not implemented");
-    }
+    // Build time-frequency objects
+    auto tfg = utils::generate_timefreq_grids(Params::nfreq, Params::tfgrids_type, meanfield);
 
     Chi0 chi0(meanfield, klist, tfg);
     chi0.gf_R_threshold = Params::gf_R_threshold;
