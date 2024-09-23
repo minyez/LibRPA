@@ -113,9 +113,9 @@ contains
     tau_points = x_tw(1: num_points) /scaling
     tau_weights = x_tw(num_points+1: 2* num_points) /scaling
 
-    allocate (cosft_wt(num_points, num_points))
-    allocate (cosft_tw(num_points, num_points))
-    allocate (sinft_wt(num_points, num_points))
+    if (.not. allocated(cosft_wt)) allocate (cosft_wt(num_points, num_points))
+    if (.not. allocated(cosft_tw)) allocate (cosft_tw(num_points, num_points))
+    if (.not. allocated(sinft_wt)) allocate (sinft_wt(num_points, num_points))
 
     ! get the weights for the cosine transform W^c(it) -> W^c(iw)
     call get_transformation_weights(num_points, tau_points, omega_points, cosft_wt, e_min, e_max, &
