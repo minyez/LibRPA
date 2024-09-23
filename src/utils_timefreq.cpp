@@ -1,5 +1,8 @@
 #include "utils_timefreq.h"
 
+#include "envs_mpi.h"
+#include "utils_io.h"
+
 
 namespace LIBRPA
 {
@@ -44,7 +47,21 @@ TFGrids generate_timefreq_grids(unsigned ngrids, const std::string &grid_type_st
         {}
     }
 
-    tfg.generate(grid_type, emin, eintv, emax, tmin, tintv);
+    auto retval = tfg.generate(grid_type, emin, eintv, emax, tmin, tintv);
+
+    switch (grid_type)
+    {
+        case (TFGrids::GRID_TYPES::Minimax):
+        {
+            if (envs::mpi_comm_global_h.is_root())
+            {
+                LIBRPA::utils::lib_printf("Cosine transform duality error: %20.12f\n", retval);
+            }
+        }
+        default:
+        // Other cases are handled within TFGrids
+        {}
+    }
 
     return tfg;
 }

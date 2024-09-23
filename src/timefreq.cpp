@@ -109,13 +109,13 @@ void TFGrids::unset()
     // fourier_t2f.create(0, 0);
 }
 
-TFGrids::TFGrids(unsigned N)
+TFGrids::TFGrids(const unsigned &N)
 {
     n_grids = N;
     set_freq();
 }
 
-void TFGrids::reset(unsigned N)
+void TFGrids::reset(const unsigned &N)
 {
     unset();
     n_grids = N;
@@ -127,8 +127,9 @@ TFGrids::~TFGrids()
     /* unset(); */
 }
 
-void TFGrids::generate(TFGrids::GRID_TYPES gtype, double emin, double eintveral, double emax, double tmin, double tinterval)
+double TFGrids::generate(TFGrids::GRID_TYPES gtype, double emin, double eintveral, double emax, double tmin, double tinterval)
 {
+    double retval = -1;
     switch (gtype)
     {
         case (TFGrids::GRID_TYPES::GaussLegendre):
@@ -145,7 +146,7 @@ void TFGrids::generate(TFGrids::GRID_TYPES gtype, double emin, double eintveral,
         }
         case (TFGrids::GRID_TYPES::Minimax):
         {
-            this->generate_minimax(emin, emax);
+            retval = this->generate_minimax(emin, emax);
             break;
         }
         case (TFGrids::GRID_TYPES::EvenSpaced):
@@ -161,6 +162,7 @@ void TFGrids::generate(TFGrids::GRID_TYPES gtype, double emin, double eintveral,
         default:
             throw invalid_argument("requested time-frequency grid is not implemented");
     }
+    return retval;
 }
 
 void TFGrids::generate_evenspaced(double emin, double interval)
@@ -200,22 +202,31 @@ void TFGrids::generate_evenspaced_tf(double emin, double eintv, double tmin, dou
     grid_type = TFGrids::GRID_TYPES::EvenSpaced_TF;
 }
 
-void TFGrids::generate_minimax(double emin, double emax)
+double TFGrids::generate_minimax(double emin, double emax)
 {
     grid_type = TFGrids::GRID_TYPES::Minimax;
     set_time();
 
     double max_errors[3];
-    double cosft_duality_error;
-    int ierr;
+    double cosft_duality_error = 1e8;
+    int ierr = -1;
 
     auto n = static_cast<int>(n_grids);
     get_minimax_grid(n, emin, emax, time_nodes.data(), time_weights.data(), freq_nodes.data(), freq_weights.data(),
                      costrans_t2f.c, costrans_f2t.c, sintrans_t2f.c, max_errors, cosft_duality_error, ierr);
 
-    if (ierr != 0)
-        throw invalid_argument(string("minimax grids failed, return code: ") + to_string(ierr));
-    LIBRPA::utils::lib_printf("Cosine transform duality error: %20.12f\n", cosft_duality_error);
+    switch (ierr) {
+        case 0: /* success */
+            break;
+        case -1:
+            throw invalid_argument("get_minimax_grid not properly called");
+        case 1: /* GreenX internal code */
+            throw invalid_argument(string("unsupported minimax grids size: ") + to_string(n_grids));
+        default:
+            throw invalid_argument(string("minimax grids failed, return code: ") + to_string(ierr));
+    }
+
+    return cosft_duality_error;
 
     // zmy debug
     // cout << "Cos transform time -> freq (freq each row)" << endl;
