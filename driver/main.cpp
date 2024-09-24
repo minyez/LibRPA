@@ -39,7 +39,7 @@ static void initialize(int argc, char **argv)
     Profiler::start("total", "Total");
 }
 
-static void finalize()
+static void finalize(bool success)
 {
     using namespace LIBRPA::envs;
     using LIBRPA::utils::lib_printf;
@@ -47,8 +47,15 @@ static void finalize()
     Profiler::stop("total");
     if (mpi_comm_global_h.is_root())
     {
-        Profiler::display();
-        lib_printf("libRPA finished\n");
+        if (success)
+        {
+            Profiler::display();
+            lib_printf("libRPA finished successfully\n");
+        }
+        else
+        {
+            lib_printf("libRPA failed\n");
+        }
     }
 
     finalize_librpa_environment();
@@ -67,6 +74,17 @@ int main(int argc, char **argv)
     using LIBRPA::utils::lib_printf;
 
     initialize(argc, argv);
+    if (mpi_comm_global_h.myid == 0)
+    {
+        lib_printf("Total number of nodes: %5d\n", LIBRPA::envs::size_inter);
+    }
+    mpi_comm_global_h.barrier();
+    if (LIBRPA::envs::mpi_comm_intra_h.myid == 0)
+    {
+        lib_printf("Global ID of master process of node %5d : %5d\n",
+                   LIBRPA::envs::mpi_comm_inter_h.myid, LIBRPA::envs::mpi_comm_global_h.myid);
+    }
+    mpi_comm_global_h.barrier();
     lib_printf("%s\n", mpi_comm_global_h.str().c_str());
     mpi_comm_global_h.barrier();
 
@@ -145,7 +163,7 @@ int main(int argc, char **argv)
         tfg.generate_minimax(emin, emax);
         if (mpi_comm_global_h.is_root())
             tfg.show();
-        finalize();
+        finalize(true);
         return 0;
     }
 
@@ -318,6 +336,6 @@ int main(int argc, char **argv)
         task_exx();
     }
 
-    finalize();
-    return 0;
+    finalize(true);
+    return EXIT_SUCCESS;
 }
