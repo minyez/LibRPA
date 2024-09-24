@@ -55,6 +55,7 @@ public:
     MPI_COMM_handler(MPI_Comm comm_in);
     ~MPI_COMM_handler() {};
     void init();
+    void reset_comm();
     void reset_comm(MPI_Comm comm_in);
     bool is_root() const { return this->myid == 0; }
     void barrier() const;

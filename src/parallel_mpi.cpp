@@ -65,21 +65,28 @@ void reduce_ComplexMatrix(ComplexMatrix &cmat_send, ComplexMatrix &cmat_recv, in
 MPI_COMM_handler::MPI_COMM_handler()
 {
     this->comm_set_ = false;
-    this->initialized_ = false; 
+    this->initialized_ = false;
 }
 
 MPI_COMM_handler::MPI_COMM_handler(MPI_Comm comm_in)
         : comm(comm_in)
 {
     this->comm_set_ = true;
-    this->initialized_ = false; 
+    this->initialized_ = false;
+}
+
+void MPI_COMM_handler::reset_comm()
+{
+    this->comm = MPI_COMM_NULL;
+    this->comm_set_ = false;
+    this->initialized_ = false;
 }
 
 void MPI_COMM_handler::reset_comm(MPI_Comm comm_in)
 {
-    this->comm = comm_in; 
+    this->comm = comm_in;
     this->comm_set_ = true;
-    this->initialized_ = false; 
+    this->initialized_ = false;
 }
 
 void MPI_COMM_handler::check_initialized() const
