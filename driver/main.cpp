@@ -284,7 +284,10 @@ int main(int argc, char **argv)
     mpi_comm_global_h.barrier();
     if (mpi_comm_global_h.myid == 0)
     {
-        cout << "Initialization finished, start task job from myid\n";
+        const auto cputime = Profiler::get_cpu_time_last("driver_read_common_input_data") / 60.0;
+        const auto walltime = Profiler::get_wall_time_last("driver_read_common_input_data") / 60.0;
+        lib_printf("Initialization finished, Wall/CPU time [min]: %12.4f %12.4f\n", walltime, cputime);
+        lib_printf("Task work begins: %s\n", task_lower.c_str());
     }
 
     if (task == task_t::RPA)
