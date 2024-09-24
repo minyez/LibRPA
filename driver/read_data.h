@@ -12,6 +12,8 @@
 #include "../src/math/vector3_order.h"
 #include "librpa.hpp"
 
+#include "../src/meanfield.h"
+
 using std::string;
 using librpa_int::matrix;
 using librpa_int::atpair_t;
@@ -38,6 +40,8 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing);
 
 size_t read_Cs(const string &dir_path, double threshold, const std::vector<atpair_t> &local_atpair);
 
+void read_velocity(const string &file_path, MeanField &mf);
+
 size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int myid, int nprocs);
 
 size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cut_coulomb);
@@ -62,8 +66,7 @@ void read_band_kpath_info(const string &file_path);
 
 void read_band_meanfield_data(const string &dir_path);
 
-std::vector<matrix> read_vxc_band(const string &dir_path, int n_states, int n_spin, int n_kpoints_band);
+std::vector<matrix> read_vxc_band(const string &dir_path, int n_states, int n_spin,
+                                  int n_kpoints_band);
 
-//! Read ELSI CSC format matrix file
-void read_elsi_csc(const string &file_path, bool save_row_major, std::vector<double> &mat, int &n_basis, bool &is_real);
-#endif // !READ_DATA_H
+#endif  // !READ_DATA_H
