@@ -14,6 +14,7 @@
 #include "stl_io_helper.h"
 #include "task.h"
 #include "utils_io.h"
+#include "utils_mem.h"
 
 #include "task_rpa.h"
 #include "task_exx.h"
@@ -299,14 +300,28 @@ int main(int argc, char **argv)
     // mpi_comm_global_h.barrier();
     Profiler::stop("driver_read_common_input_data");
 
+    // Check memory usage on each node
     mpi_comm_global_h.barrier();
-    if (mpi_comm_global_h.myid == 0)
+    if (LIBRPA::envs::mpi_comm_intra_h.myid == 0)
     {
-        const auto cputime = Profiler::get_cpu_time_last("driver_read_common_input_data") / 60.0;
-        const auto walltime = Profiler::get_wall_time_last("driver_read_common_input_data") / 60.0;
-        lib_printf("Initialization finished, Wall/CPU time [min]: %12.4f %12.4f\n", walltime, cputime);
-        lib_printf("Task work begins: %s\n", task_lower.c_str());
+        if (mpi_comm_global_h.myid == 0)
+        {
+            const auto cputime = Profiler::get_cpu_time_last("driver_read_common_input_data") / 60.0;
+            const auto walltime = Profiler::get_wall_time_last("driver_read_common_input_data") / 60.0;
+            lib_printf("Initialization finished, Wall/CPU time [min]: %12.4f %12.4f\n", walltime, cputime);
+            lib_printf("Task work begins: %s\n", task_lower.c_str());
+
+            double freemem;
+            auto flag = LIBRPA::utils::get_node_free_mem(freemem);
+            if (flag == 0)
+            {
+                lib_printf("Free memory on node %5d [GB]: %8.3f\n",
+                           LIBRPA::envs::mpi_comm_inter_h.myid, freemem);
+            }
+        }
     }
+
+
 
     if (task == task_t::RPA)
     {
