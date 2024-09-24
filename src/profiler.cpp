@@ -22,7 +22,7 @@ std::map<std::string, int> Profiler::sd_map_level;
 std::map<std::string, std::string> Profiler::sd_map_note;
 std::vector<std::string> Profiler::sd_order;
 
-static std::string get_timestamp()
+std::string get_timestamp()
 {
     auto now = std::chrono::system_clock::now();
     auto in_time_t = std::chrono::system_clock::to_time_t(now);
