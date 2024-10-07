@@ -19,6 +19,7 @@
 #include "envs_io.h"
 #include "utils_io.h"
 #include "stl_io_helper.h"
+#include "profiler.h"
 
 #include "librpa.h"
 #include "utils_mem.h"
@@ -527,11 +528,15 @@ size_t handle_Cs_file_by_ids(const string &file_path, double threshold, const ve
                         infile >> Cs_ele;
                         (*cs_ptr)(i * n_j + j, mu) = stod(Cs_ele);
                     }
+            Profiler::start("set_ao_basis_aux");
             set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, cs_ptr->c, 0);
+            Profiler::stop("set_ao_basis_aux");
         }
         else
         {
+            Profiler::start("set_ao_basis_aux");
             set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, nullptr, 1);
+            Profiler::stop("set_ao_basis_aux");
 
             double maxval = -1.0;
             for (int i = 0; i != n_i; i++)
@@ -582,11 +587,15 @@ size_t handle_Cs_file_binary_by_ids(const string &file_path, double threshold, c
             shared_ptr<matrix> cs_ptr = make_shared<matrix>();
             cs_ptr->create(n_i * n_j, n_mu);
             infile.read((char *) cs_ptr->c, n_i * n_j * n_mu * sizeof(double));
+            Profiler::start("set_ao_basis_aux");
             set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, cs_ptr->c, 0);
+            Profiler::stop("set_ao_basis_aux");
         }
         else
         {
+            Profiler::start("set_ao_basis_aux");
             set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, nullptr, 1);
+            Profiler::stop("set_ao_basis_aux");
             infile.seekg(n_i * n_j * n_mu * sizeof(double), ios::cur);
             cs_discard++;
         }
@@ -606,6 +615,7 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
     unordered_map<string, vector<size_t>> files_Cs_ids_this_proc;
     int Cs_keep_total = 0;
 
+    Profiler::start("handle_Cs_file_dry");
     while ((ptr = readdir(dir)) != NULL)
     {
         string fn(ptr->d_name);
@@ -629,6 +639,7 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
             Cs_keep_total += ids_keep_this_file.size();
         }
     }
+    Profiler::stop("handle_Cs_file_dry");
     closedir(dir);
     dir = NULL;
     if (myid == 0) LIBRPA::utils::lib_printf("Finished Cs filtering\n");
@@ -784,6 +795,8 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
     dir = opendir(dir_path.c_str());
     vector<string> files;
     map<Vector3_Order<double>, ComplexMatrix> Vq_full;
+
+    Profiler::start("handle_Vq_full_file");
     while ((ptr = readdir(dir)) != NULL)
     {
         string fm(ptr->d_name);
@@ -796,7 +809,10 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
             }
         }
     }
+    Profiler::stop("handle_Vq_full_file");
+
     // cout << "FINISH coulomb files reading!" << endl;
+    Profiler::start("set_aux_cut_coulomb_k_atom_pair_out");
     for (auto &vf_p : Vq_full)
     {
         auto qvec = vf_p.first;
@@ -866,6 +882,7 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
             }
         }
     }
+    Profiler::stop("set_aux_cut_coulomb_k_atom_pair_out");
     closedir(dir);
     dir = NULL;
     // cout << "vq threshold: " << threshold << endl;
@@ -1003,6 +1020,7 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
     dir = opendir(dir_path.c_str());
     vector<string> files;
     //map<Vector3_Order<double>, ComplexMatrix> Vq_full;
+    Profiler::start("handle_Vq_row_file");
     while ((ptr = readdir(dir)) != NULL)
     {
         string fm(ptr->d_name);
@@ -1012,10 +1030,13 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
             handle_Vq_row_file(fm,threshold, coulomb, local_atpair);
         }
     }
+    Profiler::stop("handle_Vq_row_file");
+
     // MYZ: now the map coulomb contains the complete atom-pair matrix.
     // Call the API to parse the data.
     // To reduce memory consumption during this process, we erase the data in temporary object once it is parsed.
     auto it_I = coulomb.begin();
+    Profiler::start("set_aux_coulomb_k_atom_pair");
     while (it_I != coulomb.end())
     {
         auto I = it_I->first;
@@ -1042,6 +1063,7 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
         }
         it_I = coulomb.erase(it_I);
     }
+    Profiler::stop("set_aux_coulomb_k_atom_pair");
 
     // cout << "FINISH coulomb files reading!" << endl;
 

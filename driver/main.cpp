@@ -196,7 +196,9 @@ int main(int argc, char **argv)
     }
     mpi_comm_global_h.barrier();
 
+    Profiler::start("driver_read_eigenvector");
     read_eigenvector("./", meanfield);
+    Profiler::stop("driver_read_eigenvector");
     get_natom_ncell_from_first_Cs_file(natom, ncell, "./", Params::binary_input);
     tot_atpair = generate_atom_pair_from_nat(natom, false);
     tot_atpair_ordered = generate_atom_pair_from_nat(natom, true);
@@ -213,6 +215,7 @@ int main(int argc, char **argv)
     // barrier to wait for information print on master process
     mpi_comm_global_h.barrier();
 
+    Profiler::start("driver_read_Cs_Vq");
     //para_mpi.chi_parallel_type=Parallel_MPI::parallel_type::ATOM_PAIR;
     // vector<atpair_t> local_atpair;
     if(parallel_routing == ParallelRouting::ATOM_PAIR)
@@ -265,6 +268,7 @@ int main(int argc, char **argv)
         read_Cs("./", Params::cs_threshold, local_atpair, Params::binary_input);
         read_Vq_full("./", "coulomb_mat", false);
     }
+    Profiler::stop("driver_read_Cs_Vq");
 
     for (int i = 0; i < mpi_comm_global_h.nprocs; i++)
     {
