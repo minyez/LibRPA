@@ -445,29 +445,18 @@ std::vector<size_t> handle_Cs_file_binary_dry(const string &file_path, double th
     {
         infile.read((char *) &dims[0], 8 * sizeof(int));
         // cout<<ic_1<<mu_s<<endl;
-        int ia1 = dims[0] - 1;
-        int ia2 = dims[1] - 1;
-        int ic1 = dims[2];
-        int ic2 = dims[3];
-        int ic3 = dims[4];
-        int n_i = dims[5];
-        int n_j = dims[6];
-        int n_mu = dims[7];
+        // const int ia1 = dims[0] - 1;
+        // const int ia2 = dims[1] - 1;
+        // const int ic1 = dims[2];
+        // const int ic2 = dims[3];
+        // const int ic3 = dims[4];
+        const int n_i = dims[5];
+        const int n_j = dims[6];
+        const int n_mu = dims[7];
 
-        // cout<< ia1<<ia2<<box<<endl;
-        double maxval = -1.0;
-        double Cs_read;
-        for (int i = 0; i != n_i; i++)
-        {
-            for (int j = 0; j != n_j; j++)
-            {
-                for (int mu = 0; mu != n_mu; mu++)
-                {
-                    infile.read((char *) &Cs_read, sizeof(double));
-                    maxval = std::max(maxval, abs(Cs_read));
-                }
-            }
-        }
+        matrix mat(n_i * n_j, n_mu);
+        infile.read((char *) mat.c, n_i * n_j * n_mu * sizeof(double));
+        double maxval = mat.absmax();
         n_processed++;
         if (maxval >= threshold)
         {
@@ -485,7 +474,7 @@ std::vector<size_t> handle_Cs_file_binary_dry(const string &file_path, double th
     return Cs_ids_keep;
 }
 
-size_t handle_Cs_file_by_ids(const string &file_path, double threshold, const vector<size_t> &ids)
+static size_t handle_Cs_file_by_ids(const string &file_path, double threshold, const vector<size_t> &ids)
 {
     size_t cs_discard = 0;
     string natom_s, ncell_s, ia1_s, ia2_s, ic_1, ic_2, ic_3, i_s, j_s, mu_s, Cs_ele;
@@ -555,7 +544,7 @@ size_t handle_Cs_file_by_ids(const string &file_path, double threshold, const ve
 }
 
 
-size_t handle_Cs_file_binary_by_ids(const string &file_path, double threshold, const vector<size_t> &ids)
+static size_t handle_Cs_file_binary_by_ids(const string &file_path, double threshold, const vector<size_t> &ids)
 {
     ifstream infile;
     int dims[8];
