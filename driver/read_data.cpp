@@ -633,6 +633,7 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
     dir = NULL;
     if (myid == 0) LIBRPA::utils::lib_printf("Finished Cs filtering\n");
 
+    Profiler::start("handle_Cs_file");
     for (const auto& fn_ids: files_Cs_ids_this_proc)
     {
         LIBRPA::envs::ofs_myid << fn_ids.first << " " << fn_ids.second << endl;
@@ -645,6 +646,7 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
             cs_discard += handle_Cs_file_by_ids(fn_ids.first, threshold, fn_ids.second);
         }
     }
+    Profiler::stop("handle_Cs_file");
 
     // initialize basis set object
     LIBRPA::atomic_basis_wfc.set(atom_nw);
