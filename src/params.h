@@ -46,9 +46,6 @@ struct Params
 
     static bool binary_input;
 
-    //! CS-matrix threshold parsed to RPA object of LibRI.
-    static double libri_chi0_threshold_CSM;
-
     //! Cs threshold parsed to RPA object of LibRI.
     static double libri_chi0_threshold_C;
 
@@ -57,9 +54,6 @@ struct Params
 
     //! switch of using ScaLAPACK for EcRPA calculation
     static bool use_scalapack_ecrpa;
-
-    //! CS-matrix threshold parsed to EXX object of LibRI.
-    static double libri_exx_threshold_CSM;
 
     //! Cs threshold parsed to EXX object of LibRI.
     static double libri_exx_threshold_C;
