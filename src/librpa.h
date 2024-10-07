@@ -69,9 +69,6 @@ struct LibRPAParams
     //! Threshold of real-space Green's function to compute response function using LibRI
     double libri_chi0_threshold_G;
 
-    //! Threshold of Cauchy-Schwarz filtering to compute exact exchange using LibRI
-    double libri_exx_threshold_CSM;
-
     //! Threshold of real-space LRI triple coefficients to compute exact exchange using LibRI
     double libri_exx_threshold_C;
 
