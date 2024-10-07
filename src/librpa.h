@@ -45,7 +45,6 @@ struct LibRPAParams
     double sqrt_coulomb_threshold;
     double libri_chi0_threshold_C;
     double libri_chi0_threshold_G;
-    double libri_exx_threshold_CSM;
     double libri_exx_threshold_C;
     double libri_exx_threshold_D;
     double libri_exx_threshold_V;
