@@ -267,20 +267,8 @@ int main(int argc, char **argv)
     {
         if (i == mpi_comm_global_h.myid)
         {
-            if (Cs_data.use_libri)
-            {
-                lib_printf("| process %d: Cs size %d from local atpair size %zu\n",
-                        mpi_comm_global_h.myid, get_num_keys(Cs_data.data_libri), local_atpair.size());
-                // ofs_myid << "Cs size: " << get_num_keys(Cs_data.data_libri) << ", with keys:\n";
-                // print_keys(ofs_myid, Cs_data.data_libri);
-            }
-            else
-            {
-                lib_printf("| process %d: Cs size %d from local atpair size %zu\n",
-                        mpi_comm_global_h.myid, get_num_keys(Cs_data.data_IJR), local_atpair.size());
-                // ofs_myid << "Cs size: " << get_num_keys(Cs_data.data_IJR) << ", with keys:\n";
-                // print_keys(ofs_myid, Cs_data.data_IJR);
-            }
+            lib_printf("| process %5d: Cs with %14zu non-zero keys from local atpair size %7zu. Data memory: %10.2f MB\n",
+                       mpi_comm_global_h.myid, Cs_data.n_keys(), local_atpair.size(), Cs_data.n_data_bytes() * 8.0e-6);
         }
         mpi_comm_global_h.barrier();
     }

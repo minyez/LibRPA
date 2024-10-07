@@ -52,6 +52,12 @@ public:
     std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> data_libri;
 
     void clear();
+
+    // get the number of keys in the nested map
+    size_t n_keys() const;
+
+    // get the number of bytes of data.
+    size_t n_data_bytes() const;
 };
 
 extern Cs_LRI Cs_data;

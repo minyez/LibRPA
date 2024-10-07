@@ -29,6 +29,58 @@ void Cs_LRI::clear()
     this->data_libri.clear();
 }
 
+size_t Cs_LRI::n_keys() const
+{
+    size_t nk = 0;
+    if (this->use_libri)
+    {
+        for (const auto &I_JR_data: this->data_libri)
+        {
+            nk += I_JR_data.second.size();
+        }
+    }
+    else
+    {
+        for (const auto &IJR_data: this->data_IJR)
+        {
+            for (const auto &JR_data: IJR_data.second)
+            {
+                nk += JR_data.second.size();
+            }
+        }
+    }
+    return nk;
+}
+
+size_t Cs_LRI::n_data_bytes() const
+{
+    size_t nb = 0;
+    if (this->use_libri)
+    {
+        for (const auto &I_JR_data: this->data_libri)
+        {
+            for (const auto &JR_data: I_JR_data.second)
+            {
+                nb += JR_data.second.data->size();
+            }
+        }
+    }
+    else
+    {
+        for (const auto &IJR_data: this->data_IJR)
+        {
+            for (const auto &JR_data: IJR_data.second)
+            {
+                for (const auto &R_data: JR_data.second)
+                {
+                    nb += R_data.second->size;
+                }
+            }
+        }
+    }
+    return nb;
+}
+
 Cs_LRI Cs_data;
 
 atpair_k_cplx_mat_t Vq;
