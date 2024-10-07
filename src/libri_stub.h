@@ -29,6 +29,9 @@ public:
 
     inline Tdata operator() (const std::size_t i0, const std::size_t i1) const { return static_cast<Tdata>(0); };
 
+    // dummy, should never be used
+    std::shared_ptr<std::valarray<Tdata>> data;
+
     void clear() {};
 };
 
