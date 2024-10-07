@@ -220,7 +220,8 @@ void set_ao_basis_aux(int I, int J, int nbasis_i, int nbasis_j, int naux_mu, int
 
     // cout<< ia1<<ia2<<box<<endl;
     // LIBRPA::utils::lib_printf("Cs_in size: %zu",sizeof(Cs_in) / sizeof(Cs_in[0]));
-    int cs_size = nbasis_i * nbasis_j * naux_mu;
+    const int cs_size = nbasis_i * nbasis_j * naux_mu;
+    const int n_ij = nbasis_i * nbasis_j;
     //(*cs_ptr).c=Cs_in;
 
     /*
@@ -234,12 +235,19 @@ void set_ao_basis_aux(int I, int J, int nbasis_i, int nbasis_j, int naux_mu, int
     if (Cs_data.use_libri)
     {
         const std::array<int, 3> Ra{R[0], R[1], R[2]};
-        // RI tensor uses ABF as slowest index, so we need transpose first with the help of matrix object.
-        // This is equivalent to convert the data layout from original row-major to column-major.
-        matrix_m<double> mat(nbasis_i * nbasis_j, naux_mu, Cs_in, MAJOR::ROW, MAJOR::COL);
+        // RI tensor uses ABF as slowest index, so we need transpose the input data.
+        auto data = make_shared<std::valarray<double>>(cs_size);
+        // Unless n_cols >> n_rows, cache-friendly reading (by row in C/C++) is more efficient
+        for (int i_row = 0; i_row < n_ij; i_row++)
+        {
+            for (int i_col = 0; i_col != naux_mu; i_col++)
+            {
+                (*data)[i_col * n_ij + i_row] = Cs_in[i_row * naux_mu + i_col];
+            }
+        }
         const std::initializer_list<std::size_t>
             shape{static_cast<std::size_t>(naux_mu), static_cast<std::size_t>(nbasis_i), static_cast<std::size_t>(nbasis_j)};
-        Cs_data.data_libri[I][{J, Ra}] = RI::Tensor<double>(shape, mat.dataobj.data);
+        Cs_data.data_libri[I][{J, Ra}] = RI::Tensor<double>(shape, data);
     }
     else
     {
