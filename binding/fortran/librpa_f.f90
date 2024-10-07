@@ -45,7 +45,6 @@ module librpa
       real*8 :: sqrt_coulomb_threshold
       real*8 :: libri_chi0_threshold_C
       real*8 :: libri_chi0_threshold_G
-      real*8 :: libri_exx_threshold_CSM
       real*8 :: libri_exx_threshold_C
       real*8 :: libri_exx_threshold_D
       real*8 :: libri_exx_threshold_V
@@ -74,7 +73,6 @@ module librpa
       real(c_double) :: sqrt_coulomb_threshold
       real(c_double) :: libri_chi0_threshold_C
       real(c_double) :: libri_chi0_threshold_G
-      real(c_double) :: libri_exx_threshold_CSM
       real(c_double) :: libri_exx_threshold_C
       real(c_double) :: libri_exx_threshold_D
       real(c_double) :: libri_exx_threshold_V
@@ -339,7 +337,6 @@ contains
          params_c%sqrt_coulomb_threshold   = params%sqrt_coulomb_threshold
          params_c%libri_chi0_threshold_C   = params%libri_chi0_threshold_C
          params_c%libri_chi0_threshold_G   = params%libri_chi0_threshold_G
-         params_c%libri_exx_threshold_CSM  = params%libri_exx_threshold_CSM
          params_c%libri_exx_threshold_C    = params%libri_exx_threshold_C
          params_c%libri_exx_threshold_D    = params%libri_exx_threshold_D
          params_c%libri_exx_threshold_V    = params%libri_exx_threshold_V
@@ -366,7 +363,6 @@ contains
          params%sqrt_coulomb_threshold   = params_c%sqrt_coulomb_threshold
          params%libri_chi0_threshold_C   = params_c%libri_chi0_threshold_C
          params%libri_chi0_threshold_G   = params_c%libri_chi0_threshold_G
-         params%libri_exx_threshold_CSM  = params_c%libri_exx_threshold_CSM
          params%libri_exx_threshold_C    = params_c%libri_exx_threshold_C
          params%libri_exx_threshold_D    = params_c%libri_exx_threshold_D
          params%libri_exx_threshold_V    = params_c%libri_exx_threshold_V

@@ -22,10 +22,8 @@ double Params::gf_R_threshold = 1e-4;
 double Params::cs_threshold = 1e-4;
 double Params::vq_threshold = 0;
 double Params::sqrt_coulomb_threshold = 1e-8;
-double Params::libri_chi0_threshold_CSM = 0.0;
 double Params::libri_chi0_threshold_C = 0.0;
 double Params::libri_chi0_threshold_G = 0.0;
-double Params::libri_exx_threshold_CSM = 0.0;
 double Params::libri_exx_threshold_C = 0.0;
 double Params::libri_exx_threshold_D = 0.0;
 double Params::libri_exx_threshold_V = 0.0;
@@ -60,11 +58,9 @@ void Params::print()
             {"sqrt_coulomb_threshold", sqrt_coulomb_threshold},
             {"libri_chi0_threshold_C", libri_chi0_threshold_C},
             {"libri_chi0_threshold_G", libri_chi0_threshold_G},
-            {"libri_chi0_threshold_CSM", libri_chi0_threshold_CSM},
             {"libri_exx_threshold_C", libri_exx_threshold_C},
             {"libri_exx_threshold_D", libri_exx_threshold_D},
             {"libri_exx_threshold_V", libri_exx_threshold_V},
-            {"libri_exx_threshold_CSM", libri_exx_threshold_CSM},
             {"libri_g0w0_threshold_C", libri_g0w0_threshold_C},
             {"libri_g0w0_threshold_G", libri_g0w0_threshold_G},
             {"libri_g0w0_threshold_Wc", libri_g0w0_threshold_Wc},

@@ -148,12 +148,10 @@ void parse_inputfile_to_params(const std::string& fn)
     parser.parse_double("vq_threshold", Params::vq_threshold, 0, flag);
     parser.parse_double("sqrt_coulomb_threshold", Params::sqrt_coulomb_threshold, 1e-4, flag);
     parser.parse_double("gf_R_threshold", Params::gf_R_threshold, 1e-4, flag);
-    parser.parse_double("libri_chi0_threshold_CSM", Params::libri_chi0_threshold_CSM, 0.0, flag);
     parser.parse_double("libri_chi0_threshold_C", Params::libri_chi0_threshold_C, 0.0, flag);
     parser.parse_double("libri_chi0_threshold_G", Params::libri_chi0_threshold_G, 0.0, flag);
 
     // exx related
-    parser.parse_double("libri_exx_threshold_CSM", Params::libri_exx_threshold_CSM, 0.0, flag);
     parser.parse_double("libri_exx_threshold_C", Params::libri_exx_threshold_C, 0.0, flag);
     parser.parse_double("libri_exx_threshold_D", Params::libri_exx_threshold_D, 0.0, flag);
     parser.parse_double("libri_exx_threshold_V", Params::libri_exx_threshold_V, 0.0, flag);

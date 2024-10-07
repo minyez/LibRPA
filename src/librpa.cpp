@@ -354,7 +354,6 @@ void set_librpa_params(LibRPAParams *params_c)
     Params::vq_threshold = params_c->vq_threshold;
     Params::libri_chi0_threshold_C = params_c->libri_chi0_threshold_C;
     Params::libri_chi0_threshold_G = params_c->libri_chi0_threshold_G;
-    Params::libri_exx_threshold_CSM = params_c->libri_exx_threshold_CSM = 0.0e0;
     Params::libri_exx_threshold_C = params_c->libri_exx_threshold_C;
     Params::libri_exx_threshold_D = params_c->libri_exx_threshold_D;
     Params::libri_exx_threshold_V = params_c->libri_exx_threshold_V;
@@ -381,7 +380,6 @@ void get_default_librpa_params(LibRPAParams *params_c)
     params_c->vq_threshold = 0.0e0;
     params_c->libri_chi0_threshold_C = 0.0e0;
     params_c->libri_chi0_threshold_G = 0.0e0;
-    params_c->libri_exx_threshold_CSM = 0.0e0;
     params_c->libri_exx_threshold_C = 0.0e0;
     params_c->libri_exx_threshold_D = 0.0e0;
     params_c->libri_exx_threshold_V = 0.0e0;

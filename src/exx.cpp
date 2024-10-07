@@ -134,7 +134,6 @@ void Exx::build(const Cs_LRI &Cs,
     std::array<std::array<double,3>,3> lat_array{xa,ya,za};
     std::array<int,3> period_array{R_period.x,R_period.y,R_period.z};
     exx_libri.set_parallel(mpi_comm_global, atoms_pos, lat_array, period_array);
-    exx_libri.set_csm_threshold(Params::libri_exx_threshold_CSM);
 
     // Initialize Cs libRI container on each process
     // Note: we use different treatment in different routings

@@ -443,7 +443,6 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
 
     RI::RPA<int,int,3,double> rpa;
     rpa.set_parallel(mpi_comm_global_h.comm, atoms_pos, lat_array, period_array);
-    rpa.set_csm_threshold(Params::libri_chi0_threshold_CSM);
 
     // local Rlist to collect after chi0s on each process
     auto s0_s1 = get_s0_s1_for_comm_map2_first<atom_t, int>(atpairs_ABF);
