@@ -13,7 +13,7 @@
 #include "read_data.h"
 #include "stl_io_helper.h"
 #include "task.h"
-#include "utils_io.h"
+#include "utils_io_parallel.h"
 #include "utils_mem.h"
 
 #include "task_rpa.h"
@@ -73,21 +73,19 @@ int main(int argc, char **argv)
     using LIBRPA::task_t;
     using LIBRPA::envs::ofs_myid;
     using LIBRPA::utils::lib_printf;
+    using LIBRPA::utils::lib_printf_para;
+    using LIBRPA::utils::lib_printf_master;
 
     initialize(argc, argv);
-    if (mpi_comm_global_h.myid == 0)
-    {
-        lib_printf("Total number of nodes: %5d\n", LIBRPA::envs::size_inter);
-    }
+    lib_printf_master(mpi_comm_global_h, "Total number of nodes: %5d\n", LIBRPA::envs::size_inter);
     mpi_comm_global_h.barrier();
     if (LIBRPA::envs::mpi_comm_intra_h.myid == 0)
     {
-        lib_printf("Global ID of master process of node %5d : %5d\n",
-                   LIBRPA::envs::mpi_comm_inter_h.myid, LIBRPA::envs::mpi_comm_global_h.myid);
+        lib_printf_para(LIBRPA::envs::mpi_comm_inter_h,
+                        "Global ID of master process of node %5d : %5d\n",
+                        LIBRPA::envs::mpi_comm_inter_h.myid, LIBRPA::envs::mpi_comm_global_h.myid);
     }
-    mpi_comm_global_h.barrier();
-    lib_printf("%s\n", mpi_comm_global_h.str().c_str());
-    mpi_comm_global_h.barrier();
+    lib_printf_para(mpi_comm_global_h, "%s\n", mpi_comm_global_h.str().c_str());
 
     /*
      * HACK: A close-to-square process grid is imposed.
@@ -132,7 +130,9 @@ int main(int argc, char **argv)
     if (mpi_comm_global_h.is_root())
     {
         system(("mkdir -p " + Params::output_dir).c_str());
+        lib_printf("===== Begin control parameters =====\n");
         Params::print();
+        lib_printf("===== End control parameters   =====\n");
     }
     mpi_comm_global_h.barrier();
     Profiler::stop("driver_read_params");
@@ -270,15 +270,11 @@ int main(int argc, char **argv)
     }
     Profiler::stop("driver_read_Cs_Vq");
 
-    for (int i = 0; i < mpi_comm_global_h.nprocs; i++)
-    {
-        if (i == mpi_comm_global_h.myid)
-        {
-            lib_printf("| process %5d: Cs with %14zu non-zero keys from local atpair size %7zu. Data memory: %10.2f MB\n",
-                       mpi_comm_global_h.myid, Cs_data.n_keys(), local_atpair.size(), Cs_data.n_data_bytes() * 8.0e-6);
-        }
-        mpi_comm_global_h.barrier();
-    }
+    lib_printf_para(mpi_comm_global_h,
+                    "| Process %5d: Cs with %14zu non-zero keys from local atpair size %7zu. "
+                    "Data memory: %10.2f MB\n",
+                    mpi_comm_global_h.myid, Cs_data.n_keys(), local_atpair.size(),
+                    Cs_data.n_data_bytes() * 8.0e-6);
     std::flush(ofs_myid);
 
     // debug, check available Coulomb blocks on each process

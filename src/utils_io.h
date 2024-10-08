@@ -17,6 +17,6 @@ void lib_printf(const char* format, Args&&... args)
         printf(format, std::forward<Args>(args)...);
 }
 
-} /* end of name space utils */
+} /* end of namespace utils */
 
-} /* end of name space LIBRPA */
+} /* end of namespace LIBRPA */
