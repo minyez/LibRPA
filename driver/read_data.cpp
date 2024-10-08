@@ -517,15 +517,11 @@ static size_t handle_Cs_file_by_ids(const string &file_path, double threshold, c
                         infile >> Cs_ele;
                         (*cs_ptr)(i * n_j + j, mu) = stod(Cs_ele);
                     }
-            Profiler::start("set_ao_basis_aux");
             set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, cs_ptr->c, 0);
-            Profiler::stop("set_ao_basis_aux");
         }
         else
         {
-            Profiler::start("set_ao_basis_aux");
             set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, nullptr, 1);
-            Profiler::stop("set_ao_basis_aux");
 
             double maxval = -1.0;
             for (int i = 0; i != n_i; i++)
@@ -576,15 +572,11 @@ static size_t handle_Cs_file_binary_by_ids(const string &file_path, double thres
             shared_ptr<matrix> cs_ptr = make_shared<matrix>();
             cs_ptr->create(n_i * n_j, n_mu);
             infile.read((char *) cs_ptr->c, n_i * n_j * n_mu * sizeof(double));
-            Profiler::start("set_ao_basis_aux");
             set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, cs_ptr->c, 0);
-            Profiler::stop("set_ao_basis_aux");
         }
         else
         {
-            Profiler::start("set_ao_basis_aux");
             set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, nullptr, 1);
-            Profiler::stop("set_ao_basis_aux");
             infile.seekg(n_i * n_j * n_mu * sizeof(double), ios::cur);
             cs_discard++;
         }
