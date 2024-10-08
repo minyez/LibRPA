@@ -601,8 +601,8 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
     DIR *dir;
     dir = opendir(dir_path.c_str());
     vector<string> files;
+    unordered_map<string, vector<size_t>> files_Cs_ids;
     unordered_map<string, vector<size_t>> files_Cs_ids_this_proc;
-    int Cs_keep_total = 0;
 
     Profiler::start("handle_Cs_file_dry");
     while ((ptr = readdir(dir)) != NULL)
@@ -611,21 +611,41 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
         if (fn.find("Cs_data") == 0)
         {
             files.push_back(fn);
-            std::vector<size_t> ids_keep_this_file;
-            if (binary)
-            {
-                ids_keep_this_file = handle_Cs_file_binary_dry(fn, threshold);
-            }
-            else
-            {
-                ids_keep_this_file = handle_Cs_file_dry(fn, threshold);
-            }
-            for (int id = 0; id < ids_keep_this_file.size(); id++)
-            {
-                int id_global = id + Cs_keep_total;
-                if (id_global % nprocs == myid) files_Cs_ids_this_proc[fn].push_back(ids_keep_this_file[id]);
-            }
-            Cs_keep_total += ids_keep_this_file.size();
+        }
+    }
+
+    const auto nfiles = files.size();
+
+    // TODO: the IO can be improved, in two possible ways
+    // 1. Each MPI task reads only a subset of files, instead of all files.
+    // 2. Parallel reading for each file. This may be more efficient, but would be more difficult to implement
+    for (int i_fn = 0; i_fn != nfiles; i_fn++)
+    {
+        // Let each MPI process read different files at one time
+        auto i_fn_myid = (i_fn + myid * nfiles / nprocs) % files.size();
+        const auto &fn = files[i_fn_myid];
+        std::vector<size_t> ids_keep_this_file;
+        if (binary)
+        {
+            ids_keep_this_file = handle_Cs_file_binary_dry(fn, threshold);
+        }
+        else
+        {
+            ids_keep_this_file = handle_Cs_file_dry(fn, threshold);
+        }
+        files_Cs_ids[fn] = ids_keep_this_file;
+    }
+
+    // Filter out the Cs to be actually read in each process
+    size_t id_total = 0;
+    for (int i_fn = 0; i_fn < nfiles; i_fn++)
+    {
+        const auto &fn = files[i_fn];
+        const auto &ids_this_file = files_Cs_ids[fn];
+        for (int id = 0; id != ids_this_file.size(); id++)
+        {
+            if (id_total % nprocs == myid) files_Cs_ids_this_proc[fn].push_back(ids_this_file[id]);
+            id_total++;
         }
     }
     Profiler::stop("handle_Cs_file_dry");
