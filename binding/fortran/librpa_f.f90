@@ -8,7 +8,7 @@ module librpa
    public :: initialize_librpa_environment
    public :: finalize_librpa_environment
    public :: get_rpa_correlation_energy
-   public :: set_dimension
+   public :: set_atomic_basis
    public :: set_wg_ekb_efermi
    public :: set_ao_basis_wfc
    public :: set_latvec_and_G
@@ -96,16 +96,18 @@ module librpa
    end interface
 
    interface
-      subroutine set_dimension(nspins, nkpts, nstates, nbasis, natoms) bind(c, name="set_dimension")
+      subroutine set_atomic_basis(natoms, n_basis_on_atom, n_basbas_on_atom) bind(c, name="set_atomic_basis")
          use, intrinsic :: iso_c_binding
-         integer(c_int), value :: nspins, nkpts, nstates, nbasis, natoms
+         integer(c_int), value :: natoms
+         integer(c_size_t), dimension(*), intent(inout) :: n_basis_on_atom
+         integer(c_size_t), dimension(*), intent(inout) :: n_basbas_on_atom
       end subroutine
    end interface
 
    interface
-      subroutine set_wg_ekb_efermi(nspins, nkpts, nstates, wg, ekb, efermi) bind(c, name="set_wg_ekb_efermi")
+      subroutine set_wg_ekb_efermi(nspins, nkpts, nstates, nbasis, wg, ekb, efermi) bind(c, name="set_wg_ekb_efermi")
          use, intrinsic :: iso_c_binding
-         integer(c_int), value :: nspins, nkpts, nstates
+         integer(c_int), value :: nspins, nkpts, nstates, nbasis
          real(c_double), dimension(*), intent(inout) :: wg
          real(c_double), dimension(*), intent(inout) :: ekb
          real(c_double), value :: efermi
@@ -147,13 +149,12 @@ module librpa
    end interface
 
    interface
-      subroutine set_ao_basis_aux(I, J, nbasis_i, nbasis_j, naux_mu, R, Cs_in, insert_index_only) &
+      subroutine set_ao_basis_aux(I, J, R, Cs_in) &
             bind(c, name="set_ao_basis_aux")
          use, intrinsic :: iso_c_binding
-         integer(c_int), value :: I, J, nbasis_i, nbasis_j, naux_mu
+         integer(c_int), value :: I, J
          integer(c_int), dimension(3), intent(inout) :: R
          real(c_double), dimension(*), intent(inout) :: Cs_in
-         integer(c_int), value :: insert_index_only
       end subroutine
    end interface
 

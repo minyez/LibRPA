@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <cstring>
 
+#include "atomic_basis.h"
 #include "envs_mpi.h"
 #include "envs_blacs.h"
 #include "envs_io.h"
@@ -20,7 +21,7 @@
 
 #include "atoms.h"
 #include "constants.h"
-#include "matrix_m.h"
+// #include "matrix_m.h"
 #include "librpa_main.h"
 #include "meanfield.h"
 #include "parallel_mpi.h"
@@ -70,23 +71,31 @@ void finalize_librpa_environment()
     LIBRPA::envs::finalize_mpi();
 }
 
-void set_dimension(int nspins, int nkpts, int nstates, int nbasis,int natoms)
+void set_atomic_basis(int natoms, const size_t *n_basis_on_atom, const size_t *n_basbas_on_atom)
+{
+    natom = natoms;
+
+    for (int i = 0; i != natoms; i++)
+    {
+        const auto i_atom = static_cast<atom_t>(i);
+        atom_nw[i_atom] = n_basis_on_atom[i];
+        atom_mu[i_atom] = n_basbas_on_atom[i];
+    }
+
+    LIBRPA::atomic_basis_wfc.set(atom_nw);
+    LIBRPA::atomic_basis_abf.set(atom_mu);
+}
+
+void set_wg_ekb_efermi(int nspins, int nkpts, int nstates, int nbasis, double* wg, double* ekb, double efermi)
 {
     using LIBRPA::envs::mpi_comm_global_h;
-
     if (mpi_comm_global_h.is_root())
     {
         cout << "In LibRPA nspin: " << nspins << "  nkpt: " << nkpts << endl;
-        LIBRPA::utils::lib_printf("In LibRPA nspin: %d,  nkpts: %d nstate: %d, nbasis: %d, natom: %d\n",
-                nspins, nkpts, nstates, nbasis, natoms);
+        LIBRPA::utils::lib_printf("In LibRPA nspin: %d,  nkpts: %d nstate: %d, nbasis: %d\n",
+                nspins, nkpts, nstates, nbasis);
     }
     meanfield.set(nspins, nkpts, nstates, nbasis);
-    natom=natoms;
-    
-}
-
-void set_wg_ekb_efermi(int nspins, int nkpts, int nstates, double* wg, double* ekb, double efermi)
-{
     meanfield.get_efermi() = efermi;
     auto& eskb = meanfield.get_eigenvals();
     auto& swg = meanfield.get_weight();
@@ -208,20 +217,15 @@ void set_ibz2bz_index_and_weight(const int nk_irk, const int* ibz2bz_index, cons
    }
 }
 
-void set_ao_basis_aux(int I, int J, int nbasis_i, int nbasis_j, int naux_mu, int* R, double* Cs_in, int insert_index_only)
+void set_ao_basis_aux(int I, int J, int* R, double* Cs_in)
 {
-    atom_nw.insert(pair<atom_t, size_t>(I, nbasis_i));
-    atom_mu.insert(pair<atom_t, size_t>(I, naux_mu));
-
-    if (insert_index_only)
-    {
-        return;
-    }
-
     // cout<< ia1<<ia2<<box<<endl;
     // LIBRPA::utils::lib_printf("Cs_in size: %zu",sizeof(Cs_in) / sizeof(Cs_in[0]));
-    const int cs_size = nbasis_i * nbasis_j * naux_mu;
-    const int n_ij = nbasis_i * nbasis_j;
+    const auto nbasis_i = atom_nw.at(static_cast<atom_t>(I));
+    const auto nbasis_j = atom_nw.at(static_cast<atom_t>(J));
+    const auto naux_mu = atom_mu.at(static_cast<atom_t>(I));
+    const auto cs_size = nbasis_i * nbasis_j * naux_mu;
+    const auto n_ij = nbasis_i * nbasis_j;
     //(*cs_ptr).c=Cs_in;
 
     /*
@@ -245,8 +249,7 @@ void set_ao_basis_aux(int I, int J, int nbasis_i, int nbasis_j, int naux_mu, int
                 (*data)[i_col * n_ij + i_row] = Cs_in[i_row * naux_mu + i_col];
             }
         }
-        const std::initializer_list<std::size_t>
-            shape{static_cast<std::size_t>(naux_mu), static_cast<std::size_t>(nbasis_i), static_cast<std::size_t>(nbasis_j)};
+        const std::initializer_list<std::size_t> shape{naux_mu, nbasis_i, nbasis_j};
         Cs_data.data_libri[I][{J, Ra}] = RI::Tensor<double>(shape, data);
     }
     else

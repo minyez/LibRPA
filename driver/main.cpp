@@ -137,8 +137,12 @@ int main(int argc, char **argv)
     mpi_comm_global_h.barrier();
     Profiler::stop("driver_read_params");
 
+    Profiler::start("driver_basis_out", "Driver Read Atomic Basis");
+    read_basis_out("basis_out");
+    Profiler::stop("driver_basis_out");
+
     Profiler::start("driver_band_out", "Driver Read Meanfield band");
-    read_scf_occ_eigenvalues("band_out", meanfield);
+    read_scf_occ_eigenvalues("band_out");
     if (mpi_comm_global_h.is_root())
     {
         cout << "Information of mean-field starting-point" << endl;
@@ -258,7 +262,7 @@ int main(int argc, char **argv)
         auto trangular_loc_atpair= dispatch_upper_trangular_tasks(natom,blacs_ctxt_global_h.myid,blacs_ctxt_global_h.nprows,blacs_ctxt_global_h.npcols,blacs_ctxt_global_h.myprow,blacs_ctxt_global_h.mypcol);
         for(auto &iap:trangular_loc_atpair)
             local_atpair.push_back(iap);
-        read_Vq_row("./", "coulomb_mat", Params::vq_threshold, local_atpair, false);
+        // read_Vq_row("./", "coulomb_mat", Params::vq_threshold, local_atpair, false);
         // test_libcomm_for_system(Vq);
     }
     else
@@ -266,7 +270,7 @@ int main(int argc, char **argv)
         if (mpi_comm_global_h.is_root()) lib_printf("Complete copy of Cs and V on each process\n");
         local_atpair = generate_atom_pair_from_nat(natom, false);
         read_Cs("./", Params::cs_threshold, local_atpair, Params::binary_input);
-        read_Vq_full("./", "coulomb_mat", false);
+        // read_Vq_full("./", "coulomb_mat", false);
     }
     Profiler::stop("driver_read_Cs_Vq");
 
@@ -276,6 +280,8 @@ int main(int argc, char **argv)
                     mpi_comm_global_h.myid, Cs_data.n_keys(), local_atpair.size(),
                     Cs_data.n_data_bytes() * 8.0e-6);
     std::flush(ofs_myid);
+
+    return 0;
 
     // debug, check available Coulomb blocks on each process
     // ofs_myid << "Read Coulomb blocks in process\n";

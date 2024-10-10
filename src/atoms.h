@@ -19,7 +19,7 @@ using std::pair;
 using std::size_t;
 
 //! type of atom indices
-typedef size_t atom_t;
+typedef int atom_t;
 
 //! atom-pair type. NOTE: may turn into a class?
 typedef pair<atom_t, atom_t> atpair_t;

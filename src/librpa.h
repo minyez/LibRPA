@@ -73,15 +73,13 @@ void initialize_librpa_environment(
 void finalize_librpa_environment();
 
 /*!
- * @brief Set dimension parameters of the system
+ * @brief Set the atomic basis set
  *
- * @param[in] nspins    Number of spin channels
- * @param[in] nkpts     Number of k-points, on which the Kohn-Sham eigenvectors are computed
- * @param[in] nstates   Number of states
- * @param[in] nbasis    Total number of AO basis
- * @param[in] natoms    Total number of atoms
+ * @param[in] n_atoms             Total number of atoms
+ * @param[in] n_basis_on_atom     Number of one-electron basis functions on each atom, [n_atoms]
+ * @param[in] n_basbas_on_atom    Number of auxiliary basis functions on each atom, [n_atoms]
  */
-void set_dimension(int nspins, int nkpts, int nstates, int nbasis, int natoms);
+void set_atomic_basis(int n_atoms, const size_t *n_basis_on_atom, const size_t *n_basbas_on_atom);
 
 /*!
  * @brief Set eigenvalues, occupation number and fermi level.
@@ -89,11 +87,12 @@ void set_dimension(int nspins, int nkpts, int nstates, int nbasis, int natoms);
  * @param[in] nspins    Number of spin channels
  * @param[in] nkpts     Number of k-points, on which the Kohn-Sham eigenvectors are computed
  * @param[in] nstates   Number of states
+ * @param[in] nbasis    Number of basis functions for wave function expansion
  * @param[in] wg        Unnormalized occupation number, [nspins][nkpts][nstates]
  * @param[in] ekb       Eigenvalues in Hartree unit, [nspins][nkpts][nstates]
  * @param[in] efermi    Fermi level in Hartree unit
  */
-void set_wg_ekb_efermi(int nspins, int nkpts, int nstates, double* wg, double* ekb, double efermi);
+void set_wg_ekb_efermi(int nspins, int nkpts, int nstates, int nbasis, double* wg, double* ekb, double efermi);
 
 /*!
  * @brief Set wave function expansion of AO basis for a particular spin channel and k-point
@@ -136,14 +135,10 @@ void set_ibz2bz_index_and_weight(const int nk_irk, const int* ibz2bz_index, cons
  *
  * @param[in] I                    Index of atom, where one basis and the auxiliary basis reside.
  * @param[in] J                    Index of atom, where the other basis resides.
- * @param[in] nbasis_i             Number of basis functions centered at atom I
- * @param[in] nbasis_j             Number of basis functions centered at atom J
- * @param[in] naux_mu              Number of auxliary basis functions centered at atom I
  * @param[in] R                    Real-space lattice vector where atom J resides, [3]
  * @param[in] Cs_in                Local RI triple coefficients, [nbasis_i][nbasis_j][naux_mu]
- * @param[in] insert_index_only    Only insert the indices of atoms but skip setting Cs_in
  */
-void set_ao_basis_aux(int I, int J, int nbasis_i, int nbasis_j, int naux_mu, int* R, double* Cs_in, int insert_index_only);
+void set_ao_basis_aux(int I, int J, int* R, double* Cs_in);
 
 /*!
  * @brief Set the atom-pair block of bare Coulomb matrix in auxiliary basis

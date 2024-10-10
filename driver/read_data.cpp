@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <numeric>
 #include <dirent.h>
 #include <algorithm>
 #include <unordered_map>
@@ -27,7 +28,7 @@
 using std::ifstream;
 using std::string;
 
-void read_scf_occ_eigenvalues(const string &file_path, MeanField &mf)
+void read_scf_occ_eigenvalues(const string &file_path)
 {
     // cout << "Begin to read aims-band_out" << endl;
     ifstream infile;
@@ -45,9 +46,6 @@ void read_scf_occ_eigenvalues(const string &file_path, MeanField &mf)
     infile >> n_bands;
     infile >> n_aos;
     infile >> efermi;
-
-    // TODO: replace it with set_dimension
-    mf.set(n_spins, n_kpoints, n_bands, n_aos);
 
     // Load the file data
     auto eskb = new double [n_spins * n_kpoints * n_bands];
@@ -90,11 +88,59 @@ void read_scf_occ_eigenvalues(const string &file_path, MeanField &mf)
     // for (int is = 0; is != n_spins; is++)
     //     print_matrix("eskb_mat",eskb[is]);
 
-    set_wg_ekb_efermi(n_spins, n_kpoints, n_bands, wskb, eskb, efermi);
+    set_wg_ekb_efermi(n_spins, n_kpoints, n_bands, n_aos, wskb, eskb, efermi);
 
     // free buffer
     delete [] eskb;
     delete [] wskb;
+}
+
+void read_basis_out(const string &file_path)
+{
+    ifstream infile;
+    infile.open(file_path);
+    if (!infile.good())
+    {
+        throw std::logic_error("Failed to open " + file_path);
+    }
+
+    int n_atoms;
+    int n_species, n_basis, n_basbas;
+    string s;
+    size_t i_species, n_basis_i, n_basbas_i;
+    infile >> n_atoms;
+    infile >> n_species;
+    infile >> n_basis;
+    infile >> n_basbas;
+
+    std::vector<size_t> n_basis_on_atom(n_atoms);
+    std::vector<size_t> n_basbas_on_atom(n_atoms);
+
+    for (int i_atom = 0; i_atom != n_atoms; i_atom++)
+    {
+        infile >> s >> i_species >> n_basis_i >> n_basbas_i;
+        if (!infile.good())
+        {
+            throw std::logic_error("Error during reading " + file_path);
+        }
+        n_basis_on_atom[i_atom] = n_basis_i;
+        n_basbas_on_atom[i_atom] = n_basbas_i;
+    }
+
+    auto n_basis_sum = std::accumulate(n_basis_on_atom.cbegin(), n_basis_on_atom.cend(),
+                                      decltype(n_basis_on_atom)::value_type(0));
+    if (n_basis_sum != n_basis)
+    {
+        throw std::logic_error("Inconsistent number of orbital basis in " + file_path);
+    }
+    auto n_basbas_sum = std::accumulate(n_basbas_on_atom.cbegin(), n_basbas_on_atom.cend(),
+                                      decltype(n_basbas_on_atom)::value_type(0));
+    if (n_basbas_sum != n_basbas)
+    {
+        throw std::logic_error("Inconsistent number of auxiliary basis in " + file_path);
+    }
+
+    set_atomic_basis(n_atoms, n_basis_on_atom.data(), n_basbas_on_atom.data());
 }
 
 int read_vxc(const string &file_path, std::vector<matrix> &vxc)
@@ -279,10 +325,11 @@ static size_t handle_Cs_file(const string &file_path, double threshold, const ve
         // if(!loc_atp_index.count(ia1))
         //     continue;
         // if (box == Vector3_Order<int>({0, 0, 1}))continue;
-        bool insert_index_only = loc_atp_index.count(ia1) && (*cs_ptr).absmax() >= threshold;
-        set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, cs_ptr->c, int(insert_index_only));
-        // cout<<cs_ptr->nr<<cs_ptr->nc<<endl;
-        if (insert_index_only)
+        if (loc_atp_index.count(ia1) && (*cs_ptr).absmax() >= threshold)
+        {
+            set_ao_basis_aux(ia1, ia2, R, cs_ptr->c);
+        }
+        else
         {
             cs_discard++;
         }
@@ -300,8 +347,7 @@ static size_t handle_Cs_file_binary(const string &file_path, double threshold, c
         loc_atp_index.insert(lap.first);
         loc_atp_index.insert(lap.second);
     }
-    // cout<<"READING Cs from file: "<<file_path<<"  Cs_first_size: "<<loc_atp_index.size()<<endl;
-    // map<size_t,map<size_t,map<Vector3_Order<int>,std::shared_ptr<matrix>>>> Cs_m;
+
     size_t cs_discard = 0;
     ifstream infile;
     int dims[8];
@@ -312,10 +358,23 @@ static size_t handle_Cs_file_binary(const string &file_path, double threshold, c
     infile.read((char *) &ncell, sizeof(int));
     infile.read((char *) &n_apcell_file, sizeof(int));
 
+    std::vector<size_t> bytes_offset(n_apcell_file);
+    std::vector<double> maxabs(n_apcell_file);
+
+    infile.read((char *) bytes_offset.data(), n_apcell_file * sizeof(size_t));
+    infile.read((char *) maxabs.data(), n_apcell_file * sizeof(double));
+
     int R[3];
 
     for (int i = 0; i < n_apcell_file; i++)
     {
+        if (bytes_offset[i] == 0 || maxabs[i] < threshold)
+        {
+            cs_discard++;
+            continue;
+        }
+
+        infile.seekg(bytes_offset[i], ios::beg);
         infile.read((char *) &dims[0], 8 * sizeof(int));
         // cout<<ic_1<<mu_s<<endl;
         int ia1 = dims[0] - 1;
@@ -327,16 +386,14 @@ static size_t handle_Cs_file_binary(const string &file_path, double threshold, c
         int n_j = dims[6];
         int n_mu = dims[7];
 
-        // cout<< ia1<<ia2<<box<<endl;
-
-        shared_ptr<matrix> cs_ptr = make_shared<matrix>();
-        cs_ptr->create(n_i * n_j, n_mu);
-        infile.read((char *) cs_ptr->c, n_i * n_j * n_mu * sizeof(double));
-        bool insert_index_only = loc_atp_index.count(ia1) && (*cs_ptr).absmax() >= threshold;
-        // cout << (*cs_ptr).absmax() << "\n";
-        set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, cs_ptr->c, int(insert_index_only));
-        // cout<<cs_ptr->nr<<cs_ptr->nc<<endl;
-        if (insert_index_only)
+        if (loc_atp_index.count(ia1) > 0)
+        {
+            shared_ptr<matrix> cs_ptr = make_shared<matrix>();
+            cs_ptr->create(n_i * n_j, n_mu);
+            infile.read((char *) cs_ptr->c, n_i * n_j * n_mu * sizeof(double));
+            set_ao_basis_aux(ia1, ia2, R, cs_ptr->c);
+        }
+        else
         {
             cs_discard++;
         }
@@ -430,48 +487,31 @@ std::vector<size_t> handle_Cs_file_dry(const string &file_path, double threshold
 
 std::vector<size_t> handle_Cs_file_binary_dry(const string &file_path, double threshold)
 {
-    std::vector<size_t> Cs_ids_keep;
+    std::vector<size_t> offset_Cs_keep;
     ifstream infile;
-    int dims[8];
     int n_apcell_file;
-    int n_processed = 0;
 
     infile.open(file_path, std::ios::in | std::ios::binary);
     infile.read((char *) &natom, sizeof(int));
     infile.read((char *) &ncell, sizeof(int));
     infile.read((char *) &n_apcell_file, sizeof(int));
 
-    for (int i_file = 0; i_file < n_apcell_file; i_file++)
-    {
-        infile.read((char *) &dims[0], 8 * sizeof(int));
-        // cout<<ic_1<<mu_s<<endl;
-        // const int ia1 = dims[0] - 1;
-        // const int ia2 = dims[1] - 1;
-        // const int ic1 = dims[2];
-        // const int ic2 = dims[3];
-        // const int ic3 = dims[4];
-        const int n_i = dims[5];
-        const int n_j = dims[6];
-        const int n_mu = dims[7];
+    std::vector<size_t> bytes_offset(n_apcell_file);
+    std::vector<double> maxabs(n_apcell_file);
 
-        matrix mat(n_i * n_j, n_mu);
-        infile.read((char *) mat.c, n_i * n_j * n_mu * sizeof(double));
-        double maxval = mat.absmax();
-        n_processed++;
-        if (maxval >= threshold)
+    infile.read((char *) bytes_offset.data(), n_apcell_file * sizeof(size_t));
+    infile.read((char *) maxabs.data(), n_apcell_file * sizeof(double));
+
+    for (int i = 0; i < n_apcell_file; i++)
+    {
+        if (bytes_offset[i] != 0 && maxabs[i] >= threshold)
         {
-            Cs_ids_keep.push_back(i_file);
-#ifdef LIBRPA_DEBUG
-            // LIBRPA::envs::ofs_myid << i_file << " (" << ic1 << "," << ic2 << "," << ic3 << ") " << maxval << " kept, maxval: " << maxval << endl;
-#endif
+            offset_Cs_keep.push_back(bytes_offset[i]);
         }
     }
-    // LIBRPA::envs::ofs_myid << file_path << ": kept " << Cs_ids_keep.size() << " of " << n_processed << endl;
-#ifdef LIBRPA_DEBUG
-    // LIBRPA::envs::ofs_myid << Cs_ids_keep << endl;
-#endif
+
     infile.close();
-    return Cs_ids_keep;
+    return offset_Cs_keep;
 }
 
 static size_t handle_Cs_file_by_ids(const string &file_path, double threshold, const vector<size_t> &ids)
@@ -517,21 +557,10 @@ static size_t handle_Cs_file_by_ids(const string &file_path, double threshold, c
                         infile >> Cs_ele;
                         (*cs_ptr)(i * n_j + j, mu) = stod(Cs_ele);
                     }
-            set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, cs_ptr->c, 0);
+            set_ao_basis_aux(ia1, ia2, R, cs_ptr->c);
         }
         else
         {
-            set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, nullptr, 1);
-
-            double maxval = -1.0;
-            for (int i = 0; i != n_i; i++)
-                for (int j = 0; j != n_j; j++)
-                    for (int mu = 0; mu != n_mu; mu++)
-                    {
-                        infile >> Cs_ele;
-                        maxval = std::max(maxval, abs(stod(Cs_ele)));
-                    }
-            if (maxval < threshold) cs_discard++;
         }
         id++;
     }
@@ -540,7 +569,7 @@ static size_t handle_Cs_file_by_ids(const string &file_path, double threshold, c
 }
 
 
-static size_t handle_Cs_file_binary_by_ids(const string &file_path, double threshold, const vector<size_t> &ids)
+static size_t handle_Cs_file_binary_by_offset(const string &file_path, double threshold, const vector<size_t> &offsets_this)
 {
     ifstream infile;
     int dims[8];
@@ -550,14 +579,29 @@ static size_t handle_Cs_file_binary_by_ids(const string &file_path, double thres
     infile.read((char *) &natom, sizeof(int));
     infile.read((char *) &ncell, sizeof(int));
     infile.read((char *) &n_apcell_file, sizeof(int));
+
+    std::vector<size_t> bytes_offset(n_apcell_file);
+    std::vector<double> maxabs(n_apcell_file);
+
+    infile.read((char *) bytes_offset.data(), n_apcell_file * sizeof(size_t));
+    infile.read((char *) maxabs.data(), n_apcell_file * sizeof(double));
+
     size_t cs_discard = 0;
+    for (int i = 0; i < n_apcell_file; i++)
+    {
+        if (bytes_offset[i] == 0 || maxabs[i] < threshold)
+        {
+            cs_discard++;
+        }
+    }
 
     int R[3];
 
-    for (int i = 0; i < n_apcell_file; i++)
+    for (const auto &offset: offsets_this)
     {
+        infile.seekg(offset, ios::beg);
         infile.read((char *) &dims[0], 8 * sizeof(int));
-        // cout<<ic_1<<mu_s<<endl;
+
         int ia1 = dims[0] - 1;
         int ia2 = dims[1] - 1;
         R[0] = dims[2];
@@ -567,19 +611,10 @@ static size_t handle_Cs_file_binary_by_ids(const string &file_path, double thres
         int n_j = dims[6];
         int n_mu = dims[7];
 
-        if (std::find(ids.cbegin(), ids.cend(), static_cast<size_t>(i)) != ids.cend())
-        {
-            shared_ptr<matrix> cs_ptr = make_shared<matrix>();
-            cs_ptr->create(n_i * n_j, n_mu);
-            infile.read((char *) cs_ptr->c, n_i * n_j * n_mu * sizeof(double));
-            set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, cs_ptr->c, 0);
-        }
-        else
-        {
-            set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, nullptr, 1);
-            infile.seekg(n_i * n_j * n_mu * sizeof(double), ios::cur);
-            cs_discard++;
-        }
+        shared_ptr<matrix> cs_ptr = make_shared<matrix>();
+        cs_ptr->create(n_i * n_j, n_mu);
+        infile.read((char *) cs_ptr->c, n_i * n_j * n_mu * sizeof(double));
+        set_ao_basis_aux(ia1, ia2, R, cs_ptr->c);
     }
     infile.close();
     return cs_discard;
@@ -651,7 +686,7 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
         LIBRPA::envs::ofs_myid << fn_ids.first << " " << fn_ids.second << endl;
         if (binary)
         {
-            cs_discard += handle_Cs_file_binary_by_ids(fn_ids.first, threshold, fn_ids.second);
+            cs_discard += handle_Cs_file_binary_by_offset(fn_ids.first, threshold, fn_ids.second);
         }
         else
         {

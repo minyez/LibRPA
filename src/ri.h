@@ -20,7 +20,7 @@
 #include "libri_utils.h"
 
 extern int n_irk_points;
-extern int natom;
+extern atom_t natom;
 extern int ncell;
 extern std::vector<Vector3_Order<double>> irk_points;
 extern map<Vector3_Order<double>, double> irk_weight;

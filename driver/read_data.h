@@ -17,7 +17,12 @@ using std::string;
 /*!
  * @brief Read occupation numbers and eigenvalues of SCF calculation
  */
-void read_scf_occ_eigenvalues(const string &file_path, MeanField &mf);
+void read_scf_occ_eigenvalues(const string &file_path);
+
+/*!
+ * @brief Read basis set information
+ */
+void read_basis_out(const string &file_path);
 
 /*!
  * @brief Read exchange-correlation potential
