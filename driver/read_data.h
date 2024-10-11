@@ -25,6 +25,11 @@ void read_scf_occ_eigenvalues(const string &file_path);
 void read_basis_out(const string &file_path);
 
 /*!
+ * @brief Read brillouin sampling
+ */
+void read_bz_sampling(const string &file_path);
+
+/*!
  * @brief Read exchange-correlation potential
  *
  * @param[in] file_path   data file path
@@ -40,10 +45,10 @@ size_t read_Cs(const string &dir_path, double threshold, const vector<atpair_t> 
 size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int myid, int nprocs,
                                  bool binary = false);
 
-size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cut_coulomb);
+size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cut_coulomb, bool binary);
 
 size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double threshold,
-                   const vector<atpair_t> &local_atpair, bool is_cut_coulomb);
+                   const vector<atpair_t> &local_atpair, bool is_cut_coulomb, bool binary);
 
 void read_stru(const int& n_kpoints, const std::string &file_path);
 

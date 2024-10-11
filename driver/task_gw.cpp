@@ -76,7 +76,7 @@ void task_g0w0()
     }
 
     Profiler::start("read_vq_cut", "Load truncated Coulomb");
-    read_Vq_full("./", "coulomb_cut_", true);
+    read_Vq_full("./", "coulomb_cut_", true, Params::binary_input);
     Profiler::stop("read_vq_cut");
 
     Profiler::start("read_vxc", "Load DFT xc potential");

@@ -2,7 +2,7 @@
 
 #include "app_rpa.h"
 #include "envs_mpi.h"
-#include "ri.h"
+#include "pbc.h"
 
 void task_rpa()
 {

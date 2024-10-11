@@ -1687,6 +1687,7 @@ compute_Wc_freq_q_blacs(const Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps
 #ifdef LIBRPA_USE_LIBRI
     for (const auto &q: qpts)
     {
+        cout << q << "\n";
         coul_block.zero_out();
         coulwc_block.zero_out();
         // lib_printf("coul_block\n%s", str(coul_block).c_str());
@@ -2069,7 +2070,7 @@ FT_Wc_freq_q(const map<double, atom_mapping<std::map<Vector3_Order<double>, matr
         {
             const auto q = Wc_q.first;
             const auto &Wc = Wc_q.second;
-            for (auto q_bz: map_irk_ks[q])
+            for (auto q_bz: map_irk_equiv_k[q])
             {
                 double ang = - q_bz * (R * latvec) * TWO_PI;
                 complex<double> kphase = complex<double>(cos(ang), sin(ang));
@@ -2176,7 +2177,7 @@ CT_FT_Wc_freq_q(const map<double, atom_mapping<std::map<Vector3_Order<double>, m
             {
                 const auto q = Wc_q.first;
                 const auto &Wc = Wc_q.second;
-                for (auto q_bz: map_irk_ks[q])
+                for (auto q_bz: map_irk_equiv_k[q])
                 {
                     double ang = - q_bz * (R * latvec) * TWO_PI;
                     complex<double> kphase = complex<double>(cos(ang), sin(ang));

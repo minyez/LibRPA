@@ -26,7 +26,7 @@ FT_Vq(const atpair_k_cplx_mat_t &coulmat_k, vector<Vector3_Order<int>> Rlist, bo
                 for (const auto &q_V: Nu_qV.second)
                 {
                     auto q = q_V.first;
-                    for (auto q_bz: map_irk_ks[q])
+                    for (auto q_bz: map_irk_equiv_k[q])
                     {
                         double ang = - q_bz * (R * latvec) * TWO_PI;
                         complex<double> kphase = complex<double>(cos(ang), sin(ang));
@@ -66,7 +66,7 @@ FT_Vq(const atpair_k_cplx_mat_t &coulmat_k, vector<Vector3_Order<int>> Rlist, bo
                     for (const auto &q_V: Nu_qV.second)
                     {
                         auto q = q_V.first;
-                        for (auto q_bz: map_irk_ks[q])
+                        for (auto q_bz: map_irk_equiv_k[q])
                         {
                             double ang = - q_bz * (R * latvec) * TWO_PI;
                             complex<double> kphase = complex<double>(cos(ang), sin(ang));

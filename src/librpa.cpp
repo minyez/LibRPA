@@ -172,49 +172,66 @@ void set_latvec_and_G(double lat_mat[9], double G_mat[9])
     //G.print();
 }
 
-void set_kgrids_kvec_tot(int nk1, int nk2, int nk3, double* kvecs)
+void set_bz_sampling(int nk1, int nk2, int nk3, const double *kvecs, const double *kvecs_frac,
+                     const int *index_irk, int n_irk, const int *index_irk_in_full_k, const double* wk_irk)
 {
     kv_nmp[0] = nk1;
     kv_nmp[1] = nk2;
     kv_nmp[2] = nk3;
 
-    kvec_c = new Vector3<double> [nk1 * nk2 * nk3];
+    int n_kpoints = nk1 * nk2 * nk3;
+    kvec_c = new Vector3<double> [n_kpoints];
 
-    for(int ik=0;ik!=meanfield.get_n_kpoints();ik++)
+    double kx, ky, kz;
+    mapping_k2irk.resize(n_kpoints);
+
+    for (int ik = 0; ik != n_kpoints; ik++)
     {
-        double kx=kvecs[ik*3];
-        double ky=kvecs[ik*3+1];
-        double kz=kvecs[ik*3+2];
-
+        // Cartesian k
+        kx = kvecs[ik * 3];
+        ky = kvecs[ik * 3 + 1];
+        kz = kvecs[ik * 3 + 2];
         kvec_c[ik] = {kx, ky, kz};
+
         // kvec_c[ik] *= (ANG2BOHR / TWO_PI);
         kvec_c[ik] /= TWO_PI;
         Vector3_Order<double> kvec_tmp(kvec_c[ik]);
         klist.push_back(kvec_tmp);
-        kfrac_list.push_back(latvec * kvec_tmp);
+
+        // Fractional k
+        kx = kvecs_frac[ik * 3];
+        ky = kvecs_frac[ik * 3 + 1];
+        kz = kvecs_frac[ik * 3 + 2];
+        Vector3_Order<double> kvec_frac_tmp(kx, ky, kz);
+        kfrac_list.push_back(kvec_frac_tmp);
+
+        const int i_irk = index_irk[ik];
+        mapping_k2irk[ik] = i_irk;
+        map_irk_equiv_k[klist[i_irk]].push_back(klist[ik]);
+
         // LIBRPA::utils::lib_printf("ik: %d, (%f, %f, %f), (%f, %f, %f)\n",
         //         ik, kvec_c[ik].x, kvec_c[ik].y, kvec_c[ik].z,
         //         kfrac_list[ik].x, kfrac_list[ik].y, kfrac_list[ik].z);
     }
-}
 
-void set_ibz2bz_index_and_weight(const int nk_irk, const int* ibz2bz_index, const double* wk_irk)
-{
-   // LIBRPA::utils::lib_printf(" nks_irk: %d\n",nk_irk);
-   for (int ik_ibz = 0; ik_ibz != nk_irk; ik_ibz++)
-   {
-       Vector3_Order<double> kvec_ibz = klist[ibz2bz_index[ik_ibz]];
-       klist_ibz.push_back(kvec_ibz);
-       irk_weight.insert(pair<Vector3_Order<double>, double>(kvec_ibz, wk_irk[ik_ibz]));
-       // LIBRPA::utils::lib_printf("ibz2bz:  %d   kvec_ibz:( %f, %f,
-       // %f)\n",ibz2bz_index[ik_ibz],kvec_ibz.x,kvec_ibz.y,kvec_ibz.z);
-       // LIBRPA::utils::lib_printf("irk_weight: %f\n",irk_weight[kvec_ibz]);
-       // for (int ik = 0; ik != meanfield.get_n_kpoints(); ik++)
-       // {
-       //     if(klist[ik]==kvec_ibz)
-       //         map_irk_ks[kvec_ibz].push_back(klist[ik]);
-       // }
-   }
+    n_irk_points = n_irk;
+
+    // LIBRPA::utils::lib_printf(" nks_irk: %d\n",nk_irk);
+    for (int ik_ibz = 0; ik_ibz != n_irk; ik_ibz++)
+    {
+        const auto &kvec_ibz = klist[index_irk_in_full_k[ik_ibz]];
+        irk_points.push_back(kvec_ibz);
+        klist_ibz.push_back(kvec_ibz);
+        irk_weight.insert(pair<Vector3_Order<double>, double>(kvec_ibz, wk_irk[ik_ibz]));
+        // LIBRPA::utils::lib_printf("ibz2bz:  %d   kvec_ibz:( %f, %f,
+        // %f)\n",ibz2bz_index[ik_ibz],kvec_ibz.x,kvec_ibz.y,kvec_ibz.z);
+        // LIBRPA::utils::lib_printf("irk_weight: %f\n",irk_weight[kvec_ibz]);
+        // for (int ik = 0; ik != meanfield.get_n_kpoints(); ik++)
+        // {
+        //     if(klist[ik]==kvec_ibz)
+        //         map_irk_ks[kvec_ibz].push_back(klist[ik]);
+        // }
+    }
 }
 
 void set_ao_basis_aux(int I, int J, int* R, double* Cs_in)

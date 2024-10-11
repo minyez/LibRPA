@@ -9,11 +9,10 @@ module librpa
    public :: finalize_librpa_environment
    public :: get_rpa_correlation_energy
    public :: set_atomic_basis
+   public :: set_bz_sampling
    public :: set_wg_ekb_efermi
    public :: set_ao_basis_wfc
    public :: set_latvec_and_G
-   public :: set_kgrids_kvec_tot
-   public :: set_ibz2bz_index_and_weight
    public :: set_ao_basis_aux
    public :: set_aux_bare_coulomb_k_2D_block
    public :: set_aux_cut_coulomb_k_atom_pair
@@ -132,18 +131,15 @@ module librpa
    end interface
 
    interface
-      subroutine set_kgrids_kvec_tot(nkx, nky, nkz, kvecs) bind(c, name="set_kgrids_kvec_tot")
+      subroutine set_bz_sampling(nkx, nky, nkz, kcart, kfrac, index_irk, n_irk, index_irk_in_full_k, wk_irk) &
+            bind(c, name="set_bz_sampling")
          use, intrinsic :: iso_c_binding
          integer(c_int), value :: nkx, nky, nkz
-         real(c_double), dimension(*), intent(inout) :: kvecs
-      end subroutine
-   end interface
-
-   interface
-      subroutine set_ibz2bz_index_and_weight(nk_irk, ibz2bz_index, wk_irk) bind(c, name="set_ibz2bz_index_and_weight")
-         use, intrinsic :: iso_c_binding
-         integer(c_int), value :: nk_irk
-         integer(c_int), dimension(*), intent(inout) :: ibz2bz_index
+         real(c_double), dimension(*), intent(inout) :: kcart
+         real(c_double), dimension(*), intent(inout) :: kfrac
+         integer(c_int), dimension(*), intent(inout) :: index_irk
+         integer(c_int), value :: n_irk
+         integer(c_int), dimension(*), intent(inout) :: index_irk_in_full_k
          real(c_double), dimension(*), intent(inout) :: wk_irk
       end subroutine
    end interface

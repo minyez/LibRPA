@@ -26,8 +26,11 @@ extern std::array<std::array<double, 3>, 3> lat_array;
 //! reciprocal lattice vectors as a 3D-matrix, each row as a reciprocal vector. Unit: 2pi/Bohr
 extern Matrix3 G;
 extern std::vector<Vector3_Order<double>> klist;
-extern std::vector<Vector3_Order<double>> klist_ibz;
 extern std::vector<Vector3_Order<double>> kfrac_list;
-extern std::vector<int> irk_point_id_mapping;
-extern map<Vector3_Order<double>, vector<Vector3_Order<double>>> map_irk_ks;
+extern std::vector<Vector3_Order<double>> klist_ibz;
+extern int n_irk_points;
+extern std::vector<Vector3_Order<double>> irk_points;
+extern map<Vector3_Order<double>, double> irk_weight;
+extern std::vector<int> mapping_k2irk;
+extern map<Vector3_Order<double>, vector<Vector3_Order<double>>> map_irk_equiv_k;
 extern Vector3<double> *kvec_c;

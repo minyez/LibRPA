@@ -19,11 +19,8 @@
 #endif
 #include "libri_utils.h"
 
-extern int n_irk_points;
 extern atom_t natom;
 extern int ncell;
-extern std::vector<Vector3_Order<double>> irk_points;
-extern map<Vector3_Order<double>, double> irk_weight;
 extern map<atom_t, size_t> atom_nw;
 extern map<atom_t, size_t> atom_mu;
 extern map<atom_t, size_t> atom_nw_loc;

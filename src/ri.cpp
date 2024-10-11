@@ -7,11 +7,8 @@
 #include "params.h"
 #include "pbc.h"
 
-int n_irk_points;
 int natom;
 int ncell;
-std::vector<Vector3_Order<double>> irk_points;
-map<Vector3_Order<double>, double> irk_weight;
 map<atom_t, size_t> atom_nw;
 map<atom_t, size_t> atom_mu;
 map<atom_t, size_t> atom_nw_loc;

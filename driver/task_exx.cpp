@@ -10,6 +10,7 @@
 #include "envs_mpi.h"
 #include "utils_io.h"
 #include "pbc.h"
+#include "params.h"
 
 // debug headers
 // #include "stl_io_helper.h"
@@ -20,7 +21,7 @@ void task_exx()
     using LIBRPA::utils::lib_printf;
 
     // Load the cut coulomb data
-    read_Vq_full("./", "coulomb_cut_", true);
+    read_Vq_full("./", "coulomb_cut_", true, Params::binary_input);
 
     // NOTE: since the internal object does not support parallel calculation with different k-points on each process
     // we compute all and only let master process print

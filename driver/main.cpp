@@ -137,11 +137,17 @@ int main(int argc, char **argv)
     mpi_comm_global_h.barrier();
     Profiler::stop("driver_read_params");
 
-    Profiler::start("driver_basis_out", "Driver Read Atomic Basis");
+    Profiler::start("driver_read_common_input_data", "Driver Read Task-Common Input Data");
+
+    Profiler::start("driver_basis_out", "Read Atomic Basis");
     read_basis_out("basis_out");
     Profiler::stop("driver_basis_out");
 
-    Profiler::start("driver_band_out", "Driver Read Meanfield band");
+    Profiler::start("driver_bz_sampling", "Read BZ Sampling");
+    read_bz_sampling("bz_sampling_out");
+    Profiler::stop("driver_bz_sampling");
+
+    Profiler::start("driver_band_out", "Read Meanfield Starting-point");
     read_scf_occ_eigenvalues("band_out");
     if (mpi_comm_global_h.is_root())
     {
@@ -172,7 +178,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    Profiler::start("driver_read_common_input_data", "Driver Read Task-Common Input Data");
+    Profiler::start("driver_stru_out", "Read Meanfield Starting-point");
     read_stru(meanfield.get_n_kpoints(), "stru_out");
     Vector3_Order<int> period {kv_nmp[0], kv_nmp[1], kv_nmp[2]};
     auto Rlist = construct_R_grid(period);
@@ -199,6 +205,7 @@ int main(int argc, char **argv)
         cout << endl;
     }
     mpi_comm_global_h.barrier();
+    Profiler::stop("driver_stru_out");
 
     Profiler::start("driver_read_eigenvector");
     read_eigenvector("./", meanfield);
@@ -250,7 +257,7 @@ int main(int argc, char **argv)
         read_Cs("./", Params::cs_threshold,local_atpair, Params::binary_input);
         // for(auto &ap:local_atpair)
         //     printf("   |process %d , local_atom_pair:  %d,  %d\n", mpi_comm_global_h.myid,ap.first,ap.second);
-        read_Vq_row("./", "coulomb_mat", Params::vq_threshold, local_atpair, false);
+        read_Vq_row("./", "coulomb_mat", Params::vq_threshold, local_atpair, false, Params::binary_input);
         // test_libcomm_for_system(Vq);
     }
     else if(parallel_routing == ParallelRouting::LIBRI)
@@ -262,7 +269,7 @@ int main(int argc, char **argv)
         auto trangular_loc_atpair= dispatch_upper_trangular_tasks(natom,blacs_ctxt_global_h.myid,blacs_ctxt_global_h.nprows,blacs_ctxt_global_h.npcols,blacs_ctxt_global_h.myprow,blacs_ctxt_global_h.mypcol);
         for(auto &iap:trangular_loc_atpair)
             local_atpair.push_back(iap);
-        // read_Vq_row("./", "coulomb_mat", Params::vq_threshold, local_atpair, false);
+        read_Vq_row("./", "coulomb_mat", Params::vq_threshold, local_atpair, false, Params::binary_input);
         // test_libcomm_for_system(Vq);
     }
     else
@@ -270,7 +277,7 @@ int main(int argc, char **argv)
         if (mpi_comm_global_h.is_root()) lib_printf("Complete copy of Cs and V on each process\n");
         local_atpair = generate_atom_pair_from_nat(natom, false);
         read_Cs("./", Params::cs_threshold, local_atpair, Params::binary_input);
-        // read_Vq_full("./", "coulomb_mat", false);
+        read_Vq_full("./", "coulomb_mat", false, Params::binary_input);
     }
     Profiler::stop("driver_read_Cs_Vq");
 
@@ -280,8 +287,6 @@ int main(int argc, char **argv)
                     mpi_comm_global_h.myid, Cs_data.n_keys(), local_atpair.size(),
                     Cs_data.n_data_bytes() * 8.0e-6);
     std::flush(ofs_myid);
-
-    return 0;
 
     // debug, check available Coulomb blocks on each process
     // ofs_myid << "Read Coulomb blocks in process\n";
@@ -300,6 +305,8 @@ int main(int argc, char **argv)
     // std::flush(ofs_myid);
     // mpi_comm_global_h.barrier();
     Profiler::stop("driver_read_common_input_data");
+
+    // return 0;
 
     // Check memory usage on each node
     mpi_comm_global_h.barrier();

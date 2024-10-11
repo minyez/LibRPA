@@ -1,4 +1,7 @@
+Total number of nodes:     1
+Global ID of master process of node     0 :     0
 Proc    0 of Size    1: taiyi
+===== Begin control parameters =====
 task = g0w0
 output_dir = librpa.d
 output_file = stdout
@@ -13,11 +16,9 @@ vq_threshold = 0.000000
 sqrt_coulomb_threshold = 0.000100
 libri_chi0_threshold_C = 0.000000
 libri_chi0_threshold_G = 0.000000
-libri_chi0_threshold_CSM = 0.000000
 libri_exx_threshold_C = 0.000000
 libri_exx_threshold_D = 0.000000
 libri_exx_threshold_V = 0.000000
-libri_exx_threshold_CSM = 0.000000
 libri_g0w0_threshold_C = 0.000000
 libri_g0w0_threshold_G = 0.000000
 libri_g0w0_threshold_Wc = 0.000000
@@ -27,6 +28,9 @@ use_scalapack_ecrpa = F
 use_scalapack_gw_wc = T
 output_gw_sigc_mat = T
 replace_w_head = F
+===== End control parameters   =====
+In LibRPA nspin: 1  nkpt: 1
+In LibRPA nspin: 1,  nkpts: 1 nstate: 62, nbasis: 62
 Information of mean-field starting-point
 | number of spins: 1
 | number of k-points: 1
@@ -57,8 +61,9 @@ R-points to compute:
 Evenly distributed Cs and V for LibRI
 Finished Cs filtering
 Begin READ_Vq_Row
-| process 0: Cs size 4 from local atpair size 3
-Initialization finished, start task job from myid
+| Process     0: Cs with              4 non-zero keys from local atpair size       3. Data memory:       7.41 MB
+Initialization finished, Wall/CPU time [min]:       0.0008       0.0008
+Task work begins: g0w0
 Cosine transform duality error:  991242.446619923576
 Grid type: Minimax time-frequency grids
 Grid size: 32
@@ -244,144 +249,145 @@ Finished construction of R-space Green's function
 
 Use LibRI for chi0
 is: 0 tau: 0.00314246  qifreq_atpair_all.size()96
-chi0s for time point 0.003142, spin 0. CPU time: 0.122512 (tensor), 0.031479 (trans). Wall time 0.044073
+chi0s for time point 0.003142, spin 0. CPU time: 0.119042 (tensor), 0.023232 (trans). Wall time 0.040896
 is: 0 tau: 0.0167696  qifreq_atpair_all.size()96
-chi0s for time point 0.016770, spin 0. CPU time: 0.127988 (tensor), 0.023811 (trans). Wall time 0.044995
+chi0s for time point 0.016770, spin 0. CPU time: 0.119307 (tensor), 0.022673 (trans). Wall time 0.041244
 is: 0 tau: 0.0421947  qifreq_atpair_all.size()96
-chi0s for time point 0.042195, spin 0. CPU time: 0.122742 (tensor), 0.023163 (trans). Wall time 0.043061
+chi0s for time point 0.042195, spin 0. CPU time: 0.118638 (tensor), 0.022983 (trans). Wall time 0.040577
 is: 0 tau: 0.0811634  qifreq_atpair_all.size()96
-chi0s for time point 0.081163, spin 0. CPU time: 0.121116 (tensor), 0.023166 (trans). Wall time 0.041871
+chi0s for time point 0.081163, spin 0. CPU time: 0.121485 (tensor), 0.023524 (trans). Wall time 0.041865
 is: 0 tau: 0.136626  qifreq_atpair_all.size()96
-chi0s for time point 0.136626, spin 0. CPU time: 0.121790 (tensor), 0.023292 (trans). Wall time 0.042182
+chi0s for time point 0.136626, spin 0. CPU time: 0.121454 (tensor), 0.022735 (trans). Wall time 0.042273
 is: 0 tau: 0.213269  qifreq_atpair_all.size()96
-chi0s for time point 0.213269, spin 0. CPU time: 0.122165 (tensor), 0.023200 (trans). Wall time 0.042992
+chi0s for time point 0.213269, spin 0. CPU time: 0.120283 (tensor), 0.022730 (trans). Wall time 0.041347
 is: 0 tau: 0.318226  qifreq_atpair_all.size()96
-chi0s for time point 0.318226, spin 0. CPU time: 0.120614 (tensor), 0.023278 (trans). Wall time 0.042027
+chi0s for time point 0.318226, spin 0. CPU time: 0.118647 (tensor), 0.023005 (trans). Wall time 0.040933
 is: 0 tau: 0.46194  qifreq_atpair_all.size()96
-chi0s for time point 0.461940, spin 0. CPU time: 0.119966 (tensor), 0.023048 (trans). Wall time 0.041681
+chi0s for time point 0.461940, spin 0. CPU time: 0.121485 (tensor), 0.023113 (trans). Wall time 0.041834
 is: 0 tau: 0.659177  qifreq_atpair_all.size()96
-chi0s for time point 0.659177, spin 0. CPU time: 0.121822 (tensor), 0.022995 (trans). Wall time 0.042389
+chi0s for time point 0.659177, spin 0. CPU time: 0.120112 (tensor), 0.022613 (trans). Wall time 0.041641
 is: 0 tau: 0.93031  qifreq_atpair_all.size()96
-chi0s for time point 0.930310, spin 0. CPU time: 0.121082 (tensor), 0.023208 (trans). Wall time 0.041822
+chi0s for time point 0.930310, spin 0. CPU time: 0.118371 (tensor), 0.022889 (trans). Wall time 0.040936
 is: 0 tau: 1.30306  qifreq_atpair_all.size()96
-chi0s for time point 1.303058, spin 0. CPU time: 0.121280 (tensor), 0.023354 (trans). Wall time 0.041985
+chi0s for time point 1.303058, spin 0. CPU time: 0.118776 (tensor), 0.022850 (trans). Wall time 0.041168
 is: 0 tau: 1.81489  qifreq_atpair_all.size()96
-chi0s for time point 1.814888, spin 0. CPU time: 0.122035 (tensor), 0.023113 (trans). Wall time 0.042633
+chi0s for time point 1.814888, spin 0. CPU time: 0.118524 (tensor), 0.023532 (trans). Wall time 0.040881
 is: 0 tau: 2.51625  qifreq_atpair_all.size()96
-chi0s for time point 2.516251, spin 0. CPU time: 0.125000 (tensor), 0.023023 (trans). Wall time 0.044467
+chi0s for time point 2.516251, spin 0. CPU time: 0.118751 (tensor), 0.022897 (trans). Wall time 0.040808
 is: 0 tau: 3.47491  qifreq_atpair_all.size()96
-chi0s for time point 3.474911, spin 0. CPU time: 0.124031 (tensor), 0.023125 (trans). Wall time 0.044583
+chi0s for time point 3.474911, spin 0. CPU time: 0.119460 (tensor), 0.022478 (trans). Wall time 0.040727
 is: 0 tau: 4.78167  qifreq_atpair_all.size()96
-chi0s for time point 4.781671, spin 0. CPU time: 0.121213 (tensor), 0.022963 (trans). Wall time 0.042374
+chi0s for time point 4.781671, spin 0. CPU time: 0.119109 (tensor), 0.023013 (trans). Wall time 0.040407
 is: 0 tau: 6.55791  qifreq_atpair_all.size()96
-chi0s for time point 6.557910, spin 0. CPU time: 0.123882 (tensor), 0.022902 (trans). Wall time 0.044305
+chi0s for time point 6.557910, spin 0. CPU time: 0.119208 (tensor), 0.022938 (trans). Wall time 0.040989
 is: 0 tau: 8.96549  qifreq_atpair_all.size()96
-chi0s for time point 8.965487, spin 0. CPU time: 0.123801 (tensor), 0.023129 (trans). Wall time 0.042893
+chi0s for time point 8.965487, spin 0. CPU time: 0.120370 (tensor), 0.023275 (trans). Wall time 0.041676
 is: 0 tau: 12.2197  qifreq_atpair_all.size()96
-chi0s for time point 12.219728, spin 0. CPU time: 0.120978 (tensor), 0.022885 (trans). Wall time 0.042361
+chi0s for time point 12.219728, spin 0. CPU time: 0.120500 (tensor), 0.023558 (trans). Wall time 0.041685
 is: 0 tau: 16.6064  qifreq_atpair_all.size()96
-chi0s for time point 16.606421, spin 0. CPU time: 0.126381 (tensor), 0.023121 (trans). Wall time 0.043881
+chi0s for time point 16.606421, spin 0. CPU time: 0.121774 (tensor), 0.022987 (trans). Wall time 0.041982
 is: 0 tau: 22.5041  qifreq_atpair_all.size()96
-chi0s for time point 22.504052, spin 0. CPU time: 0.122052 (tensor), 0.023105 (trans). Wall time 0.042970
+chi0s for time point 22.504052, spin 0. CPU time: 0.121973 (tensor), 0.024114 (trans). Wall time 0.042333
 is: 0 tau: 30.4129  qifreq_atpair_all.size()96
-chi0s for time point 30.412911, spin 0. CPU time: 0.123119 (tensor), 0.024230 (trans). Wall time 0.043315
+chi0s for time point 30.412911, spin 0. CPU time: 0.121974 (tensor), 0.022877 (trans). Wall time 0.041881
 is: 0 tau: 40.9933  qifreq_atpair_all.size()96
-chi0s for time point 40.993273, spin 0. CPU time: 0.123454 (tensor), 0.023126 (trans). Wall time 0.043274
+chi0s for time point 40.993273, spin 0. CPU time: 0.121977 (tensor), 0.023075 (trans). Wall time 0.041972
 is: 0 tau: 55.1158  qifreq_atpair_all.size()96
-chi0s for time point 55.115802, spin 0. CPU time: 0.123946 (tensor), 0.023448 (trans). Wall time 0.044122
+chi0s for time point 55.115802, spin 0. CPU time: 0.121205 (tensor), 0.023301 (trans). Wall time 0.042566
 is: 0 tau: 73.9289  qifreq_atpair_all.size()96
-chi0s for time point 73.928903, spin 0. CPU time: 0.122847 (tensor), 0.022887 (trans). Wall time 0.042703
+chi0s for time point 73.928903, spin 0. CPU time: 0.121828 (tensor), 0.023119 (trans). Wall time 0.042339
 is: 0 tau: 98.9507  qifreq_atpair_all.size()96
-chi0s for time point 98.950715, spin 0. CPU time: 0.119983 (tensor), 0.023072 (trans). Wall time 0.042176
+chi0s for time point 98.950715, spin 0. CPU time: 0.120935 (tensor), 0.022709 (trans). Wall time 0.041734
 is: 0 tau: 132.2  qifreq_atpair_all.size()96
-chi0s for time point 132.199559, spin 0. CPU time: 0.119342 (tensor), 0.023136 (trans). Wall time 0.041988
+chi0s for time point 132.199559, spin 0. CPU time: 0.118270 (tensor), 0.023333 (trans). Wall time 0.040809
 is: 0 tau: 176.39  qifreq_atpair_all.size()96
-chi0s for time point 176.390168, spin 0. CPU time: 0.120751 (tensor), 0.022881 (trans). Wall time 0.042602
+chi0s for time point 176.390168, spin 0. CPU time: 0.119503 (tensor), 0.022794 (trans). Wall time 0.040803
 is: 0 tau: 235.256  qifreq_atpair_all.size()96
-chi0s for time point 235.255594, spin 0. CPU time: 0.120061 (tensor), 0.022740 (trans). Wall time 0.041742
+chi0s for time point 235.255594, spin 0. CPU time: 0.121361 (tensor), 0.023130 (trans). Wall time 0.041427
 is: 0 tau: 314.142  qifreq_atpair_all.size()96
-chi0s for time point 314.141520, spin 0. CPU time: 0.119806 (tensor), 0.023026 (trans). Wall time 0.041872
+chi0s for time point 314.141520, spin 0. CPU time: 0.119470 (tensor), 0.022858 (trans). Wall time 0.041717
 is: 0 tau: 421.289  qifreq_atpair_all.size()96
-chi0s for time point 421.289351, spin 0. CPU time: 0.121569 (tensor), 0.023315 (trans). Wall time 0.042970
+chi0s for time point 421.289351, spin 0. CPU time: 0.118819 (tensor), 0.023237 (trans). Wall time 0.041305
 is: 0 tau: 571.291  qifreq_atpair_all.size()96
-chi0s for time point 571.290901, spin 0. CPU time: 0.120260 (tensor), 0.022794 (trans). Wall time 0.042152
+chi0s for time point 571.290901, spin 0. CPU time: 0.118141 (tensor), 0.022709 (trans). Wall time 0.040879
 is: 0 tau: 798.794  qifreq_atpair_all.size()96
-chi0s for time point 798.794368, spin 0. CPU time: 0.120074 (tensor), 0.023019 (trans). Wall time 0.042290
+chi0s for time point 798.794368, spin 0. CPU time: 0.119476 (tensor), 0.023500 (trans). Wall time 0.040948
 
 * Success: Read DFT xc potential, will solve quasi-particle equation
 Computing EXX orbital energy using LibRI
 Task    0: V setup for EXX
 Task    0: DM setup for EXX
-Task    0: cal_Hs elapsed time: 0.038225
-Task    0: tensor communicate elapsed time: 0.000431
+Task    0: cal_Hs elapsed time: 0.037232
+Task    0: tensor communicate elapsed time: 0.000165
 Calculating Wc using ScaLAPACK
+(         0,         0,         0)
 Calculating correlation self-energy by space-time method
 Converting Wc(q,w) -> W(R,t)
 Done converting Wc q,w -> R,t
-Task    0. libRI G0W0, spin 0, time grid     0.003142. Wc size 4, GF size 4. Wall time 0.041285
-Task    0. libRI G0W0, spin 0, time grid    -0.003142. Wc size 4, GF size 4. Wall time 0.041473
-Task    0. libRI G0W0, spin 0, time grid     0.016770. Wc size 4, GF size 4. Wall time 0.041270
-Task    0. libRI G0W0, spin 0, time grid    -0.016770. Wc size 4, GF size 4. Wall time 0.041738
-Task    0. libRI G0W0, spin 0, time grid     0.042195. Wc size 4, GF size 4. Wall time 0.041736
-Task    0. libRI G0W0, spin 0, time grid    -0.042195. Wc size 4, GF size 4. Wall time 0.041902
-Task    0. libRI G0W0, spin 0, time grid     0.081163. Wc size 4, GF size 4. Wall time 0.041119
-Task    0. libRI G0W0, spin 0, time grid    -0.081163. Wc size 4, GF size 4. Wall time 0.042792
-Task    0. libRI G0W0, spin 0, time grid     0.136626. Wc size 4, GF size 4. Wall time 0.041473
-Task    0. libRI G0W0, spin 0, time grid    -0.136626. Wc size 4, GF size 4. Wall time 0.042415
-Task    0. libRI G0W0, spin 0, time grid     0.213269. Wc size 4, GF size 4. Wall time 0.041114
-Task    0. libRI G0W0, spin 0, time grid    -0.213269. Wc size 4, GF size 4. Wall time 0.041756
-Task    0. libRI G0W0, spin 0, time grid     0.318226. Wc size 4, GF size 4. Wall time 0.040879
-Task    0. libRI G0W0, spin 0, time grid    -0.318226. Wc size 4, GF size 4. Wall time 0.041753
-Task    0. libRI G0W0, spin 0, time grid     0.461940. Wc size 4, GF size 4. Wall time 0.042270
-Task    0. libRI G0W0, spin 0, time grid    -0.461940. Wc size 4, GF size 4. Wall time 0.044607
-Task    0. libRI G0W0, spin 0, time grid     0.659177. Wc size 4, GF size 4. Wall time 0.041376
-Task    0. libRI G0W0, spin 0, time grid    -0.659177. Wc size 4, GF size 4. Wall time 0.042660
-Task    0. libRI G0W0, spin 0, time grid     0.930310. Wc size 4, GF size 4. Wall time 0.042666
-Task    0. libRI G0W0, spin 0, time grid    -0.930310. Wc size 4, GF size 4. Wall time 0.042695
-Task    0. libRI G0W0, spin 0, time grid     1.303058. Wc size 4, GF size 4. Wall time 0.042733
-Task    0. libRI G0W0, spin 0, time grid    -1.303058. Wc size 4, GF size 4. Wall time 0.044010
-Task    0. libRI G0W0, spin 0, time grid     1.814888. Wc size 4, GF size 4. Wall time 0.043063
-Task    0. libRI G0W0, spin 0, time grid    -1.814888. Wc size 4, GF size 4. Wall time 0.043166
-Task    0. libRI G0W0, spin 0, time grid     2.516251. Wc size 4, GF size 4. Wall time 0.042825
-Task    0. libRI G0W0, spin 0, time grid    -2.516251. Wc size 4, GF size 4. Wall time 0.043241
-Task    0. libRI G0W0, spin 0, time grid     3.474911. Wc size 4, GF size 4. Wall time 0.042570
-Task    0. libRI G0W0, spin 0, time grid    -3.474911. Wc size 4, GF size 4. Wall time 0.042743
-Task    0. libRI G0W0, spin 0, time grid     4.781671. Wc size 4, GF size 4. Wall time 0.042020
-Task    0. libRI G0W0, spin 0, time grid    -4.781671. Wc size 4, GF size 4. Wall time 0.042790
-Task    0. libRI G0W0, spin 0, time grid     6.557910. Wc size 4, GF size 4. Wall time 0.041857
-Task    0. libRI G0W0, spin 0, time grid    -6.557910. Wc size 4, GF size 4. Wall time 0.043746
-Task    0. libRI G0W0, spin 0, time grid     8.965487. Wc size 4, GF size 4. Wall time 0.042047
-Task    0. libRI G0W0, spin 0, time grid    -8.965487. Wc size 4, GF size 4. Wall time 0.042623
-Task    0. libRI G0W0, spin 0, time grid    12.219728. Wc size 4, GF size 4. Wall time 0.042370
-Task    0. libRI G0W0, spin 0, time grid   -12.219728. Wc size 4, GF size 4. Wall time 0.043363
-Task    0. libRI G0W0, spin 0, time grid    16.606421. Wc size 4, GF size 4. Wall time 0.042368
-Task    0. libRI G0W0, spin 0, time grid   -16.606421. Wc size 4, GF size 4. Wall time 0.048633
-Task    0. libRI G0W0, spin 0, time grid    22.504052. Wc size 4, GF size 4. Wall time 0.041726
-Task    0. libRI G0W0, spin 0, time grid   -22.504052. Wc size 4, GF size 4. Wall time 0.042379
-Task    0. libRI G0W0, spin 0, time grid    30.412911. Wc size 4, GF size 4. Wall time 0.043185
-Task    0. libRI G0W0, spin 0, time grid   -30.412911. Wc size 4, GF size 4. Wall time 0.042782
-Task    0. libRI G0W0, spin 0, time grid    40.993273. Wc size 4, GF size 4. Wall time 0.041008
-Task    0. libRI G0W0, spin 0, time grid   -40.993273. Wc size 4, GF size 4. Wall time 0.042870
-Task    0. libRI G0W0, spin 0, time grid    55.115802. Wc size 4, GF size 4. Wall time 0.042414
-Task    0. libRI G0W0, spin 0, time grid   -55.115802. Wc size 4, GF size 4. Wall time 0.042586
-Task    0. libRI G0W0, spin 0, time grid    73.928903. Wc size 4, GF size 4. Wall time 0.041992
-Task    0. libRI G0W0, spin 0, time grid   -73.928903. Wc size 4, GF size 4. Wall time 0.041796
-Task    0. libRI G0W0, spin 0, time grid    98.950715. Wc size 4, GF size 4. Wall time 0.042143
-Task    0. libRI G0W0, spin 0, time grid   -98.950715. Wc size 4, GF size 4. Wall time 0.041896
-Task    0. libRI G0W0, spin 0, time grid   132.199559. Wc size 4, GF size 4. Wall time 0.042366
-Task    0. libRI G0W0, spin 0, time grid  -132.199559. Wc size 4, GF size 4. Wall time 0.042595
-Task    0. libRI G0W0, spin 0, time grid   176.390168. Wc size 4, GF size 4. Wall time 0.041282
-Task    0. libRI G0W0, spin 0, time grid  -176.390168. Wc size 4, GF size 4. Wall time 0.043482
-Task    0. libRI G0W0, spin 0, time grid   235.255594. Wc size 4, GF size 4. Wall time 0.041753
-Task    0. libRI G0W0, spin 0, time grid  -235.255594. Wc size 4, GF size 4. Wall time 0.042979
-Task    0. libRI G0W0, spin 0, time grid   314.141520. Wc size 4, GF size 4. Wall time 0.041963
-Task    0. libRI G0W0, spin 0, time grid  -314.141520. Wc size 4, GF size 4. Wall time 0.041523
-Task    0. libRI G0W0, spin 0, time grid   421.289351. Wc size 4, GF size 4. Wall time 0.040387
-Task    0. libRI G0W0, spin 0, time grid  -421.289351. Wc size 4, GF size 4. Wall time 0.042828
-Task    0. libRI G0W0, spin 0, time grid   571.290901. Wc size 4, GF size 4. Wall time 0.041661
-Task    0. libRI G0W0, spin 0, time grid  -571.290901. Wc size 4, GF size 4. Wall time 0.041792
-Task    0. libRI G0W0, spin 0, time grid   798.794368. Wc size 4, GF size 4. Wall time 0.041581
-Task    0. libRI G0W0, spin 0, time grid  -798.794368. Wc size 4, GF size 4. Wall time 0.041690
+Task    0. libRI G0W0, spin 0, time grid     0.003142. Wc size 4, GF size 4. Wall time 0.041994
+Task    0. libRI G0W0, spin 0, time grid    -0.003142. Wc size 4, GF size 4. Wall time 0.044232
+Task    0. libRI G0W0, spin 0, time grid     0.016770. Wc size 4, GF size 4. Wall time 0.042914
+Task    0. libRI G0W0, spin 0, time grid    -0.016770. Wc size 4, GF size 4. Wall time 0.042610
+Task    0. libRI G0W0, spin 0, time grid     0.042195. Wc size 4, GF size 4. Wall time 0.042330
+Task    0. libRI G0W0, spin 0, time grid    -0.042195. Wc size 4, GF size 4. Wall time 0.041496
+Task    0. libRI G0W0, spin 0, time grid     0.081163. Wc size 4, GF size 4. Wall time 0.040253
+Task    0. libRI G0W0, spin 0, time grid    -0.081163. Wc size 4, GF size 4. Wall time 0.040856
+Task    0. libRI G0W0, spin 0, time grid     0.136626. Wc size 4, GF size 4. Wall time 0.040420
+Task    0. libRI G0W0, spin 0, time grid    -0.136626. Wc size 4, GF size 4. Wall time 0.040461
+Task    0. libRI G0W0, spin 0, time grid     0.213269. Wc size 4, GF size 4. Wall time 0.039751
+Task    0. libRI G0W0, spin 0, time grid    -0.213269. Wc size 4, GF size 4. Wall time 0.041451
+Task    0. libRI G0W0, spin 0, time grid     0.318226. Wc size 4, GF size 4. Wall time 0.040243
+Task    0. libRI G0W0, spin 0, time grid    -0.318226. Wc size 4, GF size 4. Wall time 0.041063
+Task    0. libRI G0W0, spin 0, time grid     0.461940. Wc size 4, GF size 4. Wall time 0.040866
+Task    0. libRI G0W0, spin 0, time grid    -0.461940. Wc size 4, GF size 4. Wall time 0.041570
+Task    0. libRI G0W0, spin 0, time grid     0.659177. Wc size 4, GF size 4. Wall time 0.042372
+Task    0. libRI G0W0, spin 0, time grid    -0.659177. Wc size 4, GF size 4. Wall time 0.042280
+Task    0. libRI G0W0, spin 0, time grid     0.930310. Wc size 4, GF size 4. Wall time 0.043176
+Task    0. libRI G0W0, spin 0, time grid    -0.930310. Wc size 4, GF size 4. Wall time 0.042290
+Task    0. libRI G0W0, spin 0, time grid     1.303058. Wc size 4, GF size 4. Wall time 0.042296
+Task    0. libRI G0W0, spin 0, time grid    -1.303058. Wc size 4, GF size 4. Wall time 0.042886
+Task    0. libRI G0W0, spin 0, time grid     1.814888. Wc size 4, GF size 4. Wall time 0.043785
+Task    0. libRI G0W0, spin 0, time grid    -1.814888. Wc size 4, GF size 4. Wall time 0.041964
+Task    0. libRI G0W0, spin 0, time grid     2.516251. Wc size 4, GF size 4. Wall time 0.044496
+Task    0. libRI G0W0, spin 0, time grid    -2.516251. Wc size 4, GF size 4. Wall time 0.042271
+Task    0. libRI G0W0, spin 0, time grid     3.474911. Wc size 4, GF size 4. Wall time 0.042086
+Task    0. libRI G0W0, spin 0, time grid    -3.474911. Wc size 4, GF size 4. Wall time 0.042129
+Task    0. libRI G0W0, spin 0, time grid     4.781671. Wc size 4, GF size 4. Wall time 0.042153
+Task    0. libRI G0W0, spin 0, time grid    -4.781671. Wc size 4, GF size 4. Wall time 0.042609
+Task    0. libRI G0W0, spin 0, time grid     6.557910. Wc size 4, GF size 4. Wall time 0.043121
+Task    0. libRI G0W0, spin 0, time grid    -6.557910. Wc size 4, GF size 4. Wall time 0.042489
+Task    0. libRI G0W0, spin 0, time grid     8.965487. Wc size 4, GF size 4. Wall time 0.041721
+Task    0. libRI G0W0, spin 0, time grid    -8.965487. Wc size 4, GF size 4. Wall time 0.041004
+Task    0. libRI G0W0, spin 0, time grid    12.219728. Wc size 4, GF size 4. Wall time 0.041044
+Task    0. libRI G0W0, spin 0, time grid   -12.219728. Wc size 4, GF size 4. Wall time 0.042248
+Task    0. libRI G0W0, spin 0, time grid    16.606421. Wc size 4, GF size 4. Wall time 0.040518
+Task    0. libRI G0W0, spin 0, time grid   -16.606421. Wc size 4, GF size 4. Wall time 0.040625
+Task    0. libRI G0W0, spin 0, time grid    22.504052. Wc size 4, GF size 4. Wall time 0.041302
+Task    0. libRI G0W0, spin 0, time grid   -22.504052. Wc size 4, GF size 4. Wall time 0.041381
+Task    0. libRI G0W0, spin 0, time grid    30.412911. Wc size 4, GF size 4. Wall time 0.041546
+Task    0. libRI G0W0, spin 0, time grid   -30.412911. Wc size 4, GF size 4. Wall time 0.040875
+Task    0. libRI G0W0, spin 0, time grid    40.993273. Wc size 4, GF size 4. Wall time 0.042699
+Task    0. libRI G0W0, spin 0, time grid   -40.993273. Wc size 4, GF size 4. Wall time 0.043100
+Task    0. libRI G0W0, spin 0, time grid    55.115802. Wc size 4, GF size 4. Wall time 0.041834
+Task    0. libRI G0W0, spin 0, time grid   -55.115802. Wc size 4, GF size 4. Wall time 0.042837
+Task    0. libRI G0W0, spin 0, time grid    73.928903. Wc size 4, GF size 4. Wall time 0.041887
+Task    0. libRI G0W0, spin 0, time grid   -73.928903. Wc size 4, GF size 4. Wall time 0.041116
+Task    0. libRI G0W0, spin 0, time grid    98.950715. Wc size 4, GF size 4. Wall time 0.040744
+Task    0. libRI G0W0, spin 0, time grid   -98.950715. Wc size 4, GF size 4. Wall time 0.040424
+Task    0. libRI G0W0, spin 0, time grid   132.199559. Wc size 4, GF size 4. Wall time 0.041156
+Task    0. libRI G0W0, spin 0, time grid  -132.199559. Wc size 4, GF size 4. Wall time 0.040914
+Task    0. libRI G0W0, spin 0, time grid   176.390168. Wc size 4, GF size 4. Wall time 0.040219
+Task    0. libRI G0W0, spin 0, time grid  -176.390168. Wc size 4, GF size 4. Wall time 0.040919
+Task    0. libRI G0W0, spin 0, time grid   235.255594. Wc size 4, GF size 4. Wall time 0.041557
+Task    0. libRI G0W0, spin 0, time grid  -235.255594. Wc size 4, GF size 4. Wall time 0.042486
+Task    0. libRI G0W0, spin 0, time grid   314.141520. Wc size 4, GF size 4. Wall time 0.041850
+Task    0. libRI G0W0, spin 0, time grid  -314.141520. Wc size 4, GF size 4. Wall time 0.042872
+Task    0. libRI G0W0, spin 0, time grid   421.289351. Wc size 4, GF size 4. Wall time 0.041969
+Task    0. libRI G0W0, spin 0, time grid  -421.289351. Wc size 4, GF size 4. Wall time 0.041858
+Task    0. libRI G0W0, spin 0, time grid   571.290901. Wc size 4, GF size 4. Wall time 0.040423
+Task    0. libRI G0W0, spin 0, time grid  -571.290901. Wc size 4, GF size 4. Wall time 0.041143
+Task    0. libRI G0W0, spin 0, time grid   798.794368. Wc size 4, GF size 4. Wall time 0.040228
+Task    0. libRI G0W0, spin 0, time grid  -798.794368. Wc size 4, GF size 4. Wall time 0.041875
 Solving quasi-particle equation
 Printing quasi-particle energy [unit: eV]
 
@@ -389,127 +395,138 @@ spin  1, k-point    1: (0.00000, 0.00000, 0.00000)
 ----------------------------------------------------------------------------------------------------------------------------
 State              occ             e_mf             v_xc            v_exx           ReSigc           ImSigc             e_qp
 ----------------------------------------------------------------------------------------------------------------------------
-    1          2.00000        -10.38109        -12.06615        -17.87574          0.38472          0.00001        -15.80572
-    2          0.00000          0.92945         -4.68238         -1.43275         -0.56663         -0.00000          3.61217
+    1          2.00000        -10.38109        -12.06615        -17.87574          0.38472          0.00002        -15.80572
+    2          0.00000          0.92945         -4.68238         -1.43275         -0.56663          0.00001          3.61218
     3          0.00000          1.96263         -2.73890         -0.79965         -0.29623         -0.00000          3.60540
     4          0.00000          4.13156         -4.45336         -0.98031         -0.60435         -0.00000          7.00001
-    5          0.00000          4.13156         -4.45336         -0.98031         -0.60435         -0.00000          7.00001
-    6          0.00000          7.38632         -4.37561         -1.41446         -0.75105          0.00015          9.59615
-    7          0.00000         10.02850         -3.42133         -0.26138         -1.00285         -0.01781         12.18533
-    8          0.00000         10.18555         -3.36396         -0.23739         -0.76446         -0.00078         12.54740
-    9          0.00000         10.18555         -3.36396         -0.23739         -0.76329         -0.00689         12.54856
-   10          0.00000         12.45607         -4.51534         -1.28891         -1.46278         -0.11072         14.21949
-   11          0.00000         16.65798         -3.86612         -0.93782         -0.85331         -0.19154         18.73271
-   12          0.00000         23.72653         -5.80627         -0.60073         -0.69191          0.04025         28.23991
-   13          0.00000         23.72655         -5.80627         -0.60073         -0.69418          0.02840         28.23764
-   14          0.00000         24.03709         -8.00875         -1.89730         -1.78170         -0.03819         28.36658
-   15          0.00000         24.03709         -8.00875         -1.89730         -1.73232         -0.09799         28.41595
-   16          0.00000         28.29738         -6.11032         -0.99401         -0.90411         -1.40618         32.50932
-   17          0.00000         34.95389         -7.07081         -0.91389         -1.42154         -0.81005         39.68900
-   18          0.00000         36.04584         -6.57123         -0.75882         -1.81870         -0.96997         40.03929
-   19          0.00000         36.04584         -6.57123         -0.75882         -1.76063         -0.83697         40.09736
-   20          0.00000         37.77728         -5.76423         -0.40877         -1.02585         -0.58342         42.10664
-   21          0.00000         37.77728         -5.76423         -0.40877         -0.98142         -0.84565         42.15107
-   22          0.00000         38.78467         -5.50604         -0.32530         -2.19675         -0.67747         41.76840
-   23          0.00000         38.78468         -5.50603         -0.32530         -2.23492         -0.66955         41.73023
-   24          0.00000         41.85539         -8.54604         -1.85589         -1.38212         -1.62260         47.16315
-   25          0.00000         44.77074         -6.42617         -0.72788         -0.99485         -1.38849         49.47392
-   26          0.00000         70.92806         -7.93460         -0.69784          0.17349         -1.03685         78.33805
-   27          0.00000         70.92806         -7.93460         -0.69784          0.04028         -1.21490         78.20484
-   28          0.00000         79.16170        -10.89730         -1.53521         -0.56828         -2.72803         87.95524
-   29          0.00000         84.74856         -8.59219         -0.58473         -0.45495         -0.21164         92.30080
-   30          0.00000         84.74856         -8.59219         -0.58473         -0.45410         -0.21339         92.30165
-   31          0.00000         87.94865        -10.20408         -1.02665         -0.67360         -1.60761         96.45223
-   32          0.00000        102.95857        -11.11061         -1.09238         -2.41306         -0.75995        110.56347
-   33          0.00000        102.95876        -11.11063         -1.09238         -2.40568         -0.71827        110.57106
-   34          0.00000        106.82428        -13.22634         -1.89258         -2.66217         -2.47596        115.49562
-   35          0.00000        106.82428        -13.22634         -1.89258         -2.66985         -2.45578        115.48795
-   36          0.00000        107.22009         -7.55347         -0.48989         -0.48354         -0.83031        113.79987
-   37          0.00000        123.27900         -8.75246         -0.42234          0.40699         -2.44433        132.01586
-   38          0.00000        123.27900         -8.75246         -0.42234          0.52649         -2.39679        132.13535
-   39          0.00000        123.67604         -9.39745         -0.53612         -1.45612         -0.89554        131.08100
-   40          0.00000        123.67662         -9.39749         -0.53613         -1.45845         -0.89246        131.07928
-   41          0.00000        131.78845        -12.89167         -1.53788         -1.69070         -1.83402        141.45128
-   42          0.00000        137.28151        -10.68759         -0.74789         -2.56198         -1.69788        144.65898
-   43          0.00000        137.28151        -10.68759         -0.74789         -2.56798         -1.69540        144.65298
-   44          0.00000        143.20907        -10.03138         -0.60179         -0.45313         -3.77017        152.18527
-   45          0.00000        143.21028        -10.03140         -0.60179         -0.61495         -3.85775        152.02467
-   46          0.00000        145.36508        -10.88406         -0.76032         -3.45886         -3.58761        152.02969
-   47          0.00000        145.36508        -10.88406         -0.76032         -3.36416         -3.38391        152.12440
-   48          0.00000        159.66005        -11.57845         -0.97672         -1.67673         -1.58865        168.58480
-   49          0.00000        177.85744         -9.65254         -0.40102         -1.26419          0.13623        185.84452
-   50          0.00000        199.31577        -11.36039         -0.60282         -1.10349         -1.76851        208.96959
-   51          0.00000        199.31659        -11.36040         -0.60282         -1.09444         -1.79970        208.97947
-   52          0.00000        200.68808        -11.77702         -0.66562         -1.99349         -1.66247        209.80574
-   53          0.00000        200.68808        -11.77702         -0.66562         -2.03782         -1.60905        209.76139
-   54          0.00000        202.30819        -13.64011         -0.97681         -0.77495         -2.91287        214.19628
-   55          0.00000        212.09777        -12.42093         -0.89519         -0.41706         -2.69040        223.20620
-   56          0.00000        212.09777        -12.42093         -0.89519         -0.40309         -2.71175        223.22016
-   57          0.00000        259.39775        -16.08136         -1.29322         -2.03101         -2.55813        272.15462
-   58          0.00000        266.96801         -9.15229         -0.41651         -0.39403         -1.05007        275.30952
-   59          0.00000        313.17567        -13.32496         -0.66887         -1.51319         -1.61256        324.31831
-   60          0.00000        313.17567        -13.32496         -0.66887         -1.45004         -2.14697        324.38146
-   61          0.00000        316.44468        -16.78173         -1.15881          0.20938         -2.58766        332.27673
-   62          0.00000        886.39113        -19.34983         -0.59169         -1.66083         -1.47262        903.48820
+    5          0.00000          4.13156         -4.45336         -0.98031         -0.60435          0.00000          7.00001
+    6          0.00000          7.38632         -4.37561         -1.41446         -0.75049          0.00039          9.59671
+    7          0.00000         10.02850         -3.42133         -0.26138         -0.99758         -0.01267         12.19062
+    8          0.00000         10.18555         -3.36396         -0.23739         -0.76546         -0.00196         12.54639
+    9          0.00000         10.18555         -3.36396         -0.23739         -0.76455         -0.00066         12.54731
+   10          0.00000         12.45607         -4.51534         -1.28891         -1.46949         -0.11182         14.21275
+   11          0.00000         16.65798         -3.86612         -0.93782         -0.79413         -0.05744         18.79191
+   12          0.00000         23.72653         -5.80627         -0.60073         -0.68592         -0.00172         28.24588
+   13          0.00000         23.72655         -5.80627         -0.60073         -0.68689         -0.00175         28.24493
+   14          0.00000         24.03709         -8.00875         -1.89730         -1.82557         -0.09844         28.32273
+   15          0.00000         24.03709         -8.00875         -1.89730         -1.75617         -0.12354         28.39212
+   16          0.00000         28.29738         -6.11032         -0.99401         -0.56173         -1.20443         32.85168
+   17          0.00000         34.95389         -7.07081         -0.91389         -1.83972         -0.92348         39.27082
+   18          0.00000         36.04584         -6.57123         -0.75882         -2.07865         -0.94773         39.77934
+   19          0.00000         36.04584         -6.57123         -0.75882         -1.82481         -1.03957         40.03318
+   20          0.00000         37.77728         -5.76423         -0.40877         -1.00458         -0.57490         42.12790
+   21          0.00000         37.77728         -5.76423         -0.40877         -1.01656         -0.58699         42.11592
+   22          0.00000         38.78467         -5.50604         -0.32530         -2.18445         -0.53181         41.78070
+   23          0.00000         38.78468         -5.50603         -0.32530         -2.21599         -0.54643         41.74918
+   24          0.00000         41.85539         -8.54604         -1.85589         -1.31683         -1.65287         47.22844
+   25          0.00000         44.77074         -6.42617         -0.72788         -1.58646         -1.26576         48.88232
+   26          0.00000         70.92806         -7.93460         -0.69784          0.03243         -1.12364         78.19699
+   27          0.00000         70.92806         -7.93460         -0.69784          0.01883         -1.12852         78.18338
+   28          0.00000         79.16170        -10.89730         -1.53521         -0.56826         -2.71442         87.95527
+   29          0.00000         84.74856         -8.59219         -0.58473         -0.41045         -0.12251         92.34530
+   30          0.00000         84.74856         -8.59219         -0.58473         -0.40376         -0.12762         92.35199
+   31          0.00000         87.94865        -10.20408         -1.02665         -0.68099         -1.60179         96.44484
+   32          0.00000        102.95857        -11.11061         -1.09238         -2.36782         -0.56944        110.60872
+   33          0.00000        102.95876        -11.11063         -1.09238         -2.34792         -0.53494        110.62883
+   34          0.00000        106.82428        -13.22634         -1.89258         -2.67095         -2.45442        115.48681
+   35          0.00000        106.82428        -13.22634         -1.89258         -2.66676         -2.46086        115.49103
+   36          0.00000        107.22009         -7.55347         -0.48989         -0.25697         -0.88762        114.02646
+   37          0.00000        123.27900         -8.75246         -0.42234          1.21758         -2.03828        132.82645
+   38          0.00000        123.27900         -8.75246         -0.42234         -5.23590         -4.12543        126.37297
+   39          0.00000        123.67604         -9.39745         -0.53612         -1.18360         -0.96366        131.35351
+   40          0.00000        123.67662         -9.39749         -0.53613         -1.19055         -0.96653        131.34718
+   41          0.00000        131.78845        -12.89167         -1.53788         -1.78419         -1.96864        141.35781
+   42          0.00000        137.28151        -10.68759         -0.74789         -2.68452         -1.52795        144.53643
+   43          0.00000        137.28151        -10.68759         -0.74789         -2.68326         -1.52748        144.53769
+   44          0.00000        143.20907        -10.03138         -0.60179         -0.08379         -3.71004        152.55460
+   45          0.00000        143.21028        -10.03140         -0.60179         -0.21319         -3.74454        152.42643
+   46          0.00000        145.36508        -10.88406         -0.76032         -3.12892         -3.43919        152.35964
+   47          0.00000        145.36508        -10.88406         -0.76032         -3.24711         -3.09962        152.24144
+   48          0.00000        159.66005        -11.57845         -0.97672         -1.67813         -1.58979        168.58339
+   49          0.00000        177.85744         -9.65254         -0.40102         -0.40436         -1.07465        186.70435
+   50          0.00000        199.31577        -11.36039         -0.60282         -1.61296         -1.72055        208.46011
+   51          0.00000        199.31659        -11.36040         -0.60282         -1.69677         -1.75370        208.37714
+   52          0.00000        200.68808        -11.77702         -0.66562         -2.02560         -1.12857        209.77364
+   53          0.00000        200.68808        -11.77702         -0.66562         -1.97671         -1.06253        209.82252
+   54          0.00000        202.30819        -13.64011         -0.97681         -0.91870         -2.80589        214.05253
+   55          0.00000        212.09777        -12.42093         -0.89519         -0.29964         -2.74512        223.32360
+   56          0.00000        212.09777        -12.42093         -0.89519         -0.28810         -2.68185        223.33515
+   57          0.00000        259.39775        -16.08136         -1.29322         -2.17311         -2.31591        272.01253
+   58          0.00000        266.96801         -9.15229         -0.41651         -0.37325         -1.03890        275.33030
+   59          0.00000        313.17567        -13.32496         -0.66887         -1.95220         -0.27890        323.87931
+   60          0.00000        313.17567        -13.32496         -0.66887         -1.64671         -0.26534        324.18480
+   61          0.00000        316.44468        -16.78173         -1.15881          0.20024         -2.59360        332.26759
+   62          0.00000        886.39113        -19.34983         -0.59169         -1.45450         -1.04228        903.69454
 
 Entry                                             #calls       CPU time (s)       Wall time (s)     
 ----------------------------------------------------------------------------------------------------
-Total                                             1            33.9873            12.0753           
-  Driver Read Input Parameters                    1              0.0093             0.0129          
-  Driver Read Meanfield band                      1              0.0001             0.0001          
-  Driver Read Task-Common Input Data              1              0.1829             0.1849          
-  G0W0 quasi-particle calculation                 1              33.7702            11.8522         
-    Build response function chi0                  1                4.7611             1.4629        
-      Loop over LibRI                             1                  4.7586             1.4604      
-        Set Cs                                    1                    0.0734             0.0597    
-        build_gf_Rt_libri                         64                   0.0280             0.0221    
-        Call cal_chi0s                            32                   3.7873             1.1179    
-        Collect all R blocks                      32                   0.0906             0.0353    
-        Fourier and Cosine transform              32                   0.7487             0.1937    
-    Load truncated Coulomb                        1                0.0536             0.0553        
-    Load DFT xc potential                         1                0.0002             0.0003        
-    Build exchange self-energy                    1                0.2187             0.1098        
-      Fourier transform truncated Coulomb         1                  0.0040             0.0041      
-      g0w0_exx_real_work                          1                  0.2146             0.1057      
-        Prepare C libRI object                    1                    0.0636             0.0577    
-        Prepare V libRI object                    1                    0.0102             0.0058    
+Total                                             1            32.8042            11.3003           
+  Driver Read Input Parameters                    1              0.0083             0.0121          
+  Driver Read Task-Common Input Data              1              0.0469             0.0472          
+    Read Atomic Basis                             1                0.0000             0.0000        
+    Read BZ Sampling                              1                0.0001             0.0001        
+    Read Meanfield Starting-point                 1                0.0001             0.0001        
+    Read Meanfield Starting-point                 1                0.0000             0.0000        
+    driver_read_eigenvector                       1                0.0007             0.0007        
+    driver_read_Cs_Vq                             1                0.0458             0.0462        
+      handle_Cs_file_dry                          1                  0.0000             0.0000      
+      handle_Cs_file                              1                  0.0077             0.0078      
+      handle_Vq_row_file                          1                  0.0348             0.0350      
+      set_aux_coulomb_k_atom_pair                 1                  0.0032             0.0032      
+  G0W0 quasi-particle calculation                 1              32.7241            11.2160         
+    Build response function chi0                  1                4.6731             1.4104        
+      Loop over LibRI                             1                  4.6711             1.4082      
+        Set Cs                                    1                    0.0671             0.0572    
+        build_gf_Rt_libri                         64                   0.0267             0.0208    
+        Call cal_chi0s                            32                   3.7381             1.0821    
+        Collect all R blocks                      32                   0.0740             0.0295    
+        Fourier and Cosine transform              32                   0.7374             0.1905    
+    Load truncated Coulomb                        1                0.0239             0.0241        
+      handle_Vq_full_file                         1                  0.0108             0.0109      
+      set_aux_cut_coulomb_k_atom_pair_out         1                  0.0130             0.0131      
+    Load DFT xc potential                         1                0.0001             0.0001        
+    Build exchange self-energy                    1                0.2156             0.1064        
+      Fourier transform truncated Coulomb         1                  0.0053             0.0053      
+      g0w0_exx_real_work                          1                  0.2101             0.1009      
+        Prepare C libRI object                    1                    0.0618             0.0554    
+        Prepare V libRI object                    1                    0.0088             0.0050    
         Prepare DM libRI object                   1                    0.0013             0.0009    
-        Call libRI Hexx calculation               1                    0.1360             0.0382    
-        Collect Hexx IJ from world                1                    0.0006             0.0004    
+        Call libRI Hexx calculation               1                    0.1351             0.0372    
+        Collect Hexx IJ from world                1                    0.0003             0.0002    
         Hexx IJ -> 2D block                       1                    0.0008             0.0003    
-        Rotate Hexx ij -> KS                      1                    0.0004             0.0002    
-        Collect Eexx to root process              1                    0.0001             0.0004    
-    Build screened interaction                    1                13.1800            5.0133        
-      Prepare sqrt of truncated Coulomb           1                  0.5911             0.4179      
-        Setup libRI object                        1                    0.0009             0.0009    
-        libRI Communicate                         1                    0.0520             0.0176    
-        Collect 2D-block from IJ                  1                    0.0469             0.0149    
-        Perform square root                       1                    0.4905             0.3835    
+        Rotate Hexx ij -> KS                      1                    0.0003             0.0002    
+        Collect Eexx to root process              1                    0.0001             0.0001    
+    Build screened interaction                    1                12.5752            4.6119        
+      Prepare sqrt of truncated Coulomb           1                  0.4806             0.3000      
+        Setup libRI object                        1                    0.0010             0.0010    
+        libRI Communicate                         1                    0.0509             0.0173    
+        Collect 2D-block from IJ                  1                    0.0465             0.0151    
+        Perform square root                       1                    0.3810             0.2655    
           power_hemat_blacs_1                     2                      0.0001             0.0001  
-          power_hemat_blacs_2                     2                      0.9074             0.7411  
-          power_hemat_blacs_3                     2                      0.0024             0.0024  
+          power_hemat_blacs_2                     2                      0.6986             0.5190  
+          power_hemat_blacs_3                     2                      0.0025             0.0025  
           power_hemat_blacs_4                     2                      0.0000             0.0000  
-          power_hemat_blacs_5                     2                      0.0675             0.0193  
-      Prepare sqrt of bare Coulomb                1                  0.5960             0.4217      
-      Prepare Chi0 2D block                       32                 3.2008             1.0954      
-      Compute dielectric matrix                   32                 1.5517             0.4412      
-      Invert dielectric matrix                    32                 2.6605             1.2442      
-      Multiply truncated Coulomb                  32                 1.5001             0.3834      
-      Convert Wc, 2D -> IJ                        32                 3.0369             0.9659      
-        Initialize Wc atom-pair map               32                   0.8632             0.2266    
-        Communicate                               32                   2.1732             0.7387    
-          epsilon_convert_wc_communicate_1        32                     0.0004             0.0004  
-          epsilon_convert_wc_communicate_2        32                     2.1665             0.7320  
-          epsilon_convert_wc_communicate_3        32                     0.0008             0.0008  
-    Build real-space correlation self-energy      1                15.0203            4.8053        
-      Tranform Wc (q,w) -> (R,t)                  1                  5.2666             1.3498      
-      Setup LibRI C data                          1                  0.0635             0.0565      
-      Prepare LibRI Wc object                     32                 0.2795             0.2840      
-      Compute G(R,t) and G(R,-t)                  32                 0.0232             0.0173      
-      Call libRI cal_Sigc                         64                 9.0084             2.7094      
-      Transform Sigc (R,t) -> (R,w)               32                 0.3565             0.3628      
-    Construct self-energy in Kohn-Sham space      1                0.0992             0.0485        
-      g0w0_build_sigc_KS                          1                  0.0992             0.0484      
-    Solve quasi-particle equation                 1                0.0094             0.0096        
-    Export self-energy in KS basis                1                0.0971             0.0995        
-libRPA finished
+          power_hemat_blacs_5                     2                      0.0647             0.0178  
+      Prepare sqrt of bare Coulomb                1                  0.4911             0.3159      
+      Prepare Chi0 2D block                       32                 3.1133             1.0725      
+      Compute dielectric matrix                   32                 1.5598             0.4438      
+      Invert dielectric matrix                    32                 2.4520             1.1225      
+      Multiply truncated Coulomb                  32                 1.4909             0.3794      
+      Convert Wc, 2D -> IJ                        32                 2.9443             0.9342      
+        Initialize Wc atom-pair map               32                   0.8518             0.2200    
+        Communicate                               32                   2.0919             0.7136    
+          epsilon_convert_wc_communicate_1        32                     0.0005             0.0005  
+          epsilon_convert_wc_communicate_2        32                     2.0852             0.7069  
+          epsilon_convert_wc_communicate_3        32                     0.0009             0.0009  
+    Build real-space correlation self-energy      1                14.7111            4.6675        
+      Tranform Wc (q,w) -> (R,t)                  1                  5.0030             1.2740      
+      Setup LibRI C data                          1                  0.0639             0.0564      
+      Prepare LibRI Wc object                     32                 0.2764             0.2794      
+      Compute G(R,t) and G(R,-t)                  32                 0.0238             0.0189      
+      Call libRI cal_Sigc                         64                 8.9809             2.6708      
+      Transform Sigc (R,t) -> (R,w)               32                 0.3393             0.3429      
+    Construct self-energy in Kohn-Sham space      1                0.0911             0.0430        
+      g0w0_build_sigc_KS                          1                  0.0911             0.0430      
+    Solve quasi-particle equation                 1                0.0091             0.0093        
+    Export self-energy in KS basis                1                0.0964             0.0975        
+libRPA finished successfully

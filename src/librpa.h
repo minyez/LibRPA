@@ -114,21 +114,18 @@ void set_latvec_and_G(double lat_mat[9], double G_mat[9]);
 /*!
  * @brief Set k-mesh grids
  *
- * @param[in] nk1      Number of k-grids along the 1st reciprocal lattice vector
- * @param[in] nk2      Number of k-grids along the 2nd reciprocal lattice vector
- * @param[in] nk3      Number of k-grids along the 3rd reciprocal lattice vector
- * @param[in] kvecs    Coordinates of k-mesh vectors, in inverse Bohr unit, [nk1*nk2*nk3][3]
+ * @param[in] nk1             Number of k-grids along the 1st reciprocal lattice vector
+ * @param[in] nk2             Number of k-grids along the 2nd reciprocal lattice vector
+ * @param[in] nk3             Number of k-grids along the 3rd reciprocal lattice vector
+ * @param[in] kcart           Cartesian coordinates of k-mesh vectors, in inverse Bohr unit, [nk1*nk2*nk3][3]
+ * @param[in] kfrac           Fractional coordinates of k-mesh vectors, [nk1*nk2*nk3][3]
+ * @param[in] index_irk       Mapping of irreducible k-points to the full set, [nk1*nk2*nk3]
+ * @param[in] n_irk           Number of irreducible k-points
+ * @param[in] ibz2bz_index    Mapping of irreducible k-points to the full set, [n_irk]
+ * @param[in] wk_irk          Weights of irreducible k-points, [n_irk]
  */
-void set_kgrids_kvec_tot(int nk1, int nk2, int nk3, double* kvecs);
-
-/*!
- * @brief Set the mapping of irreducible k-points to the whole k-points set and their weights.
- *
- * @param[in] nk_irk          Number of irreducible k-points
- * @param[in] ibz2bz_index    Mapping of irreducible k-points to the full set, [nk_irk]
- * @param[in] wk_irk          Weights of irreducible k-points, [nk_irk]
- */
-void set_ibz2bz_index_and_weight(const int nk_irk, const int* ibz2bz_index, const double* wk_irk);
+void set_bz_sampling(int nk1, int nk2, int nk3, const double *kcart, const double *kfrac,
+                     const int *index_irk, int n_irk, const int *index_irk_in_full_k, const double* wk_irk);
 
 /*!
  * @brief Insert the atom index and set the local RI triple coefficients
@@ -143,7 +140,7 @@ void set_ao_basis_aux(int I, int J, int* R, double* Cs_in);
 /*!
  * @brief Set the atom-pair block of bare Coulomb matrix in auxiliary basis
  *
- * @param[in] ik            Index of k-point of parsed Coulomb matrix
+ * @param[in] ik            Index of k-point of parsed Coulomb matrix in the full k-point list
  * @param[in] I             Index of atom for basis functions of the row indices
  * @param[in] J             Index of atom for basis functions of the column indices
  * @param[in] naux_mu       Number of auxliary basis functions centered at atom I
@@ -156,7 +153,7 @@ void set_aux_bare_coulomb_k_atom_pair(int ik, int I, int J, int naux_mu, int nau
 /*!
  * @brief Set the atom-pair block of truncated (cut) Coulomb matrix in auxiliary basis
  *
- * @param[in] ik            Index of k-point of parsed Coulomb matrix
+ * @param[in] ik            Index of k-point of parsed Coulomb matrix in the full k-point list
  * @param[in] I             Index of atom for basis functions of the row indices
  * @param[in] J             Index of atom for basis functions of the column indices
  * @param[in] naux_mu       Number of auxliary basis functions centered at atom I
