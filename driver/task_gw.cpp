@@ -28,6 +28,10 @@ void task_g0w0()
     using LIBRPA::envs::ofs_myid;
     using LIBRPA::utils::lib_printf;
 
+    Profiler::start("read_vq_cut", "Load truncated Coulomb");
+    read_Vq_full("./", "coulomb_cut_", true, Params::binary_input);
+    Profiler::stop("read_vq_cut");
+
     Profiler::start("g0w0", "G0W0 quasi-particle calculation");
 
     Vector3_Order<int> period {kv_nmp[0], kv_nmp[1], kv_nmp[2]};
@@ -74,10 +78,6 @@ void task_g0w0()
             }
         }
     }
-
-    Profiler::start("read_vq_cut", "Load truncated Coulomb");
-    read_Vq_full("./", "coulomb_cut_", true, Params::binary_input);
-    Profiler::stop("read_vq_cut");
 
     Profiler::start("read_vxc", "Load DFT xc potential");
     std::vector<matrix> vxc;
