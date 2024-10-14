@@ -1687,7 +1687,7 @@ compute_Wc_freq_q_blacs(const Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps
 #ifdef LIBRPA_USE_LIBRI
     for (const auto &q: qpts)
     {
-        cout << q << "\n";
+        // cout << q << "\n";
         coul_block.zero_out();
         coulwc_block.zero_out();
         // lib_printf("coul_block\n%s", str(coul_block).c_str());

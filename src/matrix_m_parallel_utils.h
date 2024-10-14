@@ -179,15 +179,18 @@ void collect_block_from_IJ_storage_tensor_transform(
         {
             int j_gl = ad.indx_l2g_c(jlo);
             atbasis_col.get_local_index(j_gl, J_loc, j_ab);
-            for (const auto &acell_mat: TMAP.at(I_loc))
+            if (TMAP.count(I_loc) > 0)
             {
-                const auto &acell = acell_mat.first;
-                const auto &mat = acell_mat.second;
-                if (acell.first != J_loc)
+                for (const auto &acell_mat: TMAP.at(I_loc))
                 {
-                    continue;
+                    const auto &acell = acell_mat.first;
+                    const auto &mat = acell_mat.second;
+                    if (acell.first != J_loc)
+                    {
+                        continue;
+                    }
+                    tmp_loc_row[jlo] += mat(i_ab, j_ab) * transform(I_loc, acell);
                 }
-                tmp_loc_row[jlo] += mat(i_ab, j_ab) * transform(I_loc, acell);
             }
         }
         Tdst *row_ptr=tmp_loc.ptr() + ilo* ad.n_loc();
