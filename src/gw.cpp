@@ -371,12 +371,22 @@ void G0W0::build_sigc_matrix_KS(const std::vector<std::vector<ComplexMatrix>> &w
 
 void G0W0::build_sigc_matrix_KS_kgrid()
 {
+    LIBRPA::envs::mpi_comm_global_h.barrier();
+    if (LIBRPA::envs::mpi_comm_global_h.myid == 0)
+    {
+        LIBRPA::utils::lib_printf("build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid\n");
+    }
     this->build_sigc_matrix_KS(this->mf.get_eigenvectors(), this->kfrac_list);
 }
 
 void G0W0::build_sigc_matrix_KS_band(const std::vector<std::vector<ComplexMatrix>> &wfc,
                                      const std::vector<Vector3_Order<double>> &kfrac_band)
 {
+    LIBRPA::envs::mpi_comm_global_h.barrier();
+    if (LIBRPA::envs::mpi_comm_global_h.myid == 0)
+    {
+        LIBRPA::utils::lib_printf("build_sigc_matrix_KS_kgrid: constructing self-energy matrix for band k-path\n");
+    }
     this->build_sigc_matrix_KS(wfc, kfrac_band);
 }
 
