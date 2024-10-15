@@ -440,6 +440,20 @@ void map_block_to_IJ_storage_new(map<int, map<int, matrix_m<T>>> &IJmap,
     // IJmap.merge(IJmap_local);
 }
 
+/*!
+ * @brief Compute power of Hermitian matrix using BLACS
+ *
+ * @param  [in,out]  A_local       Process-local part of global matrix A to be powered
+ * @param  [in]      ad_A          Array descriptor of A
+ * @param  [out]     A_local       Process-local part of the eigenvector matrix (Z) of A
+ * @param  [in]      ad_Z          Array descriptor of Z
+ * @param  [out]     n_filtered    Array descriptor of Z
+ * @param  [out]     W             Eigenvalues of A, including those smaller than threshold
+ * @param  [in]      power         Power to perform
+ * @param  [in]      threshold     The threshold to filter the eigenvalues
+ *
+ * @retval           scale_Z       Eigenvectors scaled by the power of eigenvalues, using ad_Z
+ */
 template <typename T>
 matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
                                             const LIBRPA::Array_Desc &ad_A,
@@ -508,6 +522,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
     // Optimized A no longer used
     Profiler::start("power_hemat_blacs_3");
     A_local_opt.clear();
+    // send back the eigenvector matrix
     ScalapackConnector::pgemr2d_f(n, n, Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc,
                                   Z_local.ptr(), 1, 1, ad_Z.desc, ad_Z.ictxt());
     Profiler::stop("power_hemat_blacs_3");
@@ -548,13 +563,18 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
 
     Profiler::start("power_hemat_blacs_5");
     // create scaled eigenvectors
-    auto scaled = Z_local_opt.copy();
+    auto scaled_opt = Z_local_opt.copy();
     for (int i = 0; i != n; i++)
     {
-        ScalapackConnector::pscal_f(n, W_temp[i], scaled.ptr(), 1, 1+i, ad_Z_opt.desc, 1);
+        ScalapackConnector::pscal_f(n, W_temp[i], scaled_opt.ptr(), 1, 1+i, ad_Z_opt.desc, 1);
     }
-    ScalapackConnector::pgemm_f('N', 'C', n, n, n, 1.0, Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc, scaled.ptr(), 1, 1, ad_Z_opt.desc, 0.0, A_local.ptr(), 1, 1, ad_A.desc);
+    ScalapackConnector::pgemm_f('N', 'C', n, n, n, 1.0, Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc, scaled_opt.ptr(), 1, 1, ad_Z_opt.desc, 0.0, A_local.ptr(), 1, 1, ad_A.desc);
+    auto scaled = Z_local.copy();
+    // send back the scaled eigenvector matrix with descriptor using optimized block size to that with input descriptor
+    ScalapackConnector::pgemr2d_f(n, n, scaled_opt.ptr(), 1, 1, ad_Z_opt.desc,
+                                  scaled.ptr(), 1, 1, ad_Z.desc, ad_Z.ictxt());
     Profiler::stop("power_hemat_blacs_5");
+
     return scaled;
 }
 

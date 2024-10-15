@@ -67,7 +67,7 @@ void task_g0w0()
                     for (const auto &J_chi0: I_Jchi0.second)
                     {
                         const auto &J = J_chi0.first;
-                        sprintf(fn, "chi0fq_ifreq_%d_iq_%d_I_%zu_J_%zu_id_%d.mtx", ifreq, iq, I, J, mpi_comm_global_h.myid);
+                        sprintf(fn, "chi0fq_ifreq_%d_iq_%d_I_%d_J_%d_id_%d.mtx", ifreq, iq, I, J, mpi_comm_global_h.myid);
                         print_complex_matrix_mm(J_chi0.second, Params::output_dir + "/" + fn, 1e-15);
                     }
                 }
@@ -181,7 +181,7 @@ void task_g0w0()
                     for (const auto &q_Wc: J_qWc.second)
                     {
                         const int iq = std::distance(klist.begin(), std::find(klist.begin(), klist.end(), q_Wc.first));
-                        sprintf(fn, "Wcfq_ifreq_%d_iq_%d_I_%zu_J_%zu_id_%d.mtx", ifreq, iq, I, J, mpi_comm_global_h.myid);
+                        sprintf(fn, "Wcfq_ifreq_%d_iq_%d_I_%d_J_%d_id_%d.mtx", ifreq, iq, I, J, mpi_comm_global_h.myid);
                         print_matrix_mm_file(q_Wc.second, Params::output_dir + "/" + fn, 1e-15);
                     }
                 }
