@@ -9,6 +9,7 @@ jobs:
       - uses: actions/setup-python@v4
       - name: Install documentation dependencies
         run: |
+          python3 -m pip config set global.break-system-packages true
           pip3 install -r docs/requirements.txt
           pip3 install doxysphinx
           sudo apt-get install doxygen -y
