@@ -92,7 +92,7 @@ jobs:
         run: |
           source /opt/intel/oneapi/setvars.sh
           export BUILDDIR="build_fortran_bind"
-          CXX=mpiicpx cmake -DUSE_LIBRI=OFF -DUSE_GREENX_API=OFF -DENABLE_FORTRAN_BIND=ON -B $BUILDDIR -DENABLE_TEST=OFF
+          CXX=mpiicpx FC=ifx cmake -DUSE_LIBRI=OFF -DUSE_GREENX_API=OFF -DENABLE_FORTRAN_BIND=ON -B $BUILDDIR -DENABLE_TEST=OFF
           cmake --build $BUILDDIR -j 2
       - name: Save last test log for check
         if: always()
