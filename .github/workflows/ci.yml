@@ -7,7 +7,8 @@ on:
 # https://github.com/oneapi-src/oneapi-ci/blob/master/.github/workflows/build_all.yml
 
 env:
-  LINUX_CPP_COMPONENTS: intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic_intel-oneapi-compiler-fortran_intel-oneapi-mkl_intel-oneapi-mkl-devel_intel-oneapi-mpi_intel-oneapi-mpi-devel
+  # LINUX_CPP_COMPONENTS: intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic_intel-oneapi-compiler-fortran_intel-oneapi-mkl_intel-oneapi-mkl-devel_intel-oneapi-mpi_intel-oneapi-mpi-devel
+  LINUX_CPP_COMPONENTS: intel-oneapi-compiler-dpcpp-cpp_intel-oneapi-compiler-fortran_intel-oneapi-mkl_intel-oneapi-mkl-devel_intel-oneapi-mpi_intel-oneapi-mpi-devel
 
 jobs:
   ONEAPI:
@@ -62,35 +63,35 @@ jobs:
         run: |
           source /opt/intel/oneapi/setvars.sh
           export BUILDDIR="build"
-          CXX=mpiicpc cmake -DUSE_LIBRI=OFF -B $BUILDDIR -DENABLE_TEST=ON
+          CXX=mpiicpx cmake -DUSE_LIBRI=OFF -B $BUILDDIR -DENABLE_TEST=ON
           cmake --build $BUILDDIR -j 2
           cmake --build $BUILDDIR --target test
       - name: Build/test LibRPA without LibRI and with GreenX TimeFrequency component
         run: |
           source /opt/intel/oneapi/setvars.sh
           export BUILDDIR="build_greenx"
-          CXX=mpiicpc cmake -DUSE_LIBRI=OFF -DUSE_GREENX_API=ON -B $BUILDDIR -DENABLE_TEST=ON
+          CXX=mpiicpx FC=ifx cmake -DUSE_LIBRI=OFF -DUSE_GREENX_API=ON -B $BUILDDIR -DENABLE_TEST=ON
           cmake --build $BUILDDIR -j 2
           cmake --build $BUILDDIR --target test
       - name: Build/test LibRPA with LibRI and without GreenX TimeFrequency component
         run: |
           source /opt/intel/oneapi/setvars.sh
           export BUILDDIR="build_libri"
-          CXX=mpiicpc cmake -DUSE_LIBRI=ON -B $BUILDDIR -DENABLE_TEST=ON
+          CXX=mpiicpx cmake -DUSE_LIBRI=ON -B $BUILDDIR -DENABLE_TEST=ON
           cmake --build $BUILDDIR -j 2
           cmake --build $BUILDDIR --target test
       - name: Build/test LibRPA with LibRI and with GreenX TimeFrequency component
         run: |
           source /opt/intel/oneapi/setvars.sh
           export BUILDDIR="build_libri_greenx"
-          CXX=mpiicpc cmake -DUSE_LIBRI=ON -DUSE_GREENX_API=ON -B $BUILDDIR -DENABLE_TEST=ON
+          CXX=mpiicpx FC=ifx cmake -DUSE_LIBRI=ON -DUSE_GREENX_API=ON -B $BUILDDIR -DENABLE_TEST=ON
           cmake --build $BUILDDIR -j 2
           cmake --build $BUILDDIR --target test
       - name: Build Fortran binding
         run: |
           source /opt/intel/oneapi/setvars.sh
           export BUILDDIR="build_fortran_bind"
-          CXX=mpiicpc cmake -DUSE_LIBRI=OFF -DUSE_GREENX_API=OFF -DENABLE_FORTRAN_BIND=ON -B $BUILDDIR -DENABLE_TEST=OFF
+          CXX=mpiicpx cmake -DUSE_LIBRI=OFF -DUSE_GREENX_API=OFF -DENABLE_FORTRAN_BIND=ON -B $BUILDDIR -DENABLE_TEST=OFF
           cmake --build $BUILDDIR -j 2
       - name: Save last test log for check
         if: always()
