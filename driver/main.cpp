@@ -190,7 +190,22 @@ int main(int argc, char **argv)
     mpi_comm_global_h.barrier();
 
     Profiler::start("driver_read_eigenvector");
-    read_eigenvector("./", meanfield);
+    int ret_eigenvec = read_eigenvector("./", meanfield);
+    if (ret_eigenvec != 0)
+    {
+        if (ret_eigenvec > 0)
+        {
+            lib_printf("Error in reading eigenvector files, return code: %d\n", ret_eigenvec);
+        }
+        else
+        {
+            lib_printf(
+                "Error!!! No eigenvector files is found at current working directory, check if you "
+                "have input files KS_eigenvector\n");
+        }
+        finalize(false);
+        return EXIT_FAILURE;
+    }
     Profiler::stop("driver_read_eigenvector");
     get_natom_ncell_from_first_Cs_file(natom, ncell, "./", Params::binary_input);
     tot_atpair = generate_atom_pair_from_nat(natom, false);

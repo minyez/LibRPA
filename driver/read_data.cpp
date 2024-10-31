@@ -139,13 +139,16 @@ int read_vxc(const string &file_path, std::vector<matrix> &vxc)
     return 0;
 }
 
-static void handle_KS_file(const string &file_path, MeanField &mf)
+static int handle_KS_file(const string &file_path, MeanField &mf)
 {
+    int ret = 0;
     // cout<<file_path<<endl;
     ifstream infile;
     // cout << "Reading eigenvector from file " << file_path << endl;
     infile.open(file_path);
-    // int ik;
+    if (!infile.good())
+        return 1;
+
     string rvalue, ivalue, kstr;
 
     const auto nspin = mf.get_n_spins();
@@ -172,6 +175,11 @@ static void handle_KS_file(const string &file_path, MeanField &mf)
                 {
                     // cout<<iw<<ib<<is<<ik;
                     infile >> rvalue >> ivalue;
+                    if (infile.bad())
+                    {
+                        ret = 1;
+                        break;
+                    }
                     // cout<<rvalue<<ivalue<<endl;
                     re[is * n + ib * nao + iw] = stod(rvalue);
                     im[is * n + ib * nao + iw] = stod(ivalue);
@@ -193,12 +201,14 @@ static void handle_KS_file(const string &file_path, MeanField &mf)
         //             wfc_k.at(stoi(ik) - 1)(ib, iw) = complex<double>(stod(rvalue), stod(ivalue));
         //         }
     }
+    return ret;
 }
 
-void read_eigenvector(const string &dir_path, MeanField &mf)
+int read_eigenvector(const string &dir_path, MeanField &mf)
 {
-    // cout<<"Begin to read aims eigenvecor"<<endl;
-    //assert(mf.get_n_spins() == 1);
+    // return code
+    int ret = 0;
+    int files_read = 0;
 
     struct dirent *ptr;
     DIR *dir;
@@ -209,15 +219,27 @@ void read_eigenvector(const string &dir_path, MeanField &mf)
         string fm(ptr->d_name);
         if (fm.find("KS_eigenvector") == 0)
         {
-            handle_KS_file(fm, mf);
+            ret = handle_KS_file(fm, mf);
+            if (ret != 0)
+            {
+                break;
+            }
+            files_read++;
         }
     }
     closedir(dir);
     dir = NULL;
+
+    if (files_read == 0)
+    {
+        ret = -1;
+    }
+
     //auto tmp_wfc=mf.get_eigenvectors();
     // for(int is=0;is!=mf.get_n_spins();is++)
     //     print_complex_matrix("wfc ",tmp_wfc.at(is).at(0));
     // cout << "Finish read KS_eignvector! " << endl;
+    return ret;
 }
 
 

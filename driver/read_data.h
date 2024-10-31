@@ -27,7 +27,7 @@ void read_scf_occ_eigenvalues(const string &file_path, MeanField &mf);
  */
 int read_vxc(const string &file_path, std::vector<matrix> &vxc);
 
-void read_eigenvector(const string &dir_path, MeanField &mf);
+int read_eigenvector(const string &dir_path, MeanField &mf);
 
 size_t read_Cs(const string &dir_path, double threshold, const vector<atpair_t> &local_atpair,
                bool binary = false);
