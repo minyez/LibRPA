@@ -213,6 +213,10 @@ void G0W0::build_spacetime(
                     const auto &n_J = atomic_basis_wfc.get_atom_nb(J);
                     const auto &Ra = JR_sigc_posi.first.second;
                     const auto &sigc_posi_block = JR_sigc_posi.second;
+                    if (sigc_nega_tau.count(I) == 0 || sigc_nega_tau.at(I).count(JR_sigc_posi.first) == 0)
+                    {
+                        continue;
+                    }
                     const auto &sigc_nega_block = sigc_nega_tau.at(I).at(JR_sigc_posi.first);
                     auto iR = std::distance(Rlist.cbegin(), std::find(Rlist.cbegin(), Rlist.cend(), Vector3_Order<int>{Ra[0], Ra[1], Ra[2]}));
 
