@@ -344,9 +344,43 @@ void Exx::build_KS(const std::vector<std::vector<ComplexMatrix>> &wfc_target,
             Profiler::start("build_real_space_exx_6", "Hexx IJ -> 2D block");
             const auto& kfrac = kfrac_target[ik];
             const std::function<complex<double>(const int &, const std::pair<int, std::array<int, 3>> &)>
-                fourier = [kfrac, n_kpts](const int &I, const std::pair<int, std::array<int, 3>> &J_Ra)
+                fourier = [kfrac, n_kpts, this](const int &I, const std::pair<int, std::array<int, 3>> &J_Ra)
                 {
-                    const auto ang = (kfrac * Vector3_Order<double>(J_Ra.second[0], J_Ra.second[1], J_Ra.second[2])) * TWO_PI;
+                    auto distsq = std::numeric_limits<double>::max();
+                    const auto &J = J_Ra.first;
+                    Vector3<double> R_IJ, R_IJ_min;
+                    for (int i = -1; i < 2; i++)
+                    {
+                        R_IJ.x = i * this->period_.x + J_Ra.second[0];
+                        for (int j = -1; j < 2; j++)
+                        {
+                            R_IJ.y = j * this->period_.y + J_Ra.second[1];
+                            for (int k = -1; k < 2; k++)
+                            {
+                                R_IJ.z = k * this->period_.z + J_Ra.second[2];
+                                const auto diff =
+                                    (Vector3<double>(coord_frac[I][0], coord_frac[I][1],
+                                                     coord_frac[I][2]) -
+                                     Vector3<double>(coord_frac[J][0], coord_frac[J][1],
+                                                     coord_frac[J][2]) -
+                                     R_IJ) *
+                                    latvec;
+                                const auto norm2 = diff.norm2();
+                                if (norm2 < distsq)
+                                {
+                                    distsq = norm2;
+                                    R_IJ_min = R_IJ;
+                                }
+                            }
+                        }
+                    }
+                    // cout << I << " " << J << " " << J_Ra.second << " ; " << R_IJ_min << "\n";
+                    // std::flush(cout);
+                    // original
+                    // R_IJ_min.x = J_Ra.second[0];
+                    // R_IJ_min.y = J_Ra.second[1];
+                    // R_IJ_min.z = J_Ra.second[2];
+                    const auto ang = (kfrac * R_IJ_min) * TWO_PI;
                     return complex<double>{std::cos(ang), std::sin(ang)} / double(n_kpts);
                 };
             collect_block_from_IJ_storage_tensor_transform(Hexx_nao_nao, desc_nao_nao, 
