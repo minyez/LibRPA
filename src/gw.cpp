@@ -4,6 +4,7 @@
 #include "matrix_m_parallel_utils.h"
 #include "profiler.h"
 #include "params.h"
+#include "geometry.h"
 #include "epsilon.h"
 #include "pbc.h"
 #include "libri_utils.h"
@@ -26,8 +27,9 @@ namespace LIBRPA
 
 G0W0::G0W0(const MeanField &mf,
            const vector<Vector3_Order<double>>& kfrac_list,
-           const TFGrids &tfg_in)
-    : mf(mf), kfrac_list(kfrac_list), tfg(tfg_in)
+           const TFGrids &tfg_in,
+           const Vector3_Order<int> &period)
+    : mf(mf), kfrac_list(kfrac_list), tfg(tfg_in), period_(period)
 {
     is_rspace_built_ = false;
 }
@@ -49,7 +51,7 @@ void G0W0::build_spacetime(
     const map<double,
               atom_mapping<std::map<Vector3_Order<double>, matrix_m<complex<double>>>>::pair_t_old>
         &Wc_freq_q,
-    const vector<Vector3_Order<int>> &Rlist, const Vector3_Order<int> &R_period)
+    const vector<Vector3_Order<int>> &Rlist)
 {
     using LIBRPA::envs::mpi_comm_global_h;
 
@@ -90,7 +92,7 @@ void G0W0::build_spacetime(
     map<int,std::array<double,3>> atoms_pos;
     for (int i = 0; i != natom; i++)
         atoms_pos.insert(pair<int, std::array<double, 3>>{i, {0, 0, 0}});
-    std::array<int,3> period_array{R_period.x,R_period.y,R_period.z};
+    std::array<int,3> period_array{this->period_.x,this->period_.y,this->period_.z};
     g0w0_libri.set_parallel(mpi_comm_global_h.comm, atoms_pos, lat_array, period_array);
 
     Profiler::start("g0w0_build_spacetime_2", "Setup LibRI C data");
@@ -136,7 +138,7 @@ void G0W0::build_spacetime(
                             // cout << Wc_libri[I][{J, {R.x, R.y, R.z}}] << endl;
                             // handle the <JI(R)> block
                             if (I == J) continue;
-                            auto minusR = (-R) % R_period;
+                            auto minusR = (-R) % this->period_;
                             if (J_RWc.second.count(minusR) == 0) continue;
                             const auto Wc_IJmR = J_RWc.second.at(minusR).get_real().get_transpose();
                             // cout << R_Wc.second << endl;
@@ -337,9 +339,43 @@ void G0W0::build_sigc_matrix_KS(const std::vector<std::vector<ComplexMatrix>> &w
                 const auto n_kpoints = this->mf.get_n_kpoints();
 
                 const std::function<complex<double>(const int &, const std::pair<int, std::array<int, 3>> &)>
-                    fourier = [kfrac, n_kpoints](const int &I, const std::pair<int, std::array<int, 3>> &J_Ra)
+                    fourier = [kfrac, n_kpoints, this](const int &I, const std::pair<int, std::array<int, 3>> &J_Ra)
                     {
-                        const auto ang = (kfrac * Vector3_Order<double>(J_Ra.second[0], J_Ra.second[1], J_Ra.second[2])) * TWO_PI;
+                        auto distsq = std::numeric_limits<double>::max();
+                        const auto &J = J_Ra.first;
+                        Vector3<double> R_IJ, R_IJ_min;
+                        for (int i = -1; i < 2; i++)
+                        {
+                            R_IJ.x = i * this->period_.x + J_Ra.second[0];
+                            for (int j = -1; j < 2; j++)
+                            {
+                                R_IJ.y = j * this->period_.y + J_Ra.second[1];
+                                for (int k = -1; k < 2; k++)
+                                {
+                                    R_IJ.z = k * this->period_.z + J_Ra.second[2];
+                                    const auto diff =
+                                        (Vector3<double>(coord_frac[I][0], coord_frac[I][1],
+                                                         coord_frac[I][2]) -
+                                         Vector3<double>(coord_frac[J][0], coord_frac[J][1],
+                                                         coord_frac[J][2]) -
+                                         R_IJ) *
+                                        latvec;
+                                    const auto norm2 = diff.norm2();
+                                    if (norm2 < distsq)
+                                    {
+                                        distsq = norm2;
+                                        R_IJ_min = R_IJ;
+                                    }
+                                }
+                            }
+                        }
+                        // cout << I << " " << J << " " << J_Ra.second << " ; " << R_IJ_min << "\n";
+                        // std::flush(cout);
+                        // original
+                        // R_IJ_min.x = J_Ra.second[0];
+                        // R_IJ_min.y = J_Ra.second[1];
+                        // R_IJ_min.z = J_Ra.second[2];
+                        const auto ang = (kfrac * R_IJ_min) * TWO_PI;
                         return complex<double>{std::cos(ang), std::sin(ang)} / double(n_kpoints);
                     };
 

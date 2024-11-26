@@ -189,9 +189,9 @@ void task_g0w0()
         }
     }
 
-    LIBRPA::G0W0 s_g0w0(meanfield, kfrac_list, chi0.tfg);
+    LIBRPA::G0W0 s_g0w0(meanfield, kfrac_list, chi0.tfg, period);
     Profiler::start("g0w0_sigc_IJ", "Build real-space correlation self-energy");
-    s_g0w0.build_spacetime(Cs_data, Wc_freq_q, Rlist, period);
+    s_g0w0.build_spacetime(Cs_data, Wc_freq_q, Rlist);
     Profiler::stop("g0w0_sigc_IJ");
 
     // if (Params::debug)

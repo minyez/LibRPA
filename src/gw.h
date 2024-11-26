@@ -22,6 +22,7 @@ public:
     const MeanField &mf;
     const vector<Vector3_Order<double>>& kfrac_list;
     const TFGrids &tfg;
+    const Vector3_Order<int>& period_;
 
     //! frequency-domain reciprocal-space correlation self-energy, indices [ispin][freq][k][I][J](n_I, n_J)
     // std::map<int, std::map<double, std::map<Vector3_Order<double>, atom_mapping<Matz>::pair_t_old>>> sigc_is_f_k_IJ;
@@ -38,7 +39,8 @@ public:
     // Constructors
     G0W0(const MeanField &mf,
          const vector<Vector3_Order<double>>& kfrac_list,
-         const TFGrids &tfg_in);
+         const TFGrids &tfg_in,
+         const Vector3_Order<int>& period);
     // delete copy/move constructors
     G0W0(const G0W0 &s_g0w0) = delete;
     G0W0(G0W0 &&s_g0w0) = delete;
@@ -58,8 +60,7 @@ public:
         const Cs_LRI &LRI_Cs,
         const map<double, atom_mapping<std::map<Vector3_Order<double>,
                                                 matrix_m<complex<double>>>>::pair_t_old> &Wc_freq_q,
-        const vector<Vector3_Order<int>> &Rlist,
-        const Vector3_Order<int> &R_period);
+        const vector<Vector3_Order<int>> &Rlist);
 
     //! build the correlation self-energy matrix in Kohn-Sham basis at the SCF k-points
     void build_sigc_matrix_KS_kgrid();
