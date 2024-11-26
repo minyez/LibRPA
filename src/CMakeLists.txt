@@ -39,6 +39,7 @@ list(APPEND lib_sources
         epsilon.cpp
         exx.cpp
         fitting.cpp
+        geometry.cpp
         gw.cpp
         librpa.cpp
         librpa_main.cpp

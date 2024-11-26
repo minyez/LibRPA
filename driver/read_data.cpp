@@ -12,9 +12,11 @@
 
 #include "atoms.h"
 #include "atomic_basis.h"
+#include "constants.h"
 #include "matrix.h"
 #include "ri.h"
 #include "pbc.h"
+#include "geometry.h"
 #include "envs_mpi.h"
 #include "envs_io.h"
 #include "utils_io.h"
@@ -1147,7 +1149,7 @@ void read_stru(const int& n_kpoints, const std::string &file_path)
 {
     // cout << "Begin to read aims stru" << endl;
     ifstream infile;
-    string x, y, z;
+    string x, y, z, tmp;
     infile.open(file_path);
 
     std::vector<double> lat_mat(9);
@@ -1170,6 +1172,25 @@ void read_stru(const int& n_kpoints, const std::string &file_path)
     }
 
     set_latvec_and_G(lat_mat.data(), G_mat.data());
+
+    // Read coordinates of atoms
+    // Read number of atoms
+    // FIXME: move to LibRPA API
+    int n_atom;
+    coord.clear();
+    coord_frac.clear();
+    infile >> n_atom;
+    for (int i = 0; i < n_atom; i++)
+    {
+        infile >> x >> y >> z >> tmp;
+        coord[i] = {stod(x), stod(y), stod(z)};
+        // convert to fractional using the reciprocal lattice vectors
+        coord_frac[i] = {
+            (coord[i][0] * G_mat[0] + coord[i][1] * G_mat[1] + coord[i][2] * G_mat[2]) / TWO_PI,
+            (coord[i][0] * G_mat[3] + coord[i][1] * G_mat[4] + coord[i][2] * G_mat[5]) / TWO_PI,
+            (coord[i][0] * G_mat[6] + coord[i][1] * G_mat[7] + coord[i][2] * G_mat[8]) / TWO_PI,
+        };
+    }
 
     // G.print();
     // Matrix3 latG = latvec * G.Transpose();

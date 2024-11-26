@@ -5,6 +5,7 @@
 #include "envs_blacs.h"
 #include "timefreq.h"
 #include "librpa.h"
+#include "geometry.h"
 #include "inputfile.h"
 #include "meanfield.h"
 #include "params.h"
@@ -172,6 +173,13 @@ int main(int argc, char **argv)
         latvec.print(16);
         cout << "Reciprocal lattice vectors (2PI Bohr^-1)" << endl;
         G.print(16);
+        cout << "Atom positions read (Cartisian in Bohr | fractional):" << endl;
+        for (int i_at = 0; i_at != coord.size(); i_at++)
+        {
+            lib_printf("ia %4d: %12.7f %12.7f %12.7f | %12.7f %12.7f %12.7f\n",
+                   i_at+1, coord[i_at][0], coord[i_at][1], coord[i_at][2],
+                   coord_frac[i_at][0], coord_frac[i_at][1], coord_frac[i_at][2]);
+        }
         lib_printf("kgrids: %3d %3d %3d\n", kv_nmp[0], kv_nmp[1], kv_nmp[2]);
         cout << "k-points read (Cartisian in 2Pi Bohr^-1 | fractional):" << endl;
         for (int ik = 0; ik != meanfield.get_n_kpoints(); ik++)
