@@ -9,12 +9,14 @@
 #include "params.h"
 #include "constants.h"
 #include "pbc.h"
+#include "geometry.h"
 #include "lapack_connector.h"
 #include "vector3_order.h"
 #include "libri_utils.h"
 #include "stl_io_helper.h"
 #ifdef LIBRPA_USE_LIBRI
 #include <RI/physics/Exx.h>
+#include <RI/ri/Cell_Nearest.h>
 #else
 #include "libri_stub.h"
 #endif
@@ -23,7 +25,10 @@
 namespace LIBRPA
 {
 
-Exx::Exx(const MeanField& mf, const vector<Vector3_Order<double>> &kfrac_list): mf_(mf), kfrac_list_(kfrac_list)
+Exx::Exx(const MeanField &mf,
+         const vector<Vector3_Order<double>> &kfrac_list,
+         const Vector3_Order<int> &period)
+    : mf_(mf), kfrac_list_(kfrac_list), period_(period)
 {
     is_real_space_mat_built_ = false;
 };
@@ -101,7 +106,6 @@ void Exx::warn_dmat_IJR_nonzero_imag(const ComplexMatrix& dmat_cplx, const int& 
 
 void Exx::build(const Cs_LRI &Cs,
                 const vector<Vector3_Order<int>> &Rlist,
-                const Vector3_Order<int> &R_period,
                 const atpair_R_mat_t &coul_mat)
 {
     using LIBRPA::envs::mpi_comm_global;
@@ -132,7 +136,7 @@ void Exx::build(const Cs_LRI &Cs,
     std::array<double,3> ya{latvec.e21,latvec.e22,latvec.e23};
     std::array<double,3> za{latvec.e31,latvec.e32,latvec.e33};
     std::array<std::array<double,3>,3> lat_array{xa,ya,za};
-    std::array<int,3> period_array{R_period.x,R_period.y,R_period.z};
+    std::array<int,3> period_array{period_.x,period_.y,period_.z};
     exx_libri.set_parallel(mpi_comm_global, atoms_pos, lat_array, period_array);
 
     // Initialize Cs libRI container on each process

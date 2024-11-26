@@ -96,14 +96,14 @@ void task_g0w0_band()
     }
 
     Profiler::start("g0w0_exx", "Build exchange self-energy");
-    auto exx = LIBRPA::Exx(meanfield, kfrac_list);
+    auto exx = LIBRPA::Exx(meanfield, kfrac_list, period);
     {
         Profiler::start("ft_vq_cut", "Fourier transform truncated Coulomb");
         const auto VR = FT_Vq(Vq_cut, Rlist, true);
         Profiler::stop("ft_vq_cut");
 
         Profiler::start("g0w0_exx_real_work");
-        exx.build(Cs_data, Rlist, period, VR);
+        exx.build(Cs_data, Rlist, VR);
         Profiler::stop("g0w0_exx_real_work");
     }
     Profiler::stop("g0w0_exx");
