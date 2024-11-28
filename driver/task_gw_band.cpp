@@ -150,6 +150,124 @@ void task_g0w0_band()
     Profiler::stop("g0w0_sigc_IJ");
     std::flush(ofs_myid);
 
+    /*
+     * Compute the QP energies on k-grid
+     */
+    Profiler::start("read_vxc", "Load DFT xc potential");
+    std::vector<matrix> vxc;
+    int flag_read_vxc = read_vxc("./vxc_out", vxc);
+    Profiler::stop("read_vxc");
+
+    if (flag_read_vxc != 0)
+    {
+        if (mpi_comm_global_h.myid == 0)
+        {
+            lib_printf("Error in reading Vxc on kgrid, task failed!\n");
+        }
+        Profiler::stop("g0w0_band");
+        return;
+    }
+
+    Profiler::start("g0w0_exx_ks_kgrid");
+    exx.build_KS_kgrid();
+    Profiler::stop("g0w0_exx_ks_kgrid");
+    Profiler::start("g0w0_sigc_ks_kgrid");
+    s_g0w0.build_sigc_matrix_KS_kgrid();
+    Profiler::stop("g0w0_sigc_ks_kgrid");
+
+    // imaginary freqencies for analytic continuation
+    std::vector<cplxdb> imagfreqs;
+    for (const auto &freq: chi0.tfg.get_freq_nodes())
+    {
+        imagfreqs.push_back(cplxdb{0.0, freq});
+    }
+
+    Profiler::start("g0w0_solve_qpe_kgrid", "Solve quasi-particle equation");
+    if (mpi_comm_global_h.is_root())
+    {
+        std::cout << "Solving quasi-particle equation for states at k-points of regular grid\n";
+    }
+
+    // TODO: parallelize analytic continuation and QPE solver among tasks
+    if (mpi_comm_global_h.is_root())
+    {
+        map<int, map<int, map<int, double>>> e_qp_all;
+        map<int, map<int, map<int, cplxdb>>> sigc_all;
+        const auto efermi = meanfield.get_efermi();
+        for (int i_spin = 0; i_spin < meanfield.get_n_spins(); i_spin++)
+        {
+            for (int i_kpoint = 0; i_kpoint < meanfield.get_n_kpoints(); i_kpoint++)
+            {
+                const auto &sigc_sk = s_g0w0.sigc_is_ik_f_KS[i_spin][i_kpoint];
+                for (int i_state = 0; i_state < meanfield.get_n_bands(); i_state++)
+                {
+                    const auto &eks_state = meanfield.get_eigenvals()[i_spin](i_kpoint, i_state);
+                    const auto &exx_state = exx.Eexx[i_spin][i_kpoint][i_state];
+                    const auto &vxc_state = vxc[i_spin](i_kpoint, i_state);
+                    std::vector<cplxdb> sigc_state;
+                    for (const auto &freq: chi0.tfg.get_freq_nodes())
+                    {
+                        sigc_state.push_back(sigc_sk.at(freq)(i_state, i_state));
+                    }
+                    LIBRPA::AnalyContPade pade(Params::n_params_anacon, imagfreqs, sigc_state);
+                    double e_qp;
+                    cplxdb sigc;
+                    int flag_qpe_solver = LIBRPA::qpe_solver_pade_self_consistent(
+                        pade, eks_state, efermi, vxc_state, exx_state, e_qp, sigc);
+                    if (flag_qpe_solver == 0)
+                    {
+                        e_qp_all[i_spin][i_kpoint][i_state] = e_qp;
+                        sigc_all[i_spin][i_kpoint][i_state] = sigc;
+                    }
+                    else
+                    {
+                        printf("Warning! QPE solver failed for spin %d, kpoint %d, state %d\n",
+                                i_spin+1, i_kpoint+1, i_state+1);
+                        e_qp_all[i_spin][i_kpoint][i_state] = std::numeric_limits<double>::quiet_NaN();
+                        sigc_all[i_spin][i_kpoint][i_state] = std::numeric_limits<cplxdb>::quiet_NaN();
+                    }
+                }
+            }
+        }
+
+        // display results
+        const std::string banner(124, '-');
+        printf("Printing quasi-particle energy [unit: eV]\n\n");
+        for (int i_spin = 0; i_spin < meanfield.get_n_spins(); i_spin++)
+        {
+            for (int i_kpoint = 0; i_kpoint < meanfield.get_n_kpoints(); i_kpoint++)
+            {
+                const auto &k = kfrac_list[i_kpoint];
+                printf("spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n",
+                        i_spin+1, i_kpoint+1, k.x, k.y, k.z);
+                printf("%124s\n", banner.c_str());
+                printf("%5s %16s %16s %16s %16s %16s %16s %16s\n", "State", "occ", "e_mf", "v_xc", "v_exx", "ReSigc", "ImSigc", "e_qp");
+                printf("%124s\n", banner.c_str());
+                for (int i_state = 0; i_state < meanfield.get_n_bands(); i_state++)
+                {
+                    const auto &occ_state = meanfield.get_weight()[i_spin](i_kpoint, i_state) * meanfield.get_n_kpoints();
+                    const auto &eks_state = meanfield.get_eigenvals()[i_spin](i_kpoint, i_state) * HA2EV;
+                    const auto &exx_state = exx.Eexx[i_spin][i_kpoint][i_state] * HA2EV;
+                    const auto &vxc_state = vxc[i_spin](i_kpoint, i_state) * HA2EV;
+                    const auto &resigc = sigc_all[i_spin][i_kpoint][i_state].real() * HA2EV;
+                    const auto &imsigc = sigc_all[i_spin][i_kpoint][i_state].imag() * HA2EV;
+                    const auto &eqp = e_qp_all[i_spin][i_kpoint][i_state] * HA2EV;
+                    printf("%5d %16.5f %16.5f %16.5f %16.5f %16.5f %16.5f %16.5f\n",
+                           i_state+1, occ_state, eks_state, vxc_state, exx_state, resigc, imsigc, eqp);
+                }
+                printf("\n");
+            }
+        }
+    }
+    Profiler::stop("g0w0_solve_qpe_kgrid");
+
+    /*
+     * Compute the QP energies on band k-paths
+     */
+    // Reset k-space EXX and Sigmac matrices to avoid warning from internal reset
+    exx.reset_kspace();
+    s_g0w0.reset_kspace();
+
     /* Below we handle the band k-points data
      * First load the information of k-points along the k-path */
     Profiler::start("g0w0_band_load_band_mf", "Read eigen solutions at band kpoints");
@@ -188,12 +306,6 @@ void task_g0w0_band()
     auto vxc_band = read_vxc_band(n_states_band, n_spin_band, kfrac_band.size());
     Profiler::stop("read_vxc");
     std::flush(ofs_myid);
-
-    std::vector<cplxdb> imagfreqs;
-    for (const auto &freq: chi0.tfg.get_freq_nodes())
-    {
-        imagfreqs.push_back(cplxdb{0.0, freq});
-    }
 
     Profiler::start("g0w0_solve_qpe", "Solve quasi-particle equation");
     if (mpi_comm_global_h.is_root())
