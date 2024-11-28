@@ -1224,12 +1224,16 @@ void read_stru(const int& n_kpoints, const std::string &file_path)
 }
 
 
-std::vector<Vector3_Order<double>> read_band_kpath_info(int &n_basis, int &n_states, int &n_spin)
+std::vector<Vector3_Order<double>> read_band_kpath_info(const string &file_path, int &n_basis, int &n_states, int &n_spin)
 {
     std::vector<Vector3_Order<double>> kfrac_band;
 
     ifstream infile;
-    infile.open("band_kpath_info");
+    infile.open(file_path);
+    if (!infile.good())
+    {
+        throw std::logic_error("Failed to open " + file_path);
+    }
 
     string x, y, z;
     int n_kpoints_band;
@@ -1255,7 +1259,7 @@ std::vector<Vector3_Order<double>> read_band_kpath_info(int &n_basis, int &n_sta
     return kfrac_band;
 }
 
-MeanField read_meanfield_band(int n_basis, int n_states, int n_spin, int n_kpoints_band)
+MeanField read_meanfield_band(const string &dir_path, int n_basis, int n_states, int n_spin, int n_kpoints_band)
 {
     MeanField mf_band(n_spin, n_kpoints_band, n_states, n_basis);
     std::string s1, s2, s3, s4, s5;
@@ -1264,7 +1268,7 @@ MeanField read_meanfield_band(int n_basis, int n_states, int n_spin, int n_kpoin
     {
         // Load occupation weights and eigenvalues
         std::stringstream ss;
-        ss << "band_KS_eigenvalue_k_" << std::setfill('0') << std::setw(5) << ik + 1 << ".txt";
+        ss << dir_path << "band_KS_eigenvalue_k_" << std::setfill('0') << std::setw(5) << ik + 1 << ".txt";
         ifstream infile;
         infile.open(ss.str());
 
@@ -1283,7 +1287,7 @@ MeanField read_meanfield_band(int n_basis, int n_states, int n_spin, int n_kpoin
         // Load eigenvectors
         ss.str("");
         ss.clear();
-        ss << "band_KS_eigenvector_k_" << std::setfill('0') << std::setw(5) << ik + 1 << ".txt";
+        ss << dir_path << "band_KS_eigenvector_k_" << std::setfill('0') << std::setw(5) << ik + 1 << ".txt";
         infile.open(ss.str(), std::ios::in | std::ios::binary);
 
         for (int i_spin = 0; i_spin < n_spin; i_spin++)
@@ -1300,7 +1304,7 @@ MeanField read_meanfield_band(int n_basis, int n_states, int n_spin, int n_kpoin
     return mf_band;
 }
 
-std::vector<matrix> read_vxc_band(int n_states, int n_spin, int n_kpoints_band)
+std::vector<matrix> read_vxc_band(const string &dir_path, int n_states, int n_spin, int n_kpoints_band)
 {
     std::vector<matrix> vxc_band(n_spin);
     for (int i_spin = 0; i_spin < n_spin; i_spin++)
@@ -1313,7 +1317,7 @@ std::vector<matrix> read_vxc_band(int n_states, int n_spin, int n_kpoints_band)
     {
         // Load occupation weights and eigenvalues
         std::stringstream ss;
-        ss << "band_vxc_k_" << std::setfill('0') << std::setw(5) << ik + 1 << ".txt";
+        ss << dir_path << "band_vxc_k_" << std::setfill('0') << std::setw(5) << ik + 1 << ".txt";
         ifstream infile;
         infile.open(ss.str());
         ss.clear();

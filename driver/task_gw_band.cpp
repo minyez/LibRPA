@@ -272,8 +272,8 @@ void task_g0w0_band()
      * First load the information of k-points along the k-path */
     Profiler::start("g0w0_band_load_band_mf", "Read eigen solutions at band kpoints");
     int n_basis_band, n_states_band, n_spin_band;
-    std::vector<Vector3_Order<double>> kfrac_band =
-        read_band_kpath_info(n_basis_band, n_states_band, n_spin_band);
+    std::vector<Vector3_Order<double>> kfrac_band = read_band_kpath_info(
+        "band_kpath_info", n_basis_band, n_states_band, n_spin_band);
     if (mpi_comm_global_h.is_root())
     {
         std::cout << "Band k-points to compute:\n";
@@ -285,7 +285,7 @@ void task_g0w0_band()
     }
     mpi_comm_global_h.barrier();
 
-    auto meanfield_band = read_meanfield_band(
+    auto meanfield_band = read_meanfield_band("./",
             n_basis_band, n_states_band, n_spin_band, kfrac_band.size());
 
     /* Set the same Fermi energy as in SCF */
@@ -303,7 +303,7 @@ void task_g0w0_band()
     std::flush(ofs_myid);
 
     Profiler::start("read_vxc", "Load DFT xc potential");
-    auto vxc_band = read_vxc_band(n_states_band, n_spin_band, kfrac_band.size());
+    auto vxc_band = read_vxc_band("./", n_states_band, n_spin_band, kfrac_band.size());
     Profiler::stop("read_vxc");
     std::flush(ofs_myid);
 
