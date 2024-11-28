@@ -78,7 +78,7 @@ void InputParser::parse_int(const std::string &vname, int &var, int de, int &fla
 void InputParser::parse_string(const std::string &vname, std::string &var, const std::string &de, int &flag)
 {
     flag = 0;
-    std::string s = get_last_matched(params, vname, "([\\w\\d_\\- ,;.]+)", 1);
+    std::string s = get_last_matched(params, vname, "([\\w\\d_\\- ,:;./]+)", 1);
     if (s != "")
         var = s;
     else
