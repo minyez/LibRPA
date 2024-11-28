@@ -21,7 +21,9 @@ class Exx
         //! period of unit cells in the BvK cell
         const Vector3_Order<int>& period_;
 
-        bool is_real_space_mat_built_;
+        bool is_rspace_build_;
+        bool is_kspace_built_;
+
 
         ComplexMatrix get_dmat_cplx_R_global(const int& ispin, const Vector3_Order<int>& R);
         ComplexMatrix extract_dmat_cplx_R_IJblock(const ComplexMatrix& dmat_cplx, const atom_t& I, const atom_t& J);
@@ -62,6 +64,8 @@ class Exx
         void build_KS_kgrid();
         void build_KS_band(const std::vector<std::vector<ComplexMatrix>> &wfc_band,
                            const std::vector<Vector3_Order<double>> &kfrac_band);
+        void reset_rspace();
+        void reset_kspace();
 };
 
 } /* end of namespace LIBRPA */

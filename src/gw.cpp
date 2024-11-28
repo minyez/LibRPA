@@ -268,6 +268,7 @@ void G0W0::build_sigc_matrix_KS(const std::vector<std::vector<ComplexMatrix>> &w
     assert(this->is_rspace_built_);
     if (this->is_kspace_built_)
     {
+        utils::lib_printf("Warning: reset Sigmac_c k-space matrices\n");
         this->reset_kspace();
     }
 

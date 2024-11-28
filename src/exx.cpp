@@ -30,7 +30,8 @@ Exx::Exx(const MeanField &mf,
          const Vector3_Order<int> &period)
     : mf_(mf), kfrac_list_(kfrac_list), period_(period)
 {
-    is_real_space_mat_built_ = false;
+    is_rspace_build_ = false;
+    is_kspace_built_ = false;
 };
 
 ComplexMatrix Exx::get_dmat_cplx_R_global(const int& ispin, const Vector3_Order<int>& R)
@@ -113,7 +114,7 @@ void Exx::build(const Cs_LRI &Cs,
 
     assert (parallel_routing == ParallelRouting::LIBRI);
 
-    if (this->is_real_space_mat_built_)
+    if (this->is_rspace_build_)
     {
         return;
     }
@@ -267,7 +268,7 @@ void Exx::build(const Cs_LRI &Cs,
     mpi_comm_global_h.barrier();
 #endif
 
-    is_real_space_mat_built_= true;
+    is_rspace_build_= true;
 }
 
 
@@ -278,7 +279,13 @@ void Exx::build_KS(const std::vector<std::vector<ComplexMatrix>> &wfc_target,
     using LIBRPA::envs::blacs_ctxt_global_h;
     using RI::Communicate_Tensors_Map_Judge::comm_map2_first;
 
-    assert(this->is_real_space_mat_built_);
+    assert(this->is_rspace_build_);
+    // Reset k-space matrices built from last call
+    if (this->is_kspace_built_)
+    {
+        utils::lib_printf("Warning: reset EXX k-space matrices\n");
+        this->reset_kspace();
+    }
 
     const auto& n_aos = this->mf_.get_n_aos();
     const auto& n_spins = this->mf_.get_n_spins();
@@ -433,6 +440,19 @@ void Exx::build_KS_band(const std::vector<std::vector<ComplexMatrix>> &wfc_band,
                         const std::vector<Vector3_Order<double>> &kfrac_band)
 {
     this->build_KS(wfc_band, kfrac_band);
+}
+
+void Exx::reset_rspace()
+{
+    this->exx.clear();
+    this->is_rspace_build_ = false;
+}
+
+void Exx::reset_kspace()
+{
+    this->exx_is_ik_KS.clear();
+    this->Eexx.clear();
+    this->is_kspace_built_ = false;
 }
 
 
