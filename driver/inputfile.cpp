@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include "params.h"
+#include "driver_params.h"
 
 static const std::string SPACE_SEP = "[ \r\f\t]*";
 
@@ -130,6 +131,17 @@ void parse_inputfile_to_params(const std::string& fn)
     InputFile inputf;
     int flag;
     auto parser = inputf.load(fn, false);
+
+    // driver parameters
+    parser.parse_string("input_dir", driver_params.input_dir, "./", flag);
+    if (driver_params.input_dir.back() != '/')
+    {
+        driver_params.input_dir = driver_params.input_dir + '/';
+    }
+    if (driver_params.input_dir.find(":") != std::string::npos)
+    {
+        throw std::runtime_error("input_dir contains invalid character (:) for POSIX path");
+    }
 
     // general parameters
     parser.parse_string("task", Params::task, "rpa", flag);

@@ -13,6 +13,7 @@
 #include "profiler.h"
 #include "read_data.h"
 #include "stl_io_helper.h"
+#include "driver_params.h"
 #include "task.h"
 #include "utils_io_parallel.h"
 #include "utils_mem.h"
@@ -124,6 +125,9 @@ int main(int argc, char **argv)
     if (mpi_comm_global_h.is_root())
     {
         system(("mkdir -p " + Params::output_dir).c_str());
+        lib_printf("===== Begin driver parameters  =====\n");
+        driver_params.print();
+        lib_printf("===== End driver parameters    =====\n");
         lib_printf("===== Begin control parameters =====\n");
         Params::print();
         lib_printf("===== End control parameters   =====\n");
