@@ -1066,7 +1066,6 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
         if (fm.find(vq_fprefix) == 0)
         {
             //handle_Vq_full_file(fm, threshold, Vq_full);
-            cout << "Hi\n";
             handle_Vq_row_file(dir_path + fm,threshold, coulomb, local_atpair);
         }
     }
