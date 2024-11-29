@@ -12,6 +12,7 @@
 
 #include "read_data.h"
 #include "driver_utils.h"
+#include "driver_params.h"
 
 void task_screened_coulomb_real_freq()
 {
@@ -40,7 +41,7 @@ void task_screened_coulomb_real_freq()
     Profiler::stop("chi0_build");
 
     Profiler::start("read_vq_cut", "Load truncated Coulomb");
-    read_Vq_full("./", "coulomb_cut_", true);
+    read_Vq_full(driver_params.input_dir, "coulomb_cut_", true);
     Profiler::stop("read_vq_cut");
 
     std::vector<double> epsmac_LF_imagfreq_re;
@@ -48,7 +49,7 @@ void task_screened_coulomb_real_freq()
     {
         std::vector<double> omegas_dielect;
         std::vector<double> dielect_func;
-        read_dielec_func("dielecfunc_out", omegas_dielect, dielect_func);
+        read_dielec_func(driver_params.input_dir + "dielecfunc_out", omegas_dielect, dielect_func);
 
         epsmac_LF_imagfreq_re = interpolate_dielec_func(
                 Params::option_dielect_func, omegas_dielect, dielect_func,

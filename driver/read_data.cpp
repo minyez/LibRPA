@@ -219,9 +219,10 @@ int read_eigenvector(const string &dir_path, MeanField &mf)
     while ((ptr = readdir(dir)) != NULL)
     {
         string fm(ptr->d_name);
+        // cout << fm << " find:" << fm.find("KS_eigenvector") << "\n";
         if (fm.find("KS_eigenvector") == 0)
         {
-            ret = handle_KS_file(fm, mf);
+            ret = handle_KS_file(dir_path + fm, mf);
             if (ret != 0)
             {
                 break;
@@ -382,13 +383,14 @@ size_t read_Cs(const string &dir_path, double threshold,const vector<atpair_t> &
         string fm(ptr->d_name);
         if (fm.find("Cs_data") == 0)
         {
+            const auto fn = dir_path + fm;
             if (binary)
             {
-                cs_discard += handle_Cs_file_binary(fm, threshold, local_atpair);
+                cs_discard += handle_Cs_file_binary(fn, threshold, local_atpair);
             }
             else
             {
-                cs_discard += handle_Cs_file(fm, threshold, local_atpair);
+                cs_discard += handle_Cs_file(fn, threshold, local_atpair);
             }
         }
     }
@@ -626,11 +628,12 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
         string fn(ptr->d_name);
         if (fn.find("Cs_data") == 0)
         {
-            files.push_back(fn);
+            files.push_back(dir_path + fn);
         }
     }
 
     const auto nfiles = files.size();
+    // cout << nfiles << "\n";
 
     // TODO: the IO can be improved, in two possible ways
     // 1. Each MPI task reads only a subset of files, instead of all files.
@@ -670,6 +673,8 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
     if (myid == 0) LIBRPA::utils::lib_printf("Finished Cs filtering\n");
 
     Profiler::start("handle_Cs_file");
+    // cout << files_Cs_ids_this_proc.size() << "\n";
+    // LIBRPA::envs::ofs_myid << files_Cs_ids_this_proc << "\n";
     for (const auto& fn_ids: files_Cs_ids_this_proc)
     {
         LIBRPA::envs::ofs_myid << fn_ids.first << " " << fn_ids.second << endl;
@@ -694,6 +699,7 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
         atom_mu_part_range[I]=atom_mu.at(I-1)+atom_mu_part_range[I-1];
     
     N_all_mu=atom_mu_part_range[natom-1]+atom_mu[natom-1];
+    cout << "Done\n";
     return cs_discard;
 }
 
@@ -713,7 +719,7 @@ void get_natom_ncell_from_first_Cs_file(int &n_atom, int &n_cell, const string &
         string fn(ptr->d_name);
         if (fn.find("Cs_data") == 0)
         {
-            file_path = fn;
+            file_path = dir_path + fn;
             break;
         }
     }
@@ -744,6 +750,12 @@ void read_dielec_func(const string &file_path, std::vector<double> &omegas, std:
     std::ifstream ifs;
     double omega, re, im;
     ifs.open(file_path);
+
+    if (!ifs.good())
+    {
+        throw std::logic_error("Failed to open " + file_path);
+    }
+
     while(ifs >> omega >> re >> im)
     {
         omegas.push_back(omega);
@@ -829,7 +841,7 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
         string fm(ptr->d_name);
         if (fm.find(vq_fprefix) == 0)
         {
-            int retcode = handle_Vq_full_file(fm, Vq_full);
+            int retcode = handle_Vq_full_file(dir_path + fm, Vq_full);
             if (retcode != 0)
             {
                 LIBRPA::utils::lib_printf("Error encountered when reading %s, return code %d", fm.c_str(), retcode);
@@ -1054,7 +1066,8 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
         if (fm.find(vq_fprefix) == 0)
         {
             //handle_Vq_full_file(fm, threshold, Vq_full);
-            handle_Vq_row_file(fm,threshold, coulomb, local_atpair);
+            cout << "Hi\n";
+            handle_Vq_row_file(dir_path + fm,threshold, coulomb, local_atpair);
         }
     }
     Profiler::stop("handle_Vq_row_file");

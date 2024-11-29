@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <map>
+#include <unordered_map>
 #include <ostream>
 #include <set>
 #include <vector>
@@ -25,6 +26,10 @@ std::ostream& operator<<(std::ostream& os, const std::array<T, N> &arr_objs);
 //! Print a map
 template <typename Tkey, typename Tval>
 std::ostream& operator<<(std::ostream& os, const std::map<Tkey, Tval> &map_objs);
+
+//! Print a map
+template <typename Tkey, typename Tval>
+std::ostream& operator<<(std::ostream& os, const std::unordered_map<Tkey, Tval> &map_objs);
 
 //! Print a the keys of a nested map
 template <typename Tkey1, typename Tkey2, typename Tval>

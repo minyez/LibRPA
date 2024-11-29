@@ -70,6 +70,19 @@ std::ostream& operator<<(std::ostream& os, const std::map<Tkey, Tval> &map_objs)
     return os;
 }
 
+//! Print a map
+template <typename Tkey, typename Tval>
+std::ostream& operator<<(std::ostream& os, const std::unordered_map<Tkey, Tval> &map_objs)
+{
+    os << "{";
+    for (const auto& kv: map_objs)
+    {
+        os << "\"" << kv.first << "\":\"" << kv.second << "\"\n";
+    }
+    os << "}";
+    return os;
+}
+
 //! Print a the keys of a nested map
 template <typename Tkey1, typename Tkey2, typename Tval>
 void print_keys(std::ostream& os, const std::map<Tkey1, std::map<Tkey2, Tval>> &nested_map)

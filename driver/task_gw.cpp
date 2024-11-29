@@ -20,6 +20,7 @@
 
 #include "read_data.h"
 #include "write_aims.h"
+#include "driver_params.h"
 #include "driver_utils.h"
 
 void task_g0w0()
@@ -76,12 +77,12 @@ void task_g0w0()
     }
 
     Profiler::start("read_vq_cut", "Load truncated Coulomb");
-    read_Vq_full("./", "coulomb_cut_", true);
+    read_Vq_full(driver_params.input_dir, "coulomb_cut_", true);
     Profiler::stop("read_vq_cut");
 
     Profiler::start("read_vxc", "Load DFT xc potential");
     std::vector<matrix> vxc;
-    int flag_read_vxc = read_vxc("./vxc_out", vxc);
+    int flag_read_vxc = read_vxc(driver_params.input_dir + "vxc_out", vxc);
     if (mpi_comm_global_h.myid == 0)
     {
         if (flag_read_vxc == 0)
@@ -102,7 +103,7 @@ void task_g0w0()
     {
         std::vector<double> omegas_dielect;
         std::vector<double> dielect_func;
-        read_dielec_func("dielecfunc_out", omegas_dielect, dielect_func);
+        read_dielec_func(driver_params.input_dir + "dielecfunc_out", omegas_dielect, dielect_func);
 
         epsmac_LF_imagfreq_re = interpolate_dielec_func(
                 Params::option_dielect_func, omegas_dielect, dielect_func,
