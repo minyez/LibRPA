@@ -233,6 +233,7 @@ int main(int argc, char **argv)
         cout << "| Total atom pairs (ordered)  : " << tot_atpair_ordered.size() << endl;
         cout << "| Number of (R,t) points      : " << Rt_num << endl;
     }
+    std::flush(cout);
 
     set_parallel_routing(Params::parallel_routing, tot_atpair.size(), Rt_num, parallel_routing);
 

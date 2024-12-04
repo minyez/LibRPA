@@ -216,9 +216,10 @@ void Chi0::build_chi0_q_space_time(const Cs_LRI &Cs,
     if(parallel_routing == ParallelRouting::LIBRI)
     {
         if (mpi_comm_global_h.is_root())
+        {
             cout<<"Use LibRI for chi0"<<endl;
+        }
         build_chi0_q_space_time_LibRI_routing(Cs, R_period, atpairs_ABF, qlist);
-
     }
     else if (parallel_routing == ParallelRouting::R_TAU)
     {
@@ -421,7 +422,20 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     Profiler::start("LibRI_routing", "Loop over LibRI");
     map<int,std::array<double,3>> atoms_pos;
     for(int i=0;i!=atom_mu.size();i++)
+    {
         atoms_pos.insert(pair<int,std::array<double,3>>{i,{0,0,0}});
+    }
+
+    // Estimate memory consumption of chi0_q
+    double chi0_q_mem_gb = 0.0;
+    for (auto atpair: atpairs_ABF)
+    {
+        auto Mu = atpair.first;
+        auto Nu = atpair.second;
+        chi0_q_mem_gb += atom_mu[Mu] * atom_mu[Nu];
+    }
+    chi0_q_mem_gb *= tfg.get_n_grids() * qlist.size() * 1.6e-9;
+    ofs_myid << "Estimated chi0_q memory [GB]: " << chi0_q_mem_gb << endl;
 
     // Preapre relevant ComplexMatrix objects
     for ( auto freq: tfg.get_freq_nodes() )
@@ -442,7 +456,9 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     std::array<int,3> period_array{R_period.x,R_period.y,R_period.z};
 
     RI::RPA<int,int,3,double> rpa;
+    Profiler::start("chi0_libri_routing_set_parallel");
     rpa.set_parallel(mpi_comm_global_h.comm, atoms_pos, lat_array, period_array);
+    Profiler::stop("chi0_libri_routing_set_parallel");
 
     // local Rlist to collect after chi0s on each process
     auto s0_s1 = get_s0_s1_for_comm_map2_first<atom_t, int>(atpairs_ABF);
