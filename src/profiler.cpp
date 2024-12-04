@@ -10,6 +10,9 @@
 #include <iomanip>
 
 #include "utils_io.h"
+#ifdef LIBRPA_VERBOSE
+#include "utils_mem.h"
+#endif
 
 double cpu_time_from_clocks_diff(const std::clock_t& ct_start,
                                  const std::clock_t& ct_end)
@@ -92,7 +95,11 @@ void Profiler::start(const char *tname, const char *tnote, int level) noexcept
         add(tname, tnote, level);
     }
 #ifdef LIBRPA_VERBOSE
-    LIBRPA::envs::ofs_myid << get_timestamp() <<" Timer start: " << tname << "\n";
+    double free_mem_gb;
+    LIBRPA::utils::get_node_free_mem(free_mem_gb);
+    LIBRPA::envs::ofs_myid << get_timestamp() <<" Timer start: " << tname << ". "
+                           << "Free memory on node [GB]: " << free_mem_gb << "\n";
+    std::flush(LIBRPA::envs::ofs_myid);
 #endif
     sd_map_timer.at(tname).start();
 }
@@ -103,7 +110,10 @@ void Profiler::stop(const char *tname) noexcept
     if (sd_map_timer.count(tname))
     {
 #ifdef LIBRPA_VERBOSE
-        LIBRPA::envs::ofs_myid << get_timestamp() << " Timer stop:  " << tname << "\n";
+        double free_mem_gb;
+        LIBRPA::utils::get_node_free_mem(free_mem_gb);
+        LIBRPA::envs::ofs_myid << get_timestamp() << " Timer stop:  " << tname << ". "
+                               << "Free memory on node [GB]: " << free_mem_gb << "\n";
 #endif
         sd_map_timer.at(tname).stop();
     }
