@@ -434,7 +434,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         auto Nu = atpair.second;
         chi0_q_mem_gb += atom_mu[Mu] * atom_mu[Nu];
     }
-    chi0_q_mem_gb *= tfg.get_n_grids() * qlist.size() * 1.6e-9;
+    chi0_q_mem_gb *= tfg.get_n_grids() * qlist.size() * 1.6e-8;
     ofs_myid << "Estimated chi0_q memory [GB]: " << chi0_q_mem_gb << endl;
 
     // Preapre relevant ComplexMatrix objects
