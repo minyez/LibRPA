@@ -44,8 +44,6 @@ struct Params
     //! threshold to filter when computing the square root of Coulomb matrix
     static double sqrt_coulomb_threshold;
 
-    static bool binary_input;
-
     //! Cs threshold parsed to RPA object of LibRI.
     static double libri_chi0_threshold_C;
 

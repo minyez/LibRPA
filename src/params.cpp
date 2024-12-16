@@ -31,7 +31,6 @@ double Params::libri_g0w0_threshold_C  = 0.0;
 double Params::libri_g0w0_threshold_G  = 0.0;
 double Params::libri_g0w0_threshold_Wc = 0.0;
 
-bool Params::binary_input = false;
 bool Params::use_scalapack_ecrpa = true;
 bool Params::use_scalapack_gw_wc = false;
 bool Params::debug = false;
@@ -85,7 +84,6 @@ void Params::print()
     const std::vector<std::pair<std::string, bool>> bool_params
         {
             {"debug", debug},
-            {"binary_input", binary_input},
             {"use_scalapack_ecrpa", use_scalapack_ecrpa},
             {"use_scalapack_gw_wc", use_scalapack_gw_wc},
             {"output_gw_sigc_mat", output_gw_sigc_mat},

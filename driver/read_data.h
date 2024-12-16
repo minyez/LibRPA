@@ -29,11 +29,9 @@ int read_vxc(const string &file_path, std::vector<matrix> &vxc);
 
 int read_eigenvector(const string &dir_path, MeanField &mf);
 
-size_t read_Cs(const string &dir_path, double threshold, const vector<atpair_t> &local_atpair,
-               bool binary = false);
+size_t read_Cs(const string &dir_path, double threshold, const vector<atpair_t> &local_atpair);
 
-size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int myid, int nprocs,
-                                 bool binary = false);
+size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int myid, int nprocs);
 
 size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cut_coulomb);
 
@@ -47,7 +45,7 @@ void read_dielec_func(const string &file_path, std::vector<double> &omegas,
 
 void erase_Cs_from_local_atp(atpair_R_mat_t &Cs, vector<atpair_t> &local_atpair);
 
-void get_natom_ncell_from_first_Cs_file(int &n_atom, int &n_cell, const string &dir_path, bool binary = false);
+void get_natom_ncell_from_first_Cs_file(int &n_atom, int &n_cell, const string &dir_path);
 
 std::vector<Vector3_Order<double>> read_band_kpath_info(const string &file_path, int &n_basis, int &n_states, int &n_spin);
 

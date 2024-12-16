@@ -223,7 +223,7 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
     Profiler::stop("driver_read_eigenvector");
-    get_natom_ncell_from_first_Cs_file(natom, ncell, driver_params.input_dir, Params::binary_input);
+    get_natom_ncell_from_first_Cs_file(natom, ncell, driver_params.input_dir);
     tot_atpair = generate_atom_pair_from_nat(natom, false);
     tot_atpair_ordered = generate_atom_pair_from_nat(natom, true);
     if (mpi_comm_global_h.is_root())
@@ -268,7 +268,7 @@ int main(int argc, char **argv)
         //local_atpair = dispatch_vector(tot_atpair, mpi_comm_global_h.myid, mpi_comm_global_h.nprocs, true);
         for(auto &iap:trangular_loc_atpair)
             local_atpair.push_back(iap);
-        read_Cs(driver_params.input_dir, Params::cs_threshold,local_atpair, Params::binary_input);
+        read_Cs(driver_params.input_dir, Params::cs_threshold,local_atpair);
         // for(auto &ap:local_atpair)
         //     printf("   |process %d , local_atom_pair:  %d,  %d\n", mpi_comm_global_h.myid,ap.first,ap.second);
         read_Vq_row(driver_params.input_dir, "coulomb_mat", Params::vq_threshold, local_atpair, false);
@@ -277,7 +277,7 @@ int main(int argc, char **argv)
     else if(parallel_routing == ParallelRouting::LIBRI)
     {
         if (mpi_comm_global_h.is_root()) lib_printf("Evenly distributed Cs and V for LibRI\n");
-        read_Cs_evenly_distribute(driver_params.input_dir, Params::cs_threshold, mpi_comm_global_h.myid, mpi_comm_global_h.nprocs, Params::binary_input);
+        read_Cs_evenly_distribute(driver_params.input_dir, Params::cs_threshold, mpi_comm_global_h.myid, mpi_comm_global_h.nprocs);
         // Vq distributed using the same strategy
         // There should be no duplicate for V
         auto trangular_loc_atpair= dispatch_upper_trangular_tasks(natom,blacs_ctxt_global_h.myid,blacs_ctxt_global_h.nprows,blacs_ctxt_global_h.npcols,blacs_ctxt_global_h.myprow,blacs_ctxt_global_h.mypcol);
@@ -290,7 +290,7 @@ int main(int argc, char **argv)
     {
         if (mpi_comm_global_h.is_root()) lib_printf("Complete copy of Cs and V on each process\n");
         local_atpair = generate_atom_pair_from_nat(natom, false);
-        read_Cs(driver_params.input_dir, Params::cs_threshold, local_atpair, Params::binary_input);
+        read_Cs(driver_params.input_dir, Params::cs_threshold, local_atpair);
         read_Vq_full(driver_params.input_dir, "coulomb_mat", false);
     }
     Profiler::stop("driver_read_Cs_Vq");

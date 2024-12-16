@@ -245,6 +245,24 @@ int read_eigenvector(const string &dir_path, MeanField &mf)
     return ret;
 }
 
+//! Check if Cs data file is in ASCII text or unformatted binary format
+static bool check_Cs_file_binary(const string &file_path)
+{
+    bool is_binary = true;
+    ifstream infile;
+    int natom;
+    // infile.open(file_path, std::ios::in | std::ios::binary);
+    infile.open(file_path, std::ios::in);
+    // infile.read((char *) &natom, sizeof(int));
+    infile >> natom;
+    if (infile.good())
+    {
+        is_binary = false;
+    }
+    // cout << natom << " " << is_binary << endl;
+    infile.close();
+    return is_binary;
+}
 
 static size_t handle_Cs_file(const string &file_path, double threshold, const vector<atpair_t> &local_atpair)
 {
@@ -369,7 +387,7 @@ static size_t handle_Cs_file_binary(const string &file_path, double threshold, c
     return cs_discard;
 }
 
-size_t read_Cs(const string &dir_path, double threshold,const vector<atpair_t> &local_atpair, bool binary)
+size_t read_Cs(const string &dir_path, double threshold,const vector<atpair_t> &local_atpair)
 {
     size_t cs_discard = 0;
     // cout << "Begin to read Cs" << endl;
@@ -378,12 +396,31 @@ size_t read_Cs(const string &dir_path, double threshold,const vector<atpair_t> &
     DIR *dir;
     dir = opendir(dir_path.c_str());
     vector<string> files;
+    bool binary;
+    bool binary_checked = false;
+
     while ((ptr = readdir(dir)) != NULL)
     {
         string fm(ptr->d_name);
         if (fm.find("Cs_data") == 0)
         {
             const auto fn = dir_path + fm;
+            if (!binary_checked)
+            {
+                binary = check_Cs_file_binary(fn);
+                binary_checked = true;
+                if (LIBRPA::envs::myid_global == 0)
+                {
+                    if (binary)
+                    {
+                        cout << "Unformatted binary Cs files detected" << endl;
+                    }
+                    else
+                    {
+                        cout << "ASCII test Cs files detected" << endl;
+                    }
+                }
+            }
             if (binary)
             {
                 cs_discard += handle_Cs_file_binary(fn, threshold, local_atpair);
@@ -612,7 +649,7 @@ static size_t handle_Cs_file_binary_by_ids(const string &file_path, double thres
 }
 
 
-size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int myid, int nprocs, bool binary)
+size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int myid, int nprocs)
 {
     size_t cs_discard = 0;
     struct dirent *ptr;
@@ -621,6 +658,8 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
     vector<string> files;
     unordered_map<string, vector<size_t>> files_Cs_ids;
     unordered_map<string, vector<size_t>> files_Cs_ids_this_proc;
+    bool binary;
+    bool binary_checked = false;
 
     Profiler::start("handle_Cs_file_dry");
     while ((ptr = readdir(dir)) != NULL)
@@ -629,6 +668,11 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
         if (fn.find("Cs_data") == 0)
         {
             files.push_back(dir_path + fn);
+            if (!binary_checked)
+            {
+                binary = check_Cs_file_binary(fn);
+                binary_checked = true;
+            }
         }
     }
 
@@ -703,10 +747,11 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
     return cs_discard;
 }
 
-void get_natom_ncell_from_first_Cs_file(int &n_atom, int &n_cell, const string &dir_path, bool binary)
+void get_natom_ncell_from_first_Cs_file(int &n_atom, int &n_cell, const string &dir_path)
 {
     // cout<<file_path<<endl;
     ifstream infile;
+    bool binary;
 
     string file_path = "";
 
@@ -725,6 +770,19 @@ void get_natom_ncell_from_first_Cs_file(int &n_atom, int &n_cell, const string &
     }
     if (file_path == "")
         throw std::runtime_error("Cs_data file is not found under dir_path: " + dir_path);
+
+    binary = check_Cs_file_binary(file_path);
+    if (LIBRPA::envs::myid_global == 0)
+    {
+        if (binary)
+        {
+            cout << "Unformatted binary Cs files detected" << endl;
+        }
+        else
+        {
+            cout << "ASCII format Cs files detected" << endl;
+        }
+    }
 
     if (binary)
     {
