@@ -4,4 +4,3 @@ option_dielect_func = 0
 replace_w_head = t
 use_scalapack_gw_wc = t
 parallel_routing = libri
-binary_input = t

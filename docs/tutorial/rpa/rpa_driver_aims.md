@@ -42,7 +42,6 @@ Run FHI-aims, and after the calculation is completed, the following files will b
   ```text
     task = rpa
     nfreq = 16
-    binary_input = t
     use_scalapack_ecrpa = t
   ```
 ## 4. **Running the RPA Calculation with LibRPA**
