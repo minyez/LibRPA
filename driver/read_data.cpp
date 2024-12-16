@@ -440,7 +440,7 @@ size_t read_Cs(const string &dir_path, double threshold,const vector<atpair_t> &
                     }
                     else
                     {
-                        cout << "ASCII test Cs files detected" << endl;
+                        cout << "ASCII format Cs files detected" << endl;
                     }
                 }
             }
@@ -846,62 +846,116 @@ void read_dielec_func(const string &file_path, std::vector<double> &omegas, std:
 }
 
 
-static int handle_Vq_full_file(const string &file_path, map<Vector3_Order<double>, ComplexMatrix> &Vq_full)
+static int handle_Vq_full_file(const string &file_path, map<Vector3_Order<double>, ComplexMatrix> &Vq_full, bool binary)
 {
     // cout << "Begin to read aims vq_real from " << file_path << endl;
     ifstream infile;
-    infile.open(file_path);
-    string nbasbas, begin_row, end_row, begin_col, end_col, q1, q2, q3, vq_r, vq_i, q_num, q_weight;
-    // int nline=0;
-    // while(!infile.eof())
-    // {
-    //     nline++;
-    // }
-    // cout<<"  nline:  "<<nline<<endl;
-    infile >> n_irk_points;
+    int n_irk_points_local;
+
+    if (binary)
+    {
+        infile.open(file_path, std::ios::in | std::ios::binary);
+        infile.read((char *) &n_irk_points, sizeof(int));
+        infile.read((char *) &n_irk_points_local, sizeof(int));
+    }
+    else
+    {
+        infile.open(file_path);
+        infile >> n_irk_points;
+    }
+
     if (!infile.good())
         return 1;
 
-    while (infile.peek() != EOF)
+    if (binary)
     {
-        infile >> nbasbas >> begin_row >> end_row >> begin_col >> end_col;
-        if (infile.peek() == EOF)
-            break;
-        if (!infile.good())
-            return 2;
-        //cout << "vq range: " << begin_row << " ~ " << end_row << "  ,   " << begin_col << " ~ " << end_col << endl;
-        infile >> q_num >> q_weight;
-        if (!infile.good())
-            return 3;
-        int mu = stoi(nbasbas);
-        int nu = stoi(nbasbas);
-        int brow = stoi(begin_row) - 1;
-        int erow = stoi(end_row) - 1;
-        int bcol = stoi(begin_col) - 1;
-        int ecol = stoi(end_col) - 1;
-        int iq = stoi(q_num) - 1;
-        
-        //skip empty coulumb_file
-        if((erow-brow<=0) || (ecol-bcol<=0) || iq<0 || iq> klist.size())
-            return 4;
-        Vector3_Order<double> qvec(kvec_c[iq]);
-        // skip duplicate insert of k weight, since 
-        if (irk_weight.count(qvec) == 0)
+        int nbasbas, brow, erow, bcol, ecol, iq;
+        double q_weight;
+
+        for (int i_irk = 0; i_irk < n_irk_points_local; i_irk++)
         {
-            irk_points.push_back(qvec);
-            irk_weight.insert(pair<Vector3_Order<double>, double>(qvec, stod(q_weight)));
-        }
-        if (!Vq_full.count(qvec))
-        {
-            Vq_full[qvec].create(mu, nu);
-        }
-        for (int i_mu = brow; i_mu <= erow; i_mu++)
-            for (int i_nu = bcol; i_nu <= ecol; i_nu++)
+            infile.read((char *) &nbasbas, sizeof(int));
+            infile.read((char *) &brow, sizeof(int));
+            infile.read((char *) &erow, sizeof(int));
+            infile.read((char *) &bcol, sizeof(int));
+            infile.read((char *) &ecol, sizeof(int));
+            infile.read((char *) &iq, sizeof(int));
+            infile.read((char *) &q_weight, sizeof(double));
+
+            brow--;
+            erow--;
+            bcol--;
+            ecol--;
+            iq--;
+            Vector3_Order<double> q(kvec_c[iq]);
+
+            if (!Vq_full.count(q))
             {
-                infile >> vq_r >> vq_i;
-                //Vq_full[qvec](i_nu, i_mu) = complex<double>(stod(vq_r), stod(vq_i)); // for FHI-aims
-                Vq_full[qvec](i_mu, i_nu) = complex<double>(stod(vq_r), stod(vq_i)); // for abacus
+                Vq_full[q].create(nbasbas, nbasbas);
             }
+
+            const int nrow = erow - brow + 1;
+            const int ncol = ecol - bcol + 1;
+            const size_t n = nrow * ncol;
+            std::vector<complex<double>> tmp(n);
+            infile.read((char *) tmp.data(), 2 * n * sizeof(double));
+            for (int i = 0; i < nrow; i++)
+            {
+                for (int j = 0; j < ncol; j++)
+                {
+                    const auto i_mu = i + brow;
+                    const auto i_nu = j + bcol;
+                    Vq_full[q](i_mu, i_nu) = tmp[i * ncol + j]; // for abacus
+                }
+            }
+        }
+    }
+    else
+    {
+        string nbasbas, begin_row, end_row, begin_col, end_col, q1, q2, q3, vq_r, vq_i, q_num, q_weight;
+        while (infile.peek() != EOF)
+        {
+            infile >> nbasbas >> begin_row >> end_row >> begin_col >> end_col;
+            if (infile.peek() == EOF)
+                break;
+            if (!infile.good())
+                return 2;
+            //cout << "vq range: " << begin_row << " ~ " << end_row << "  ,   " << begin_col << " ~ " << end_col << endl;
+            infile >> q_num >> q_weight;
+            if (!infile.good())
+                return 3;
+            int mu = stoi(nbasbas);
+            int nu = stoi(nbasbas);
+            int brow = stoi(begin_row) - 1;
+            int erow = stoi(end_row) - 1;
+            int bcol = stoi(begin_col) - 1;
+            int ecol = stoi(end_col) - 1;
+            int iq = stoi(q_num) - 1;
+            
+            //skip empty coulumb_file
+            if((erow-brow<=0) || (ecol-bcol<=0) || iq<0 || iq> klist.size())
+                return 4;
+            Vector3_Order<double> qvec(kvec_c[iq]);
+            // skip duplicate insert of k weight, since 
+            if (irk_weight.count(qvec) == 0)
+            {
+                irk_points.push_back(qvec);
+                irk_weight.insert(pair<Vector3_Order<double>, double>(qvec, stod(q_weight)));
+            }
+            if (!Vq_full.count(qvec))
+            {
+                Vq_full[qvec].create(mu, nu);
+            }
+            for (int i_mu = brow; i_mu <= erow; i_mu++)
+            {
+                for (int i_nu = bcol; i_nu <= ecol; i_nu++)
+                {
+                    infile >> vq_r >> vq_i;
+                    //Vq_full[qvec](i_nu, i_mu) = complex<double>(stod(vq_r), stod(vq_i)); // for FHI-aims
+                    Vq_full[qvec](i_mu, i_nu) = complex<double>(stod(vq_r), stod(vq_i)); // for abacus
+                }
+            }
+        }
     }
     return 0;
 }
@@ -930,9 +984,20 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
             {
                 binary = check_coulomb_file_binary(file_path);
                 binary_checked = true;
+                if (LIBRPA::envs::myid_global == 0)
+                {
+                    if (binary)
+                    {
+                        cout << "Unformatted binary V files detected" << endl;
+                    }
+                    else
+                    {
+                        cout << "ASCII format V files detected" << endl;
+                    }
+                }
             }
 
-            int retcode = handle_Vq_full_file(file_path, Vq_full);
+            int retcode = handle_Vq_full_file(file_path, Vq_full, binary);
             if (retcode != 0)
             {
                 LIBRPA::utils::lib_printf("Error encountered when reading %s, return code %d", fm.c_str(), retcode);
@@ -1030,97 +1095,191 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
 
 static int handle_Vq_row_file(const string &file_path, double threshold,
         atom_mapping<std::map<int, std::shared_ptr<ComplexMatrix>>>::pair_t_old &coulomb,
-        const vector<atpair_t> &local_atpair)
+        const vector<atpair_t> &local_atpair, bool binary)
 {
     // cout << "Begin to read aims vq_real from " << file_path << endl;
     ifstream infile;
-    infile.open(file_path);
-    string nbasbas, begin_row, end_row, begin_col, end_col, q1, q2, q3, vq_r, vq_i, q_num, q_weight;
-    infile >> n_irk_points;
+    int n_irk_points_local;
+
+    if (binary)
+    {
+        infile.open(file_path, std::ios::in | std::ios::binary);
+        infile.read((char *) &n_irk_points, sizeof(int));
+        infile.read((char *) &n_irk_points_local, sizeof(int));
+    }
+    else
+    {
+        infile.open(file_path);
+        infile >> n_irk_points;
+    }
     if (!infile.good()) return 1;
 
-    while (infile.peek() != EOF)
+    if (binary)
     {
-        infile >> nbasbas >> begin_row >> end_row >> begin_col >> end_col;
-        if (infile.peek() == EOF)
-            break;
-        if (!infile.good()) return 2;
-        // cout << "vq range: " << begin_row << " ~ " << end_row << "  ,   " << begin_col << " ~ " << end_col << endl;
-        infile >> q_num >> q_weight;
-        if (!infile.good()) return 3;
-        int mu = stoi(nbasbas);
-        int nu = stoi(nbasbas);
-        int brow = stoi(begin_row) - 1;
-        int erow = stoi(end_row) - 1;
-        int bcol = stoi(begin_col) - 1;
-        int ecol = stoi(end_col) - 1;
-        int iq = stoi(q_num) - 1;
-        //cout<<file_path<<" iq:"<<iq<<"  qweight:"<<stod(q_weight)<<endl;
-
-        //skip empty coulumb_file
-        if((erow-brow<=0) || (ecol-bcol<=0) || iq<0 || iq> klist.size())
-            return 4;
-
-        Vector3_Order<double> qvec(kvec_c[iq]);
-        // skip duplicate insert of k weight, since 
-        if (irk_weight.count(qvec) == 0)
+        set<int> coulomb_row_need;
+        for (const auto &ap: local_atpair)
         {
-            irk_points.push_back(qvec);
-            irk_weight.insert(pair<Vector3_Order<double>, double>(qvec, stod(q_weight)));
+            const auto brow = atom_mu_part_range[ap.first];
+            const auto nb = atom_mu[ap.first];
+            for (int ir = 0; ir < nb; ir++)
+            {
+                coulomb_row_need.insert(brow + ir);
+            }
         }
 
-        for(const auto &ap:local_atpair)
+        int nbasbas, brow, erow, bcol, ecol, iq;
+        double q_weight;
+        for (int i_irk = 0; i_irk < n_irk_points_local; i_irk++)
         {
-            auto I=ap.first;
-            auto J=ap.second;
-            if(!coulomb[I][J].count(iq))
-            {
-                shared_ptr<ComplexMatrix> vq_ptr = make_shared<ComplexMatrix>();
-                vq_ptr->create(atom_mu[I], atom_mu[J]);
-                // cout<<"  create  IJ: "<<I<<"  "<<J<<"   "<<atom_mu[I]<<"  "<<atom_mu[J];
-                coulomb[I][J][iq]=vq_ptr;
-            }
-        }   
+            infile.read((char *) &nbasbas, sizeof(int));
+            infile.read((char *) &brow, sizeof(int));
+            infile.read((char *) &erow, sizeof(int));
+            infile.read((char *) &bcol, sizeof(int));
+            infile.read((char *) &ecol, sizeof(int));
+            infile.read((char *) &iq, sizeof(int));
+            infile.read((char *) &q_weight, sizeof(double));
 
-        set<int> coulomb_row_need;
-        for(auto &Ip:coulomb)
-            for(int ir=atom_mu_part_range[Ip.first];ir!=atom_mu_part_range[Ip.first]+atom_mu[Ip.first];ir++)
-                coulomb_row_need.insert(ir);
+            brow--;
+            erow--;
+            bcol--;
+            ecol--;
+            iq--;
 
-        //printf("   |process %d, coulomb_begin:  %d, size: %d\n",para_mpi.get_myid(),*coulomb_row_need.begin(),coulomb_row_need.size());
-        for (int i_mu = brow; i_mu <= erow; i_mu++)
-        {
-            vector<complex<double>> tmp_row(ecol-bcol+1);
-            for (int i_nu = bcol; i_nu <= ecol; i_nu++)
+            for (const auto &ap : local_atpair)
             {
-                infile >> vq_r >> vq_i;
-                if (!infile.good()) return 4;
-                
-                tmp_row[i_nu-bcol] = complex<double>(stod(vq_r), stod(vq_i)); // for abacus
-                
-            }
-            if(coulomb_row_need.count(i_mu))
-            {
-                int I_loc,mu_loc;
-                I_loc=atom_mu_glo2loc(i_mu,mu_loc);
-                int bI=atom_mu_part_range[I_loc];
-                for(auto &Jp:coulomb[I_loc] )
+                auto I = ap.first;
+                auto J = ap.second;
+                if (coulomb[I][J].count(iq) == 0)
                 {
-                    auto J=Jp.first;
-                    int Jb=atom_mu_part_range[J];
-                    int Je=atom_mu_part_range[J]+atom_mu[J]-1;
-                    
-                    if(ecol>=Jb && bcol<Je)
+                    shared_ptr<ComplexMatrix> vq_ptr = make_shared<ComplexMatrix>();
+                    vq_ptr->create(atom_mu[I], atom_mu[J]);
+                    coulomb[I][J][iq] = vq_ptr;
+                }
+            }
+
+            const auto ncol = ecol - bcol + 1;
+
+            for (int i_mu = brow; i_mu <= erow; i_mu++)
+            {
+                vector<complex<double>> tmp_row(ncol);
+                infile.read((char *) tmp_row.data(), 2 * ncol * sizeof(double));
+
+                if (coulomb_row_need.count(i_mu))
+                {
+                    int I_loc, mu_loc;
+                    I_loc = atom_mu_glo2loc(i_mu, mu_loc);
+                    for (auto &Jp : coulomb[I_loc])
                     {
-                        int start_point = ( bcol<=Jb ? Jb:bcol);
-                        int end_point = (ecol<=Je? ecol:Je);
-                        for(int i=start_point;i<=end_point;i++)
+                        auto J = Jp.first;
+                        int Jb = atom_mu_part_range[J];
+                        int Je = atom_mu_part_range[J] + atom_mu[J] - 1;
+
+                        if (ecol >= Jb && bcol < Je)
                         {
-                            int J_loc, nu_loc;
-                            J_loc=atom_mu_glo2loc(i,nu_loc);
-                            //printf("|i: %d   J: %d   J_loc: %d, nu_loc: %d\n",i,J,J_loc,nu_loc);
-                            assert(J==J_loc);
-                            (*coulomb[I_loc][J_loc][iq])(mu_loc,nu_loc)=tmp_row[i-bcol];
+                            int start_point = (bcol <= Jb ? Jb : bcol);
+                            int end_point = (ecol <= Je ? ecol : Je);
+                            for (int i = start_point; i <= end_point; i++)
+                            {
+                                int J_loc, nu_loc;
+                                J_loc = atom_mu_glo2loc(i, nu_loc);
+                                // printf("|i: %d   J: %d   J_loc: %d, nu_loc:
+                                // %d\n",i,J,J_loc,nu_loc);
+                                assert(J == J_loc);
+                                (*coulomb[I_loc][J_loc][iq])(mu_loc, nu_loc) = tmp_row[i - bcol];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+    }
+    else
+    {
+        string nbasbas, begin_row, end_row, begin_col, end_col, q1, q2, q3, vq_r, vq_i, q_num, q_weight;
+        while (infile.peek() != EOF)
+        {
+            infile >> nbasbas >> begin_row >> end_row >> begin_col >> end_col;
+            if (infile.peek() == EOF)
+                break;
+            if (!infile.good()) return 2;
+            // cout << "vq range: " << begin_row << " ~ " << end_row << "  ,   " << begin_col << " ~ " << end_col << endl;
+            infile >> q_num >> q_weight;
+            if (!infile.good()) return 3;
+            int mu = stoi(nbasbas);
+            int nu = stoi(nbasbas);
+            int brow = stoi(begin_row) - 1;
+            int erow = stoi(end_row) - 1;
+            int bcol = stoi(begin_col) - 1;
+            int ecol = stoi(end_col) - 1;
+            int iq = stoi(q_num) - 1;
+            //cout<<file_path<<" iq:"<<iq<<"  qweight:"<<stod(q_weight)<<endl;
+
+            //skip empty coulumb_file
+            if((erow-brow<=0) || (ecol-bcol<=0) || iq<0 || iq> klist.size())
+                return 4;
+
+            Vector3_Order<double> qvec(kvec_c[iq]);
+            // skip duplicate insert of k weight, since 
+            if (irk_weight.count(qvec) == 0)
+            {
+                irk_points.push_back(qvec);
+                irk_weight.insert(pair<Vector3_Order<double>, double>(qvec, stod(q_weight)));
+            }
+
+            for(const auto &ap:local_atpair)
+            {
+                auto I=ap.first;
+                auto J=ap.second;
+                if(!coulomb[I][J].count(iq))
+                {
+                    shared_ptr<ComplexMatrix> vq_ptr = make_shared<ComplexMatrix>();
+                    vq_ptr->create(atom_mu[I], atom_mu[J]);
+                    // cout<<"  create  IJ: "<<I<<"  "<<J<<"   "<<atom_mu[I]<<"  "<<atom_mu[J];
+                    coulomb[I][J][iq]=vq_ptr;
+                }
+            }   
+
+            set<int> coulomb_row_need;
+            for(auto &Ip:coulomb)
+                for(int ir=atom_mu_part_range[Ip.first];ir!=atom_mu_part_range[Ip.first]+atom_mu[Ip.first];ir++)
+                    coulomb_row_need.insert(ir);
+
+            //printf("   |process %d, coulomb_begin:  %d, size: %d\n",para_mpi.get_myid(),*coulomb_row_need.begin(),coulomb_row_need.size());
+            for (int i_mu = brow; i_mu <= erow; i_mu++)
+            {
+                vector<complex<double>> tmp_row(ecol-bcol+1);
+                for (int i_nu = bcol; i_nu <= ecol; i_nu++)
+                {
+                    infile >> vq_r >> vq_i;
+                    if (!infile.good()) return 4;
+                    
+                    tmp_row[i_nu-bcol] = complex<double>(stod(vq_r), stod(vq_i)); // for abacus
+                    
+                }
+                if(coulomb_row_need.count(i_mu))
+                {
+                    int I_loc,mu_loc;
+                    I_loc=atom_mu_glo2loc(i_mu,mu_loc);
+                    int bI=atom_mu_part_range[I_loc];
+                    for(auto &Jp:coulomb[I_loc] )
+                    {
+                        auto J=Jp.first;
+                        int Jb=atom_mu_part_range[J];
+                        int Je=atom_mu_part_range[J]+atom_mu[J]-1;
+                        
+                        if(ecol>=Jb && bcol<Je)
+                        {
+                            int start_point = ( bcol<=Jb ? Jb:bcol);
+                            int end_point = (ecol<=Je? ecol:Je);
+                            for(int i=start_point;i<=end_point;i++)
+                            {
+                                int J_loc, nu_loc;
+                                J_loc=atom_mu_glo2loc(i,nu_loc);
+                                //printf("|i: %d   J: %d   J_loc: %d, nu_loc: %d\n",i,J,J_loc,nu_loc);
+                                assert(J==J_loc);
+                                (*coulomb[I_loc][J_loc][iq])(mu_loc,nu_loc)=tmp_row[i-bcol];
+                            }
                         }
                     }
                 }
@@ -1164,8 +1323,19 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
             {
                 binary = check_coulomb_file_binary(file_path);
                 binary_checked = true;
+                if (LIBRPA::envs::myid_global == 0)
+                {
+                    if (binary)
+                    {
+                        cout << "Unformatted binary V files detected" << endl;
+                    }
+                    else
+                    {
+                        cout << "ASCII format V files detected" << endl;
+                    }
+                }
             }
-            handle_Vq_row_file(file_path,threshold, coulomb, local_atpair);
+            handle_Vq_row_file(file_path, threshold, coulomb, local_atpair, binary);
         }
     }
     Profiler::stop("handle_Vq_row_file");
