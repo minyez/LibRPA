@@ -887,11 +887,16 @@ static int handle_Vq_full_file(const string &file_path, map<Vector3_Order<double
             bcol--;
             ecol--;
             iq--;
-            Vector3_Order<double> q(kvec_c[iq]);
+            Vector3_Order<double> qvec(kvec_c[iq]);
 
-            if (!Vq_full.count(q))
+            if (irk_weight.count(qvec) == 0)
             {
-                Vq_full[q].create(nbasbas, nbasbas);
+                irk_points.push_back(qvec);
+                irk_weight.insert(pair<Vector3_Order<double>, double>(qvec, q_weight));
+            }
+            if (!Vq_full.count(qvec))
+            {
+                Vq_full[qvec].create(nbasbas, nbasbas);
             }
 
             const int nrow = erow - brow + 1;
@@ -905,7 +910,7 @@ static int handle_Vq_full_file(const string &file_path, map<Vector3_Order<double
                 {
                     const auto i_mu = i + brow;
                     const auto i_nu = j + bcol;
-                    Vq_full[q](i_mu, i_nu) = tmp[i * ncol + j]; // for abacus
+                    Vq_full[qvec](i_mu, i_nu) = tmp[i * ncol + j]; // for abacus
                 }
             }
         }
@@ -1144,6 +1149,13 @@ static int handle_Vq_row_file(const string &file_path, double threshold,
             bcol--;
             ecol--;
             iq--;
+
+            Vector3_Order<double> qvec(kvec_c[iq]);
+            if (irk_weight.count(qvec) == 0)
+            {
+                irk_points.push_back(qvec);
+                irk_weight.insert(pair<Vector3_Order<double>, double>(qvec, q_weight));
+            }
 
             for (const auto &ap : local_atpair)
             {
