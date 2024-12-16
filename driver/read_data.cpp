@@ -248,6 +248,12 @@ int read_eigenvector(const string &dir_path, MeanField &mf)
 //! Check if Cs data file is in ASCII text or unformatted binary format
 static bool check_Cs_file_binary(const string &file_path)
 {
+    // Current strategy:
+    //   Assume the file is ASCII, try to read to the first integer, which is the number of atoms
+    //   If it succeeds, then the file is ASCII, otherwise it is unformatted.
+    //
+    // This is the simplest way, and gives less false positives than assuming the file is binary
+    // and checking the first integer by reading the first 4 bytes with infile.read.
     bool is_binary = true;
     ifstream infile;
     int natom;
@@ -260,6 +266,23 @@ static bool check_Cs_file_binary(const string &file_path)
         is_binary = false;
     }
     // cout << natom << " " << is_binary << endl;
+    infile.close();
+    return is_binary;
+}
+
+//! Check if Coulomb matrix data file is in ASCII text or unformatted binary format
+static bool check_coulomb_file_binary(const string &file_path)
+{
+    bool is_binary = true;
+    ifstream infile;
+    int nirk;
+    infile.open(file_path, std::ios::in);
+    infile >> nirk;
+    if (infile.good())
+    {
+        is_binary = false;
+    }
+    // cout << nirk << " " << is_binary << endl;
     infile.close();
     return is_binary;
 }
@@ -893,13 +916,23 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
     vector<string> files;
     map<Vector3_Order<double>, ComplexMatrix> Vq_full;
 
+    bool binary;
+    bool binary_checked = false;
+
     Profiler::start("handle_Vq_full_file");
     while ((ptr = readdir(dir)) != NULL)
     {
         string fm(ptr->d_name);
         if (fm.find(vq_fprefix) == 0)
         {
-            int retcode = handle_Vq_full_file(dir_path + fm, Vq_full);
+            string file_path = dir_path + fm;
+            if (!binary_checked)
+            {
+                binary = check_coulomb_file_binary(file_path);
+                binary_checked = true;
+            }
+
+            int retcode = handle_Vq_full_file(file_path, Vq_full);
             if (retcode != 0)
             {
                 LIBRPA::utils::lib_printf("Error encountered when reading %s, return code %d", fm.c_str(), retcode);
@@ -1116,6 +1149,9 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
     DIR *dir;
     dir = opendir(dir_path.c_str());
     vector<string> files;
+    bool binary;
+    bool binary_checked = false;
+
     //map<Vector3_Order<double>, ComplexMatrix> Vq_full;
     Profiler::start("handle_Vq_row_file");
     while ((ptr = readdir(dir)) != NULL)
@@ -1123,8 +1159,13 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
         string fm(ptr->d_name);
         if (fm.find(vq_fprefix) == 0)
         {
-            //handle_Vq_full_file(fm, threshold, Vq_full);
-            handle_Vq_row_file(dir_path + fm,threshold, coulomb, local_atpair);
+            string file_path = dir_path + fm;
+            if (!binary_checked)
+            {
+                binary = check_coulomb_file_binary(file_path);
+                binary_checked = true;
+            }
+            handle_Vq_row_file(file_path,threshold, coulomb, local_atpair);
         }
     }
     Profiler::stop("handle_Vq_row_file");
