@@ -165,11 +165,15 @@ void G0W0::build_spacetime(
         {
             n_obj_wc_libri += w.second.size();
         }
+
         Profiler::stop("g0w0_build_spacetime_3");
         LIBRPA::utils::lib_printf_root("Time for preparing LibRI Wc object, i_tau %d (seconds, Wall/CPU): %f %f\n",
                 itau + 1,
                 Profiler::get_wall_time_last("g0w0_build_spacetime_3"),
                 Profiler::get_cpu_time_last("g0w0_build_spacetime_3"));
+
+        g0w0_libri.set_Wc(Wc_libri, Params::libri_g0w0_threshold_Wc);
+        Wc_libri.clear();
 
         for (int ispin = 0; ispin != mf.get_n_spins(); ispin++)
         {
@@ -218,8 +222,9 @@ void G0W0::build_spacetime(
 
                 double wtime_g0w0_cal_sigc = omp_get_wtime();
                 Profiler::start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
-                g0w0_libri.cal_Sigc(gf_libri, Params::libri_g0w0_threshold_G, Wc_libri, Params::libri_g0w0_threshold_Wc);
+                g0w0_libri.cal_Sigc(gf_libri, Params::libri_g0w0_threshold_G);
                 Profiler::stop("g0w0_build_spacetime_5");
+                g0w0_libri.free_G();
 
                 // Check size of data
                 double mem_mb = get_tensor_map_bytes(g0w0_libri.Sigc_tau) * 1e-6;
@@ -235,6 +240,7 @@ void G0W0::build_spacetime(
                 LIBRPA::utils::lib_printf("Task %4d. libRI G0W0, spin %1d, time grid %12.6f. Wc size %zu, GF size %zu. Wall time %f\n",
                        mpi_comm_global_h.myid, ispin, t, n_obj_wc_libri, n_obj_gf_libri, wtime_g0w0_cal_sigc);
             }
+            g0w0_libri.free_Wc();
 
             size_t n_IJR_myid = 0; // for sigcmat output
 
