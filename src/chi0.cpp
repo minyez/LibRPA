@@ -517,7 +517,7 @@ static void build_gf_Rt_libri_cplx(
 template <typename Tdata>
 static void chi_libri_ft_ct(
     const int &isp, const int &nspins, const int &it, const TFGrids &tfg,
-    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &chi0s_IJR,
+    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<Tdata>>> &chi0s_IJR,
     const vector<Vector3_Order<double>> &qlist, const vector<atpair_t> &atpairs_ABF,
     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &chi0_q)
 {
@@ -603,7 +603,7 @@ static void chi_libri_ft_ct(
 template <typename Tdata>
 static void chi_libri_ft_Rq(
     const int &isp, const int &nspins, const int &it, const TFGrids &tfg,
-    std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<Tdata>>> chi0s_IJR,
+    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<Tdata>>> &chi0s_IJR,
     const vector<Vector3_Order<double>> &qlist, const vector<atpair_t> &atpairs_ABF,
     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &chi0_q)
 {
@@ -1950,24 +1950,24 @@ template void Chi0::build_chi0_q_space_time_LibRI_routing<std::complex<double>>(
 
 template void chi_libri_ft_ct<double>(
     const int &, const int &, const int &, const TFGrids &,
-    std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>>,
+    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &,
     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
 
 template void chi_libri_ft_ct<std::complex<double>>(
     const int &, const int &, const int &, const TFGrids &,
-    std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>>,
+    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>> &,
     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
 
 template void chi_libri_ft_Rq<double>(
     const int &, const int &, const int &, const TFGrids &,
-    std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>>,
+    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &,
     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
 
 template void chi_libri_ft_Rq<std::complex<double>>(
     const int &, const int &, const int &, const TFGrids &,
-    std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>>,
+    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>> &,
     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
