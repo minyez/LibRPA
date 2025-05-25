@@ -76,6 +76,7 @@ target_include_directories(rpa_lib
   PRIVATE
     # ${CMAKE_CURRENT_LIST_DIR}
     ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/thirdparty/lebedev-quadrature
   )
 
 if(USE_LIBRI)
