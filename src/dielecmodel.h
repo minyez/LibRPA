@@ -84,6 +84,7 @@ class diele_func
     diele_func() : meanfield_df(meanfield), kfrac_band(kfrac_list) {};
     ~diele_func() {};
     void init();
+    void init_wing();
     void init_Cs();
     void set(MeanField &mf, std::vector<Vector3_Order<double>> &kfrac,
              std::vector<double> frequencies_target, int nbasis, int nstates, int nspin);
