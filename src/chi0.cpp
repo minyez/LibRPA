@@ -1942,33 +1942,33 @@ void Chi0::free_chi0_q(const double freq, const Vector3_Order<double> q)
     map<atom_t, map<atom_t,ComplexMatrix>>().swap(chi0_for_free);
 }
 
-template void Chi0::build_chi0_q_space_time_LibRI_routing<double>(
-    const Cs_LRI &, const Vector3_Order<int> &, const vector<atpair_t> &,
-    const vector<Vector3_Order<double>> &, std::map<Vector3_Order<double>, ComplexMatrix> &);
-template void Chi0::build_chi0_q_space_time_LibRI_routing<std::complex<double>>(
-    const Cs_LRI &, const Vector3_Order<int> &, const vector<atpair_t> &,
-    const vector<Vector3_Order<double>> &, std::map<Vector3_Order<double>, ComplexMatrix> &);
-
-template void chi_libri_ft_ct<double>(
-    const int &, const int &, const int &, const TFGrids &,
-    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &,
-    const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
-    map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
-
-template void chi_libri_ft_ct<std::complex<double>>(
-    const int &, const int &, const int &, const TFGrids &,
-    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>> &,
-    const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
-    map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
-
-template void chi_libri_ft_Rq<double>(
-    const int &, const int &, const int &, const TFGrids &,
-    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &,
-    const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
-    map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
-
-template void chi_libri_ft_Rq<std::complex<double>>(
-    const int &, const int &, const int &, const TFGrids &,
-    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>> &,
-    const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
-    map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
+// template void Chi0::build_chi0_q_space_time_LibRI_routing<double>(
+//     const Cs_LRI &, const Vector3_Order<int> &, const vector<atpair_t> &,
+//     const vector<Vector3_Order<double>> &, std::map<Vector3_Order<double>, ComplexMatrix> &);
+// template void Chi0::build_chi0_q_space_time_LibRI_routing<std::complex<double>>(
+//     const Cs_LRI &, const Vector3_Order<int> &, const vector<atpair_t> &,
+//     const vector<Vector3_Order<double>> &, std::map<Vector3_Order<double>, ComplexMatrix> &);
+//
+// template void chi_libri_ft_ct<double>(
+//     const int &, const int &, const int &, const TFGrids &,
+//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &,
+//     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
+//     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
+//
+// template void chi_libri_ft_ct<std::complex<double>>(
+//     const int &, const int &, const int &, const TFGrids &,
+//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>> &,
+//     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
+//     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
+//
+// template void chi_libri_ft_Rq<double>(
+//     const int &, const int &, const int &, const TFGrids &,
+//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &,
+//     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
+//     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
+//
+// template void chi_libri_ft_Rq<std::complex<double>>(
+//     const int &, const int &, const int &, const TFGrids &,
+//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>> &,
+//     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
+//     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
