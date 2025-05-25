@@ -1,10 +1,14 @@
 #include "task_rpa.h"
 
 #include "app_rpa.h"
+#include "driver_params.h"
 #include "envs_mpi.h"
+#include "params.h"
+#include "profiler.h"
+#include "read_data.h"
 #include "ri.h"
 
-void task_rpa()
+void task_rpa(std::map<Vector3_Order<double>, ComplexMatrix>& sinvS)
 {
     using LIBRPA::envs::mpi_comm_global_h;
     using LIBRPA::utils::lib_printf;
@@ -21,7 +25,8 @@ void task_rpa()
     std::complex<double> corr;
     std::vector<std::complex<double>> corr_irk(n_irk_points);
 
-    LIBRPA::app::get_rpa_correlation_energy_(corr, corr_irk);
+    LIBRPA::app::get_rpa_correlation_energy_(corr, corr_irk, sinvS, driver_params.input_dir,
+                                             Params::use_shrink_abfs);
 
     if (mpi_comm_global_h.is_root())
     {

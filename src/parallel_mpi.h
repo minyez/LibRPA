@@ -34,6 +34,9 @@ void set_parallel_routing(const string &option, const int &atpais_num, const int
 
 namespace MPI_Wrapper
 {
+    // 新增广播声明
+    void broadcast_matrix(matrix &mat, int root, MPI_Comm mpi_comm);
+    void broadcast_ComplexMatrix(ComplexMatrix &cmat, int root, MPI_Comm mpi_comm);
     void allreduce_matrix(const matrix& mat_send, matrix& mat_recv, MPI_Comm mpi_comm);
     void allreduce_ComplexMatrix(const ComplexMatrix& cmat_send, ComplexMatrix & cmat_recv, MPI_Comm mpi_comm);
     void reduce_matrix(const matrix& mat_send, matrix& mat_recv, int root, MPI_Comm mpi_comm);
@@ -65,6 +68,14 @@ public:
     void allreduce_ComplexMatrix(ComplexMatrix &cmat_send, ComplexMatrix & cmat_recv) const;
     void reduce_matrix(matrix &mat_send, matrix & cmat_recv, int root) const;
     void reduce_ComplexMatrix(ComplexMatrix &cmat_send, ComplexMatrix & cmat_recv, int root) const;
+    template <typename T>
+    void broadcast(T& data, int root = 0) const {
+        MPI_Bcast(&data, sizeof(T), MPI_BYTE, root, comm);
+    }
+    
+    // 添加这两个广播函数的声明
+    void broadcast_matrix(matrix &mat, const int root = 0) const;
+    void broadcast_ComplexMatrix(ComplexMatrix &cmat, const int root = 0) const;
 };
 
 } // namespace LIBRPA

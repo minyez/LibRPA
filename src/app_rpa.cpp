@@ -1,18 +1,16 @@
 #include "app_rpa.h"
 
-#include "utils_mem.h"
-
 #include "chi0.h"
-#include "epsilon.h"
 #include "envs_mpi.h"
+#include "epsilon.h"
 #include "parallel_mpi.h"
 #include "params.h"
 #include "pbc.h"
 #include "profiler.h"
-#include "utils_timefreq.h"
 #include "ri.h"
-
 #include "stl_io_helper.h"
+#include "utils_mem.h"
+#include "utils_timefreq.h"
 
 namespace LIBRPA
 {
@@ -21,18 +19,21 @@ namespace app
 {
 
 void get_rpa_correlation_energy_(std::complex<double> &rpa_corr,
-                                 std::vector<std::complex<double>> &rpa_corr_irk_contrib)
+                                 std::vector<std::complex<double>> &rpa_corr_irk_contrib,
+                                 std::map<Vector3_Order<double>, ComplexMatrix> &sinvS,
+                                 const std::string &input_dir, const bool use_shrink_abfs)
 {
     using LIBRPA::envs::mpi_comm_global_h;
     using LIBRPA::utils::lib_printf;
 
-    Vector3_Order<int> period {kv_nmp[0], kv_nmp[1], kv_nmp[2]};
+    Vector3_Order<int> period{kv_nmp[0], kv_nmp[1], kv_nmp[2]};
     auto Rlist = construct_R_grid(period);
     const int Rt_num = Rlist.size() * Params::nfreq;
 
     tot_atpair = generate_atom_pair_from_nat(natom, false);
 
-    set_parallel_routing(Params::parallel_routing, tot_atpair.size(), Rt_num, LIBRPA::parallel_routing);
+    set_parallel_routing(Params::parallel_routing, tot_atpair.size(), Rt_num,
+                         LIBRPA::parallel_routing);
 
     // Build time-frequency objects
     auto tfg = utils::generate_timefreq_grids(Params::nfreq, Params::tfgrids_type, meanfield);
@@ -40,7 +41,7 @@ void get_rpa_correlation_energy_(std::complex<double> &rpa_corr,
     Chi0 chi0(meanfield, klist, tfg);
     chi0.gf_R_threshold = Params::gf_R_threshold;
     vector<Vector3_Order<double>> qlist;
-    for ( auto q_weight: irk_weight)
+    for (auto q_weight : irk_weight)
     {
         qlist.push_back(q_weight.first);
     }
@@ -48,26 +49,29 @@ void get_rpa_correlation_energy_(std::complex<double> &rpa_corr,
     mpi_comm_global_h.barrier();
 
     Profiler::start("chi0_build", "Build response function chi0");
-    chi0.build(Cs_data, Rlist, period, local_atpair, qlist);
+    chi0.build(Cs_data, Rlist, period, local_atpair, qlist, sinvS);
     Profiler::stop("chi0_build");
 
     if (Params::debug)
-    { // debug, check chi0
+    {  // debug, check chi0
         char fn[80];
-        for (const auto &chi0q: chi0.get_chi0_q())
+        for (const auto &chi0q : chi0.get_chi0_q())
         {
             const int ifreq = chi0.tfg.get_freq_index(chi0q.first);
-            for (const auto &q_IJchi0: chi0q.second)
+            for (const auto &q_IJchi0 : chi0q.second)
             {
-                const int iq = std::distance(klist.begin(), std::find(klist.begin(), klist.end(), q_IJchi0.first));
-                for (const auto &I_Jchi0: q_IJchi0.second)
+                const int iq = std::distance(klist.begin(),
+                                             std::find(klist.begin(), klist.end(), q_IJchi0.first));
+                for (const auto &I_Jchi0 : q_IJchi0.second)
                 {
                     const auto &I = I_Jchi0.first;
-                    for (const auto &J_chi0: I_Jchi0.second)
+                    for (const auto &J_chi0 : I_Jchi0.second)
                     {
                         const auto &J = J_chi0.first;
-                        sprintf(fn, "chi0fq_ifreq_%d_iq_%d_I_%zu_J_%zu_id_%d.mtx", ifreq, iq, I, J, mpi_comm_global_h.myid);
-                        print_complex_matrix_mm(J_chi0.second, Params::output_dir + "/" + fn, 1e-15);
+                        sprintf(fn, "chi0fq_ifreq_%d_iq_%d_I_%zu_J_%zu_id_%d.mtx", ifreq, iq, I, J,
+                                mpi_comm_global_h.myid);
+                        print_complex_matrix_mm(J_chi0.second, Params::output_dir + "/" + fn,
+                                                1e-15);
                     }
                 }
             }
@@ -75,19 +79,26 @@ void get_rpa_correlation_energy_(std::complex<double> &rpa_corr,
     }
 
     // NOTE: Cs is cleaned up.
-    // This means that the behavior will be undefined if this function is called again
+    // This means that the behavior will be undefined if this function is
+    // called again
     Cs_data.clear();
     LIBRPA::utils::release_free_mem();
 
     mpi_comm_global_h.barrier();
     Profiler::start("EcRPA", "Compute RPA correlation Energy");
     CorrEnergy corr;
-    if (Params::use_scalapack_ecrpa && (LIBRPA::parallel_routing == LIBRPA::ParallelRouting::ATOM_PAIR || LIBRPA::parallel_routing == LIBRPA::ParallelRouting::LIBRI))
+    if (Params::use_scalapack_ecrpa &&
+        (LIBRPA::parallel_routing == LIBRPA::ParallelRouting::ATOM_PAIR ||
+         LIBRPA::parallel_routing == LIBRPA::ParallelRouting::LIBRI))
     {
-        if(meanfield.get_n_kpoints() == 1)
+        if (meanfield.get_n_kpoints() == 1)
+        {
             corr = compute_RPA_correlation_blacs_2d_gamma_only(chi0, Vq);
+        }
         else
+        {
             corr = compute_RPA_correlation_blacs_2d(chi0, Vq);
+        }
     }
     else
         corr = compute_RPA_correlation(chi0, Vq);
@@ -95,7 +106,7 @@ void get_rpa_correlation_energy_(std::complex<double> &rpa_corr,
     rpa_corr = corr.value;
 
     cout << qlist << "\n";
-    for (const auto &irk_corr: corr.qcontrib)
+    for (const auto &irk_corr : corr.qcontrib)
     {
         auto ite = std::find(qlist.cbegin(), qlist.cend(), irk_corr.first);
         // cout << irk_corr.first << " " << irk_corr.second << "\n";

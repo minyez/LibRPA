@@ -30,6 +30,52 @@ void set_parallel_routing(const string &option, const int &atpais_num, const int
 
 namespace MPI_Wrapper {
 
+// 新增广播函数 (放在allreduce_matrix附近)
+void broadcast_matrix(matrix &mat, int root, MPI_Comm mpi_comm)
+{
+    // 修复1：分离进程号获取和维度设置
+    int myrank;
+    MPI_Comm_rank(mpi_comm, &myrank); // ✅ 正确获取进程号
+    
+    int dims[2];
+    if (myrank == root) { // ✅ 仅根进程设置维度
+        dims[0] = mat.nr;
+        dims[1] = mat.nc;
+    }
+
+    // 修复2：统一使用dims数组进行广播
+    if (MPI_Bcast(dims, 2, MPI_INT, root, mpi_comm) != MPI_SUCCESS)
+        throw std::runtime_error("MPI matrix dimension broadcast failed");
+
+    // 修复3：统一使用dims数值调整矩阵
+    if (myrank != root) {
+        mat.create(dims[0], dims[1]);
+    }
+
+    MPI_Bcast(mat.c, dims[0] * dims[1], MPI_DOUBLE, root, mpi_comm);
+}
+
+void broadcast_ComplexMatrix(ComplexMatrix &cmat, int root, MPI_Comm mpi_comm) 
+{
+    int myrank;
+    MPI_Comm_rank(mpi_comm, &myrank);
+    
+    int dims[2];
+    if (myrank == root) {
+        dims[0] = cmat.nr;
+        dims[1] = cmat.nc;
+    }
+
+    if (MPI_Bcast(dims, 2, MPI_INT, root, mpi_comm) != MPI_SUCCESS)
+        throw std::runtime_error("MPI complex matrix dimension broadcast failed");
+
+    if (myrank != root) {
+        cmat.create(dims[0], dims[1]);
+    }
+
+    MPI_Bcast(cmat.c, dims[0] * dims[1], MPI_DOUBLE_COMPLEX, root, mpi_comm);
+}
+
 void allreduce_matrix(matrix &mat_send, matrix &mat_recv, MPI_Comm mpi_comm)
 {
     assert(mat_send.nr==mat_recv.nr);
@@ -160,6 +206,17 @@ void MPI_COMM_handler::reduce_ComplexMatrix(ComplexMatrix &cmat_sent,
     MPI_Wrapper::reduce_ComplexMatrix(cmat_sent, cmat_recv, root, this->comm);
 }
 
+void MPI_COMM_handler::broadcast_matrix(matrix &mat, int root) const
+{
+    this->check_initialized();
+    MPI_Wrapper::broadcast_matrix(mat, root, this->comm);
+}
+
+void MPI_COMM_handler::broadcast_ComplexMatrix(ComplexMatrix &cmat, int root) const
+{
+    this->check_initialized();
+    MPI_Wrapper::broadcast_ComplexMatrix(cmat, root, this->comm);
+}
 
 } // namespace LIBRPA
 

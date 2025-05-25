@@ -20,9 +20,9 @@ set(LIB_NAME            "rpa")
 set(FORTRAN_LIB_NAME    "rpa_f")
 
 # options setup
-option(USE_LIBRI            "Use LibRI for tensor contraction" OFF)
-option(USE_CMAKE_INC        "Use cmake.inc for configure" OFF)
-option(USE_GREENX_API       "Use GreenX API for minimax grids generation" OFF)
+option(USE_LIBRI            "Use LibRI for tensor contraction" ON)
+option(USE_CMAKE_INC        "Use cmake.inc for configure" ON)
+option(USE_GREENX_API       "Use GreenX API for minimax grids generation" ON)
 option(USE_EXTERNAL_GREENX  "Use external GreenX library rather than the packaged one" OFF)
 option(ENABLE_TEST          "Flag to build unit tests" ON)
 option(ENABLE_DRIVER        "Flag to build driver executables" ON)
@@ -85,9 +85,6 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
       FORCE)
 endif()
 
-# Get git commit number
-include(GetGitRevisionDescription)
-get_git_head_revision(GIT_REF GIT_SHA1)
 
 if(NOT _loaded_cmake_inc)
   if(DEFINED ENV{MKLROOT} AND NOT DEFINED MKLROOT)
@@ -228,5 +225,6 @@ if(ENABLE_DRIVER)
 endif()
 
 add_subdirectory(src)
+add_subdirectory(qsgw)
 
 message(STATUS "CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")

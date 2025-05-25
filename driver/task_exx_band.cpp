@@ -1,21 +1,20 @@
 #include "task_exx_band.h"
 
-#include <sstream>
 #include <fstream>
+#include <sstream>
 
-#include "meanfield.h"
-#include "pbc.h"
-#include "exx.h"
 #include "constants.h"
 #include "coulmat.h"
-#include "profiler.h"
-#include "ri.h"
-
-#include "envs_mpi.h"
-#include "envs_io.h"
-
-#include "read_data.h"
 #include "driver_params.h"
+#include "envs_io.h"
+#include "envs_mpi.h"
+#include "exx.h"
+#include "meanfield.h"
+#include "params.h"
+#include "pbc.h"
+#include "profiler.h"
+#include "read_data.h"
+#include "ri.h"
 
 void task_exx_band()
 {
@@ -25,11 +24,11 @@ void task_exx_band()
 
     Profiler::start("exx_band");
 
-    Vector3_Order<int> period {kv_nmp[0], kv_nmp[1], kv_nmp[2]};
+    Vector3_Order<int> period{kv_nmp[0], kv_nmp[1], kv_nmp[2]};
     auto Rlist = construct_R_grid(period);
 
     vector<Vector3_Order<double>> qlist;
-    for ( auto q_weight: irk_weight)
+    for (auto q_weight : irk_weight)
     {
         qlist.push_back(q_weight.first);
     }
@@ -49,7 +48,10 @@ void task_exx_band()
         Profiler::stop("ft_vq_cut");
 
         Profiler::start("exx_real_work");
-        exx.build(Cs_data, Rlist, VR);
+        if (Params::use_soc)
+            exx.build<std::complex<double>>(Cs_data, Rlist, VR);
+        else
+            exx.build<double>(Cs_data, Rlist, VR);
         Profiler::stop("exx_real_work");
     }
     Profiler::stop("exx_real_space");
@@ -84,19 +86,22 @@ void task_exx_band()
             for (int i_kpoint = 0; i_kpoint < meanfield.get_n_kpoints(); i_kpoint++)
             {
                 const auto &k = kfrac_list[i_kpoint];
-                printf("spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n",
-                        i_spin+1, i_kpoint+1, k.x, k.y, k.z);
+                printf("spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n", i_spin + 1, i_kpoint + 1,
+                       k.x, k.y, k.z);
                 printf("%90s\n", banner.c_str());
-                printf("%5s %16s %16s %16s %16s %16s\n", "State", "occ", "e_mf", "v_xc", "v_exx", "e_exx");
+                printf("%5s %16s %16s %16s %16s %16s\n", "State", "occ", "e_mf", "v_xc", "v_exx",
+                       "e_exx");
                 printf("%90s\n", banner.c_str());
                 for (int i_state = 0; i_state < meanfield.get_n_bands(); i_state++)
                 {
-                    const auto &occ_state = meanfield.get_weight()[i_spin](i_kpoint, i_state) * meanfield.get_n_kpoints();
-                    const auto &eks_state = meanfield.get_eigenvals()[i_spin](i_kpoint, i_state) * HA2EV;
+                    const auto &occ_state = meanfield.get_weight()[i_spin](i_kpoint, i_state) *
+                                            meanfield.get_n_kpoints();
+                    const auto &eks_state =
+                        meanfield.get_eigenvals()[i_spin](i_kpoint, i_state) * HA2EV;
                     const auto &exx_state = exx.Eexx[i_spin][i_kpoint][i_state] * HA2EV;
                     const auto &vxc_state = vxc[i_spin](i_kpoint, i_state) * HA2EV;
-                    printf("%5d %16.5f %16.5f %16.5f %16.5f %16.5f\n",
-                           i_state+1, occ_state, eks_state, vxc_state, exx_state, eks_state - vxc_state + exx_state);
+                    printf("%5d %16.5f %16.5f %16.5f %16.5f %16.5f\n", i_state + 1, occ_state,
+                           eks_state, vxc_state, exx_state, eks_state - vxc_state + exx_state);
                 }
                 printf("\n");
             }
@@ -126,8 +131,8 @@ void task_exx_band()
     }
     mpi_comm_global_h.barrier();
 
-    auto meanfield_band = read_meanfield_band(driver_params.input_dir,
-            n_basis_band, n_states_band, n_spin_band, kfrac_band.size());
+    auto meanfield_band = read_meanfield_band(driver_params.input_dir, n_basis_band, n_states_band,
+                                              n_spin_band, kfrac_band.size());
 
     /* Set the same Fermi energy as in SCF */
     meanfield_band.get_efermi() = meanfield.get_efermi();
@@ -139,7 +144,8 @@ void task_exx_band()
     std::flush(ofs_myid);
 
     Profiler::start("read_vxc", "Load DFT xc potential");
-    auto vxc_band = read_vxc_band(driver_params.input_dir, n_states_band, n_spin_band, kfrac_band.size());
+    auto vxc_band =
+        read_vxc_band(driver_params.input_dir, n_states_band, n_spin_band, kfrac_band.size());
     Profiler::stop("read_vxc");
     std::flush(ofs_myid);
 
@@ -168,8 +174,12 @@ void task_exx_band()
             for (int i_kpoint = 0; i_kpoint < mf.get_n_kpoints(); i_kpoint++)
             {
                 const auto &k = kfrac_band[i_kpoint];
-                ofs_ks << std::setw(5) << i_kpoint + 1 << std::setw(15) << std::setprecision(7) << k.x << std::setw(15) << std::setprecision(7) << k.y << std::setw(15) << std::setprecision(7) << k.z;
-                ofs_hf << std::setw(5) << i_kpoint + 1 << std::setw(15) << std::setprecision(7) << k.x << std::setw(15) << std::setprecision(7) << k.y << std::setw(15) << std::setprecision(7) << k.z;
+                ofs_ks << std::setw(5) << i_kpoint + 1 << std::setw(15) << std::setprecision(7)
+                       << k.x << std::setw(15) << std::setprecision(7) << k.y << std::setw(15)
+                       << std::setprecision(7) << k.z;
+                ofs_hf << std::setw(5) << i_kpoint + 1 << std::setw(15) << std::setprecision(7)
+                       << k.x << std::setw(15) << std::setprecision(7) << k.y << std::setw(15)
+                       << std::setprecision(7) << k.z;
                 for (int i_state = 0; i_state < meanfield.get_n_bands(); i_state++)
                 {
                     const auto &occ_state = mf.get_weight()[i_spin](i_kpoint, i_state);
@@ -178,15 +188,16 @@ void task_exx_band()
                     const auto &vxc_state = vxc_band[i_spin](i_kpoint, i_state) * HA2EV;
                     // const auto &resigc = sigc_all[i_spin][i_kpoint][i_state].real() * HA2EV;
                     // const auto &imsigc = sigc_all[i_spin][i_kpoint][i_state].imag() * HA2EV;
-                    ofs_ks << std::setw(15) << std::setprecision(5) << occ_state << std::setw(15) << std::setprecision(5) << eks_state;
-                    ofs_hf << std::setw(15) << std::setprecision(5) << occ_state << std::setw(15) << std::setprecision(5) << eks_state - vxc_state + exx_state;
+                    ofs_ks << std::setw(15) << std::setprecision(5) << occ_state << std::setw(15)
+                           << std::setprecision(5) << eks_state;
+                    ofs_hf << std::setw(15) << std::setprecision(5) << occ_state << std::setw(15)
+                           << std::setprecision(5) << eks_state - vxc_state + exx_state;
                 }
                 ofs_hf << "\n";
                 ofs_ks << "\n";
             }
         }
     }
-
 
     Profiler::stop("exx_band");
 }

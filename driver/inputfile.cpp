@@ -1,28 +1,25 @@
 #include "inputfile.h"
 
-#include <regex>
 #include <fstream>
-#include <sstream>
 #include <iostream>
+#include <regex>
+#include <sstream>
 
-#include "params.h"
 #include "driver_params.h"
+#include "params.h"
 
 static const std::string SPACE_SEP = "[ \r\f\t]*";
 
 const std::string InputParser::KV_SEP = "=";
 const std::string InputParser::COMMENTS_IDEN = "[#!]";
 
-static std::string get_last_matched(const std::string &s,
-                                    const std::string &key,
-                                    const std::string &vregex,
-                                    int igroup)
+static std::string get_last_matched(const std::string &s, const std::string &key,
+                                    const std::string &vregex, int igroup)
 {
     std::string sout = "";
     // a leading group to get rid of keys in comments
     std::regex r(key + SPACE_SEP + InputParser::KV_SEP + SPACE_SEP + vregex,
-                 std::regex_constants::ECMAScript |
-                 std::regex_constants::icase);
+                 std::regex_constants::ECMAScript | std::regex_constants::icase);
     std::sregex_iterator si(s.begin(), s.end(), r);
     auto ei = std::sregex_iterator();
     for (auto i = si; i != ei; i++)
@@ -37,9 +34,7 @@ static std::string get_last_matched(const std::string &s,
 void InputParser::parse_double(const std::string &vname, double &var, double de, int &flag)
 {
     flag = 0;
-    std::string s = get_last_matched(params, vname,
-                                     "(-?[\\d]+\\.?([\\d]+)?([ed]-?[\\d]+)?)",
-                                     1);
+    std::string s = get_last_matched(params, vname, "(-?[\\d]+\\.?([\\d]+)?([ed]-?[\\d]+)?)", 1);
     if (s != "")
     {
         try
@@ -76,7 +71,8 @@ void InputParser::parse_int(const std::string &vname, int &var, int de, int &fla
     if (flag) var = de;
 }
 
-void InputParser::parse_string(const std::string &vname, std::string &var, const std::string &de, int &flag)
+void InputParser::parse_string(const std::string &vname, std::string &var, const std::string &de,
+                               int &flag)
 {
     flag = 0;
     std::string s = get_last_matched(params, vname, "([\\w\\d_\\- ,:;./]+)", 1);
@@ -105,7 +101,7 @@ InputParser InputFile::load(const std::string &fn, bool error_if_fail_open)
 {
     std::ifstream t(fn);
     std::string params;
-    if(t.is_open())
+    if (t.is_open())
     {
         filename = fn;
         std::stringstream buffer;
@@ -141,7 +137,7 @@ static std::string check_dirpath(const std::string &dirpath)
     return std::string(dirpath);
 }
 
-void parse_inputfile_to_params(const std::string& fn)
+void parse_inputfile_to_params(const std::string &fn)
 {
     InputFile inputf;
     int flag;
@@ -171,6 +167,8 @@ void parse_inputfile_to_params(const std::string& fn)
     parser.parse_double("gf_R_threshold", Params::gf_R_threshold, 1e-4, flag);
     parser.parse_double("libri_chi0_threshold_C", Params::libri_chi0_threshold_C, 0.0, flag);
     parser.parse_double("libri_chi0_threshold_G", Params::libri_chi0_threshold_G, 0.0, flag);
+    parser.parse_bool("use_shrink_abfs", Params::use_shrink_abfs, false, flag);
+    parser.parse_bool("use_soc", Params::use_soc, false, flag);
 
     // exx related
     parser.parse_double("libri_exx_threshold_C", Params::libri_exx_threshold_C, 0.0, flag);
@@ -188,6 +186,7 @@ void parse_inputfile_to_params(const std::string& fn)
     parser.parse_bool("output_gw_sigc_mat", Params::output_gw_sigc_mat, false, flag);
     parser.parse_bool("output_gw_sigc_mat_rt", Params::output_gw_sigc_mat_rt, false, flag);
     parser.parse_bool("output_gw_sigc_mat_rf", Params::output_gw_sigc_mat_rf, false, flag);
+    parser.parse_int("nbands_G", Params::nbands_G, -1, flag);
 }
 
 const std::string input_filename = "librpa.in";

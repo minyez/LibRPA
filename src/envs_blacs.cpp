@@ -25,10 +25,7 @@ void initialize_blacs(const MPI_Comm &mpi_comm_global_in)
     librpa_blacs_initialized = true;
 }
 
-bool is_blacs_initialized()
-{
-    return librpa_blacs_initialized;
-}
+bool is_blacs_initialized() { return librpa_blacs_initialized; }
 
 void finalize_blacs()
 {

@@ -1,3 +1,7 @@
 #pragma once
+#include <map>
 
-void task_g0w0_band();
+#include "complexmatrix.h"
+#include "vector3_order.h"
+
+void task_g0w0_band(std::map<Vector3_Order<double>, ComplexMatrix>& sinvS);

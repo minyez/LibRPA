@@ -3,13 +3,14 @@
 #include <numeric>
 #include <stdexcept>
 #include <string>
-#include "envs_mpi.h"
 
-#include "ri.h"
-#include "pbc.h"
 #include "coulmat.h"
-#include "meanfield.h"
+#include "envs_mpi.h"
 #include "exx.h"
+#include "meanfield.h"
+#include "params.h"
+#include "pbc.h"
+#include "ri.h"
 
 namespace LIBRPA
 {
@@ -17,7 +18,8 @@ namespace LIBRPA
 namespace app
 {
 
-std::vector<double> compute_exx_orbital_energy_(int i_state_low, int i_state_high, int n_kpoints_task, const int *i_kpoints_task)
+std::vector<double> compute_exx_orbital_energy_(int i_state_low, int i_state_high,
+                                                int n_kpoints_task, const int *i_kpoints_task)
 {
     using LIBRPA::envs::mpi_comm_global_h;
     using LIBRPA::utils::lib_printf;
@@ -50,18 +52,31 @@ std::vector<double> compute_exx_orbital_energy_(int i_state_low, int i_state_hig
     else if (i_state_low >= meanfield.get_n_bands())
     {
         throw std::runtime_error(
-            std::string(__FILE__) + ":" + std::to_string(__LINE__) + ":" + std::string(__FUNCTION__) + ": " +
-            "i_state_low should be no larger than n_bands = " + std::to_string(meanfield.get_n_bands()) +
-            ", got " + std::to_string(i_state_low));
+            std::string(__FILE__) + ":" + std::to_string(__LINE__) + ":" +
+            std::string(__FUNCTION__) + ": " + "i_state_low should be no larger than n_bands = " +
+            std::to_string(meanfield.get_n_bands()) + ", got " + std::to_string(i_state_low));
     }
 
-    Vector3_Order<int> period {kv_nmp[0], kv_nmp[1], kv_nmp[2]};
+    Vector3_Order<int> period{kv_nmp[0], kv_nmp[1], kv_nmp[2]};
     auto Rlist = construct_R_grid(period);
 
     const auto VR = FT_Vq(Vq_cut, meanfield.get_n_kpoints(), Rlist, true);
     // TODO: kfrac_list should depend on i_kpoints_compute
     auto exx = LIBRPA::Exx(meanfield, kfrac_list, period);
-    exx.build(Cs_data, Rlist, VR);
+    if (Params::use_shrink_abfs)
+    {
+        if (Params::use_soc)
+            exx.build<std::complex<double>>(Cs_shrinked_data, Rlist, VR);
+        else
+            exx.build<double>(Cs_shrinked_data, Rlist, VR);
+    }
+    else
+    {
+        if (Params::use_soc)
+            exx.build<std::complex<double>>(Cs_data, Rlist, VR);
+        else
+            exx.build<double>(Cs_data, Rlist, VR);
+    }
     exx.build_KS_kgrid();
 
     for (int isp = 0; isp != meanfield.get_n_spins(); isp++)
@@ -71,7 +86,8 @@ std::vector<double> compute_exx_orbital_energy_(int i_state_low, int i_state_hig
             const auto ik = i_kpoints_compute[i_ik];
             for (int ib = i_state_low; ib < i_state_high; ib++)
             {
-                const int index = isp * n_kpoints_task * n_states_calc + ik * n_states_calc + ib - i_state_low;
+                const int index =
+                    isp * n_kpoints_task * n_states_calc + ik * n_states_calc + ib - i_state_low;
                 exx_state[index] = exx.Eexx[isp][ik][ib];
             }
         }
