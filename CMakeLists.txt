@@ -20,9 +20,9 @@ set(LIB_NAME            "rpa")
 set(FORTRAN_LIB_NAME    "rpa_f")
 
 # options setup
-option(USE_LIBRI            "Use LibRI for tensor contraction" ON)
-option(USE_CMAKE_INC        "Use cmake.inc for configure" ON)
-option(USE_GREENX_API       "Use GreenX API for minimax grids generation" ON)
+option(USE_LIBRI            "Use LibRI for tensor contraction" OFF)
+option(USE_CMAKE_INC        "Use cmake.inc for configure" OFF)
+option(USE_GREENX_API       "Use GreenX API for minimax grids generation" OFF)
 option(USE_EXTERNAL_GREENX  "Use external GreenX library rather than the packaged one" OFF)
 option(ENABLE_TEST          "Flag to build unit tests" ON)
 option(ENABLE_DRIVER        "Flag to build driver executables" ON)
