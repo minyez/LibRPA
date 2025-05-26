@@ -1981,7 +1981,7 @@ compute_Wc_freq_q_blacs(Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps,
                 eigenvalues.c, 0.5, Params::sqrt_coulomb_threshold);
             if (Params::option_dielect_func == 3)
             {
-                df_headwing.wing_mu_to_lambda(sqrtveig_blacs);
+                df_headwing.wing_mu_to_lambda(sqrtveig_blacs, desc_nabf_nabf_opt);
             }
         }
         else
@@ -2093,7 +2093,7 @@ compute_Wc_freq_q_blacs(Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps,
                     }
                     ofs_myid << get_timestamp() << "Perform the head & wing element overwrite"
                              << endl;
-                    df_headwing.rewrite_eps(chi0_block, ifreq);
+                    df_headwing.rewrite_eps(chi0_block, ifreq, desc_nabf_nabf_opt);
                 }
                 else
                 {

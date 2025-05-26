@@ -19,6 +19,8 @@
 #include "utils_io.h"
 #include "vec.h"
 
+using LIBRPA::Array_Desc;
+using LIBRPA::envs::blacs_ctxt_global_h;
 //! double-dispersion Havriliak-Negami model
 struct DoubleHavriliakNegami
 {
@@ -98,7 +100,8 @@ class diele_func
     // compute wing in ABF representation
     std::complex<double> compute_wing(int alpha, int iomega, int mu);
     // transform wing from ABF to Coulomb representation
-    void wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blacs);
+    void wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blacs,
+                           Array_Desc &desc_nabf_nabf_opt);
     // tranform Cs_ij(R) to Cs_ij(k)
     void FT_R2k();
     std::complex<double> compute_Cijk(Cs_LRI &Cs_in, int mu, int I, int i, int J, int j, int ik);
@@ -112,16 +115,20 @@ class diele_func
     // set wing=0 for debug
     void set_0_wing();
 
-    void get_body_inv(matrix_m<std::complex<double>> &chi0_block);
-    void construct_L(const int ifreq);
+    Array_Desc get_body_inv(matrix_m<std::complex<double>> &chi0_block,
+                            Array_Desc &desc_nabf_nabf_opt);
+    Array_Desc construct_L(const int ifreq, Array_Desc &desc_body);
     // Lebedev-Laikov quadrature
     void get_Leb_points();
     void get_g_enclosing_gamma();
     void calculate_q_gamma();
-    void cal_eps(const int ifreq);
-    std::complex<double> compute_chi0_inv_00(const int ifreq);
-    std::complex<double> compute_chi0_inv_ij(const int ifreq, int i, int j);
-    void rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq);
+    void cal_eps(const int ifreq, Array_Desc &desc_nabf_nabf_opt, Array_Desc &desc_body);
+    std::complex<double> compute_chi0_inv_00(const int ifreq, Array_Desc &desc_L);
+    std::complex<double> compute_chi0_inv_ij(const int ifreq, int i, int j, Array_Desc &desc_body,
+                                             Array_Desc &desc_L);
+    void rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
+                     Array_Desc &desc_nabf_nabf_opt);
+    void assign_chi0(matrix_m<std::complex<double>> &chi0_block, Array_Desc &desc_nabf_nabf_opt);
 };
 
 extern diele_func df_headwing;
