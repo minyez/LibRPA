@@ -646,7 +646,9 @@ matrix_m<std::complex<T>> power_hemat_blacs_desc(matrix_m<std::complex<T>> &A_lo
                                     lrwork, info);
         lwork = int(work[0].real());
         lrwork = int(rwork[0]);
-        delete[] work, Wquery, rwork;
+        delete[] work;
+        delete[] Wquery;
+        delete[] rwork;
     }
     Profiler::stop("power_hemat_blacs_1");
 
@@ -656,7 +658,8 @@ matrix_m<std::complex<T>> power_hemat_blacs_desc(matrix_m<std::complex<T>> &A_lo
     ScalapackConnector::pheev_f(jobz, uplo, n, A_local_opt.ptr(), 1, 1, ad_A_opt.desc, W,
                                 Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc, work, lwork, rwork, lrwork,
                                 info);
-    delete[] work, rwork;
+    delete[] work;
+    delete[] rwork;
     for (int i = 0; i != n; i++)
     {
         W[i] *= -1.0;
@@ -788,7 +791,9 @@ inline matrix_m<double> power_hemat_blacs_real(matrix_m<double> &A_local,
                                     lrwork, info);
         lwork = int(work[0]);
         lrwork = int(rwork[0]);
-        delete[] work, Wquery, rwork;
+        delete[] work;
+        delete[] Wquery;
+        delete[] rwork;
     }
     Profiler::stop("power_hemat_blacs_real_1");
 
@@ -798,7 +803,8 @@ inline matrix_m<double> power_hemat_blacs_real(matrix_m<double> &A_local,
     ScalapackConnector::psyev_f(jobz, uplo, n, A_local_opt.ptr(), 1, 1, ad_A_opt.desc, W,
                                 Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc, work, lwork, rwork, lrwork,
                                 info);
-    delete[] work, rwork;
+    delete[] work;
+    delete[] rwork;
     for (int i = 0; i != n; i++)
     {
         W[i] *= -1.0;
