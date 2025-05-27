@@ -375,8 +375,8 @@ int main(int argc, char **argv)
                     auto mu = Imu.second;
                     std::cout << I << "," << mu << std::endl;
                 }
-                Profiler::stop("read_shrink_sinvS_fold");
             }
+            Profiler::stop("read_shrink_sinvS_fold");
         }
         // Vq distributed using the same strategy
         // There should be no duplicate for V

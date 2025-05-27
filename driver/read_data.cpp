@@ -656,8 +656,8 @@ std::vector<size_t> handle_Cs_file_dry(const string &file_path, double threshold
         int n_i = stoi(i_s);
         int n_j = stoi(j_s);
         int n_mu = stoi(mu_s);
-        int ia1 = stoi(ia1_s);
-        int ia2 = stoi(ia2_s);
+        int ia1 = stoi(ia1_s) - 1;
+        int ia2 = stoi(ia2_s) - 1;
         R[0] = stoi(ic_1);
         R[1] = stoi(ic_2);
         R[2] = stoi(ic_3);
@@ -672,7 +672,7 @@ std::vector<size_t> handle_Cs_file_dry(const string &file_path, double threshold
                     infile >> Cs_ele;
                     maxval = std::max(maxval, abs(stod(Cs_ele)));
                 }
-        LIBRPA::envs::ofs_myid << id << " (" << ic_1 << "," << ic_2 << "," << ic_3 << ") " << maxval
+        LIBRPA::envs::ofs_myid << id << " " << ia1 << " " << ia2 << " (" << ic_1 << "," << ic_2 << "," << ic_3 << ") " << maxval
                                << " keep? " << (maxval >= threshold) << endl;
         if (maxval >= threshold) Cs_ids_keep.push_back(id);
         id++;
