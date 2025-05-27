@@ -1701,15 +1701,18 @@ void read_stru(const int &n_kpoints, const std::string &file_path)
 }
 
 std::vector<Vector3_Order<double>> read_band_kpath_info(const string &file_path, int &n_basis,
-                                                        int &n_states, int &n_spin)
+                                                        int &n_states, int &n_spin, int &flag)
 {
     std::vector<Vector3_Order<double>> kfrac_band;
+    flag = 0;
 
     ifstream infile;
     infile.open(file_path);
     if (!infile.good())
     {
-        throw std::logic_error("Failed to open " + file_path);
+        // Fail to find the band path file
+        flag = 1;
+        return kfrac_band;
     }
 
     string x, y, z;

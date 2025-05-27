@@ -116,21 +116,38 @@ void task_exx_band()
 
     /* Below we handle the band k-points data
      * First load the information of k-points along the k-path */
-    Profiler::start("exx_band_load_band_mf");
     int n_basis_band, n_states_band, n_spin_band;
+    int flag;
     std::vector<Vector3_Order<double>> kfrac_band = read_band_kpath_info(
-        driver_params.input_dir + "band_kpath_info", n_basis_band, n_states_band, n_spin_band);
-    if (mpi_comm_global_h.is_root())
-    {
-        std::cout << "Band k-points to compute:\n";
-        for (int ik = 0; ik < kfrac_band.size(); ik++)
-        {
-            const auto &k = kfrac_band[ik];
-            lib_printf("%5d %12.7f %12.7f %12.7f\n", ik + 1, k.x, k.y, k.z);
-        }
-    }
-    mpi_comm_global_h.barrier();
+        driver_params.input_dir + "band_kpath_info", n_basis_band, n_states_band, n_spin_band, flag);
 
+    if (flag == 0)
+    {
+        // Success
+        if (mpi_comm_global_h.is_root())
+        {
+            std::cout << "Band k-points to compute:" << std::endl;
+            for (int ik = 0; ik < kfrac_band.size(); ik++)
+            {
+                const auto &k = kfrac_band[ik];
+                lib_printf("%5d %12.7f %12.7f %12.7f\n", ik + 1, k.x, k.y, k.z);
+            }
+        }
+        mpi_comm_global_h.barrier();
+    }
+    else
+    {
+        if (mpi_comm_global_h.is_root())
+        {
+            const auto fn = driver_params.input_dir + "band_kpath_info";
+            std::cout << "Warning! Failed to read " << fn
+                      << " , skip band structure" << std::endl << std::endl;
+        }
+        mpi_comm_global_h.barrier();
+        Profiler::stop("exx_band");
+        return;
+    }
+    Profiler::start("exx_band_load_band_mf");
     auto meanfield_band = read_meanfield_band(driver_params.input_dir, n_basis_band, n_states_band,
                                               n_spin_band, kfrac_band.size());
 
