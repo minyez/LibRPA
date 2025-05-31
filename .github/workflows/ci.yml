@@ -79,7 +79,9 @@ jobs:
           CXX=mpiicpx cmake -DUSE_LIBRI=ON -B $BUILDDIR -DENABLE_TEST=ON
           cmake --build $BUILDDIR -j 2
           cmake --build $BUILDDIR --target test
+          cd regression_tests
           ./run_regression.py full ../${BUILDDIR}/chi0_main.exe -n 4 --use-libri -d "workspace_libri"
+          cd ..
       - name: Build/test with LibRI and with GreenX TimeFrequency component
         run: |
           source /opt/intel/oneapi/setvars.sh
@@ -89,6 +91,7 @@ jobs:
           cmake --build $BUILDDIR --target test
           cd regression_tests
           ./run_regression.py full ../${BUILDDIR}/chi0_main.exe -n 4 --use-libri --use-greenx-api -d "workspace_libri_greenx"
+          cd ..
       - name: Build/test with LibRI and with GreenX TimeFrequency component, debug build
         run: |
           source /opt/intel/oneapi/setvars.sh
