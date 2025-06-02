@@ -46,6 +46,10 @@ class diele_func
     matrix_m<std::complex<double>> body_inv;
     // ( i:3, j:3 )
     matrix_m<std::complex<double>> Lind;
+    // ( i:n_lambda, j:3 )
+    matrix_m<std::complex<double>> bw;
+    // ( i:3, j:n_lambda )
+    matrix_m<std::complex<double>> wb;
     // ( i:n_lambda, j:n_lambda )
     matrix_m<std::complex<double>> chi0;
     // ( lambda: n_nonsingular-1, mu: n_abfs)
@@ -55,9 +59,13 @@ class diele_func
     // ( mu: n_abfs, m: n_bands, n: n_bands, k )
     std::vector<std::vector<std::vector<std::map<Vector3_Order<double>, std::complex<double>>>>>
         Ctri_mn;
-    // ( mu: n_abfs@I, i: i atom basis, j: j atom basis, k, I atom, J atom, R cell  )
+    // ( mu: n_abfs@I, i: i atom basis, j: j atom basis, k, I atom, J atom, q cell  )
     // Ctri_ij.data_libri[I][{J, k_array}](mu, i, j)
     Cs_LRI_clx Ctri_ij;
+    // ( mu: n_abfs@I, i: i atom basis, j: j atom basis, k, I atom, J atom, R cell  )
+    // Ctri_ij.data_libri[I][{J, R}](mu, i, j)
+    // used for reduce all mpi Cs_data to Cs_IJR
+    Cs_LRI Cs_IJR;
 
     MeanField &meanfield_df;
     std::vector<double> omega;
@@ -117,15 +125,14 @@ class diele_func
 
     Array_Desc get_body_inv(matrix_m<std::complex<double>> &chi0_block,
                             Array_Desc &desc_nabf_nabf_opt);
-    Array_Desc construct_L(const int ifreq, Array_Desc &desc_body);
+    void construct_L(const int ifreq, Array_Desc &desc_body);
     // Lebedev-Laikov quadrature
     void get_Leb_points();
     void get_g_enclosing_gamma();
     void calculate_q_gamma();
     void cal_eps(const int ifreq, Array_Desc &desc_nabf_nabf_opt, Array_Desc &desc_body);
-    std::complex<double> compute_chi0_inv_00(const int ifreq, Array_Desc &desc_L);
-    std::complex<double> compute_chi0_inv_ij(const int ifreq, int i, int j, Array_Desc &desc_body,
-                                             Array_Desc &desc_L);
+    std::complex<double> compute_chi0_inv_00(const int ifreq);
+    std::complex<double> compute_chi0_inv_ij(const int ifreq, int i, int j);
     void rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
                      Array_Desc &desc_nabf_nabf_opt);
     void assign_chi0(matrix_m<std::complex<double>> &chi0_block, Array_Desc &desc_nabf_nabf_opt);
