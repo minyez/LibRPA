@@ -121,12 +121,6 @@ void Chi0::build_gf_Rt(Vector3_Order<int> R, double tau)
     const auto naos = mf.get_n_aos();
     const auto nsoc = mf.get_n_soc();
     assert(tau != 0);
-    assert(Params::nbands_G < nbands);
-    if (Params::nbands_G >= 0)
-        std::cout << "Note: Green's Function sums over " << Params::nbands_G << " states."
-                  << std::endl;
-    else
-        std::cout << "Green's Function sums over all states." << std::endl;
 
     // temporary Green's function
     matrix gf_Rt_is_global(naos, naos);
@@ -284,15 +278,6 @@ static void build_gf_Rt_libri(
     const auto naos = mf.get_n_aos();
 
     assert(klist.size() == nkpts);
-    assert(Params::nbands_G < nbands);
-    if (mpi_comm_global_h.is_root())
-    {
-        if (Params::nbands_G >= 0)
-            std::cout << "Note: Green's Function sums over " << Params::nbands_G << " states."
-                      << std::endl;
-        else
-            std::cout << "Green's Function sums over all states." << std::endl;
-    }
 
     std::map<Vector3_Order<int>, std::vector<atpair_t>> map_R_IJs;
     for (const auto &IJR : IJRs)
@@ -406,15 +391,6 @@ static void build_gf_Rt_libri_cplx(
     const auto naos = mf.get_n_aos();
 
     assert(klist.size() == nkpts);
-    assert(Params::nbands_G < nbands);
-    if (mpi_comm_global_h.is_root())
-    {
-        if (Params::nbands_G >= 0)
-            std::cout << "Note: Green's Function sums over " << Params::nbands_G << " states."
-                      << std::endl;
-        else
-            std::cout << "Green's Function sums over all states." << std::endl;
-    }
 
     std::map<Vector3_Order<int>, std::vector<atpair_t>> map_R_IJs;
     for (const auto &IJR : IJRs)
@@ -1047,6 +1023,15 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(
 
                     // On-the-fly build of Green's function at specific spin channel and imaginary
                     // time
+                    assert(Params::nbands_G < nbands);
+                    if (mpi_comm_global_h.is_root())
+                    {
+                        if (Params::nbands_G >= 0)
+                            std::cout << "Green's Function sums over " << Params::nbands_G
+                                      << " states." << std::endl;
+                        else
+                            std::cout << "Green's Function sums over all states." << std::endl;
+                    }
                     if constexpr (std::is_same<Tdata, std::complex<double>>::value)
                         build_gf_Rt_libri_cplx(this->mf, isp, is1, is2, this->klist,
                                                this->IJRs_gf_local, tau, gf_po_libri);
