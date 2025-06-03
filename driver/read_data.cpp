@@ -649,6 +649,8 @@ std::vector<size_t> handle_Cs_file_dry(const string &file_path, double threshold
     ncell = stoi(ncell_s);
 
     size_t id = 0;
+    int R[3];
+
     while (infile.peek() != EOF)
     {
         infile >> ia1_s;
@@ -657,6 +659,13 @@ std::vector<size_t> handle_Cs_file_dry(const string &file_path, double threshold
         int n_i = stoi(i_s);
         int n_j = stoi(j_s);
         int n_mu = stoi(mu_s);
+        int ia1 = stoi(ia1_s) - 1;
+        int ia2 = stoi(ia2_s) - 1;
+        R[0] = stoi(ic_1);
+        R[1] = stoi(ic_2);
+        R[2] = stoi(ic_3);
+        // assign basis
+        set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, nullptr, 1);
 
         double maxval = -1.0;
         for (int i = 0; i != n_i; i++)
@@ -666,7 +675,7 @@ std::vector<size_t> handle_Cs_file_dry(const string &file_path, double threshold
                     infile >> Cs_ele;
                     maxval = std::max(maxval, abs(stod(Cs_ele)));
                 }
-        LIBRPA::envs::ofs_myid << id << " (" << ic_1 << "," << ic_2 << "," << ic_3 << ") " << maxval
+        LIBRPA::envs::ofs_myid << id << " " << ia1 << " " << ia2 << " (" << ic_1 << "," << ic_2 << "," << ic_3 << ") " << maxval
                                << " keep? " << (maxval >= threshold) << endl;
         if (maxval >= threshold) Cs_ids_keep.push_back(id);
         id++;
@@ -683,6 +692,7 @@ std::vector<size_t> handle_Cs_file_binary_dry(const string &file_path, double th
     int dims[8];
     int n_apcell_file;
     int n_processed = 0;
+    int R[3];
 
     infile.open(file_path, std::ios::in | std::ios::binary);
     infile.read((char *)&natom, sizeof(int));
@@ -693,14 +703,15 @@ std::vector<size_t> handle_Cs_file_binary_dry(const string &file_path, double th
     {
         infile.read((char *)&dims[0], 8 * sizeof(int));
         // cout<<ic_1<<mu_s<<endl;
-        // const int ia1 = dims[0] - 1;
-        // const int ia2 = dims[1] - 1;
-        // const int ic1 = dims[2];
-        // const int ic2 = dims[3];
-        // const int ic3 = dims[4];
+        const int ia1 = dims[0] - 1;
+        const int ia2 = dims[1] - 1;
+        R[0] = dims[2];
+        R[1] = dims[3];
+        R[2] = dims[4];
         const int n_i = dims[5];
         const int n_j = dims[6];
         const int n_mu = dims[7];
+        set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, nullptr, 1);
 
         matrix mat(n_i * n_j, n_mu);
         infile.read((char *)mat.c, n_i * n_j * n_mu * sizeof(double));
@@ -827,7 +838,6 @@ static size_t handle_Cs_file_binary_by_ids(const string &file_path, double thres
         }
         else
         {
-            set_ao_basis_aux(ia1, ia2, n_i, n_j, n_mu, R, nullptr, 1);
             infile.seekg(n_i * n_j * n_mu * sizeof(double), ios::cur);
             cs_discard++;
         }
@@ -876,6 +886,7 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
         // Let each MPI process read different files at one time
         auto i_fn_myid = (i_fn + myid * nfiles / nprocs) % files.size();
         const auto &fn = files[i_fn_myid];
+        LIBRPA::envs::ofs_myid << "Reading " << fn << endl;
         std::vector<size_t> ids_keep_this_file;
         if (binary)
         {
@@ -907,8 +918,8 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
 
     Profiler::start("handle_Cs_file");
     // cout << files_Cs_ids_this_proc.size() << "\n";
-    // LIBRPA::envs::ofs_myid << files_Cs_ids_this_proc << "\n";
-    for (const auto &fn_ids : files_Cs_ids_this_proc)
+    LIBRPA::envs::ofs_myid << "Number of Cs files to process: " << files_Cs_ids_this_proc.size() << "\n";
+    for (const auto& fn_ids: files_Cs_ids_this_proc)
     {
         LIBRPA::envs::ofs_myid << fn_ids.first << " " << fn_ids.second << endl;
         if (binary)
@@ -1693,15 +1704,18 @@ void read_stru(const int &n_kpoints, const std::string &file_path)
 }
 
 std::vector<Vector3_Order<double>> read_band_kpath_info(const string &file_path, int &n_basis,
-                                                        int &n_states, int &n_spin)
+                                                        int &n_states, int &n_spin, int &flag)
 {
     std::vector<Vector3_Order<double>> kfrac_band;
+    flag = 0;
 
     ifstream infile;
     infile.open(file_path);
     if (!infile.good())
     {
-        throw std::logic_error("Failed to open " + file_path);
+        // Fail to find the band path file
+        flag = 1;
+        return kfrac_band;
     }
 
     string x, y, z;

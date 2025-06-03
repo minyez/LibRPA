@@ -1,26 +1,16 @@
+#pragma once
 #include <complex>
 #include <ostream>
 #include <vector>
 
+// For printing container
+#include "../stl_io_helper.h"
 
 #ifdef LIBRPA_DEBUG
 constexpr bool print_mat_equal = true;
 #else
 constexpr bool print_mat_equal = false;
 #endif
-
-template <typename T>
-std::ostream& operator<<(std::ostream &os, const std::vector<T> &vec)
-{
-    if (!vec.empty())
-    {
-        int i;
-        for (i = 0; i < vec.size() - 1; i++)
-            os << vec[i] << " ";
-        os << vec[i];
-    }
-    return os;
-}
 
 template <typename T>
 inline bool fequal(const T &a, const T &b, const T &thres = 1e-14)

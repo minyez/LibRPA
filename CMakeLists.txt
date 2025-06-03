@@ -20,9 +20,9 @@ set(LIB_NAME            "rpa")
 set(FORTRAN_LIB_NAME    "rpa_f")
 
 # options setup
-option(USE_LIBRI            "Use LibRI for tensor contraction" ON)
-option(USE_CMAKE_INC        "Use cmake.inc for configure" ON)
-option(USE_GREENX_API       "Use GreenX API for minimax grids generation" ON)
+option(USE_LIBRI            "Use LibRI for tensor contraction" OFF)
+option(USE_CMAKE_INC        "Use cmake.inc for configure" OFF)
+option(USE_GREENX_API       "Use GreenX API for minimax grids generation" OFF)
 option(USE_EXTERNAL_GREENX  "Use external GreenX library rather than the packaged one" OFF)
 option(ENABLE_TEST          "Flag to build unit tests" ON)
 option(ENABLE_DRIVER        "Flag to build driver executables" ON)
@@ -51,11 +51,7 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/cmake.inc" AND USE_CMAKE_INC)
 endif()
 
 # C++ standard requirement
-if(USE_LIBRI)
-  set(CMAKE_CXX_STANDARD 14)
-else()
-  set(CMAKE_CXX_STANDARD 11)
-endif()
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # enable_language later than cmake.inc to take the variables therein into accout

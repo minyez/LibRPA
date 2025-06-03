@@ -55,7 +55,7 @@ void erase_Cs_from_local_atp(atpair_R_mat_t &Cs, vector<atpair_t> &local_atpair)
 void get_natom_ncell_from_first_Cs_file(int &n_atom, int &n_cell, const string &dir_path);
 
 std::vector<Vector3_Order<double>> read_band_kpath_info(const string &file_path, int &n_basis,
-                                                        int &n_states, int &n_spin);
+                                                        int &n_states, int &n_spin, int &flag);
 
 MeanField read_meanfield_band(const string &dir_path, int n_basis, int n_states, int n_spin,
                               int n_kpoints_band);

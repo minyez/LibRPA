@@ -647,20 +647,28 @@ void Exx::build_KS(const std::vector<std::vector<std::vector<ComplexMatrix>>> &w
                 map<Vector3_Order<int>, map<atom_t, map<atom_t, Matz>>> exx_is;
                 if (Params::use_soc)
                 {
-                    exx_is = this->exx_cplx.at(isp).at(isoc1).at(isoc2);
+                    if (this->exx_cplx.count(isp) && this->exx_cplx.at(isp).count(isoc1)
+                        && this->exx_cplx.at(isp).at(isoc1).count(isoc2))
+                    {
+                        exx_is = this->exx_cplx.at(isp).at(isoc1).at(isoc2);
+                    }
                 }
                 else
                 {
-                    for (const auto &R_IJ_exx : this->exx.at(isp).at(isoc1).at(isoc2))
+                    if (this->exx.count(isp) && this->exx.at(isp).count(isoc1)
+                        && this->exx.at(isp).at(isoc1).count(isoc2))
                     {
-                        const auto R = R_IJ_exx.first;
-                        for (const auto &I_J_exx : R_IJ_exx.second)
+                        for (const auto &R_IJ_exx : this->exx.at(isp).at(isoc1).at(isoc2))
                         {
-                            const auto I = I_J_exx.first;
-                            for (const auto &J_exx : I_J_exx.second)
+                            const auto R = R_IJ_exx.first;
+                            for (const auto &I_J_exx : R_IJ_exx.second)
                             {
-                                const auto J = J_exx.first;
-                                exx_is[R][I][J] = J_exx.second.to_complex();
+                                const auto I = I_J_exx.first;
+                                for (const auto &J_exx : I_J_exx.second)
+                                {
+                                    const auto J = J_exx.first;
+                                    exx_is[R][I][J] = J_exx.second.to_complex();
+                                }
                             }
                         }
                     }

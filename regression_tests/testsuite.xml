@@ -1,0 +1,33 @@
+<regressionsuite>
+
+  <group name="RPA correlation energy">
+    <testcase name="RPA, water molecules in box (aims input)" directory="rpa_aims_mole_H2O_libri">
+      <build require_libri="true"
+             require_greenx_api="false"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <validate name="Correlation energy"
+                regex="Total EcRPA: \s+([-+]?\d*\.\d+)"
+                comparison="cmp_float.abs_diff(1e-4)"
+      />
+    </testcase>
+  </group>
+
+  <group name="One-shot GW quasi-particle energies (QPE)">
+    <testcase name="G0W0, bulk silicon (aims input)" directory="g0w0_aims_Si_libri">
+      <build require_libri="true"
+             require_greenx_api="false"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+    </testcase>
+  </group>
+
+</regressionsuite>
