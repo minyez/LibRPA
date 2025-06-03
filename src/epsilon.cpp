@@ -1981,7 +1981,7 @@ compute_Wc_freq_q_blacs(Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps,
             sqrtveig_blacs = power_hemat_blacs_real(
                 coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt, n_singular,
                 eigenvalues.c, 0.5, Params::sqrt_coulomb_threshold);
-            if (Params::option_dielect_func == 3)
+            if (Params::replace_w_head && Params::option_dielect_func == 3)
             {
                 df_headwing.wing_mu_to_lambda(sqrtveig_blacs, desc_nabf_nabf_opt);
             }

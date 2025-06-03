@@ -336,7 +336,7 @@ void read_velocity(const string &file_path, MeanField &mf)
             }
         }
     }
-    if (mpi_comm_global_h.is_root())
+    if (LIBRPA::envs::mpi_comm_global_h.is_root())
         std::cout << "* Success: read velocity from pyatb_librpa_df(ABACUS)." << std::endl;
 }
 
@@ -444,7 +444,7 @@ void read_velocity_aims(MeanField &mf, const string &file_path)
     }*/
     // std::cout << "px(k=26, m=5, n=40): " << velocity.at(0).at(26).at(0)(5, 40) << std::endl;
     // std::cout << "px(k=26, m=40, n=5): " << velocity.at(0).at(26).at(0)(40, 5) << std::endl;
-    if (mpi_comm_global_h.is_root())
+    if (LIBRPA::envs::mpi_comm_global_h.is_root())
         std::cout << "* Success: read moment from moment_KS_spin_01_kpt_*.dat(FHI-aims)."
                   << std::endl;
 }
@@ -675,8 +675,9 @@ std::vector<size_t> handle_Cs_file_dry(const string &file_path, double threshold
                     infile >> Cs_ele;
                     maxval = std::max(maxval, abs(stod(Cs_ele)));
                 }
-        LIBRPA::envs::ofs_myid << id << " " << ia1 << " " << ia2 << " (" << ic_1 << "," << ic_2 << "," << ic_3 << ") " << maxval
-                               << " keep? " << (maxval >= threshold) << endl;
+        LIBRPA::envs::ofs_myid << id << " " << ia1 << " " << ia2 << " (" << ic_1 << "," << ic_2
+                               << "," << ic_3 << ") " << maxval << " keep? "
+                               << (maxval >= threshold) << endl;
         if (maxval >= threshold) Cs_ids_keep.push_back(id);
         id++;
     }
@@ -918,8 +919,9 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
 
     Profiler::start("handle_Cs_file");
     // cout << files_Cs_ids_this_proc.size() << "\n";
-    LIBRPA::envs::ofs_myid << "Number of Cs files to process: " << files_Cs_ids_this_proc.size() << "\n";
-    for (const auto& fn_ids: files_Cs_ids_this_proc)
+    LIBRPA::envs::ofs_myid << "Number of Cs files to process: " << files_Cs_ids_this_proc.size()
+                           << "\n";
+    for (const auto &fn_ids : files_Cs_ids_this_proc)
     {
         LIBRPA::envs::ofs_myid << fn_ids.first << " " << fn_ids.second << endl;
         if (binary)

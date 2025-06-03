@@ -524,7 +524,8 @@ static void chi_libri_ft_ct(
         }
     }
 
-    ofs_myid << "is: " << isp << " tau: " << tau << "  qifreq_atpair_all.size()" << ifreq_iq_mu_nu_to_Rs.size() << endl;
+    ofs_myid << "is: " << isp << " tau: " << tau << "  qifreq_atpair_all.size()"
+             << ifreq_iq_mu_nu_to_Rs.size() << endl;
     // ofs_myid << "qifreq_atpair_all: " << ifreq_iq_mu_nu_to_Rs << endl;
     ofs_myid << "available chi0s_IJR: " << chi0s_IJR.size() << endl;
     // ofs_myid << "Keys:" << endl;
@@ -548,7 +549,7 @@ static void chi_libri_ft_ct(
         // ofs_myid << n_mu << " " << n_nu << endl;
         ComplexMatrix cm_chi0(n_mu, n_nu);
         // ofs_myid << "created cm_chi0" << endl;
-        for (const auto &R: index_Rs.second)
+        for (const auto &R : index_Rs.second)
         {
             const auto &chi_tensor = chi0s_IJR.at(Mu).at({Nu, R});
             Vector3_Order<int> Rint(R[0], R[1], R[2]);
@@ -1032,8 +1033,9 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(
 
                     // On-the-fly build of Green's function at specific spin channel and imaginary
                     // time
+                    const auto nbands = mf.get_n_bands();
                     assert(Params::nbands_G < nbands);
-                    if (mpi_comm_global_h.is_root())
+                    if (LIBRPA::envs::mpi_comm_global_h.is_root())
                     {
                         if (Params::nbands_G >= 0)
                             std::cout << "Green's Function sums over " << Params::nbands_G
@@ -1924,7 +1926,7 @@ void Chi0::free_chi0_q(const double freq, const Vector3_Order<double> q)
 {
     auto &chi0_for_free = chi0_q.at(freq).at(q);
     chi0_for_free.clear();
-    map<atom_t, map<atom_t,ComplexMatrix>>().swap(chi0_for_free);
+    map<atom_t, map<atom_t, ComplexMatrix>>().swap(chi0_for_free);
 }
 
 // template void Chi0::build_chi0_q_space_time_LibRI_routing<double>(
@@ -1942,9 +1944,9 @@ void Chi0::free_chi0_q(const double freq, const Vector3_Order<double> q)
 //
 // template void chi_libri_ft_ct<std::complex<double>>(
 //     const int &, const int &, const int &, const TFGrids &,
-//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>> &,
-//     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
-//     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
+//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>>
+//     &, const vector<Vector3_Order<double>> &, const vector<atpair_t> &, map<double,
+//     map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
 //
 // template void chi_libri_ft_Rq<double>(
 //     const int &, const int &, const int &, const TFGrids &,
@@ -1954,6 +1956,6 @@ void Chi0::free_chi0_q(const double freq, const Vector3_Order<double> q)
 //
 // template void chi_libri_ft_Rq<std::complex<double>>(
 //     const int &, const int &, const int &, const TFGrids &,
-//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>> &,
-//     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
-//     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
+//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>>
+//     &, const vector<Vector3_Order<double>> &, const vector<atpair_t> &, map<double,
+//     map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
