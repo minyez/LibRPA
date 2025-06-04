@@ -98,6 +98,15 @@ struct Params
     /* ==========================================================
      * output options
      */
+    /*
+    switch of outputting Wc matrix in Abs (real space, imaginary frequency domain)
+    Available values:
+    - 0: do not output
+    - 1: output lowerest frequency
+    - 2: output all frequencies
+    */
+    static int output_Wc_Rf_mat;
+
     //! output correlation self-energy matrix (reciprocal space, imaginary frequency domain)
     static bool output_gw_sigc_mat;
 
