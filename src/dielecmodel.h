@@ -116,7 +116,7 @@ class diele_func
     void Cs_ij2mn();
     std::complex<double> compute_Cs_ij2mn(int mu, int m, int n, int ik);
     // diagonalize real Vq_cut(q=0)
-    void get_Xv_real();
+    // void get_Xv_real();
     // diagonalize complex Vq_cut(q=0)
     void get_Xv_cpl();
     void test_wing();

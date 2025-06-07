@@ -489,22 +489,7 @@ void diele_func::init_Cs()
             //              mpi_comm_global_h.comm);
         }
     }
-    this->Ctri_mn.resize(n_abf);
-    for (int mu = 0; mu != n_abf; mu++)
-    {
-        this->Ctri_mn.at(mu).resize(n_states);
-        for (int m = 0; m != n_states; m++)
-        {
-            this->Ctri_mn.at(mu).at(m).resize(n_states);
-            for (int n = 0; n != n_states; n++)
-            {
-                for (int ik = 0; ik != nk; ik++)
-                {
-                    this->Ctri_mn.at(mu).at(m).at(n).insert(std::make_pair(kfrac_band[ik], 0.0));
-                }
-            }
-        }
-    }
+
     // std::cout << "* Success: Initialize Ctri_ij and Ctri_mn.\n";
     Profiler::stop("init_Cs");
 };
@@ -586,6 +571,22 @@ std::complex<double> diele_func::compute_Cijk(Cs_LRI &Cs_in, int mu, int I, int 
 void diele_func::Cs_ij2mn()
 {
     Profiler::start("transform_Cs_NAO_to_KS");
+    this->Ctri_mn.resize(n_abf);
+    for (int mu = 0; mu != n_abf; mu++)
+    {
+        this->Ctri_mn.at(mu).resize(n_states);
+        for (int m = 0; m != n_states; m++)
+        {
+            this->Ctri_mn.at(mu).at(m).resize(n_states);
+            for (int n = 0; n != n_states; n++)
+            {
+                for (int ik = 0; ik != nk; ik++)
+                {
+                    this->Ctri_mn.at(mu).at(m).at(n).insert(std::make_pair(kfrac_band[ik], 0.0));
+                }
+            }
+        }
+    }
 #pragma omp parallel for schedule(dynamic) collapse(4)
     for (int ik = 0; ik != nk; ik++)
     {
@@ -607,6 +608,7 @@ void diele_func::Cs_ij2mn()
             }
         }
     }
+    Ctri_ij.clear();
     if (mpi_comm_global_h.is_root())
         std::cout << "* Success: transform of Cs from NAO to KS." << std::endl;
     Profiler::stop("transform_Cs_NAO_to_KS");
