@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "lebedev_quadrature.hpp"
+#include "utils_mem.h"
 #ifdef LIBRPA_USE_LIBRI
 #include <RI/comm/mix/Communicate_Tensors_Map_Judge.h>
 #include <RI/global/Tensor.h>
@@ -265,6 +266,7 @@ void diele_func::cal_wing()
     this->Coul_value.clear();
     this->Ctri_mn.clear();
     this->Ctri_ij.clear();
+    LIBRPA::utils::release_free_mem();
     Profiler::stop("cal_wing_mu");
 };
 
