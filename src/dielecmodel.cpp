@@ -95,43 +95,50 @@ void diele_func::init_wing()
         std::cout << "* Success: initalize and calculate lebdev points and q_gamma." << std::endl;
 }
 
+// intraband term is not considered
 void diele_func::cal_head()
 {
     Profiler::start("cal_head");
-    //! spin = 1 only
-    auto &wg = this->meanfield_df.get_weight()[n_spin - 1];
-    auto &eigenvalues = this->meanfield_df.get_eigenvals()[n_spin - 1];
-    auto &velocity = this->meanfield_df.get_velocity()[n_spin - 1];
     std::complex<double> tmp;
     int nocc = 0;
-
     double dielectric_unit = cal_factor("head");
-    for (int i = 0; i != wg.size; i++)
+
+    for (int ispin = 0; ispin != n_spin; ispin++)
     {
-        if (wg.c[i] == 0.)
+        auto &wg = this->meanfield_df.get_weight()[ispin];
+        auto &eigenvalues = this->meanfield_df.get_eigenvals()[ispin];
+        auto &velocity = this->meanfield_df.get_velocity()[ispin];
+        for (int ik = 0; ik != nk; ik++)
         {
-            nocc = i;
-            break;
-        }
-    }
-    for (int ik = 0; ik != nk; ik++)
-    {
-        for (int iocc = 0; iocc != nocc; iocc++)
-        {
-            for (int iunocc = nocc; iunocc != n_states; iunocc++)
+            for (int iocc = 0; iocc != n_states; iocc++)
             {
-                double egap = (eigenvalues(ik, iocc) - eigenvalues(ik, iunocc));  // * HA2EV;
-                for (int alpha = 0; alpha != 3; alpha++)
+                for (int iunocc = 0; iunocc != n_states; iunocc++)
                 {
-                    for (int beta = 0; beta != 3; beta++)
+                    if (iocc < iunocc)
                     {
-                        for (int iomega = 0; iomega != this->omega.size(); iomega++)
+                        double egap =
+                            (eigenvalues(ik, iocc) - eigenvalues(ik, iunocc));  // * HA2EV;
+                        double factor;
+                        if (Params::use_soc)
+                            factor = wg.c[iocc] - wg.c[iunocc];
+                        else
+                            factor = (wg.c[iocc] - wg.c[iunocc]) / 2 * n_spin;
+                        if (factor > 1.e-8)
                         {
-                            double omega_ev = this->omega[iomega];  // * HA2EV;
-                            tmp = 2.0 * velocity[ik][alpha](iunocc, iocc) *
-                                  velocity[ik][beta](iocc, iunocc) /
-                                  (egap * egap + omega_ev * omega_ev) / egap;
-                            this->head.at(iomega)(alpha, beta) -= tmp;
+                            for (int alpha = 0; alpha != 3; alpha++)
+                            {
+                                for (int beta = 0; beta != 3; beta++)
+                                {
+                                    for (int iomega = 0; iomega != this->omega.size(); iomega++)
+                                    {
+                                        double omega_ev = this->omega[iomega];  // * HA2EV;
+                                        tmp = 2.0 * factor * velocity[ik][alpha](iunocc, iocc) *
+                                              velocity[ik][beta](iocc, iunocc) /
+                                              (egap * egap + omega_ev * omega_ev) / egap;
+                                        this->head.at(iomega)(alpha, beta) -= tmp;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -144,15 +151,10 @@ void diele_func::cal_head()
         {
             for (int iomega = 0; iomega != this->omega.size(); iomega++)
             {
-                if (n_spin == 1)
-                {
-                    if (Params::use_soc)
-                        this->head.at(iomega)(alpha, beta) *= dielectric_unit;
-                    else
-                        this->head.at(iomega)(alpha, beta) *= dielectric_unit * 2;
-                }
-                else if (n_spin == 4)
+                if (Params::use_soc)
                     this->head.at(iomega)(alpha, beta) *= dielectric_unit;
+                else
+                    this->head.at(iomega)(alpha, beta) *= dielectric_unit * 2.0 / n_spin;
                 if (alpha == beta)
                 {
                     this->head.at(iomega)(alpha, beta) += complex<double>(1.0, 0.0);
@@ -181,7 +183,7 @@ double diele_func::cal_factor(string name)
         /*dielectric_unit = TWO_PI * hbar / h_divide_e2 / primitive_cell_volume /
                           this->meanfield_df.get_n_kpoints() * 1.0e30 / epsilon0 / eV;*/
         // aims
-        dielectric_unit = 2 * TWO_PI / primitive_cell_volume / this->meanfield_df.get_n_kpoints();
+        dielectric_unit = 2 * TWO_PI / primitive_cell_volume;
     }
     else if (name == "wing")
     {
@@ -189,8 +191,7 @@ double diele_func::cal_factor(string name)
         /* dielectric_unit = TWO_PI * hbar / h_divide_e2 * sqrt(2 * TWO_PI / primitive_cell_volume)
          * 1.0e15 / this->meanfield_df.get_n_kpoints() / epsilon0 / TWO_PI / eV; */
         // aims
-        dielectric_unit = 2 * sqrt(2 * TWO_PI / primitive_cell_volume) /
-                          this->meanfield_df.get_n_kpoints();  // bohr
+        dielectric_unit = 2 * sqrt(2 * TWO_PI / primitive_cell_volume);  // bohr
     }
     else
         throw std::logic_error("Unsupported value for head/wing factor");
@@ -241,15 +242,10 @@ void diele_func::cal_wing()
         {
             for (int iomega = 0; iomega != this->omega.size(); iomega++)
             {
-                if (n_spin == 1)
-                {
-                    if (Params::use_soc)
-                        this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit;
-                    else
-                        this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit * 2.0;
-                }
-                else if (n_spin == 4)
+                if (Params::use_soc)
                     this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit;
+                else
+                    this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit * 2.0 / n_spin;
             }
         }
     }
@@ -310,63 +306,56 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
 
 std::complex<double> diele_func::compute_wing(int alpha, int iomega, int mu)
 {
-    auto &wg = this->meanfield_df.get_weight()[n_spin - 1];
     auto &velocity = this->meanfield_df.get_velocity();
     auto &eigenvalues = this->meanfield_df.get_eigenvals();
-    int nocc = 0;
-    for (int i = 0; i != wg.size; i++)
-    {
-        if (wg.c[i] == 0.)
-        {
-            nocc = i;
-            break;
-        }
-    }
+    auto nkpts = this->meanfield_df.get_n_kpoints();
+
     double omega_ev = this->omega[iomega];  // * HA2EV;
     std::complex<double> wing_term = 0.0;
 
-    // std::complex<double> tmp = 0.0;
     for (int ispin = 0; ispin != n_spin; ispin++)
     {
+        auto &wg = this->meanfield_df.get_weight()[ispin];
         for (int ik = 0; ik != nk; ik++)
         {
             std::complex<double> test_tot = 0.0;
             for (int iocc = 0; iocc != n_states; iocc++)
             {
-                for (int iunocc = iocc; iunocc != n_states; iunocc++)
+                for (int iunocc = 0; iunocc != n_states; iunocc++)
                 {
                     double egap = (eigenvalues[ispin](ik, iunocc) -
                                    eigenvalues[ispin](ik, iocc));  // * HA2EV;
-                    if (iocc < nocc && iunocc >= nocc)
+                    if (iocc < iunocc)
                     {
-                        /*tmp += conj(this->Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]] *
-                                    velocity[ispin][ik][alpha](iunocc, iocc)) /
-                               (omega_ev * omega_ev + egap * egap);*/
-
-                        wing_term += conj(this->Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]] *
-                                          velocity[ispin][ik][alpha](iunocc, iocc)) /
-                                     (omega_ev * omega_ev + egap * egap);
-
-                        /*if (iocc == 5 && iunocc == 40 && alpha == 0 && mu == 0 && iomega == 0)
+                        double factor1;
+                        double factor2;
+                        if (Params::use_soc)
                         {
-                            std::cout << "mu, ik: " << mu << "," << ik << std::endl;
-                            std::cout << "C: " << std::scientific << std::setprecision(8)
-                                      << conj(this->Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]])
-                                      << std::endl;
-                            std::cout << "p: " << std::scientific << std::setprecision(8)
-                                      << conj(velocity[ispin][ik][alpha](iunocc, iocc))
-                                      << std::endl;
-                            std::cout << "E_m, E_n: " << std::scientific << std::setprecision(8)
-                                      << eigenvalues[ispin](ik, iunocc) << "," << std::scientific
-                                      << std::setprecision(8) << eigenvalues[ispin](ik, iocc)
-                                      << std::endl;
-                            std::cout << "C*p: "
-                                      << conj(
-                                              this->Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]] *
+                            factor1 = wg.c[iocc] * (1.0 - wg.c[iunocc] * nkpts);
+                            factor2 = wg.c[iunocc] * (1.0 - wg.c[iocc] * nkpts);
+                        }
+                        else
+                        {
+                            factor1 =
+                                wg.c[iocc] / 2 * n_spin * (1.0 - wg.c[iunocc] / 2 * n_spin * nkpts);
+                            factor2 =
+                                wg.c[iunocc] / 2 * n_spin * (1.0 - wg.c[iocc] / 2 * n_spin * nkpts);
+                        }
+                        if (factor1 > 1.e-8)
+                        {
+                            wing_term += factor1 *
+                                         conj(this->Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]] *
+
                                               velocity[ispin][ik][alpha](iunocc, iocc)) /
-                                             (omega_ev * omega_ev + egap * egap)
-                                      << std::endl;
-                        }*/
+                                         (omega_ev * omega_ev + egap * egap);
+                        }
+                        if (factor2 > 1.e-8)
+                        {  // for metal
+                            wing_term += factor2 * this->Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]] *
+                                         velocity[ispin][ik][alpha](iunocc, iocc) /
+                                         (omega_ev * omega_ev + egap * egap);
+                        }
+
                         if (Params::debug)
                         {
                             if (alpha == 0 && iomega == 0 && mu == 0)
@@ -385,13 +374,6 @@ std::complex<double> diele_func::compute_wing(int alpha, int iomega, int mu)
                                 test_tot += test;
                             }
                         }
-                    }
-                    else if (iunocc < nocc && iocc >= nocc)
-                    {
-                        // for metal
-                        wing_term += 0.0 * this->Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]] *
-                                     velocity[ispin][ik][alpha](iunocc, iocc) /
-                                     (omega_ev * omega_ev + egap * egap);
                     }
                 }
             }
