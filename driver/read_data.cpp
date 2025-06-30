@@ -305,10 +305,10 @@ void read_velocity(const string &file_path, MeanField &mf)
 {
     ifstream infile;
     infile.open(file_path);
-    string alpha, kk, single_re, single_im;
+    string alpha, kk, ss, single_re, single_im;
     int n_kpoints, n_spins, n_bands, n_aos;
     infile >> n_kpoints;
-    n_spins = 1;
+    infile >> n_spins;
     infile >> n_bands;
     infile >> n_aos;
 
@@ -319,11 +319,13 @@ void read_velocity(const string &file_path, MeanField &mf)
         {
             for (int ia = 0; ia != 3; ia++)
             {
-                infile >> alpha >> kk;
+                infile >> alpha >> kk >> ss;
                 int k_index = stoi(kk) - 1;
                 int a_index = stoi(alpha) - 1;
+                int s_index = stoi(ss) - 1;
                 assert(k_index == ik);
                 assert(a_index == ia);
+                assert(s_index == is);
                 for (int i = 0; i != n_bands; i++)
                 {
                     for (int j = 0; j != n_bands; j++)
@@ -1897,7 +1899,7 @@ MeanField read_meanfield_band(const string &dir_path, int n_basis, int n_states,
                         if (Params::use_soc)
                         {
                             // NOTE: i_spin should be 0 for spinor-form wavefunction
-                            assert (i_spin < 1);
+                            assert(i_spin < 1);
                             index = ib * n_basis * n_soc + iw * n_soc + i_soc;
                         }
                         else
