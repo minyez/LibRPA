@@ -1899,7 +1899,6 @@ MeanField read_meanfield_band(const string &dir_path, int n_basis, int n_states,
                         {
                             index = i_spin * n_basis * n_states + ib * n_basis + iw;
                         }
-                        if (ik == 0) cout << index << endl;
                         mf_band.get_eigenvectors()[i_spin][i_soc][ik](ib, iw) = vecs[index];
                     }
                 }
