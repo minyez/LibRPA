@@ -1,0 +1,34 @@
+#include "envs_cmake.h"
+
+namespace LIBRPA
+{
+
+namespace envs
+{
+
+const char * source_dir = "${PROJECT_SOURCE_DIR}/src";
+
+const char * git_hash = "${GIT_SHA1}";
+
+const char * git_ref = "${GIT_REF}";
+
+const char * cxx_compiler = "${CMAKE_CXX_COMPILER}";
+
+const char * fortran_compiler = "${CMAKE_Fortran_COMPILER}";
+
+const char * cxx_compiler_flags = "${CMAKE_CXX_FLAGS}";
+
+const char * fortran_compiler_flags = "${CMAKE_Fortran_FLAGS}";
+
+const char * cmake_build_type = "${CMAKE_BUILD_TYPE}";
+
+const char * use_libri = "${USE_LIBRI}";
+
+const char * libri_include_dir = "${LibRI_INCLUDE_DIR}";
+
+const char * libcomm_include_dir = "${LibComm_INCLUDE_DIR}";
+
+const char * use_greenx_api = "${USE_GREENX_API}";
+
+} /* end of namespace envs */
+} /* end of namespace LIBRPA */

@@ -1,0 +1,117 @@
+name: Build and run unittest with Intel oneAPI
+on:
+  push:
+  pull_request:
+
+# oneapi install adapted from the build_linux_apt_cpp of
+# https://github.com/oneapi-src/oneapi-ci/blob/master/.github/workflows/build_all.yml
+
+env:
+  LINUX_CPP_COMPONENTS: intel-oneapi-dpcpp-cpp-compiler_intel-oneapi-compiler-fortran_intel-oneapi-mkl_intel-oneapi-mkl-devel_intel-oneapi-mpi_intel-oneapi-mpi-devel
+
+jobs:
+  ONEAPI:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Intel oneAPI apt repo
+        run: |
+          # download the key to system keyring
+          wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+            | gpg --dearmor | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+          # add signed entry to apt sources and configure the APT client to use Intel repository:
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+            | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          # --allow-unauthenticated to resolve Clearsigned file isn't valid, got 'NOSPLIT' error
+          # when fetching https://packages.microsoft.com/ubuntu/22.04/prod
+          # https://superuser.com/questions/1774745/kali-apt-get-update-fails-with-clearsigned-file-isnt-valid
+          # https://superuser.com/questions/1331936/how-can-i-get-past-a-repository-is-not-signed-message-when-attempting-to-upgr
+          sudo apt-get update --allow-unauthenticated -o Dir::Etc::sourcelist="sources.list.d/oneAPI.list" -o APT::Get::List-Cleanup="0"
+      - name: Collect apt dependencies
+        run: |
+          echo "$LINUX_CPP_COMPONENTS" | sed "s/_/ /g" | xargs -n 1 apt-cache depends | tee depends.txt
+      - name: Cache install
+        id: cache-install
+        uses: actions/cache@v3
+        with:
+          path: /opt/intel/oneapi/
+          key: install-${{ env.LINUX_CPP_COMPONENTS }}-${{ hashFiles('**/depends.txt') }}
+      - name: Install build-essential and cmake
+        run: sudo apt-get install -y build-essential cmake
+      - name: Install python dependency
+        run: |
+          pip install --user pytest scipy
+          cd thirdparty/greenX-6ff8a00/python && python setup.py install --verbose --user
+      - name: Install tools including oneAPI
+        if: steps.cache-install.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get install -y $(echo "$LINUX_CPP_COMPONENTS" | sed "s/_/ /g")
+      - name: Initialize and update submodules recursively
+        run: git submodule update --init --recursive
+      - name: Check environment
+        run: |
+          echo -n "Size of /opt/intel/oneapi/: " && du -csh /opt/intel/oneapi
+          echo "PATH: $PATH"
+          which pytest
+          echo "PYTHONPATH: $PYTHONPATH"
+      - name: Build/test without LibRI
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          export BUILDDIR="build"
+          CXX=mpiicpx cmake -DUSE_LIBRI=OFF -B $BUILDDIR -DENABLE_TEST=ON
+          cmake --build $BUILDDIR -j 2
+          cmake --build $BUILDDIR --target test
+      - name: Build/test without LibRI and with GreenX TimeFrequency component
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          export BUILDDIR="build_greenx"
+          CXX=mpiicpx FC=ifx cmake -DUSE_LIBRI=OFF -DUSE_GREENX_API=ON -B $BUILDDIR -DENABLE_TEST=ON
+          cmake --build $BUILDDIR -j 2
+          cmake --build $BUILDDIR --target test
+      - name: Build/test with LibRI and without GreenX TimeFrequency component
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          export BUILDDIR="build_libri"
+          CXX=mpiicpx cmake -DUSE_LIBRI=ON -B $BUILDDIR -DENABLE_TEST=ON
+          cmake --build $BUILDDIR -j 2
+          cmake --build $BUILDDIR --target test
+          cd regression_tests
+          ./run_regression.py full ../${BUILDDIR}/chi0_main.exe -n 4 --use-libri -d "workspace_libri"
+          cd ..
+      - name: Build/test with LibRI and with GreenX TimeFrequency component
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          export BUILDDIR="build_libri_greenx"
+          CXX=mpiicpx FC=ifx cmake -DUSE_LIBRI=ON -DUSE_GREENX_API=ON -B $BUILDDIR -DENABLE_TEST=ON
+          cmake --build $BUILDDIR -j 2
+          cmake --build $BUILDDIR --target test
+          cd regression_tests
+          ./run_regression.py full ../${BUILDDIR}/chi0_main.exe -n 4 --use-libri --use-greenx-api -d "workspace_libri_greenx"
+          cd ..
+      - name: Build/test with LibRI and with GreenX TimeFrequency component, debug build
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          export BUILDDIR="build_libri_greenx_debug"
+          CXX=mpiicpx FC=ifx cmake -DUSE_LIBRI=ON -DUSE_GREENX_API=ON -B $BUILDDIR -DENABLE_TEST=ON -DCMAKE_BUILD_TYPE=Debug
+          cmake --build $BUILDDIR -j 2
+          cmake --build $BUILDDIR --target test
+      - name: Build Fortran binding
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          export BUILDDIR="build_fortran_bind"
+          CXX=mpiicpx FC=ifx cmake -DUSE_LIBRI=OFF -DUSE_GREENX_API=OFF -DENABLE_FORTRAN_BIND=ON -B $BUILDDIR -DENABLE_TEST=OFF
+          cmake --build $BUILDDIR -j 2
+      - name: Save last test log for check
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: save-last-test
+          path: |
+            build/Testing/Temporary/LastTest.log
+            build_greenx/Testing/Temporary/LastTest.log
+            build_libri/Testing/Temporary/LastTest.log
+            build_libri_greenx/Testing/Temporary/LastTest.log

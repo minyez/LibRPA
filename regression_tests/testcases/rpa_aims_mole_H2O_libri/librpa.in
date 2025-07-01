@@ -1,0 +1,5 @@
+input_dir = ./input_librpa/
+task = rpa
+nfreq = 16
+use_scalapack_ecrpa = t
+parallel_routing = libri

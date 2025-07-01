@@ -1,0 +1,82 @@
+# Created by https://www.toptal.com/developers/gitignore/api/cmake,c++
+# Edit at https://www.toptal.com/developers/gitignore?templates=cmake,c++
+
+### C++ ###
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+### CMake ###
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+
+### CMake Patch ###
+# External projects
+*-prefix/
+
+# End of https://www.toptal.com/developers/gitignore/api/cmake,c++
+
+*.pyc
+__pycache__
+local_*_points.dat
+*_time2freq_grid_*.txt
+*_freq2time_grid_*.txt
+
+# cmake build directories
+build*/
+
+# Necessary makefiles
+# !src/Makefile
+# !tests/Makefile
+
+.cache
+
+# environment config
+.envrc
+.clangd
+# personal build script
+mybuild*.sh
+
+# extracted test input data
+input_librpa/
+
+# regression test workspace
+regression_tests/workspace
