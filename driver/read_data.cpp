@@ -1862,7 +1862,8 @@ MeanField read_meanfield_band(const string &dir_path, int n_basis, int n_states,
         }
 
         int nbasis_full = Params::use_soc ? n_basis * 2 : n_basis;
-        size_t total_complex = static_cast<size_t>(n_states) * static_cast<size_t>(nbasis_full) * n_spin;
+        size_t total_complex =
+            static_cast<size_t>(n_states) * static_cast<size_t>(nbasis_full) * n_spin;
         size_t total_doubles = total_complex * 2;
 
         std::vector<double> double_buffer(total_doubles);
@@ -1890,14 +1891,15 @@ MeanField read_meanfield_band(const string &dir_path, int n_basis, int n_states,
                         size_t index;
                         if (Params::use_soc)
                         {
+                            // NOTE: i_spin should be 0 for spinor-form wavefunction
+                            assert (i_spin < 1);
                             index = ib * n_basis * n_soc + iw * n_soc + i_soc;
                         }
                         else
                         {
-                            index = ib * n_basis + iw;
+                            index = i_spin * n_basis * n_states + ib * n_basis + iw;
                         }
                         mf_band.get_eigenvectors()[i_spin][i_soc][ik](ib, iw) = vecs[index];
-
                     }
                 }
             }

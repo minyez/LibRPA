@@ -37,21 +37,6 @@ std::vector<std::vector<cplxdb>> build_G0(
     }
     return G0;
 }
-
-ComplexMatrix MeanField::get_dmat_cplx(int ispin, int isoc1, int isoc2, int ikpt) const
-{
-    assert(ispin < this->n_spins);
-    assert(ikpt < this->n_kpoints);
-    assert(isoc1 < this->n_soc);
-    assert(isoc2 < this->n_soc);
-    auto scaled_wfc_conj = conj(wfc[ispin][isoc2][ikpt]);
-    for (int ib = 0; ib != this->n_bands; ib++)
-        LapackConnector::scal(this->n_aos, this->wg[ispin](ikpt, ib),
-                              scaled_wfc_conj.c + n_aos * ib, 1);
-    auto dmat_cplx = transpose(this->wfc[ispin][isoc1][ikpt], false) * scaled_wfc_conj;
-    return dmat_cplx;
-}
-
 // mode A
 Matz build_correlation_potential_spin_k_modeA(
     const std::vector<std::vector<std::vector<cplxdb>>>& sigc_spin_k,

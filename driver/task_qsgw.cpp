@@ -39,7 +39,6 @@
 #include "utils_timefreq.h"
 #include "write_aims.h"
 
-
 std::vector<double> efermi_values;
 std::vector<double> homo_values;
 std::vector<double> lumo_values;
