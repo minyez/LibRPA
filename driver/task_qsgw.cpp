@@ -1006,11 +1006,11 @@ void task_qsgw(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                         Vc_all[i_spin][i_kpoint] = build_correlation_potential_spin_k(sigcmat, n_bands);
 
                         // Vc_all[i_spin][i_kpoint] = build_correlation_potential_spin_k_modeA(sigcmat,n_bands);
-                        if(iteration>1){
-                            Matz delta_Hartree_is_ik(n_bands, n_bands, MAJOR::COL);
-                            delta_Hartree_is_ik = Hartree_i_delta[i_spin][i_kpoint];
-                            Vc_all[i_spin][i_kpoint] = Vc_all[i_spin][i_kpoint] + delta_Hartree_is_ik;
-                        }
+                        // if(iteration>1){
+                        //     Matz delta_Hartree_is_ik(n_bands, n_bands, MAJOR::COL);
+                        //     delta_Hartree_is_ik = Hartree_i_delta[i_spin][i_kpoint];
+                        //     Vc_all[i_spin][i_kpoint] = Vc_all[i_spin][i_kpoint] + delta_Hartree_is_ik;
+                        // }
 
                         
 

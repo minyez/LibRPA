@@ -74,6 +74,8 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     std::map<int, std::map<int, Matz>> hf_nao;  
     std::map<int, std::map<int, Matz>> vxc;  
     std::map<int, std::map<int, Matz>> hf;
+    std::map<int, std::map<int, Matz>> s_nao;
+    std::map<int, std::map<int, Matz>> s_inverse;
     std::map<int, std::map<int, Matz>> vxc0;
     std::map<int, std::map<int, Matz>> vxc1;
     std::map<int, std::map<int, Matz>> exx0;
@@ -81,6 +83,8 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     std::map<int, std::map<int, Matz>> H_KS0;
     std::map<int, std::map<int, Matz>> H_KS1;//用于混合迭代
     std::map<int, std::map<int, Matz>> Hartree_0;
+    std::map<int, std::map<int, Matz>> hartree_nao;
+    std::map<int, std::map<int, Matz>> T_ext_potensial_0;
     std::map<int, std::map<int, Matz>> Hartree_i;
     std::map<int, std::map<int, Matz>> Hartree_i_delta;
     std::map<int,std::map<int, std::map<int, std::vector<cplxdb>>>> Omega_total; 
@@ -95,12 +99,14 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             std::string key_hf, key_vxc;
 
             // 使用 ostringstream 构建文件名
-            std::ostringstream oss_hf, oss_vxc;
+            std::ostringstream oss_hf, oss_vxc, oss_s;  // 新增S矩阵文件名生成器
             oss_hf << "hf_exchange_spin_0" << (ispin + 1) << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
             oss_vxc << "xc_matr_spin_" << (ispin + 1) << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
+            oss_s << "S_spin_0" << (ispin + 1) << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";  // 新增S矩阵文件名
 
             std::string hfFilePath = oss_hf.str();
             std::string vxcFilePath = oss_vxc.str();
+            std::string sFilePath = oss_s.str();  // 获取S矩阵文件路径
             
             Matz wfc1(n_bands, n_aos * n_soc, MAJOR::COL);
             for (int ib1 = 0; ib1 < n_bands; ++ib1)
@@ -116,21 +122,47 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 }
             }
 
-       
+            // 初始化 hf 和 vxc 矩阵
             hf_nao[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);  
             vxc0[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);     
-            // 初始化 hf 和 vxc 矩阵为零矩阵
+            s_nao[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);  // 新增S矩阵初始化
+            s_inverse[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);  // 新增S矩阵初始化
+            
+            // 初始化矩阵为零矩阵
             for (int i = 0; i < n_aos; ++i) {
                 for (int j = 0; j < n_aos; ++j) {
                     hf_nao[ispin][ikpt](i, j) = 0.0;
                     vxc0[ispin][ikpt](i, j) = 0.0;
+                    s_nao[ispin][ikpt](i, j) = 0.0;  // 初始化S矩阵元素
+                    s_inverse[ispin][ikpt](i, j) = 0.0;  // 初始化S矩阵元素
                 }
             }
-          
-            
 
             bool hf_file_found = false;
             bool vxc_file_found = false;
+            bool s_file_found = false;  // 新增S文件存在标志
+
+            // 新增S矩阵文件读取
+            std::string key_s;
+            std::ifstream s_file(sFilePath.c_str());
+            if (s_file.good()) {
+                if (!convert_csc(sFilePath, arrays, key_s)) {
+                    all_files_processed_successfully = false;
+                    std::cerr << "Failed to process S matrix file: " << sFilePath << std::endl;
+                } else {
+                    s_nao[ispin][ikpt] = arrays[key_s];
+                    s_file_found = true;
+                }
+            } else {
+                std::cerr << "S matrix file not found: " << sFilePath << std::endl;
+            }
+
+            // 修改文件存在性检查，包含S矩阵
+            if (!hf_file_found && !vxc_file_found && !s_file_found) {
+                all_files_processed_successfully = false;
+                std::cerr << "HF, VXC and S files not found for spin " << ispin + 1 << ", k-point " << ikpt + 1 << std::endl;
+                continue;
+            }
 
             // 读取 hf 文件
             std::ifstream hf_file(hfFilePath.c_str());
@@ -182,7 +214,15 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             // 生成 H_KS 和 H_KS0 矩阵
             hf[ispin][ikpt] = Matz(n_aos, n_aos, MAJOR::COL);     
             hf[ispin][ikpt] = conj(wfc1) * hf_nao[ispin][ikpt] * transpose(wfc1);//row hf,KS basis
-            
+            inverse(s_nao[ispin][ikpt],s_inverse[ispin][ikpt]);
+            // s_nao[ispin][ikpt] = conj(wfc1) * s_nao[ispin][ikpt] * transpose(wfc1);  // 检验完备性
+            // for (int i = 0; i < n_aos; ++i)
+            // {
+            //     for (int j = 0; j < n_aos; ++j)
+            //     {
+            //         printf("s_nao[%d][%d](%d,%d) = %f\n", ispin, ikpt, i, j, s_nao[ispin][ikpt](i, j));
+            //     }
+            // }
             // 将 hf 和 vxc 在 KS 基下相加，生成最终的 vxc 矩阵
             
             vxc[ispin][ikpt] = vxc0[ispin][ikpt] + hf[ispin][ikpt];
@@ -195,13 +235,9 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 H_KS[ispin][ikpt](i_band, i_band) = meanfield.get_eigenvals()[ispin](ikpt, i_band);
                 H_KS0[ispin][ikpt](i_band, i_band) = meanfield.get_eigenvals()[ispin](ikpt, i_band);
             }
-         
         }
-   
     }
     
-
-
     Profiler::stop("read_vxc_HKS");
     mpi_comm_global_h.barrier();
     std::flush(ofs_myid);
@@ -251,7 +287,6 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
     printf("%5s\n","Total_electrons");
     printf("%5f\n",total_electrons);
     
-
     // 设置收敛条件
     double eigenvalue_tolerance = 1e-4; // 设置一个适当的小值，作为本征值收敛的判断标准
     int max_iterations =200;           // 最大迭代次数
@@ -282,6 +317,7 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             }
         }
         mpi_comm_global_h.barrier();
+
 
         // std::complex<double> corr;
         // std::vector<std::complex<double>> corr_irk(n_irk_points);
@@ -388,7 +424,6 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             if (std::abs(rpa_corr.imag()) > 1.e-3)
                 lib_printf("Warning: considerable imaginary part of EcRPA = %f\n", rpa_corr.imag());
         }
-        
 
         // 读取库伦相互作用
         Profiler::start("read_vq_cut", "Load truncated Coulomb");
@@ -482,8 +517,12 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
         std::flush(ofs_myid);
         mpi_comm_global_h.barrier();
 
-        std::complex<double> hartree_energy;
-        hartree_energy = 0.0;
+        // 构建V^{Hartree}矩阵,得到Hartree_i_nband_nband: Hartree.Hartree_is_ik_KS[ispin][ikpt]
+
+        std::complex<double> hartree_energy = 0.0;
+        std::complex<double> hartree_energy_test = 0.0;
+        std::complex<double> T_ext_energy = 0.0;
+
         if (mpi_comm_global_h.is_root())
         {
             for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
@@ -492,38 +531,78 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                     for(int isoc2 = 0; isoc2 < meanfield.get_n_soc(); ++isoc2)
                     {
                         for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {    
-                            Hartree_i[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
-                            Hartree_0[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
+                            Hartree_i[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);                           
                             Hartree_i_delta[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
+                            hartree_nao[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
+                            Matz dmat_ks_is_ik = Matz(n_bands, n_bands, MAJOR::COL);
+                            Matz dmat_nao_is_ik = Matz(n_bands, n_bands, MAJOR::COL);
+                            if(iteration==1)
+                            {
+                                Hartree_0[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
+                                T_ext_potensial_0[ispin][ikpt] = Matz(n_bands, n_bands, MAJOR::COL);
+                            }
+                            Matz wfc2(n_bands, n_aos * n_soc, MAJOR::COL);
+
+                            for (int ib1 = 0; ib1 < n_bands; ++ib1)
+                            {
+                                for (int isoc = 0; isoc < n_soc; isoc++)
+                                {
+                                    for (int iao = 0; iao < n_aos; iao++)
+                                    {
+                                        int ib2 = iao * n_soc + isoc;
+                                        wfc2(ib1, ib2) = meanfield.get_eigenvectors0()[ispin][isoc][ikpt](ib1, iao);       
+                                        //soc可能会有bug
+                                        dmat_nao_is_ik(ib1, ib2) = meanfield.get_dmat_cplx(ispin, isoc1, isoc2, ikpt)(ib1, ib2);    
+                                    }
+                                }
+                            }
+                            // conj(wfc1) * hf_nao[ispin][ikpt] * transpose(wfc1);
+                            if(iteration==1)
+                                {
+                                    Hartree_0[ispin][ikpt] =  Hartree.Hartree_is_ik_KS[ispin][ikpt];
+                                }
+                            dmat_ks_is_ik = conj(wfc2) * dmat_nao_is_ik * transpose(wfc2);
+                            dmat_ks_is_ik = transpose(wfc2) * dmat_ks_is_ik * conj(wfc2);
+                            hartree_nao[ispin][ikpt] = s_nao[ispin][ikpt] * transpose(wfc2) * Hartree.Hartree_is_ik_KS[ispin][ikpt] * conj(wfc2) * s_nao[ispin][ikpt];
+                            T_ext_potensial_0[ispin][ikpt] = s_nao[ispin][ikpt] * transpose(wfc2) * (H_KS0[ispin][ikpt] - Hartree_0[ispin][ikpt] - vxc0[ispin][ikpt]) * conj(wfc2) * s_nao[ispin][ikpt];
                             for (int i = 0; i < n_bands; ++i) {                                
                                 const auto &hartree0_k_ks_value = Hartree.EHartree[ispin][ikpt][i];
-                                printf("%16.6f ", hartree0_k_ks_value ); 
+                                // printf("%16.6f ", hartree0_k_ks_value ); 
                                 for (int j = 0; j < n_bands;++j) {
 
                                     const auto &hartree_k_ks_value = Hartree.Hartree_is_ik_KS[ispin][ikpt](i, j);
                                     
                                     Hartree_i[ispin][ikpt](i, j) = hartree_k_ks_value;
                                     
-                                    if(iteration==1){
-                                        Hartree_0[ispin][ikpt](i, j) =  Hartree.Hartree_is_ik_KS[ispin][ikpt](i,j);
-                                    }
-                                    else{
+                                    
+                                    if(iteration!=1)
+                                    {
                                         Hartree_i_delta[ispin][ikpt](i, j) = Hartree_i[ispin][ikpt](i, j) - Hartree_0[ispin][ikpt](i,j);
                                         
                                     }
                                     hartree_energy += - 0.5 * Hartree.Hartree_is_ik_nao[ispin][ikpt](i, j) * meanfield.get_dmat_cplx(ispin, isoc1, isoc2, ikpt)(j, i);
+                                    hartree_energy_test +=  0.5 * hartree_nao[ispin][ikpt](i,j) * meanfield.get_dmat_cplx(ispin, isoc1, isoc2, ikpt)(j, i);
+
+                                    T_ext_energy +=  T_ext_potensial_0[ispin][ikpt](i,j) * meanfield.get_dmat_cplx(ispin, isoc1, isoc2, ikpt)(j, i)  ;
+                                
                                 }
-                                printf("\n");
+                                // printf("\n");
+
                             }
-                            printf("\n");
-                          
+                            // printf("\n");
+                            
                         }
                     }
                 }
             }
             lib_printf(" Hartree_energy (Hartree)\n");
             lib_printf("| Hartree_energy: %18.9f\n", hartree_energy.real());
+            lib_printf("| Hartree_energy_test: %18.9f\n", hartree_energy_test.real());
+            lib_printf("| T_ext_energy: %18.9f\n", T_ext_energy.real());
+
         }
+      
+        
         // 构建V^{exx}矩阵,得到Hexx_nband_nband: exx.exx_is_ik_KS
 
         Profiler::start("scRPA_exx", "Build exchange self-energy");
@@ -576,12 +655,10 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
             lib_printf("Exchange self-energy (Hartree)\n");
             lib_printf("| Exx_energy: %18.9f\n", exx_energy.real());
             lib_printf("| XC_energy: %18.9f\n", rpa_corr.real()+exx_energy.real());
-            lib_printf("| Total_energy: %18.9f\n", hartree_energy.real()+rpa_corr.real()+exx_energy.real());
+            lib_printf("| Total_energy: %18.9f\n", hartree_energy.real()+rpa_corr.real()+exx_energy.real()+T_ext_energy.real());
 
         }
         
-        
-      
         
         
         
@@ -679,7 +756,12 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                         auto G0_matrix= build_G0(meanfield,freq,i_spin,i_kpoint,n_bands);
                     
                         Vc_all[i_spin][i_kpoint] = calculate_scRPA_exchange_correlation(meanfield,freq,f_weight,sigc_sk,sigcmat,G0_matrix,i_spin,i_kpoint,n_bands,temperature);
-                        
+                        if(iteration>1){
+                            Matz delta_Hartree_is_ik(n_bands, n_bands, MAJOR::COL);
+                            delta_Hartree_is_ik = Hartree_i_delta[i_spin][i_kpoint];
+                            Vc_all[i_spin][i_kpoint] = Vc_all[i_spin][i_kpoint] + delta_Hartree_is_ik;
+                        }
+
 
                         // printf("%77s\n", final_banner.c_str());
                         // printf("Vc_all.real:\n");
@@ -708,7 +790,7 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 auto H0_GW_all = construct_H0_GW(meanfield, H_KS0, vxc0, exx.exx_is_ik_KS, Vc_all, n_spins, n_kpoints, n_bands);
                 
             
-                //混合
+                // //混合
                 // if(iteration > 1){
                 //     for (int ispin = 0; ispin < meanfield.get_n_spins(); ++ispin) {
                 //         for (int ikpt = 0; ikpt < meanfield.get_n_kpoints(); ++ikpt) {
@@ -716,6 +798,7 @@ void task_scRPA(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 //         }
                 //     }
                 // }
+                // H_KS = H0_GW_all;
                 // 第三步：对 Hamiltonian 进行对角化并存储本征值
                 diagonalize_and_store(meanfield, H0_GW_all, n_spins, n_kpoints, n_bands);
   

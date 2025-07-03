@@ -581,8 +581,7 @@ void task_qsgw_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                             }
                         }
 
-                        Vc_all[i_spin][i_kpoint] =
-                            build_correlation_potential_spin_k(sigcmat, n_bands);
+                        Vc_all[i_spin][i_kpoint] = build_correlation_potential_spin_k(sigcmat, n_bands);
                     }
                 }
                 Profiler::stop("qsgw_solve_qpe");
