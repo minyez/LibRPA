@@ -57,15 +57,15 @@ class diele_func
     // ( lambda: n_nonsingular-1 )
     std::vector<std::complex<double>> Coul_value;
     // ( mu: n_abfs, m: n_bands, n: n_bands, k )
-    std::vector<std::vector<std::vector<std::map<Vector3_Order<double>, std::complex<double>>>>>
-        Ctri_mn;
+    // std::vector<std::vector<std::vector<std::map<Vector3_Order<double>, std::complex<double>>>>>
+    //    Ctri_mn;
     // ( mu: n_abfs@I, i: i atom basis, j: j atom basis, k, I atom, J atom, q cell  )
     // Ctri_ij.data_libri[I][{J, k_array}](mu, i, j)
-    Cs_LRI_clx Ctri_ij;
+    // Cs_LRI_clx Ctri_ij;
     // ( mu: n_abfs@I, i: i atom basis, j: j atom basis, k, I atom, J atom, R cell  )
     // Ctri_ij.data_libri[I][{J, R}](mu, i, j)
     // used for reduce all mpi Cs_data to Cs_IJR
-    Cs_LRI Cs_IJR;
+    // Cs_LRI Cs_IJR;
 
     MeanField &meanfield_df;
     std::vector<double> omega;
@@ -95,7 +95,7 @@ class diele_func
     ~diele_func() {};
     void init();
     void init_wing();
-    void init_Cs();
+    // void init_Cs();
     void set(MeanField &mf, std::vector<Vector3_Order<double>> &kfrac,
              std::vector<double> frequencies_target, int nbasis, int nstates, int nspin);
 
@@ -106,18 +106,22 @@ class diele_func
 
     void cal_wing();
     // compute wing in ABF representation
-    std::complex<double> compute_wing(int alpha, int iomega, int mu);
+    std::complex<double> compute_wing(const int alpha, const int iomega, const int mu, const int ik,
+                                      const int ispin, const Array_Desc &desc_nband_nband,
+                                      const matrix_m<complex<double>> &C_nband_nband);
     // transform wing from ABF to Coulomb representation
     void wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blacs,
                            Array_Desc &desc_nabf_nabf_opt);
     // tranform Cs_ij(R) to Cs_ij(k)
-    void FT_R2k();
-    std::complex<double> compute_Cijk(Cs_LRI &Cs_in, int mu, int I, int i, int J, int j, int ik);
-    void Cs_ij2mn();
-    std::complex<double> compute_Cs_ij2mn(int mu, int m, int n, int ik);
-    // diagonalize real Vq_cut(q=0)
-    // void get_Xv_real();
-    // diagonalize complex Vq_cut(q=0)
+    std::pair<Array_Desc, matrix_m<complex<double>>> transform_Cs2mnk(const int ik, const int ispin,
+                                                                      const int mu);
+    // void FT_R2k();
+    // std::complex<double> compute_Cijk(Cs_LRI &Cs_in, int mu, int I, int i, int J, int j, int
+    // ik); void Cs_ij2mn(); std::complex<double> compute_Cs_ij2mn(int mu, int m, int n, int
+    // ik);
+    //  diagonalize real Vq_cut(q=0)
+    //  void get_Xv_real();
+    //  diagonalize complex Vq_cut(q=0)
     void get_Xv_cpl();
     void test_wing();
     // set wing=0 for debug
