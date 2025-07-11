@@ -232,9 +232,9 @@ void diele_func::cal_wing()
         for (int ik = 0; ik != nk; ik++)
         {
             // mpi_comm_global_h.barrier();
-            // Profiler::start("transform_Cs2mnk");
+            Profiler::start("transform_Cs2mnk");
             auto desc_C_mnk = transform_Cs2mnk(ik, mu);
-            // Profiler::stop("transform_Cs2mnk");
+            Profiler::stop("transform_Cs2mnk");
             auto &desc_nband_nband = desc_C_mnk.first;
             auto &C_mnk = desc_C_mnk.second;
             // if (mu == 0 && mpi_comm_global_h.is_root())
@@ -246,7 +246,7 @@ void diele_func::cal_wing()
             //     std::cout << "C,p: " << C_mnk(i_3, j_4) << "," << velocity[isp][ik][0](4, 3)
             //               << std::endl;
             // }
-            // Profiler::start("compute_wing");
+            Profiler::start("compute_wing");
             for (int iomega = 0; iomega != this->omega.size(); iomega++)
             {
                 for (int alpha = 0; alpha != 3; alpha++)
@@ -260,7 +260,7 @@ void diele_func::cal_wing()
                     }
                 }
             }
-            // Profiler::stop("compute_wing");
+            Profiler::stop("compute_wing");
         }
     }
     Profiler::start("Comm_wing");
@@ -315,8 +315,6 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
     desc_nao_nao.init_1b1p(n_basis, n_basis, 0, 0);
     Array_Desc desc_nband_nband(blacs_ctxt_global_h);
     desc_nband_nband.init_1b1p(n_states, n_states, 0, 0);
-    Array_Desc desc_nband_nband_fb(blacs_ctxt_global_h);
-    desc_nband_nband_fb.init(n_states, n_states, n_states, n_states, 0, 0);
 
     auto C_nao_nao = init_local_mat<complex<double>>(desc_Mu_nao, MAJOR::COL);
     auto C_nband_nband = init_local_mat<complex<double>>(desc_nband_nband, MAJOR::COL);
@@ -330,6 +328,7 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
         const auto ang = (kfrac * R_IJ) * TWO_PI;
         return complex<double>{std::cos(ang), std::sin(ang)};
     };
+    Profiler::start("fourier");
     const auto set_IJ_nao_nao = LIBRPA::utils::get_necessary_IJ_from_block_2D(
         atomic_basis_wfc, atomic_basis_wfc, desc_nao_nao);
     auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao);
@@ -338,6 +337,7 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
 
     std::map<libri_types<int, int>::TAC, Tensor<double>> data_libri;
     std::map<int, std::map<std::pair<int, std::array<int, 3>>, Tensor<double>>> Cs_I_JR_local;
+    Profiler::start("fourier_assign");
     if (Params::use_shrink_abfs)
     {
         data_libri = Cs_shrinked_data.data_libri.at(Mu);
@@ -367,8 +367,11 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
             }
         }
     }
+    Profiler::stop("fourier_assign");
+    Profiler::start("fourier_comm");
     auto Cs_I_JR =
         comm_map2_first(mpi_comm_global_h.comm, Cs_I_JR_local, s0_s1.first, s0_s1.second);
+    Profiler::stop("fourier_comm");
     Cs_I_JR_local.clear();
     data_libri.clear();
     C_nao_nao.zero_out();
@@ -377,9 +380,12 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
     LIBRPA::AtomicBasis atomic_basis_wfc_row;
     atom_Mu[0] = atomic_basis_wfc.get_atom_nb(Mu);
     atomic_basis_wfc_row.set(atom_Mu);
+    Profiler::start("fourier_collect");
     collect_block_from_IJ_storage_tensor_transform_triple(
         C_nao_nao, desc_Mu_nao, atomic_basis_wfc_row, atomic_basis_wfc, fourier, Cs_I_JR, Mu);
+    Profiler::stop("fourier_collect");
     Cs_I_JR.clear();
+    Profiler::stop("fourier");
     // if (ik == 0 && mu == 1)
     // {
     //     for (int i = 0; i < n_ao_Mu; i++)
@@ -394,6 +400,7 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
     //             ofs_myid << "Cij: " << i << ", " << C_nao_nao(ii_loc, jj_loc) << std::endl;
     //     }
     // }
+    Profiler::start("scalapack_multiply");
     // prepare wave function BLACS
     for (int ispin = 0; ispin != n_spin; ispin++)
     {
@@ -442,6 +449,13 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
                                             temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc,
                                             wfc2_block.ptr(), 1, 1, desc_nband_nao.desc, 1.0,
                                             C_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
+                auto C_tmp = init_local_mat<complex<double>>(desc_nband_nband, MAJOR::COL);
+                ScalapackConnector::pgeadd_f('C', n_states, n_states, 1.0, C_nband_nband.ptr(), 1,
+                                             1, desc_nband_nband.desc, 0.0, C_tmp.ptr(), 1, 1,
+                                             desc_nband_nband.desc);
+                ScalapackConnector::pgeadd_f('N', n_states, n_states, 1.0, C_tmp.ptr(), 1, 1,
+                                             desc_nband_nband.desc, 1.0, C_nband_nband.ptr(), 1, 1,
+                                             desc_nband_nband.desc);
                 // if (ik == 0 && mu == 1)
                 // {
                 //     auto i_3 = desc_nband_nband.indx_g2l_r(3);
@@ -450,19 +464,19 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
                 //         ofs_myid << "Cmn1: " << C_nband_nband(i_3, j_4) << std::endl;
                 // }
                 // term2
-                wfc1_block = get_local_mat(wfc_Mu.c, MAJOR::ROW, desc_nband_Mu, MAJOR::COL);
-                wfc2_block =
-                    get_local_mat(conj(wfc_isp2_k).c, MAJOR::ROW, desc_nband_nao, MAJOR::COL);
-                auto tmp_band_Mu = init_local_mat<complex<double>>(desc_nband_Mu, MAJOR::COL);
+                // wfc1_block = get_local_mat(wfc_Mu.c, MAJOR::ROW, desc_nband_Mu, MAJOR::COL);
+                // wfc2_block =
+                //     get_local_mat(conj(wfc_isp2_k).c, MAJOR::ROW, desc_nband_nao, MAJOR::COL);
+                // auto tmp_band_Mu = init_local_mat<complex<double>>(desc_nband_Mu, MAJOR::COL);
 
-                ScalapackConnector::pgemm_f('N', 'C', n_states, n_ao_Mu, n_basis, 1.0,
-                                            wfc2_block.ptr(), 1, 1, desc_nband_nao.desc,
-                                            C_nao_nao.ptr(), 1, 1, desc_Mu_nao.desc, 0.0,
-                                            tmp_band_Mu.ptr(), 1, 1, desc_nband_Mu.desc);
-                ScalapackConnector::pgemm_f('N', 'T', n_states, n_states, n_ao_Mu, 1.0,
-                                            tmp_band_Mu.ptr(), 1, 1, desc_nband_Mu.desc,
-                                            wfc1_block.ptr(), 1, 1, desc_nband_Mu.desc, 1.0,
-                                            C_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
+                // ScalapackConnector::pgemm_f('N', 'C', n_states, n_ao_Mu, n_basis, 1.0,
+                //                             wfc2_block.ptr(), 1, 1, desc_nband_nao.desc,
+                //                             C_nao_nao.ptr(), 1, 1, desc_Mu_nao.desc, 0.0,
+                //                             tmp_band_Mu.ptr(), 1, 1, desc_nband_Mu.desc);
+                // ScalapackConnector::pgemm_f('N', 'T', n_states, n_states, n_ao_Mu, 1.0,
+                //                             tmp_band_Mu.ptr(), 1, 1, desc_nband_Mu.desc,
+                //                             wfc1_block.ptr(), 1, 1, desc_nband_Mu.desc, 1.0,
+                //                             C_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
                 // if (ik == 0 && mu == 1)
                 // {
                 //     auto i_3 = desc_nband_nband.indx_g2l_r(3);
@@ -473,11 +487,8 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
             }
         }
     }
-    auto C_nband_nband_fb = init_local_mat<complex<double>>(desc_nband_nband_fb, MAJOR::COL);
-    ScalapackConnector::pgemr2d_f(n_states, n_states, C_nband_nband.ptr(), 1, 1,
-                                  desc_nband_nband.desc, C_nband_nband_fb.ptr(), 1, 1,
-                                  desc_nband_nband_fb.desc, desc_nband_nband_fb.ictxt());
-    return std::make_pair(desc_nband_nband_fb, C_nband_nband_fb);
+    Profiler::stop("scalapack_multiply");
+    return std::make_pair(desc_nband_nband, C_nband_nband);
 };
 
 std::complex<double> diele_func::compute_wing(const int alpha, const int iomega, const int mu,
