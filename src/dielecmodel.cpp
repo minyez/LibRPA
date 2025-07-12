@@ -232,9 +232,9 @@ void diele_func::cal_wing()
         for (int ik = 0; ik != nk; ik++)
         {
             // mpi_comm_global_h.barrier();
-            Profiler::start("transform_Cs2mnk");
+            // Profiler::start("transform_Cs2mnk");
             auto desc_C_mnk = transform_Cs2mnk(ik, mu);
-            Profiler::stop("transform_Cs2mnk");
+            // Profiler::stop("transform_Cs2mnk");
             auto &desc_nband_nband = desc_C_mnk.first;
             auto &C_mnk = desc_C_mnk.second;
             // if (mu == 0 && mpi_comm_global_h.is_root())
@@ -246,7 +246,7 @@ void diele_func::cal_wing()
             //     std::cout << "C,p: " << C_mnk(i_3, j_4) << "," << velocity[isp][ik][0](4, 3)
             //               << std::endl;
             // }
-            Profiler::start("compute_wing");
+            // Profiler::start("compute_wing");
             for (int iomega = 0; iomega != this->omega.size(); iomega++)
             {
                 for (int alpha = 0; alpha != 3; alpha++)
@@ -260,7 +260,7 @@ void diele_func::cal_wing()
                     }
                 }
             }
-            Profiler::stop("compute_wing");
+            // Profiler::stop("compute_wing");
         }
     }
     Profiler::start("Comm_wing");
@@ -328,7 +328,7 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
         const auto ang = (kfrac * R_IJ) * TWO_PI;
         return complex<double>{std::cos(ang), std::sin(ang)};
     };
-    Profiler::start("fourier");
+    // Profiler::start("fourier");
     const auto set_IJ_nao_nao = LIBRPA::utils::get_necessary_IJ_from_block_2D(
         atomic_basis_wfc, atomic_basis_wfc, desc_nao_nao);
     auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao);
@@ -337,7 +337,7 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
 
     std::map<libri_types<int, int>::TAC, Tensor<double>> data_libri;
     std::map<int, std::map<std::pair<int, std::array<int, 3>>, Tensor<double>>> Cs_I_JR_local;
-    Profiler::start("fourier_assign");
+    // Profiler::start("fourier_assign");
     if (Params::use_shrink_abfs)
     {
         data_libri = Cs_shrinked_data.data_libri.at(Mu);
@@ -367,11 +367,11 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
             }
         }
     }
-    Profiler::stop("fourier_assign");
-    Profiler::start("fourier_comm");
+    // Profiler::stop("fourier_assign");
+    // Profiler::start("fourier_comm");
     auto Cs_I_JR =
         comm_map2_first(mpi_comm_global_h.comm, Cs_I_JR_local, s0_s1.first, s0_s1.second);
-    Profiler::stop("fourier_comm");
+    // Profiler::stop("fourier_comm");
     Cs_I_JR_local.clear();
     data_libri.clear();
     C_nao_nao.zero_out();
@@ -380,28 +380,28 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
     LIBRPA::AtomicBasis atomic_basis_wfc_row;
     atom_Mu[0] = atomic_basis_wfc.get_atom_nb(Mu);
     atomic_basis_wfc_row.set(atom_Mu);
-    Profiler::start("fourier_collect");
+    // Profiler::start("fourier_collect");
     collect_block_from_IJ_storage_tensor_transform_triple(
         C_nao_nao, desc_Mu_nao, atomic_basis_wfc_row, atomic_basis_wfc, fourier, Cs_I_JR, Mu);
-    Profiler::stop("fourier_collect");
+    // Profiler::stop("fourier_collect");
     Cs_I_JR.clear();
-    Profiler::stop("fourier");
-    // if (ik == 0 && mu == 1)
-    // {
-    //     for (int i = 0; i < n_ao_Mu; i++)
-    //     {
-    //         int J = 0;
-    //         int j = 4;
-    //         int ii = atomic_basis_wfc.get_global_index(0, i);
-    //         int jj = atomic_basis_wfc.get_global_index(J, j);
-    //         auto ii_loc = desc_Mu_nao.indx_g2l_r(ii);
-    //         auto jj_loc = desc_Mu_nao.indx_g2l_c(jj);
-    //         if (ii_loc >= 0 && jj_loc >= 0)
-    //             ofs_myid << "Cij: " << i << ", " << C_nao_nao(ii_loc, jj_loc) << std::endl;
-    //     }
-    // }
-    Profiler::start("scalapack_multiply");
-    // prepare wave function BLACS
+    // Profiler::stop("fourier");
+    //  if (ik == 0 && mu == 1)
+    //  {
+    //      for (int i = 0; i < n_ao_Mu; i++)
+    //      {
+    //          int J = 0;
+    //          int j = 4;
+    //          int ii = atomic_basis_wfc.get_global_index(0, i);
+    //          int jj = atomic_basis_wfc.get_global_index(J, j);
+    //          auto ii_loc = desc_Mu_nao.indx_g2l_r(ii);
+    //          auto jj_loc = desc_Mu_nao.indx_g2l_c(jj);
+    //          if (ii_loc >= 0 && jj_loc >= 0)
+    //              ofs_myid << "Cij: " << i << ", " << C_nao_nao(ii_loc, jj_loc) << std::endl;
+    //      }
+    //  }
+    // Profiler::start("scalapack_multiply");
+    //  prepare wave function BLACS
     for (int ispin = 0; ispin != n_spin; ispin++)
     {
         for (int is1 = 0; is1 != n_soc; is1++)
@@ -487,7 +487,7 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
             }
         }
     }
-    Profiler::stop("scalapack_multiply");
+    // Profiler::stop("scalapack_multiply");
     return std::make_pair(desc_nband_nband, C_nband_nband);
 };
 
