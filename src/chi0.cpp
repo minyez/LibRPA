@@ -382,11 +382,24 @@ static void build_gf_Rt_libri(
             }
             omp_set_lock(&gf_lock);
             gf_libri[I][{J, Ra}] = RI::Tensor<double>({nI, nJ}, ptr);
+            double max = -1;
+            for(int i = 0; i < nI; i++)
+            {
+                for (int j = 0; j < nJ; j++)
+                {
+                    if (max < std::abs((*ptr)[i * nJ + j]))
+                        max = std::abs((*ptr)[i * nJ + j]);
+                }
+            }
+            Vector3_Order<int> R_vec(Ra[0],Ra[1],Ra[2]);
+            double R_norm= (R_vec * latvec).norm();
+            std::cout<<"G(chi)::I:"<<I<<", J:"<<J << ", R: "<<R_norm <<" max: "<<max<<endl;
             omp_unset_lock(&gf_lock);
         }
 #pragma omp barrier
         omp_destroy_lock(&gf_lock);
     }
+
 
     Profiler::stop("build_gf_Rt_libri");
 }
@@ -1115,7 +1128,21 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(
                                     RI::Tensor<Tdata>({chi0.shape[0], chi0.shape[1]});
                             }
                             chi0s_IJR[I][{J, R}] += chi0;
-                        }
+
+                            double max = -1;
+                            for(int i = 0; i < chi0.shape[0]; i++)
+                            {
+                                for (int j = 0; j < chi0.shape[1]; j++)
+                                {
+                                    if (max < std::abs(chi0s_IJR[I][{J, R}](i, j)))
+                                        max = std::abs(chi0s_IJR[I][{J, R}](i, j));
+                                }
+                            }
+                            Vector3_Order<int> R_vec(R[0],R[1],R[2]);
+                            double R_norm= (R_vec*latvec).norm();
+                            std::cout<<"chi::I:"<<I<<", J:"<<J << ", R: "<<R_norm <<" max: "<<max<<endl;
+
+                            }
                     }
                 }
             }

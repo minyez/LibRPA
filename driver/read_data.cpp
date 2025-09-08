@@ -305,10 +305,10 @@ void read_velocity(const string &file_path, MeanField &mf)
 {
     ifstream infile;
     infile.open(file_path);
-    string alpha, kk, single_re, single_im;
+    string alpha, kk, ss, single_re, single_im;
     int n_kpoints, n_spins, n_bands, n_aos;
     infile >> n_kpoints;
-    n_spins = 1;
+    infile >> n_spins;
     infile >> n_bands;
     infile >> n_aos;
 
@@ -319,11 +319,13 @@ void read_velocity(const string &file_path, MeanField &mf)
         {
             for (int ia = 0; ia != 3; ia++)
             {
-                infile >> alpha >> kk;
+                infile >> alpha >> kk >> ss;
                 int k_index = stoi(kk) - 1;
                 int a_index = stoi(alpha) - 1;
+                int s_index = stoi(ss) - 1;
                 assert(k_index == ik);
                 assert(a_index == ia);
+                assert(s_index == is);
                 for (int i = 0; i != n_bands; i++)
                 {
                     for (int j = 0; j != n_bands; j++)
@@ -336,7 +338,8 @@ void read_velocity(const string &file_path, MeanField &mf)
             }
         }
     }
-    std::cout << "* Success: read velocity from pyatb_librpa_df(ABACUS)." << std::endl;
+    if (LIBRPA::envs::mpi_comm_global_h.is_root())
+        std::cout << "* Success: read velocity from pyatb_librpa_df(ABACUS)." << std::endl;
 }
 
 void read_velocity_aims(MeanField &mf, const string &file_path)

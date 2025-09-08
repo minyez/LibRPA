@@ -628,6 +628,19 @@ void G0W0::build_spacetime(
                                         std::shared_ptr<std::valarray<Tdata>> mat_ptr =
                                             std::make_shared<std::valarray<Tdata>>(
                                                 gf_IJ_block.c, gf_IJ_block.size);
+
+                                        // double max = -1;
+                                        // for(int i = 0; i < n_I; i++)
+                                        // {
+                                        //     for (int j = 0; j < n_J; j++)
+                                        //     {
+                                        //         if (max < std::abs(gf_IJ_block(i, j)))
+                                        //             max = std::abs(gf_IJ_block(i, j));
+                                        //     }
+                                        // }
+                                        // double R_norm= (R * latvec).norm();
+                                        // std::cout<<"G(GW)::I:"<<I<<", J:"<<J << ", R: "<<R_norm <<" max: "<<max<<endl;
+
                                         tau_gf_libri[t][static_cast<int>(I)]
                                                     [{static_cast<int>(J), {R.x, R.y, R.z}}] =
                                                         RI::Tensor<Tdata>({n_I, n_J}, mat_ptr);

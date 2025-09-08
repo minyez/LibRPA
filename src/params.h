@@ -107,6 +107,9 @@ struct Params
     */
     static int output_Wc_Rf_mat;
 
+    //! output energy_qp file for BSE calculation outside
+    static bool output_energy_qp;
+
     //! output correlation self-energy matrix (reciprocal space, imaginary frequency domain)
     static bool output_gw_sigc_mat;
 

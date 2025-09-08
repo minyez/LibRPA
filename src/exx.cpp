@@ -305,6 +305,19 @@ void Exx::build(const Cs_LRI &Cs, const vector<Vector3_Order<int>> &Rlist,
                             *pdmat = dmat_va;
                             dmat_libri[I][{J, Ra}] = RI::Tensor<Tdata>(
                                 {size_t(dmat_IJR.nr), size_t(dmat_IJR.nc)}, pdmat);
+                            
+                            double max = -1;
+                            for(int i = 0; i < dmat_IJR.nr; i++)
+                            {
+                                for (int j = 0; j < dmat_IJR.nc; j++)
+                                {
+                                    if (max < std::abs(dmat_libri[I][{J, Ra}](i, j)))
+                                        max = std::abs(dmat_libri[I][{J, Ra}](i, j));
+                                }
+                            }
+                            Vector3_Order<int> R_vec(Ra[0],Ra[1],Ra[2]);
+                            double R_norm= (R_vec*latvec).norm();
+                            std::cout<<"D::I:"<<I<<", J:"<<J << ", R: "<<R_norm <<" max: "<<max<<endl;
                         }
                     }
                 }

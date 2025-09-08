@@ -184,6 +184,7 @@ void parse_inputfile_to_params(const std::string &fn)
     parser.parse_int("option_dielect_func", Params::option_dielect_func, 2, flag);
 
     parser.parse_int("output_Wc_Rf_mat", Params::output_Wc_Rf_mat, false, flag);
+    parser.parse_bool("output_energy_qp", Params::output_energy_qp, false, flag);
     parser.parse_bool("output_gw_sigc_mat", Params::output_gw_sigc_mat, false, flag);
     parser.parse_bool("output_gw_sigc_mat_rt", Params::output_gw_sigc_mat_rt, false, flag);
     parser.parse_bool("output_gw_sigc_mat_rf", Params::output_gw_sigc_mat_rf, false, flag);
