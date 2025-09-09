@@ -49,7 +49,8 @@ std::vector<double> interpolate_dielec_func(int option, const std::vector<double
             int n_basis, n_states, n_spin;
 
             std::string file_abacus = driver_params.input_dir + "pyatb_librpa_df/velocity_matrix";
-            std::string file_aims = driver_params.input_dir + "moment_KS_spin_01_kpt_000001.dat";
+            // std::string file_aims = driver_params.input_dir + "moment_KS_spin_01_kpt_000001.dat";
+            std::string file_aims = driver_params.input_dir + "mommat_ks_kpt_000001.dat";
             ifstream infile_abacus;
             ifstream infile_aims;
             infile_abacus.open(file_abacus);
@@ -104,7 +105,8 @@ std::vector<double> interpolate_dielec_func(int option, const std::vector<double
             int n_basis, n_states, n_spin;
 
             std::string file_abacus = driver_params.input_dir + "pyatb_librpa_df/velocity_matrix";
-            std::string file_aims = driver_params.input_dir + "moment_KS_spin_01_kpt_000001.dat";
+            // std::string file_aims = driver_params.input_dir + "moment_KS_spin_01_kpt_000001.dat";
+            std::string file_aims = driver_params.input_dir + "mommat_ks_kpt_000001.dat";
             ifstream infile_abacus;
             ifstream infile_aims;
             infile_abacus.open(file_abacus);
