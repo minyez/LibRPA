@@ -91,7 +91,7 @@ class diele_func
     {
         init();
     };
-    diele_func() : meanfield_df(meanfield), kfrac_band(kfrac_list) {};
+    diele_func() : meanfield_df(pyatb_meanfield), kfrac_band(kfrac_list) {};
     ~diele_func() {};
     void init();
     void init_wing();
