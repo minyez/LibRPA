@@ -220,12 +220,26 @@ void diele_func::set_0_wing()
 
 void diele_func::cal_wing()
 {
+    using LIBRPA::atomic_basis_wfc;
     Profiler::start("cal_wing_mu");
     init_wing();
     int n_lambda = this->n_nonsingular - 1;
     std::vector<std::complex<double>> local_wing_mu;
     local_wing_mu.resize(this->omega.size() * 3 * n_abf, 0.0);
 
+    // IJR distribution to IJ distribution
+    Array_Desc desc_nao_nao(blacs_ctxt_global_h);
+    desc_nao_nao.init_1b1p(n_basis, n_basis, 0, 0);
+    const auto set_IJ_nao_nao = LIBRPA::utils::get_necessary_IJ_from_block_2D(
+        atomic_basis_wfc, atomic_basis_wfc, desc_nao_nao);
+    auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao);
+    std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> Cs_IJ;
+    if (Params::use_shrink_abfs)
+        Cs_IJ = comm_map2_first(mpi_comm_global_h.comm, Cs_shrinked_data.data_libri, s0_s1.first,
+                                s0_s1.second);
+    else
+        Cs_IJ =
+            comm_map2_first(mpi_comm_global_h.comm, Cs_data.data_libri, s0_s1.first, s0_s1.second);
     // #pragma omp parallel for schedule(dynamic) collapse(2)
     for (int mu = 0; mu < n_abf; ++mu)
     {
@@ -233,7 +247,7 @@ void diele_func::cal_wing()
         {
             // mpi_comm_global_h.barrier();
             // Profiler::start("transform_Cs2mnk");
-            auto desc_C_mnk = transform_Cs2mnk(ik, mu);
+            auto desc_C_mnk = transform_Cs2mnk(ik, mu, Cs_IJ);
             // Profiler::stop("transform_Cs2mnk");
             auto &desc_nband_nband = desc_C_mnk.first;
             auto &C_mnk = desc_C_mnk.second;
@@ -293,8 +307,9 @@ void diele_func::cal_wing()
     Profiler::stop("cal_wing_mu");
 };
 
-std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(const int ik,
-                                                                              const int mu)
+std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(
+    const int ik, const int mu,
+    std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ)
 {
     using LIBRPA::atomic_basis_abf;
     using LIBRPA::atomic_basis_wfc;
@@ -307,14 +322,15 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
     desc_nband_nao.init_1b1p(n_states, n_basis, 0, 0);
     Array_Desc desc_nband_Mu(blacs_ctxt_global_h);
     desc_nband_Mu.init_1b1p(n_states, n_ao_Mu, 0, 0);
-    Array_Desc desc_Mu_nao(blacs_ctxt_global_h);
-    desc_Mu_nao.init_1b1p(n_ao_Mu, n_basis, 0, 0);
+    Array_Desc desc_Mu_nband(blacs_ctxt_global_h);
+    desc_Mu_nband.init_1b1p(n_ao_Mu, n_states, 0, 0);
     Array_Desc desc_nao_nao(blacs_ctxt_global_h);
     desc_nao_nao.init_1b1p(n_basis, n_basis, 0, 0);
     Array_Desc desc_nband_nband(blacs_ctxt_global_h);
     desc_nband_nband.init_1b1p(n_states, n_states, 0, 0);
 
-    auto C_nao_nao = init_local_mat<complex<double>>(desc_Mu_nao, MAJOR::COL);
+    auto C_nao_nao = init_local_mat<complex<double>>(desc_nao_nao, MAJOR::COL);
+    auto C_Mu_nband = init_local_mat<complex<double>>(desc_Mu_nband, MAJOR::COL);
     auto C_nband_nband = init_local_mat<complex<double>>(desc_nband_nband, MAJOR::COL);
 
     const auto kfrac = kfrac_band[ik];
@@ -326,80 +342,36 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
         const auto ang = (kfrac * R_IJ) * TWO_PI;
         return complex<double>{std::cos(ang), std::sin(ang)};
     };
-    // Profiler::start("fourier");
-    const auto set_IJ_nao_nao = LIBRPA::utils::get_necessary_IJ_from_block_2D(
-        atomic_basis_wfc, atomic_basis_wfc, desc_nao_nao);
-    auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao);
-    s0_s1.first.clear();
-    s0_s1.first.insert(0);
 
-    std::map<libri_types<int, int>::TAC, Tensor<double>> data_libri;
-    std::map<int, std::map<std::pair<int, std::array<int, 3>>, Tensor<double>>> Cs_I_JR_local;
-    // Profiler::start("fourier_assign");
-    if (Params::use_shrink_abfs)
-    {
-        if (Cs_shrinked_data.data_libri.count(Mu) > 0)
-            data_libri = Cs_shrinked_data.data_libri.at(Mu);
-    }
-    else
-    {
-        if (Cs_data.data_libri.count(Mu) > 0) data_libri = Cs_data.data_libri.at(Mu);
-    }
-    const auto &n_Mu = atomic_basis_wfc.get_atom_nb(Mu);
-    for (const auto &JR_C : data_libri)
-    {
-        const auto J = JR_C.first.first;
-        const auto R = JR_C.first.second;
-        const auto &n_J = atomic_basis_wfc.get_atom_nb(J);
-
-        const std::initializer_list<std::size_t> shape{static_cast<std::size_t>(n_Mu),
-                                                       static_cast<std::size_t>(n_J)};
-
-        Cs_I_JR_local[0][{J, R}] = Tensor<double>(shape);
-
-#pragma omp parallel for schedule(dynamic) collapse(2)
-        for (int i = 0; i < n_Mu; i++)
-        {
-            for (int j = 0; j < n_J; j++)
-            {
-                Cs_I_JR_local[0][{J, R}](i, j) = JR_C.second(mu_local, i, j);
-            }
-        }
-    }
-    // Profiler::stop("fourier_assign");
-    // Profiler::start("fourier_comm");
-    auto Cs_I_JR =
-        comm_map2_first(mpi_comm_global_h.comm, Cs_I_JR_local, s0_s1.first, s0_s1.second);
-    // Profiler::stop("fourier_comm");
-    Cs_I_JR_local.clear();
-    data_libri.clear();
     C_nao_nao.zero_out();
+    C_Mu_nband.zero_out();
     C_nband_nband.zero_out();
-    std::map<atom_t, size_t> atom_Mu;
-    LIBRPA::AtomicBasis atomic_basis_wfc_row;
-    atom_Mu[0] = atomic_basis_wfc.get_atom_nb(Mu);
-    atomic_basis_wfc_row.set(atom_Mu);
-    // Profiler::start("fourier_collect");
     collect_block_from_IJ_storage_tensor_transform_triple(
-        C_nao_nao, desc_Mu_nao, atomic_basis_wfc_row, atomic_basis_wfc, fourier, Cs_I_JR, Mu);
-    // Profiler::stop("fourier_collect");
-    Cs_I_JR.clear();
-    // Profiler::stop("fourier");
-    //  if (ik == 0 && mu == 1)
-    //  {
-    //      for (int i = 0; i < n_ao_Mu; i++)
-    //      {
-    //          int J = 0;
-    //          int j = 4;
-    //          int ii = atomic_basis_wfc.get_global_index(0, i);
-    //          int jj = atomic_basis_wfc.get_global_index(J, j);
-    //          auto ii_loc = desc_Mu_nao.indx_g2l_r(ii);
-    //          auto jj_loc = desc_Mu_nao.indx_g2l_c(jj);
-    //          if (ii_loc >= 0 && jj_loc >= 0)
-    //              ofs_myid << "Cij: " << i << ", " << C_nao_nao(ii_loc, jj_loc) << std::endl;
-    //      }
-    //  }
-    // Profiler::start("scalapack_multiply");
+        C_nao_nao, desc_nao_nao, atomic_basis_wfc, atomic_basis_wfc, fourier, Cs_IJ, Mu, mu_local);
+    // ghj debug
+    // if (ik == 1 && mu == 4)
+    // {
+    //     for (const auto IJRc : Cs_IJ)
+    //     {
+    //         const auto I = IJRc.first;
+    //         for (const auto J_R : IJRc.second)
+    //         {
+    //             const auto J = J_R.first.first;
+    //             const auto R = J_R.first.second;
+    //             const auto &tensor = J_R.second;
+    //             ofs_myid << "Cs_IJ(" << I << "," << J << "," << R[0] << R[1] << R[2]
+    //                      << "):" << tensor(mu_local, 1, 2) << std::endl;
+    //         }
+    //     }
+    //     for (int i = 0; i < n_ao_Mu; i++)
+    //     {
+    //         const auto i_loc = desc_nao_nao.indx_g2l_r(i);
+    //         const auto j_loc = desc_nao_nao.indx_g2l_c(10);
+    //         if (i_loc >= 0 && j_loc >= 0)
+    //             ofs_myid << "C_nao_nao(" << i << ",10): " << C_nao_nao(i_loc, j_loc) <<
+    //             std::endl;
+    //     }
+    // }
     //  prepare wave function BLACS
     for (int ispin = 0; ispin != n_spin; ispin++)
     {
@@ -420,69 +392,22 @@ std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(co
                 }
                 const auto &wfc_isp2_k = meanfield_df.get_eigenvectors()[ispin][is2][ik];
                 // blacs_ctxt_global_h.barrier();
-                auto wfc1_block =
-                    get_local_mat(conj(wfc_Mu).c, MAJOR::ROW, desc_nband_Mu, MAJOR::COL);
+                auto wfc1_block = get_local_mat(wfc_Mu.c, MAJOR::ROW, desc_nband_Mu, MAJOR::COL);
                 auto wfc2_block =
                     get_local_mat(wfc_isp2_k.c, MAJOR::ROW, desc_nband_nao, MAJOR::COL);
-                // if (ik == 0 && mu == 1)
-                // {
-                //     for (int i = 0; i < n_ao_Mu; i++)
-                //     {
-                //         auto ii_loc = desc_nband_Mu.indx_g2l_r(3);
-                //         auto jj_loc = desc_nband_Mu.indx_g2l_c(i);
-                //         if (ii_loc >= 0 && jj_loc >= 0)
-                //             ofs_myid << "wfc1_block: " << i << ", " << wfc1_block(ii_loc, jj_loc)
-                //                      << std::endl;
-                //     }
-                // }
-                auto temp_nband_nao = multiply_scalapack(wfc1_block, desc_nband_Mu, C_nao_nao,
-                                                         desc_Mu_nao, desc_nband_nao);
-                // if (ik == 0 && mu == 1)
-                // {
-                //     auto i_3 = desc_nband_nao.indx_g2l_r(3);
-                //     auto j_4 = desc_nband_nao.indx_g2l_c(4);
-                //     if (i_3 >= 0 && j_4 >= 0)
-                //         ofs_myid << "Cmn0: " << temp_nband_nao(i_3, j_4) << std::endl;
-                // }
-                ScalapackConnector::pgemm_f('N', 'T', n_states, n_states, n_basis, 1.0,
-                                            temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc,
-                                            wfc2_block.ptr(), 1, 1, desc_nband_nao.desc, 1.0,
+                ScalapackConnector::pgemm_f(
+                    'N', 'T', n_ao_Mu, n_states, n_basis, 1.0, C_nao_nao.ptr(),
+                    1 + atomic_basis_wfc.get_part_range()[Mu], 1, desc_nao_nao.desc,
+                    wfc2_block.ptr(), 1, 1, desc_nband_nao.desc, 0.0, C_Mu_nband.ptr(), 1, 1,
+                    desc_Mu_nband.desc);
+                ScalapackConnector::pgemm_f('N', 'N', n_states, n_states, n_ao_Mu, 1.0,
+                                            conj(wfc1_block).ptr(), 1, 1, desc_nband_Mu.desc,
+                                            C_Mu_nband.ptr(), 1, 1, desc_Mu_nband.desc, 1.0,
                                             C_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
-                auto C_tmp = init_local_mat<complex<double>>(desc_nband_nband, MAJOR::COL);
-                ScalapackConnector::pgeadd_f('C', n_states, n_states, 1.0, C_nband_nband.ptr(), 1,
-                                             1, desc_nband_nband.desc, 0.0, C_tmp.ptr(), 1, 1,
-                                             desc_nband_nband.desc);
-                ScalapackConnector::pgeadd_f('N', n_states, n_states, 1.0, C_tmp.ptr(), 1, 1,
-                                             desc_nband_nband.desc, 1.0, C_nband_nband.ptr(), 1, 1,
-                                             desc_nband_nband.desc);
-                // if (ik == 0 && mu == 1)
-                // {
-                //     auto i_3 = desc_nband_nband.indx_g2l_r(3);
-                //     auto j_4 = desc_nband_nband.indx_g2l_c(4);
-                //     if (i_3 >= 0 && j_4 >= 0)
-                //         ofs_myid << "Cmn1: " << C_nband_nband(i_3, j_4) << std::endl;
-                // }
-                // term2
-                // wfc1_block = get_local_mat(wfc_Mu.c, MAJOR::ROW, desc_nband_Mu, MAJOR::COL);
-                // wfc2_block =
-                //     get_local_mat(conj(wfc_isp2_k).c, MAJOR::ROW, desc_nband_nao, MAJOR::COL);
-                // auto tmp_band_Mu = init_local_mat<complex<double>>(desc_nband_Mu, MAJOR::COL);
-
-                // ScalapackConnector::pgemm_f('N', 'C', n_states, n_ao_Mu, n_basis, 1.0,
-                //                             wfc2_block.ptr(), 1, 1, desc_nband_nao.desc,
-                //                             C_nao_nao.ptr(), 1, 1, desc_Mu_nao.desc, 0.0,
-                //                             tmp_band_Mu.ptr(), 1, 1, desc_nband_Mu.desc);
-                // ScalapackConnector::pgemm_f('N', 'T', n_states, n_states, n_ao_Mu, 1.0,
-                //                             tmp_band_Mu.ptr(), 1, 1, desc_nband_Mu.desc,
-                //                             wfc1_block.ptr(), 1, 1, desc_nband_Mu.desc, 1.0,
-                //                             C_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
-                // if (ik == 0 && mu == 1)
-                // {
-                //     auto i_3 = desc_nband_nband.indx_g2l_r(3);
-                //     auto j_4 = desc_nband_nband.indx_g2l_c(4);
-                //     if (i_3 >= 0 && j_4 >= 0)
-                //         ofs_myid << "Cmn2: " << C_nband_nband(i_3, j_4) << std::endl;
-                // }
+                ScalapackConnector::pgemm_f('C', 'T', n_states, n_states, n_ao_Mu, 1.0,
+                                            C_Mu_nband.ptr(), 1, 1, desc_Mu_nband.desc,
+                                            wfc1_block.ptr(), 1, 1, desc_nband_Mu.desc, 1.0,
+                                            C_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
             }
         }
     }
@@ -1004,10 +929,9 @@ void diele_func::get_Xv_cpl()
         const auto Mu = Mu_Nu.first;
         const auto Nu = Mu_Nu.second;
         // ofs_myid << "Mu " << Mu << " Nu " << Nu << endl;
-        if (Vq_cut.count(Mu) == 0 || Vq_cut.at(Mu).count(Nu) == 0 ||
-            Vq_cut.at(Mu).at(Nu).count(q) == 0)
+        if (Vq.count(Mu) == 0 || Vq.at(Mu).count(Nu) == 0 || Vq.at(Mu).at(Nu).count(q) == 0)
             continue;
-        const auto &Vq0 = Vq_cut.at(Mu).at(Nu).at(q);
+        const auto &Vq0 = Vq.at(Mu).at(Nu).at(q);
         const auto n_mu = LIBRPA::atomic_basis_abf.get_atom_nb(Mu);
         const auto n_nu = LIBRPA::atomic_basis_abf.get_atom_nb(Nu);
         std::valarray<complex<double>> Vq_va(Vq0->c, Vq0->size);

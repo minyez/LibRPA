@@ -21,6 +21,7 @@
 
 using LIBRPA::Array_Desc;
 using LIBRPA::envs::blacs_ctxt_global_h;
+using RI::Tensor;
 //! double-dispersion Havriliak-Negami model
 struct DoubleHavriliakNegami
 {
@@ -113,7 +114,9 @@ class diele_func
     void wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blacs,
                            Array_Desc &desc_nabf_nabf_opt);
     // tranform Cs_ij(R) to Cs_ij(k)
-    std::pair<Array_Desc, matrix_m<complex<double>>> transform_Cs2mnk(const int ik, const int mu);
+    std::pair<Array_Desc, matrix_m<complex<double>>> transform_Cs2mnk(
+        const int ik, const int mu,
+        std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ);
     // void FT_R2k();
     // std::complex<double> compute_Cijk(Cs_LRI &Cs_in, int mu, int I, int i, int J, int j, int
     // ik); void Cs_ij2mn(); std::complex<double> compute_Cs_ij2mn(int mu, int m, int n, int
