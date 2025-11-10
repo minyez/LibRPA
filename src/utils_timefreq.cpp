@@ -31,6 +31,10 @@ TFGrids generate_timefreq_grids(unsigned ngrids, const std::string &grid_type_st
             {
                 emin = Params::minimax_min_gap;
             }
+            if (Params::minimax_max_transition > 0.0)
+            {
+                emax = Params::minimax_max_transition;
+            }
             break;
         }
         case (TFGrids::GRID_TYPES::EvenSpaced):

@@ -181,6 +181,7 @@ void parse_inputfile_to_params(const std::string &fn)
     parser.parse_double("libri_g0w0_threshold_Wc", Params::libri_g0w0_threshold_Wc, 0.0, flag);
 
     parser.parse_double("minimax_min_gap", Params::minimax_min_gap, -1.0, flag);
+    parser.parse_double("minimax_max_transition", Params::minimax_max_transition, -1.0, flag);
 
     parser.parse_bool("replace_w_head", Params::replace_w_head, true, flag);
     parser.parse_int("option_dielect_func", Params::option_dielect_func, 2, flag);
