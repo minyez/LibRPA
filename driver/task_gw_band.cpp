@@ -542,17 +542,17 @@ void task_g0w0_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                     // output EXX bandgap
                     if (i_state == nocc - 1)  // HOMO
                     {
-                        if (exx_state > exx_valence)
+                        if (eks_state - vxc_state + exx_state > exx_valence)
                         {
-                            exx_valence = exx_state;
+                            exx_valence = eks_state - vxc_state + exx_state;
                             ik_val_exx = i_kpoint;
                         }
                     }
                     else if (i_state == nocc)  // LUMO
                     {
-                        if (exx_state < exx_conduct)
+                        if (eks_state - vxc_state + exx_state < exx_conduct)
                         {
-                            exx_conduct = exx_state;
+                            exx_conduct = eks_state - vxc_state + exx_state;
                             ik_cond_exx = i_kpoint;
                         }
                     }
