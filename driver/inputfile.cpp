@@ -190,6 +190,7 @@ void parse_inputfile_to_params(const std::string &fn)
     parser.parse_bool("output_gw_sigc_mat", Params::output_gw_sigc_mat, false, flag);
     parser.parse_bool("output_gw_sigc_mat_rt", Params::output_gw_sigc_mat_rt, false, flag);
     parser.parse_bool("output_gw_sigc_mat_rf", Params::output_gw_sigc_mat_rf, false, flag);
+    parser.parse_bool("output_hamgnn", Params::output_hamgnn, false, flag);
     parser.parse_int("nbands_G", Params::nbands_G, -1, flag);
 }
 
