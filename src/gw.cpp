@@ -339,11 +339,18 @@ void G0W0::build_spacetime(
     else
     {
         Profiler::start("g0w0_build_spacetime_ct_ft_wc", "Tranform Wc (q,w) -> (R,t)");
-        Wc_tau_R = CT_FT_Wc_freq_q(Wc_freq_q, tfg, meanfield.get_n_kpoints(), Rlist);
-        // HACK: Free up Wc_freq_q to save memory, especially for large Coulomb matrix case and many
-        // minimax grids
-        Wc_freq_q.clear();
-        utils::release_free_mem();
+        if (Params::output_Wc_Rf_mat > 0)
+        {
+            Wc_tau_R = CT_FT_Wc_q2R_freq2time(Wc_freq_q, tfg, meanfield.get_n_kpoints(), Rlist);
+        }
+        else
+        {
+            Wc_tau_R = CT_FT_Wc_freq_q(Wc_freq_q, tfg, meanfield.get_n_kpoints(), Rlist);
+            // HACK: Free up Wc_freq_q to save memory, especially for large Coulomb matrix case and many
+            // minimax grids
+            Wc_freq_q.clear();
+            utils::release_free_mem();
+        }
         Profiler::stop("g0w0_build_spacetime_ct_ft_wc");
         LIBRPA::utils::lib_printf_root(
             "Time for Fourier transform of Wc in GW (seconds, Wall/CPU): %f %f\n",
@@ -446,9 +453,11 @@ void G0W0::build_spacetime(
                         else
                             Wc_libri[static_cast<int>(I)][{static_cast<int>(J), {R.x, R.y, R.z}}] =
                                 RI::Tensor<double>({nabf_I, nabf_J}, R_Wc.second.get_real().sptr());
-                        // cout << "I " << I << " J " << J <<  " R " << R << " tau " << tau << endl
-                        // ; cout << Wc_libri[I][{J, {R.x, R.y, R.z}}] << endl; handle the <JI(R)>
-                        // block
+                        // cout << "I " << I << " J " << J <<  " R " << R << " tau " << tau << endl; 
+                        // cout << Wc_libri[I][{J, {R.x, R.y, R.z}}] << endl; 
+                        // std::cout << "R_Wc.second: " << R_Wc.second << std::endl;
+                        // handle the <JI(R)> block
+                        if (Params::output_Wc_Rf_mat > 0) continue; // full atom-pair has been constructed
                         if (I == J) continue;
                         auto minusR = (-R) % this->period_;
                         if (J_RWc.second.count(minusR) == 0) continue;
@@ -619,6 +628,7 @@ void G0W0::build_spacetime(
                                         std::shared_ptr<std::valarray<Tdata>> mat_ptr =
                                             std::make_shared<std::valarray<Tdata>>(
                                                 gf_IJ_block.c, gf_IJ_block.size);
+
                                         tau_gf_libri[t][static_cast<int>(I)]
                                                     [{static_cast<int>(J), {R.x, R.y, R.z}}] =
                                                         RI::Tensor<Tdata>({n_I, n_J}, mat_ptr);

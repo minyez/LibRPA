@@ -42,6 +42,8 @@ bool Params::use_soc = false;
 /* ==========================================================
  * output options begin
  * ========================================================== */
+int Params::output_Wc_Rf_mat = 0;
+bool Params::output_energy_qp = false;
 bool Params::output_gw_sigc_mat = false;
 bool Params::output_gw_sigc_mat_rt = false;
 bool Params::output_gw_sigc_mat_rf = false;
@@ -79,6 +81,7 @@ void Params::print()
         {"nfreq", nfreq},
         {"n_params_anacon", n_params_anacon},
         {"option_dielect_func", option_dielect_func},
+        {"output_Wc_Rf_mat", output_Wc_Rf_mat},
         {"nbands_G", nbands_G},
     };
 
@@ -94,6 +97,7 @@ void Params::print()
         {"debug", debug},
         {"use_scalapack_ecrpa", use_scalapack_ecrpa},
         {"use_scalapack_gw_wc", use_scalapack_gw_wc},
+        {"output_energy_qp", output_energy_qp},
         {"output_gw_sigc_mat", output_gw_sigc_mat},
         {"replace_w_head", replace_w_head},
         {"use_shrink_abfs", use_shrink_abfs},
