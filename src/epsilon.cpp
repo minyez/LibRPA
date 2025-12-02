@@ -71,8 +71,15 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
     auto coul_chi0_block = init_local_mat<double>(desc_nabf_nabf, MAJOR::COL);
 
     vector<Vector3_Order<double>> qpts;
-    for (const auto &qMuNuchi : chi0.get_chi0_q().at(chi0.tfg.get_freq_nodes()[0]))
-        qpts.push_back(qMuNuchi.first);
+    // for (const auto &qMuNuchi : chi0.get_chi0_q().at(chi0.tfg.get_freq_nodes()[0]))
+    //     qpts.push_back(qMuNuchi.first);
+    for (const auto &q : chi0.klist)
+    {
+        qpts.push_back(q);
+#ifdef OPEN_TEST_FOR_LU_DECOMPOSITION
+        printf("processId:%d, q: (%f, %f, %f)\n", mpi_comm_global_h.myid, q.x, q.y, q.z);
+#endif
+    }
 
     complex<double> tot_RPA_energy(0.0, 0.0);
     map<Vector3_Order<double>, complex<double>> cRPA_q;
@@ -156,24 +163,27 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
                 double chi_begin_arr = omp_get_wtime();
                 std::map<int, std::map<std::pair<int, std::array<double, 3>>, Tensor<double>>>
                     chi0_libri;
-                const auto &chi0_wq = chi0.get_chi0_q().at(freq).at(q);
+                // const auto &chi0_wq = chi0.get_chi0_q().at(freq).at(q);
+                atom_mapping<ComplexMatrix>::pair_t_old chi0_wq;
+                if (!chi0.get_chi0_q().empty()) chi0_wq = chi0.get_chi0_q().at(freq).at(q);
 
-                for (const auto &M_Nchi : chi0_wq)
-                {
-                    const auto &M = M_Nchi.first;
-                    const auto n_mu = LIBRPA::atomic_basis_abf.get_atom_nb(M);
-                    for (const auto &N_chi : M_Nchi.second)
+                if (!chi0.get_chi0_q().empty())
+                    for (const auto &M_Nchi : chi0_wq)
                     {
-                        const auto &N = N_chi.first;
-                        const auto n_nu = LIBRPA::atomic_basis_abf.get_atom_nb(N);
-                        const auto &chi = N_chi.second.real();
-                        std::valarray<double> chi_va(chi.c, chi.size);
-                        auto pchi = std::make_shared<std::valarray<double>>();
-                        *pchi = chi_va;
-                        chi0_libri[M][{N, std::array<double, 3>{0, 0, 0}}] =
-                            Tensor<double>({n_mu, n_nu}, pchi);
+                        const auto &M = M_Nchi.first;
+                        const auto n_mu = LIBRPA::atomic_basis_abf.get_atom_nb(M);
+                        for (const auto &N_chi : M_Nchi.second)
+                        {
+                            const auto &N = N_chi.first;
+                            const auto n_nu = LIBRPA::atomic_basis_abf.get_atom_nb(N);
+                            const auto &chi = N_chi.second.real();
+                            std::valarray<double> chi_va(chi.c, chi.size);
+                            auto pchi = std::make_shared<std::valarray<double>>();
+                            *pchi = chi_va;
+                            chi0_libri[M][{N, std::array<double, 3>{0, 0, 0}}] =
+                                Tensor<double>({n_mu, n_nu}, pchi);
+                        }
                     }
-                }
 
                 // if(mpi_comm_global_h.is_root())
                 // {
@@ -181,8 +191,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
                 //     system("free -m");
                 //     lib_printf("chi0_freq_q size: %d\n",chi0_wq.size());
                 // }
-
-                chi0.free_chi0_q(freq, q);
+                if (!chi0.get_chi0_q().empty()) chi0.free_chi0_q(freq, q);
 
                 LIBRPA::utils::release_free_mem();
 
