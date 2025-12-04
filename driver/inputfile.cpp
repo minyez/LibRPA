@@ -175,6 +175,7 @@ void parse_inputfile_to_params(const std::string &fn)
     parser.parse_double("libri_exx_threshold_D", Params::libri_exx_threshold_D, 0.0, flag);
     parser.parse_double("libri_exx_threshold_V", Params::libri_exx_threshold_V, 0.0, flag);
     parser.parse_bool("use_fullcoul_exx", Params::use_fullcoul_exx, false, flag);
+    parser.parse_bool("use_fullcoul_wc", Params::use_fullcoul_wc, false, flag);
 
     // gw related
     parser.parse_double("libri_g0w0_threshold_C", Params::libri_g0w0_threshold_C, 0.0, flag);

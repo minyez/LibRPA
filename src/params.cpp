@@ -34,6 +34,7 @@ double Params::libri_g0w0_threshold_Wc = 0.0;
 double Params::minimax_min_gap = -1.0;
 double Params::minimax_max_transition = -1.0;
 bool Params::use_fullcoul_exx = false;
+bool Params::use_fullcoul_wc = false;
 
 bool Params::use_scalapack_ecrpa = true;
 bool Params::use_scalapack_gw_wc = false;
@@ -105,6 +106,7 @@ void Params::print()
         {"use_shrink_abfs", use_shrink_abfs},
         {"use_soc", use_soc},
         {"use_fullcoul_exx", use_fullcoul_exx},
+        {"use_fullcoul_wc", use_fullcoul_wc},
         {"output_hamgnn", output_hamgnn},
     };
 
