@@ -168,6 +168,7 @@ void parse_inputfile_to_params(const std::string &fn)
     parser.parse_double("libri_chi0_threshold_C", Params::libri_chi0_threshold_C, 0.0, flag);
     parser.parse_double("libri_chi0_threshold_G", Params::libri_chi0_threshold_G, 0.0, flag);
     parser.parse_bool("use_shrink_abfs", Params::use_shrink_abfs, false, flag);
+    parser.parse_bool("use_shrink_chi", Params::use_shrink_chi, true, flag);
     parser.parse_bool("use_soc", Params::use_soc, false, flag);
 
     // exx related
