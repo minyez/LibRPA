@@ -135,6 +135,7 @@ class diele_func
     // Lebedev-Laikov quadrature
     void get_Leb_points();
     void get_g_enclosing_gamma();
+    void get_g_enclosing_gamma_2d();
     void calculate_q_gamma();
     void cal_eps(const int ifreq, Array_Desc &desc_nabf_nabf_opt, Array_Desc &desc_body);
     // not used now due to performance optimization
