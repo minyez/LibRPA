@@ -137,6 +137,10 @@ class diele_func
     void get_g_enclosing_gamma();
     void get_g_enclosing_gamma_2d();
     void calculate_q_gamma();
+    void calculate_q_gamma_2d();
+    double I_q_series(const double q_gamma, const double L, const int nmax = 200);
+    double I_q_simpson(double q1, double L, int N = 1000);
+    inline double integrand(double q, double L);
     void cal_eps(const int ifreq, Array_Desc &desc_nabf_nabf_opt, Array_Desc &desc_body);
     // not used now due to performance optimization
     // std::complex<double> compute_chi0_inv_00(const int ifreq);
