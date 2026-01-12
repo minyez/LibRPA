@@ -48,30 +48,27 @@ std::vector<double> interpolate_dielec_func(int option, const std::vector<double
         {
             int n_basis, n_states, n_spin;
 
-            std::string file_abacus = driver_params.input_dir + "pyatb_librpa_df/velocity_matrix";
-            // std::string file_aims = driver_params.input_dir + "moment_KS_spin_01_kpt_000001.dat";
-            std::string file_aims = driver_params.input_dir + "mommat_ks_kpt_000001.dat";
+            std::string file_abacus = driver_params.input_dir + "velocity_matrix";
+            std::string file_aims = driver_params.input_dir + "moment_KS_spin_01_kpt_000001.dat";
             ifstream infile_abacus;
             ifstream infile_aims;
             infile_abacus.open(file_abacus);
             infile_aims.open(file_aims);
             if (infile_abacus.is_open())
             {
-                read_scf_occ_eigenvalues(driver_params.input_dir + "pyatb_librpa_df/band_out",
-                                         pyatb_meanfield);
-                read_eigenvector(driver_params.input_dir + "pyatb_librpa_df/", pyatb_meanfield);
+                // read_scf_occ_eigenvalues(driver_params.input_dir + "pyatb_librpa_df/band_out",
+                //                          pyatb_meanfield);
+                // read_eigenvector(driver_params.input_dir + "pyatb_librpa_df/", pyatb_meanfield);
 
-                read_velocity(file_abacus, pyatb_meanfield);
-                int flag;
-                std::vector<Vector3_Order<double>> kfrac_band =
-                    read_band_kpath_info(driver_params.input_dir + "pyatb_librpa_df/k_path_info",
-                                         n_basis, n_states, n_spin, flag);
-                if (Params::use_soc)
-                {
-                    assert(n_basis % 2 == 0 && "Error: nbasis is not even when SOC!");
-                    n_basis = n_basis / 2;
-                }
-                df_headwing.set(pyatb_meanfield, kfrac_band, frequencies_target, n_basis, n_states,
+                read_velocity(file_abacus, meanfield);
+                n_basis = meanfield.get_n_aos();
+                n_states = meanfield.get_n_bands();
+                n_spin = meanfield.get_n_spins();
+                // int flag;
+                // std::vector<Vector3_Order<double>> kfrac_band =
+                //     read_band_kpath_info(driver_params.input_dir + "pyatb_librpa_df/k_path_info",
+                //                          n_basis, n_states, n_spin, flag);
+                df_headwing.set(meanfield, kfrac_list, frequencies_target, n_basis, n_states,
                                 n_spin);
             }
             else if (infile_aims.is_open())
@@ -104,9 +101,8 @@ std::vector<double> interpolate_dielec_func(int option, const std::vector<double
         {
             int n_basis, n_states, n_spin;
 
-            std::string file_abacus = driver_params.input_dir + "pyatb_librpa_df/velocity_matrix";
-            // std::string file_aims = driver_params.input_dir + "moment_KS_spin_01_kpt_000001.dat";
-            std::string file_aims = driver_params.input_dir + "mommat_ks_kpt_000001.dat";
+            std::string file_abacus = driver_params.input_dir + "velocity_matrix";
+            std::string file_aims = driver_params.input_dir + "moment_KS_spin_01_kpt_000001.dat";
             ifstream infile_abacus;
             ifstream infile_aims;
             infile_abacus.open(file_abacus);
@@ -114,11 +110,14 @@ std::vector<double> interpolate_dielec_func(int option, const std::vector<double
             if (infile_abacus.is_open())
             {
                 read_velocity(file_abacus, meanfield);
-                int flag;
-                std::vector<Vector3_Order<double>> kfrac_band =
-                    read_band_kpath_info(driver_params.input_dir + "pyatb_librpa_df/k_path_info",
-                                         n_basis, n_states, n_spin, flag);
-                df_headwing.set(meanfield, kfrac_band, frequencies_target, n_basis, n_states,
+                n_basis = meanfield.get_n_aos();
+                n_states = meanfield.get_n_bands();
+                n_spin = meanfield.get_n_spins();
+                // int flag;
+                // std::vector<Vector3_Order<double>> kfrac_band =
+                //     read_band_kpath_info(driver_params.input_dir + "pyatb_librpa_df/k_path_info",
+                //                          n_basis, n_states, n_spin, flag);
+                df_headwing.set(meanfield, kfrac_list, frequencies_target, n_basis, n_states,
                                 n_spin);
             }
             else if (infile_aims.is_open())
