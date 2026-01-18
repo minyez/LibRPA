@@ -187,9 +187,16 @@ double diele_func::cal_factor(string name)
     const double hbar = 1.05457182e-34;
     const double eV = 1.60217662e-19;
     double dielectric_unit;
-    //! Bohr to A
-    const double primitive_cell_volume =
-        std::abs(latvec.Det());  //* BOHR2ANG * BOHR2ANG * BOHR2ANG;
+    double primitive_cell_volume;
+    if (Params::use_2d_dielectric)
+    {
+        // Bohr
+        primitive_cell_volume = std::abs(latvec.e11 * latvec.e22 - latvec.e12 * latvec.e21) * 10;
+    }
+    else
+    {                                                    //! Bohr to A
+        primitive_cell_volume = std::abs(latvec.Det());  //* BOHR2ANG * BOHR2ANG * BOHR2ANG;}
+    }
     // latvec.print();
     if (name == "head")
     {
@@ -1448,15 +1455,15 @@ void diele_func::cal_eps(const int ifreq, Array_Desc &desc_nabf_nabf_opt, Array_
 
     const size_t nleb = qw_leb.size();
     std::vector<std::complex<double>> weights;
-    std::vector<std::complex<double>> weights_head;
-    std::vector<std::complex<double>> weights_wing;
-    if (Params::use_2d_dielectric)
-    {
-        weights_head.resize(nleb);
-        weights_wing.resize(nleb);
-    }
-    else
-        weights.resize(nleb);
+    // std::vector<std::complex<double>> weights_head;
+    // std::vector<std::complex<double>> weights_wing;
+    //  if (Params::use_2d_dielectric)
+    //  {
+    //      weights_head.resize(nleb);
+    //      weights_wing.resize(nleb);
+    //  }
+    //  else
+    weights.resize(nleb);
 
     std::vector<std::array<double, 3>> q_vectors(nleb);
 
@@ -1479,13 +1486,14 @@ void diele_func::cal_eps(const int ifreq, Array_Desc &desc_nabf_nabf_opt, Array_
 
         if (Params::use_2d_dielectric)
         {
+            weights[ileb] = qw_leb[ileb] * std::pow(q_gamma[ileb], 2) / (2.0 * vol_gamma) / qLq;
             // Assume z-direction e33 is the vaccum height
-            weights_head[ileb] = qw_leb[ileb] *
-                                 I_q_simpson_head(q_gamma[ileb], std::abs(latvec.e33), qLq) /
-                                 vol_gamma;
-            weights_wing[ileb] = qw_leb[ileb] *
-                                 I_q_simpson_wing(q_gamma[ileb], std::abs(latvec.e33), qLq) /
-                                 vol_gamma;
+            // weights_head[ileb] = qw_leb[ileb] *
+            //                      I_q_simpson_head(q_gamma[ileb], std::abs(latvec.e33), qLq) /
+            //                      vol_gamma;
+            // weights_wing[ileb] = qw_leb[ileb] *
+            //                      I_q_simpson_wing(q_gamma[ileb], std::abs(latvec.e33), qLq) /
+            //                      vol_gamma;
         }
         else
             weights[ileb] = qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / (3.0 * vol_gamma) / qLq;
@@ -1509,20 +1517,24 @@ void diele_func::cal_eps(const int ifreq, Array_Desc &desc_nabf_nabf_opt, Array_
 
             if (i == 0 && j == 0)
             {
-                if (Params::use_2d_dielectric)
+                for (int ileb = 0; ileb < nleb; ++ileb)
                 {
-                    for (int ileb = 0; ileb < nleb; ++ileb)
-                    {
-                        result += weights_head[ileb];
-                    }
+                    result += weights[ileb];
                 }
-                else
-                {
-                    for (int ileb = 0; ileb < nleb; ++ileb)
-                    {
-                        result += weights[ileb];
-                    }
-                }
+                // if (Params::use_2d_dielectric)
+                // {
+                //     for (int ileb = 0; ileb < nleb; ++ileb)
+                //     {
+                //         result += weights_head[ileb];
+                //     }
+                // }
+                // else
+                // {
+                //     for (int ileb = 0; ileb < nleb; ++ileb)
+                //     {
+                //         result += weights[ileb];
+                //     }
+                // }
             }
             else if (i == 0 || j == 0)
             {
@@ -1541,8 +1553,10 @@ void diele_func::cal_eps(const int ifreq, Array_Desc &desc_nabf_nabf_opt, Array_
                     const auto bwq = bw_i0 * qx + bw_i1 * qy + bw_i2 * qz;
                     const auto qwb = qx * wb_j0 + qy * wb_j1 + qz * wb_j2;
 
-                    result += Params::use_2d_dielectric ? weights_wing[ileb] * bwq * qwb
-                                                        : weights[ileb] * bwq * qwb;
+                    result += weights[ileb] * bwq * qwb;
+
+                    // result += Params::use_2d_dielectric ? weights_wing[ileb] * bwq * qwb
+                    //                                     : weights[ileb] * bwq * qwb;
                 }
             }
             chi0(ilo, jlo) = result;
