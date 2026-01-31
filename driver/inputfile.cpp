@@ -168,24 +168,37 @@ void parse_inputfile_to_params(const std::string &fn)
     parser.parse_double("libri_chi0_threshold_C", Params::libri_chi0_threshold_C, 0.0, flag);
     parser.parse_double("libri_chi0_threshold_G", Params::libri_chi0_threshold_G, 0.0, flag);
     parser.parse_bool("use_shrink_abfs", Params::use_shrink_abfs, false, flag);
+    parser.parse_bool("use_shrink_chi", Params::use_shrink_chi, true, flag);
     parser.parse_bool("use_soc", Params::use_soc, false, flag);
+    parser.parse_bool("use_2d_dielectric", Params::use_2d_dielectric, false, flag);
+    parser.parse_bool("use_pyatb", Params::use_pyatb, true, flag);
 
     // exx related
     parser.parse_double("libri_exx_threshold_C", Params::libri_exx_threshold_C, 0.0, flag);
     parser.parse_double("libri_exx_threshold_D", Params::libri_exx_threshold_D, 0.0, flag);
     parser.parse_double("libri_exx_threshold_V", Params::libri_exx_threshold_V, 0.0, flag);
+    parser.parse_bool("use_fullcoul_exx", Params::use_fullcoul_exx, false, flag);
+    parser.parse_bool("use_fullcoul_wc", Params::use_fullcoul_wc, false, flag);
 
     // gw related
     parser.parse_double("libri_g0w0_threshold_C", Params::libri_g0w0_threshold_C, 0.0, flag);
     parser.parse_double("libri_g0w0_threshold_G", Params::libri_g0w0_threshold_G, 0.0, flag);
     parser.parse_double("libri_g0w0_threshold_Wc", Params::libri_g0w0_threshold_Wc, 0.0, flag);
 
+    parser.parse_double("minimax_min_gap", Params::minimax_min_gap, -1.0, flag);
+    parser.parse_double("minimax_max_transition", Params::minimax_max_transition, -1.0, flag);
+
     parser.parse_bool("replace_w_head", Params::replace_w_head, true, flag);
     parser.parse_int("option_dielect_func", Params::option_dielect_func, 2, flag);
 
+    parser.parse_bool("band_continue", Params::band_continue, false, flag);
+
+    parser.parse_int("output_Wc_Rf_mat", Params::output_Wc_Rf_mat, false, flag);
+    parser.parse_bool("output_energy_qp", Params::output_energy_qp, false, flag);
     parser.parse_bool("output_gw_sigc_mat", Params::output_gw_sigc_mat, false, flag);
     parser.parse_bool("output_gw_sigc_mat_rt", Params::output_gw_sigc_mat_rt, false, flag);
     parser.parse_bool("output_gw_sigc_mat_rf", Params::output_gw_sigc_mat_rf, false, flag);
+    parser.parse_bool("output_hamgnn", Params::output_hamgnn, false, flag);
     parser.parse_int("nbands_G", Params::nbands_G, -1, flag);
 }
 

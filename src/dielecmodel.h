@@ -19,6 +19,9 @@
 #include "utils_io.h"
 #include "vec.h"
 
+using LIBRPA::Array_Desc;
+using LIBRPA::envs::blacs_ctxt_global_h;
+using RI::Tensor;
 //! double-dispersion Havriliak-Negami model
 struct DoubleHavriliakNegami
 {
@@ -44,18 +47,26 @@ class diele_func
     matrix_m<std::complex<double>> body_inv;
     // ( i:3, j:3 )
     matrix_m<std::complex<double>> Lind;
+    // ( i:n_lambda, j:3 )
+    matrix_m<std::complex<double>> bw;
+    // ( i:3, j:n_lambda )
+    matrix_m<std::complex<double>> wb;
     // ( i:n_lambda, j:n_lambda )
     matrix_m<std::complex<double>> chi0;
     // ( lambda: n_nonsingular-1, mu: n_abfs)
-    std::vector<std::vector<std::complex<double>>> Coul_vector;
+    // std::vector<std::vector<std::complex<double>>> Coul_vector;
     // ( lambda: n_nonsingular-1 )
-    std::vector<std::complex<double>> Coul_value;
+    // std::vector<std::complex<double>> Coul_value;
     // ( mu: n_abfs, m: n_bands, n: n_bands, k )
-    std::vector<std::vector<std::vector<std::map<Vector3_Order<double>, std::complex<double>>>>>
-        Ctri_mn;
-    // ( mu: n_abfs@I, i: i atom basis, j: j atom basis, k, I atom, J atom, R cell  )
+    // std::vector<std::vector<std::vector<std::map<Vector3_Order<double>, std::complex<double>>>>>
+    //    Ctri_mn;
+    // ( mu: n_abfs@I, i: i atom basis, j: j atom basis, k, I atom, J atom, q cell  )
     // Ctri_ij.data_libri[I][{J, k_array}](mu, i, j)
-    Cs_LRI_clx Ctri_ij;
+    // Cs_LRI_clx Ctri_ij;
+    // ( mu: n_abfs@I, i: i atom basis, j: j atom basis, k, I atom, J atom, R cell  )
+    // Ctri_ij.data_libri[I][{J, R}](mu, i, j)
+    // used for reduce all mpi Cs_data to Cs_IJR
+    // Cs_LRI Cs_IJR;
 
     MeanField &meanfield_df;
     std::vector<double> omega;
@@ -81,10 +92,11 @@ class diele_func
     {
         init();
     };
-    diele_func() : meanfield_df(meanfield), kfrac_band(kfrac_list) {};
+    diele_func() : meanfield_df(pyatb_meanfield), kfrac_band(kfrac_list) {};
     ~diele_func() {};
     void init();
-    void init_Cs();
+    void init_wing();
+    // void init_Cs();
     void set(MeanField &mf, std::vector<Vector3_Order<double>> &kfrac,
              std::vector<double> frequencies_target, int nbasis, int nstates, int nspin);
 
@@ -95,32 +107,51 @@ class diele_func
 
     void cal_wing();
     // compute wing in ABF representation
-    std::complex<double> compute_wing(int alpha, int iomega, int mu);
+    std::complex<double> compute_wing(const int alpha, const int iomega, const int mu, const int ik,
+                                      const int ispin, const Array_Desc &desc_nband_nband,
+                                      const matrix_m<complex<double>> &C_nband_nband);
     // transform wing from ABF to Coulomb representation
-    void wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blacs);
+    void wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blacs,
+                           Array_Desc &desc_nabf_nabf_opt);
     // tranform Cs_ij(R) to Cs_ij(k)
-    void FT_R2k();
-    std::complex<double> compute_Cijk(Cs_LRI &Cs_in, int mu, int I, int i, int J, int j, int ik);
-    void Cs_ij2mn();
-    std::complex<double> compute_Cs_ij2mn(int mu, int m, int n, int ik);
-    // diagonalize real Vq_cut(q=0)
-    void get_Xv_real();
-    // diagonalize complex Vq_cut(q=0)
+    std::pair<Array_Desc, matrix_m<complex<double>>> transform_Cs2mnk(
+        const int ik, const int mu,
+        std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ);
+    // void FT_R2k();
+    // std::complex<double> compute_Cijk(Cs_LRI &Cs_in, int mu, int I, int i, int J, int j, int
+    // ik); void Cs_ij2mn(); std::complex<double> compute_Cs_ij2mn(int mu, int m, int n, int
+    // ik);
+    //  diagonalize real Vq_cut(q=0)
+    //  void get_Xv_real();
+    //  diagonalize complex Vq_cut(q=0)
     void get_Xv_cpl();
     void test_wing();
     // set wing=0 for debug
     void set_0_wing();
 
-    void get_body_inv(matrix_m<std::complex<double>> &chi0_block);
-    void construct_L(const int ifreq);
+    Array_Desc get_body_inv(matrix_m<std::complex<double>> &chi0_block,
+                            Array_Desc &desc_nabf_nabf_opt);
+    void construct_L(const int ifreq, Array_Desc &desc_body);
     // Lebedev-Laikov quadrature
     void get_Leb_points();
     void get_g_enclosing_gamma();
+    void get_g_enclosing_gamma_2d();
     void calculate_q_gamma();
-    void cal_eps(const int ifreq);
-    std::complex<double> compute_chi0_inv_00(const int ifreq);
-    std::complex<double> compute_chi0_inv_ij(const int ifreq, int i, int j);
-    void rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq);
+    void calculate_q_gamma_2d();
+    double I_q_series(const double q_gamma, const double L, const int nmax = 200);
+    std::complex<double> I_q_simpson_head(double q1, double L, std::complex<double> qLq,
+                                          int N = 1000);
+    std::complex<double> I_q_simpson_wing(double q1, double L, std::complex<double> qLq,
+                                          int N = 1000);
+    inline std::complex<double> integrand_head(double q, double L, std::complex<double> qLq);
+    inline std::complex<double> integrand_wing(double q, double L, std::complex<double> qLq);
+    void cal_eps(const int ifreq, Array_Desc &desc_nabf_nabf_opt, Array_Desc &desc_body);
+    // not used now due to performance optimization
+    // std::complex<double> compute_chi0_inv_00(const int ifreq);
+    // std::complex<double> compute_chi0_inv_ij(const int ifreq, int i, int j);
+    void rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
+                     Array_Desc &desc_nabf_nabf_opt);
+    void assign_chi0(matrix_m<std::complex<double>> &chi0_block, Array_Desc &desc_nabf_nabf_opt);
 };
 
 extern diele_func df_headwing;

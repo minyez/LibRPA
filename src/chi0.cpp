@@ -121,12 +121,6 @@ void Chi0::build_gf_Rt(Vector3_Order<int> R, double tau)
     const auto naos = mf.get_n_aos();
     const auto nsoc = mf.get_n_soc();
     assert(tau != 0);
-    assert(Params::nbands_G < nbands);
-    if (Params::nbands_G >= 0)
-        std::cout << "Note: Green's Function sums over " << Params::nbands_G << " states."
-                  << std::endl;
-    else
-        std::cout << "Green's Function sums over all states." << std::endl;
 
     // temporary Green's function
     matrix gf_Rt_is_global(naos, naos);
@@ -284,15 +278,6 @@ static void build_gf_Rt_libri(
     const auto naos = mf.get_n_aos();
 
     assert(klist.size() == nkpts);
-    assert(Params::nbands_G < nbands);
-    if (mpi_comm_global_h.is_root())
-    {
-        if (Params::nbands_G >= 0)
-            std::cout << "Note: Green's Function sums over " << Params::nbands_G << " states."
-                      << std::endl;
-        else
-            std::cout << "Green's Function sums over all states." << std::endl;
-    }
 
     std::map<Vector3_Order<int>, std::vector<atpair_t>> map_R_IJs;
     for (const auto &IJR : IJRs)
@@ -406,15 +391,6 @@ static void build_gf_Rt_libri_cplx(
     const auto naos = mf.get_n_aos();
 
     assert(klist.size() == nkpts);
-    assert(Params::nbands_G < nbands);
-    if (mpi_comm_global_h.is_root())
-    {
-        if (Params::nbands_G >= 0)
-            std::cout << "Note: Green's Function sums over " << Params::nbands_G << " states."
-                      << std::endl;
-        else
-            std::cout << "Green's Function sums over all states." << std::endl;
-    }
 
     std::map<Vector3_Order<int>, std::vector<atpair_t>> map_R_IJs;
     for (const auto &IJR : IJRs)
@@ -548,7 +524,8 @@ static void chi_libri_ft_ct(
         }
     }
 
-    ofs_myid << "is: " << isp << " tau: " << tau << "  qifreq_atpair_all.size()" << ifreq_iq_mu_nu_to_Rs.size() << endl;
+    ofs_myid << "is: " << isp << " tau: " << tau << "  qifreq_atpair_all.size()"
+             << ifreq_iq_mu_nu_to_Rs.size() << endl;
     // ofs_myid << "qifreq_atpair_all: " << ifreq_iq_mu_nu_to_Rs << endl;
     ofs_myid << "available chi0s_IJR: " << chi0s_IJR.size() << endl;
     // ofs_myid << "Keys:" << endl;
@@ -572,7 +549,7 @@ static void chi_libri_ft_ct(
         // ofs_myid << n_mu << " " << n_nu << endl;
         ComplexMatrix cm_chi0(n_mu, n_nu);
         // ofs_myid << "created cm_chi0" << endl;
-        for (const auto &R: index_Rs.second)
+        for (const auto &R : index_Rs.second)
         {
             const auto &chi_tensor = chi0s_IJR.at(Mu).at({Nu, R});
             Vector3_Order<int> Rint(R[0], R[1], R[2]);
@@ -784,7 +761,7 @@ static void shrink_abfs_chi0(
         const auto &q = qlist[iq];
         std::array<double, 3> qa = {q.x, q.y, q.z};
         const auto &U = sinvS.at(q);
-        Profiler::start("shrink_prepare_chi0_2d", "Prepare Chi0 2D block for shrink");
+        // Profiler::start("shrink_prepare_chi0_2d", "Prepare Chi0 2D block for shrink");
         chi0_block.zero_out();
         chi0ss_block.zero_out();
         u_block.zero_out();
@@ -816,17 +793,17 @@ static void shrink_abfs_chi0(
             // wait for all mpi to calculate chi0_libri
             // then collect chi0_libri to chi0_block
             mpi_comm_global_h.barrier();
-            Profiler::start("shrink_prepare_chi0_2d_comm_map2");
+            // Profiler::start("shrink_prepare_chi0_2d_comm_map2");
             const auto IJq_chi0 = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
                 mpi_comm_global_h.comm, chi0_libri, s0_s1.first, s0_s1.second);
-            Profiler::stop("shrink_prepare_chi0_2d_comm_map2");
-            Profiler::start("shrink_prepare_chi0_2d_collect_block");
+            // Profiler::stop("shrink_prepare_chi0_2d_comm_map2");
+            // Profiler::start("shrink_prepare_chi0_2d_collect_block");
             collect_block_from_ALL_IJ_Tensor(chi0_block, desc_nabf_nabf_ll,
                                              LIBRPA::atomic_basis_abf, qa, true, CONE, IJq_chi0,
                                              MAJOR::ROW);
-            Profiler::stop("shrink_prepare_chi0_2d_collect_block");
+            // Profiler::stop("shrink_prepare_chi0_2d_collect_block");
         }
-        Profiler::stop("shrink_prepare_chi0_2d");
+        // Profiler::stop("shrink_prepare_chi0_2d");
         for (int ir = 0; ir < U.nr; ir++)
         {
             const int ilo = desc_nabf_nabf_sl.indx_g2l_r(ir);
@@ -924,7 +901,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(
     mpi_comm_global_h.barrier();
     throw std::logic_error("compilation");
 #else
-    if (Params::use_shrink_abfs)
+    if (Params::use_shrink_abfs && Params::use_shrink_chi)
     {
         // replace atom_mu by atom_mu_l to construct chi0 due to LRI error
         atom_mu = atom_mu_l;
@@ -1056,6 +1033,16 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(
 
                     // On-the-fly build of Green's function at specific spin channel and imaginary
                     // time
+                    const auto nbands = mf.get_n_bands();
+                    assert(Params::nbands_G < nbands);
+                    if (LIBRPA::envs::mpi_comm_global_h.is_root())
+                    {
+                        if (Params::nbands_G >= 0)
+                            std::cout << "Green's Function sums over " << Params::nbands_G
+                                      << " states." << std::endl;
+                        else
+                            std::cout << "Green's Function sums over all states." << std::endl;
+                    }
                     if constexpr (std::is_same<Tdata, std::complex<double>>::value)
                         build_gf_Rt_libri_cplx(this->mf, isp, is1, is2, this->klist,
                                                this->IJRs_gf_local, tau, gf_po_libri);
@@ -1123,7 +1110,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(
             std::clock_t cpu_clock_done_chi0s = clock();
 
             // parse back to chi0
-            if (Params::use_shrink_abfs)
+            if (Params::use_shrink_abfs && Params::use_shrink_chi)
             {
                 map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>>
                     chi0_tau_q;
@@ -1939,7 +1926,7 @@ void Chi0::free_chi0_q(const double freq, const Vector3_Order<double> q)
 {
     auto &chi0_for_free = chi0_q.at(freq).at(q);
     chi0_for_free.clear();
-    map<atom_t, map<atom_t,ComplexMatrix>>().swap(chi0_for_free);
+    map<atom_t, map<atom_t, ComplexMatrix>>().swap(chi0_for_free);
 }
 
 // template void Chi0::build_chi0_q_space_time_LibRI_routing<double>(
@@ -1957,9 +1944,9 @@ void Chi0::free_chi0_q(const double freq, const Vector3_Order<double> q)
 //
 // template void chi_libri_ft_ct<std::complex<double>>(
 //     const int &, const int &, const int &, const TFGrids &,
-//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>> &,
-//     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
-//     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
+//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>>
+//     &, const vector<Vector3_Order<double>> &, const vector<atpair_t> &, map<double,
+//     map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
 //
 // template void chi_libri_ft_Rq<double>(
 //     const int &, const int &, const int &, const TFGrids &,
@@ -1969,6 +1956,6 @@ void Chi0::free_chi0_q(const double freq, const Vector3_Order<double> q)
 //
 // template void chi_libri_ft_Rq<std::complex<double>>(
 //     const int &, const int &, const int &, const TFGrids &,
-//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>> &,
-//     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
-//     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
+//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>>
+//     &, const vector<Vector3_Order<double>> &, const vector<atpair_t> &, map<double,
+//     map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);

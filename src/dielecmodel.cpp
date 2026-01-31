@@ -3,14 +3,19 @@
 #include <cmath>
 
 #include "lebedev_quadrature.hpp"
+#include "utils_mem.h"
 #ifdef LIBRPA_USE_LIBRI
 #include <RI/comm/mix/Communicate_Tensors_Map_Judge.h>
 #include <RI/global/Tensor.h>
+#include <mpi.h>
+
+#include "libri_stub.h"
+#include "libri_utils.h"
+#include "matrix_m_parallel_utils.h"
 using RI::Tensor;
 using RI::Communicate_Tensors_Map_Judge::comm_map2_first;
 #endif
-using LIBRPA::Array_Desc;
-using LIBRPA::envs::blacs_ctxt_global_h;
+
 using LIBRPA::envs::mpi_comm_global_h;
 using LIBRPA::envs::ofs_myid;
 using LIBRPA::utils::lib_printf;
@@ -60,65 +65,94 @@ void diele_func::set(MeanField &mf, std::vector<Vector3_Order<double>> &kfrac,
 
 void diele_func::init()
 {
-    this->n_abf = LIBRPA::atomic_basis_abf.nb_total;
     this->nk = this->kfrac_band.size();
     int n_omega = this->omega.size();
-    get_Xv_cpl();
+
     this->head.clear();
     this->head.resize(n_omega);
+    for (int iomega = 0; iomega != n_omega; iomega++)
+    {
+        head[iomega].resize(3, 3, MAJOR::COL);
+    }
+};
+
+void diele_func::init_wing()
+{
+    int n_omega = this->omega.size();
+    this->n_abf = LIBRPA::atomic_basis_abf.nb_total;
+    get_Xv_cpl();
     this->wing_mu.clear();
     this->wing_mu.resize(n_omega);
     this->wing.clear();
     this->wing.resize(n_omega);
     this->Lind.resize(3, 3, MAJOR::COL);
+    this->bw.resize(n_nonsingular - 1, 3, MAJOR::COL);
+    this->wb.resize(3, n_nonsingular - 1, MAJOR::COL);
     for (int iomega = 0; iomega != n_omega; iomega++)
     {
-        head[iomega].resize(3, 3, MAJOR::COL);
         wing_mu[iomega].resize(n_abf, 3, MAJOR::COL);
         wing[iomega].resize(n_nonsingular - 1, 3, MAJOR::COL);
     }
     get_Leb_points();
-    get_g_enclosing_gamma();
-    calculate_q_gamma();
-    std::cout << "* Success: initalize and calculate lebdev points and q_gamma." << std::endl;
-};
+    if (Params::use_2d_dielectric)
+    {
+        get_g_enclosing_gamma_2d();
+        calculate_q_gamma_2d();
+    }
+    else
+    {
+        get_g_enclosing_gamma();
+        calculate_q_gamma();
+    }
 
+    if (mpi_comm_global_h.is_root())
+        std::cout << "* Success: initalize and calculate lebdev points and q_gamma." << std::endl;
+}
+
+// intraband term is not considered
 void diele_func::cal_head()
 {
-    //! spin = 1 only
-    auto &wg = this->meanfield_df.get_weight()[n_spin - 1];
-    auto &eigenvalues = this->meanfield_df.get_eigenvals()[n_spin - 1];
-    auto &velocity = this->meanfield_df.get_velocity()[n_spin - 1];
+    Profiler::start("cal_head");
     std::complex<double> tmp;
     int nocc = 0;
-
     double dielectric_unit = cal_factor("head");
-    for (int i = 0; i != wg.size; i++)
+
+    for (int ispin = 0; ispin != n_spin; ispin++)
     {
-        if (wg.c[i] == 0.)
+        auto &wg = this->meanfield_df.get_weight()[ispin];
+        auto &eigenvalues = this->meanfield_df.get_eigenvals()[ispin];
+        auto &velocity = this->meanfield_df.get_velocity()[ispin];
+        for (int ik = 0; ik != nk; ik++)
         {
-            nocc = i;
-            break;
-        }
-    }
-    for (int ik = 0; ik != nk; ik++)
-    {
-        for (int iocc = 0; iocc != nocc; iocc++)
-        {
-            for (int iunocc = nocc; iunocc != n_states; iunocc++)
+            for (int iocc = 0; iocc != n_states; iocc++)
             {
-                double egap = (eigenvalues(ik, iocc) - eigenvalues(ik, iunocc));  // * HA2EV;
-                for (int alpha = 0; alpha != 3; alpha++)
+                for (int iunocc = 0; iunocc != n_states; iunocc++)
                 {
-                    for (int beta = 0; beta != 3; beta++)
+                    if (iocc < iunocc)
                     {
-                        for (int iomega = 0; iomega != this->omega.size(); iomega++)
+                        double egap =
+                            (eigenvalues(ik, iocc) - eigenvalues(ik, iunocc));  // * HA2EV;
+                        double factor;
+                        if (Params::use_soc)
+                            factor = wg.c[iocc] - wg.c[iunocc];
+                        else
+                            factor = (wg.c[iocc] - wg.c[iunocc]) / 2 * n_spin;
+                        if (factor > 1.e-8)
                         {
-                            double omega_ev = this->omega[iomega];  // * HA2EV;
-                            tmp = 2.0 * velocity[ik][alpha](iunocc, iocc) *
-                                  velocity[ik][beta](iocc, iunocc) /
-                                  (egap * egap + omega_ev * omega_ev) / egap;
-                            this->head.at(iomega)(alpha, beta) -= tmp;
+                            for (int alpha = 0; alpha != 3; alpha++)
+                            {
+                                for (int beta = 0; beta != 3; beta++)
+                                {
+                                    for (int iomega = 0; iomega != this->omega.size(); iomega++)
+                                    {
+                                        double omega_ev = this->omega[iomega];  // * HA2EV;
+                                        tmp = 2.0 * factor * velocity[ik][alpha](iunocc, iocc) *
+                                              velocity[ik][beta](iocc, iunocc) /
+                                              (egap * egap + omega_ev * omega_ev) / egap;
+                                        this->head.at(iomega)(alpha, beta) -= tmp;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -131,15 +165,10 @@ void diele_func::cal_head()
         {
             for (int iomega = 0; iomega != this->omega.size(); iomega++)
             {
-                if (n_spin == 1)
-                {
-                    if (Params::use_soc)
-                        this->head.at(iomega)(alpha, beta) *= dielectric_unit;
-                    else
-                        this->head.at(iomega)(alpha, beta) *= dielectric_unit * 2;
-                }
-                else if (n_spin == 4)
+                if (Params::use_soc)
                     this->head.at(iomega)(alpha, beta) *= dielectric_unit;
+                else
+                    this->head.at(iomega)(alpha, beta) *= dielectric_unit * 2.0 / n_spin;
                 if (alpha == beta)
                 {
                     this->head.at(iomega)(alpha, beta) += complex<double>(1.0, 0.0);
@@ -147,7 +176,8 @@ void diele_func::cal_head()
             }
         }
     }
-    std::cout << "* Success: calculate head term." << std::endl;
+    if (mpi_comm_global_h.is_root()) std::cout << "* Success: calculate head term." << std::endl;
+    Profiler::start("cal_head");
 };
 
 double diele_func::cal_factor(string name)
@@ -157,9 +187,16 @@ double diele_func::cal_factor(string name)
     const double hbar = 1.05457182e-34;
     const double eV = 1.60217662e-19;
     double dielectric_unit;
-    //! Bohr to A
-    const double primitive_cell_volume =
-        std::abs(latvec.Det());  //* BOHR2ANG * BOHR2ANG * BOHR2ANG;
+    double primitive_cell_volume;
+    if (Params::use_2d_dielectric)
+    {
+        // Bohr
+        primitive_cell_volume = std::abs(latvec.e11 * latvec.e22 - latvec.e12 * latvec.e21) * 10;
+    }
+    else
+    {                                                    //! Bohr to A
+        primitive_cell_volume = std::abs(latvec.Det());  //* BOHR2ANG * BOHR2ANG * BOHR2ANG;}
+    }
     // latvec.print();
     if (name == "head")
     {
@@ -167,7 +204,7 @@ double diele_func::cal_factor(string name)
         /*dielectric_unit = TWO_PI * hbar / h_divide_e2 / primitive_cell_volume /
                           this->meanfield_df.get_n_kpoints() * 1.0e30 / epsilon0 / eV;*/
         // aims
-        dielectric_unit = 2 * TWO_PI / primitive_cell_volume / this->meanfield_df.get_n_kpoints();
+        dielectric_unit = 2 * TWO_PI / primitive_cell_volume;
     }
     else if (name == "wing")
     {
@@ -175,8 +212,7 @@ double diele_func::cal_factor(string name)
         /* dielectric_unit = TWO_PI * hbar / h_divide_e2 * sqrt(2 * TWO_PI / primitive_cell_volume)
          * 1.0e15 / this->meanfield_df.get_n_kpoints() / epsilon0 / TWO_PI / eV; */
         // aims
-        dielectric_unit = 2 * sqrt(2 * TWO_PI / primitive_cell_volume) /
-                          this->meanfield_df.get_n_kpoints();  // bohr
+        dielectric_unit = 2 * sqrt(2 * TWO_PI / primitive_cell_volume);  // bohr
     }
     else
         throw std::logic_error("Unsupported value for head/wing factor");
@@ -190,9 +226,9 @@ void diele_func::set_0_wing()
     {
         for (int iomega = 0; iomega != this->omega.size(); iomega++)
         {
-            for (int lambda = 0; lambda != n_lambda; lambda++)
+            for (int mu = 0; mu != n_abf; mu++)
             {
-                this->wing.at(iomega)(lambda, alpha) = 0.0;
+                this->wing_mu.at(iomega)(mu, alpha) = 0.0;
             }
         }
     }
@@ -200,23 +236,67 @@ void diele_func::set_0_wing()
 
 void diele_func::cal_wing()
 {
+    using LIBRPA::atomic_basis_wfc;
+    Profiler::start("cal_wing_mu");
+    init_wing();
     int n_lambda = this->n_nonsingular - 1;
+    std::vector<std::complex<double>> local_wing_mu;
+    local_wing_mu.resize(this->omega.size() * 3 * n_abf, 0.0);
 
-    init_Cs();
-    FT_R2k();
-    Cs_ij2mn();
-
-#pragma omp parallel for schedule(dynamic) collapse(3)
-    for (int iomega = 0; iomega != this->omega.size(); iomega++)
+    // IJR distribution to IJ distribution
+    Array_Desc desc_nao_nao(blacs_ctxt_global_h);
+    desc_nao_nao.init_1b1p(n_basis, n_basis, 0, 0);
+    const auto set_IJ_nao_nao = LIBRPA::utils::get_necessary_IJ_from_block_2D(
+        atomic_basis_wfc, atomic_basis_wfc, desc_nao_nao);
+    auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao);
+    std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> Cs_IJ;
+    if (Params::use_shrink_abfs)
+        Cs_IJ = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+            mpi_comm_global_h.comm, Cs_shrinked_data.data_libri, s0_s1.first, s0_s1.second);
+    else
+        Cs_IJ = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+            mpi_comm_global_h.comm, Cs_data.data_libri, s0_s1.first, s0_s1.second);
+    // #pragma omp parallel for schedule(dynamic) collapse(2)
+    for (int mu = 0; mu < n_abf; ++mu)
     {
-        for (int alpha = 0; alpha != 3; alpha++)
+        for (int ik = 0; ik != nk; ik++)
         {
-            for (int mu = 0; mu != n_abf; mu++)
+            // mpi_comm_global_h.barrier();
+            // Profiler::start("transform_Cs2mnk");
+            auto desc_C_mnk = transform_Cs2mnk(ik, mu, Cs_IJ);
+            // Profiler::stop("transform_Cs2mnk");
+            auto &desc_nband_nband = desc_C_mnk.first;
+            auto &C_mnk = desc_C_mnk.second;
+            // if (mu == 0 && mpi_comm_global_h.is_root())
+            // {
+            //     auto &velocity = this->meanfield_df.get_velocity();
+            //     auto i_3 = desc_nband_nband.indx_g2l_r(3);
+            //     auto j_4 = desc_nband_nband.indx_g2l_c(4);
+
+            //     std::cout << "C,p: " << C_mnk(i_3, j_4) << "," << velocity[isp][ik][0](4, 3)
+            //               << std::endl;
+            // }
+            // Profiler::start("compute_wing");
+            for (int iomega = 0; iomega != this->omega.size(); iomega++)
             {
-                this->wing_mu.at(iomega)(mu, alpha) = compute_wing(alpha, iomega, mu);
+                for (int alpha = 0; alpha != 3; alpha++)
+                {
+                    for (int isp = 0; isp != n_spin; isp++)
+                    {
+                        std::complex<double> tmp =
+                            compute_wing(alpha, iomega, mu, ik, isp, desc_nband_nband, C_mnk);
+                        const int index = mu * this->omega.size() * 3 + iomega * 3 + alpha;
+                        local_wing_mu[index] += tmp;
+                    }
+                }
             }
+            // Profiler::stop("compute_wing");
         }
     }
+    Profiler::start("Comm_wing");
+    MPI_Allreduce(MPI_IN_PLACE, local_wing_mu.data(), static_cast<int>(local_wing_mu.size()),
+                  MPI_CXX_DOUBLE_COMPLEX, MPI_SUM, MPI_COMM_WORLD);
+    Profiler::stop("Comm_wing");
     double dielectric_unit = cal_factor("wing");
 
     for (int alpha = 0; alpha != 3; alpha++)
@@ -225,463 +305,627 @@ void diele_func::cal_wing()
         {
             for (int iomega = 0; iomega != this->omega.size(); iomega++)
             {
-                if (n_spin == 1)
-                {
-                    if (Params::use_soc)
-                        this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit;
-                    else
-                        this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit * 2.0;
-                }
-                else if (n_spin == 4)
+                const int index = mu * this->omega.size() * 3 + iomega * 3 + alpha;
+                this->wing_mu.at(iomega)(mu, alpha) = local_wing_mu[index];
+                if (Params::use_soc)
                     this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit;
+                else
+                    this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit * 2.0 / n_spin;
             }
         }
     }
     // transform_mu_to_lambda();
-    std::cout << "* Success: calculate wing term." << std::endl;
+    if (mpi_comm_global_h.is_root()) std::cout << "* Success: calculate wing term." << std::endl;
 
-    if (Params::debug)
-    {
-        df_headwing.test_head();
-        df_headwing.test_wing();
-    }
     // this->wing_mu.clear();
-    this->Coul_vector.clear();
-    this->Coul_value.clear();
-    this->Ctri_mn.clear();
-    this->Ctri_ij.clear();
+    this->meanfield_df.get_velocity().clear();
+    LIBRPA::utils::release_free_mem();
+    Profiler::stop("cal_wing_mu");
 };
 
-void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blacs)
-{
-    int n_lambda = this->n_nonsingular - 1;
-    for (int alpha = 0; alpha != 3; alpha++)
-    {
-        for (int iomega = 0; iomega != this->omega.size(); iomega++)
-        {
-            for (int lambda = 0; lambda != n_lambda; lambda++)
-            {
-                for (int mu = 0; mu != n_abf; mu++)
-                {
-                    this->wing.at(iomega)(lambda, alpha) +=
-                        conj(sqrtveig_blacs(mu, lambda)) * this->wing_mu.at(iomega)(mu, alpha);
-                }
-            }
-        }
-    }
-    this->wing_mu.clear();
-};
-
-std::complex<double> diele_func::compute_wing(int alpha, int iomega, int mu)
-{
-    auto &wg = this->meanfield_df.get_weight()[n_spin - 1];
-    auto &velocity = this->meanfield_df.get_velocity();
-    auto &eigenvalues = this->meanfield_df.get_eigenvals();
-    int nocc = 0;
-    for (int i = 0; i != wg.size; i++)
-    {
-        if (wg.c[i] == 0.)
-        {
-            nocc = i;
-            break;
-        }
-    }
-    double omega_ev = this->omega[iomega];  // * HA2EV;
-    std::complex<double> wing_term = 0.0;
-
-    // std::complex<double> tmp = 0.0;
-    for (int ispin = 0; ispin != n_spin; ispin++)
-    {
-        for (int ik = 0; ik != nk; ik++)
-        {
-            std::complex<double> test_tot = 0.0;
-            for (int iocc = 0; iocc != n_states; iocc++)
-            {
-                for (int iunocc = iocc; iunocc != n_states; iunocc++)
-                {
-                    double egap = (eigenvalues[ispin](ik, iunocc) -
-                                   eigenvalues[ispin](ik, iocc));  // * HA2EV;
-                    if (iocc < nocc && iunocc >= nocc)
-                    {
-                        /*tmp += conj(this->Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]] *
-                                    velocity[ispin][ik][alpha](iunocc, iocc)) /
-                               (omega_ev * omega_ev + egap * egap);*/
-
-                        wing_term += conj(this->Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]] *
-                                          velocity[ispin][ik][alpha](iunocc, iocc)) /
-                                     (omega_ev * omega_ev + egap * egap);
-
-                        /*if (iocc == 5 && iunocc == 40 && alpha == 0 && mu == 0 && iomega == 0)
-                        {
-                            std::cout << "mu, ik: " << mu << "," << ik << std::endl;
-                            std::cout << "C: " << std::scientific << std::setprecision(8)
-                                      << conj(this->Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]])
-                                      << std::endl;
-                            std::cout << "p: " << std::scientific << std::setprecision(8)
-                                      << conj(velocity[ispin][ik][alpha](iunocc, iocc))
-                                      << std::endl;
-                            std::cout << "E_m, E_n: " << std::scientific << std::setprecision(8)
-                                      << eigenvalues[ispin](ik, iunocc) << "," << std::scientific
-                                      << std::setprecision(8) << eigenvalues[ispin](ik, iocc)
-                                      << std::endl;
-                            std::cout << "C*p: "
-                                      << conj(
-                                              this->Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]] *
-                                              velocity[ispin][ik][alpha](iunocc, iocc)) /
-                                             (omega_ev * omega_ev + egap * egap)
-                                      << std::endl;
-                        }*/
-                        if (Params::debug)
-                        {
-                            if (alpha == 0 && iomega == 0 && mu == 0)
-                            {
-                                std::complex<double> test =
-                                    conj(Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]] *
-                                         velocity[ispin][ik][alpha](iunocc, iocc)) /
-                                    (omega_ev * omega_ev + egap * egap);
-                                if (iocc == 0 && iunocc == 10)
-                                {
-                                    std::cout
-                                        << "C,p: " << Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]]
-                                        << "," << velocity[ispin][ik][alpha](iunocc, iocc)
-                                        << std::endl;
-                                }
-                                test_tot += test;
-                            }
-                        }
-                    }
-                    else if (iunocc < nocc && iocc >= nocc)
-                    {
-                        // for metal
-                        wing_term += 0.0 * this->Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]] *
-                                     velocity[ispin][ik][alpha](iunocc, iocc) /
-                                     (omega_ev * omega_ev + egap * egap);
-                    }
-                }
-            }
-            if (Params::debug)
-            {
-                if (alpha == 0 && iomega == 0 && mu == 0)
-                {
-                    std::cout << "sum over mn: " << ik << "," << test_tot << std::endl;
-                }
-            }
-        }
-
-        /*if (alpha == 0 && lambda == 0 && iomega == 0)
-        {
-            std::cout << "wing(x,l=0,w=0,mu): " << mu << ", " << wing_term << std::endl;
-        }*/
-        // wing_term += conj(this->Coul_vector.at(lambda).at(mu)) * tmp;
-    }
-    return wing_term;
-};
-
-void diele_func::init_Cs()
+std::pair<Array_Desc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(
+    const int ik, const int mu,
+    std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ)
 {
     using LIBRPA::atomic_basis_abf;
     using LIBRPA::atomic_basis_wfc;
-    using RI::Tensor;
-    const int n_atom = Cs_data.data_libri.size();
-
-    for (int ik = 0; ik != nk; ik++)
-    {
-        for (int I = 0; I != n_atom; I++)
-        {
-            for (int J = 0; J != n_atom; J++)
-            {
-                int n_mu_I = atomic_basis_abf.get_atom_nb(I);
-                int n_ao_I = atomic_basis_wfc.get_atom_nb(I);
-                int n_ao_J = atomic_basis_wfc.get_atom_nb(J);
-
-                Vector3_Order<double> k_frac = kfrac_band[ik];
-                const std::array<double, 3> k_array = {k_frac.x, k_frac.y, k_frac.z};
-                size_t total = n_ao_I * n_ao_J * n_mu_I;
-                std::complex<double> *Cs_in = new std::complex<double>[total]();
-                matrix_m<std::complex<double>> mat(n_ao_I * n_ao_J, n_mu_I, Cs_in, MAJOR::ROW,
-                                                   MAJOR::COL);
-                const std::initializer_list<std::size_t> shape{static_cast<std::size_t>(n_mu_I),
-                                                               static_cast<std::size_t>(n_ao_I),
-                                                               static_cast<std::size_t>(n_ao_J)};
-                this->Ctri_ij.data_libri[I][{J, k_array}] =
-                    Tensor<std::complex<double>>(shape, mat.dataobj.data);
-                delete[] Cs_in;
-            }
-        }
-    }
-
-    this->Ctri_mn.resize(n_abf);
-    for (int mu = 0; mu != n_abf; mu++)
-    {
-        this->Ctri_mn.at(mu).resize(n_states);
-        for (int m = 0; m != n_states; m++)
-        {
-            this->Ctri_mn.at(mu).at(m).resize(n_states);
-            for (int n = 0; n != n_states; n++)
-            {
-                for (int ik = 0; ik != nk; ik++)
-                {
-                    this->Ctri_mn.at(mu).at(m).at(n).insert(std::make_pair(kfrac_band[ik], 0.0));
-                }
-            }
-        }
-    }
-    // std::cout << "* Success: Initialize Ctri_ij and Ctri_mn.\n";
-};
-
-void diele_func::FT_R2k()
-{
-    using LIBRPA::atomic_basis_abf;
-    using LIBRPA::atomic_basis_wfc;
-    const int n_atom = Cs_data.data_libri.size();
-    // std::cout << "Number of atom: " << n_atom << std::endl;
-
-    for (int ik = 0; ik != nk; ik++)
-    {
-        for (int I = 0; I != n_atom; I++)
-        {
-            for (int J = 0; J != n_atom; J++)
-            {
-                int n_mu_I = atomic_basis_abf.get_atom_nb(I);
-                int n_ao_I = atomic_basis_wfc.get_atom_nb(I);
-                int n_ao_J = atomic_basis_wfc.get_atom_nb(J);
-#pragma omp parallel for schedule(dynamic) collapse(3)
-                for (int mu = 0; mu != n_mu_I; mu++)
-                {
-                    for (int i = 0; i != n_ao_I; i++)
-                    {
-                        for (int j = 0; j != n_ao_J; j++)
-                        {
-                            Vector3_Order<double> k_frac = kfrac_band[ik];
-                            const std::array<double, 3> k_array = {k_frac.x, k_frac.y, k_frac.z};
-                            if (Params::use_shrink_abfs)
-                            {
-                                this->Ctri_ij.data_libri[I][{J, k_array}](mu, i, j) =
-                                    compute_Cijk(Cs_shrinked_data, mu, I, i, J, j, ik);
-                            }
-                            else
-                            {
-                                this->Ctri_ij.data_libri[I][{J, k_array}](mu, i, j) =
-                                    compute_Cijk(Cs_data, mu, I, i, J, j, ik);
-                            }
-
-                            /*if (ik == 19 && I == 1 && J == 0 && i == 0 && j == 1)
-                            {
-                                std::cout << "Cij: " << mu << ", "
-                                          << this->Ctri_ij.data_libri[I][{J, k_array}](mu, i, j)
-                                          << std::endl;
-                            }*/
-                        }
-                    }
-                }
-            }
-        }
-    }
-    /* Vector3_Order<int> period{kv_nmp[0], kv_nmp[1], kv_nmp[2]};
-    auto Rlist = construct_R_grid(period);
-    std::cout << "Number of Bvk cell: " << Rlist.size() << std::endl; */
-    std::cout << "* Success: Fourier transform from Cs(R) to Cs(k)." << std::endl;
-};
-
-std::complex<double> diele_func::compute_Cijk(Cs_LRI &Cs_in, int mu, int I, int i, int J, int j,
-                                              int ik)
-{
-    std::complex<double> Cijk = 0.0;
-    Vector3_Order<int> period{kv_nmp[0], kv_nmp[1], kv_nmp[2]};
-    auto Rlist = construct_R_grid(period);
-    Vector3_Order<double> k_frac = kfrac_band[ik];
-    for (auto outer : Cs_in.data_libri[I])
-    {
-        auto J_Ra = outer.first;
-        auto Ra = J_Ra.second;
-        Vector3_Order<int> R = {Ra[0], Ra[1], Ra[2]};
-        double ang = k_frac * R * TWO_PI;
-        complex<double> kphase = complex<double>(cos(ang), sin(ang));
-        if (J_Ra.first == J)
-        {
-            // std::cout << I << "," << J << "," << Ra[0] << "," << Ra[1] << "," << Ra[2] <<
-            // std::endl;
-            Cijk += kphase * Cs_in.data_libri[I][{J, Ra}](mu, i, j);
-        }
-    }
-    return Cijk;
-};
-
-void diele_func::Cs_ij2mn()
-{
-#pragma omp parallel for schedule(dynamic) collapse(4)
-    for (int ik = 0; ik != nk; ik++)
-    {
-        for (int m = 0; m != n_states; m++)
-        {
-            for (int n = 0; n != n_states; n++)
-            {
-                for (int mu = 0; mu != n_abf; mu++)
-                {
-                    this->Ctri_mn.at(mu).at(m).at(n).at(kfrac_band[ik]) =
-                        compute_Cs_ij2mn(mu, m, n, ik);
-                    /*if (ik == 26 && m == 5 && n == 40)
-                    {
-                        lib_printf("Cmn: %5d, %15.5e, %15.5e\n", mu,
-                                   Ctri_mn.at(mu).at(m).at(n).at(kfrac_band[ik]).real(),
-                                   Ctri_mn.at(mu).at(m).at(n).at(kfrac_band[ik]).imag());
-                    }*/
-                }
-            }
-        }
-    }
-
-    std::cout << "* Success: transform of Cs^mu_ij(k) to Cs^mu_mn(k)." << std::endl;
-};
-
-std::complex<double> diele_func::compute_Cs_ij2mn(int mu, int m, int n, int ik)
-{
-    using LIBRPA::atomic_basis_abf;
-    using LIBRPA::atomic_basis_wfc;
-    const std::array<double, 3> k_array = {kfrac_band[ik].x, kfrac_band[ik].y, kfrac_band[ik].z};
-    std::complex<double> total = 0.0;
-    int Mu = atomic_basis_abf.get_i_atom(mu);
-    int mu_local = atomic_basis_abf.get_local_index(mu, Mu);
-    const int n_atom = Ctri_ij.data_libri.size();
-    const int n_ao_Mu = atomic_basis_wfc.get_atom_nb(Mu);
-    const int n_spins = meanfield_df.get_n_spins();
     const int n_soc = meanfield_df.get_n_soc();
+    const int Mu = atomic_basis_abf.get_i_atom(mu);
+    const int mu_local = atomic_basis_abf.get_local_index(mu, Mu);
+    const int n_ao_Mu = atomic_basis_wfc.get_atom_nb(Mu);
 
-    // #pragma omp parallel for schedule(dynamic) collapse(2)
-    for (int isp = 0; isp != n_spins; isp++)
+    Array_Desc desc_nband_nao(blacs_ctxt_global_h);
+    desc_nband_nao.init_1b1p(n_states, n_basis, 0, 0);
+    Array_Desc desc_nband_Mu(blacs_ctxt_global_h);
+    desc_nband_Mu.init_1b1p(n_states, n_ao_Mu, 0, 0);
+    Array_Desc desc_Mu_nband(blacs_ctxt_global_h);
+    desc_Mu_nband.init_1b1p(n_ao_Mu, n_states, 0, 0);
+    Array_Desc desc_nao_nao(blacs_ctxt_global_h);
+    desc_nao_nao.init_1b1p(n_basis, n_basis, 0, 0);
+    Array_Desc desc_nband_nband(blacs_ctxt_global_h);
+    desc_nband_nband.init_1b1p(n_states, n_states, 0, 0);
+
+    auto C_nao_nao = init_local_mat<complex<double>>(desc_nao_nao, MAJOR::COL);
+    auto C_Mu_nband = init_local_mat<complex<double>>(desc_Mu_nband, MAJOR::COL);
+    auto C_nband_nband = init_local_mat<complex<double>>(desc_nband_nband, MAJOR::COL);
+
+    const auto kfrac = kfrac_band[ik];
+    const std::function<complex<double>(const int &, const std::pair<int, std::array<int, 3>> &)>
+        fourier = [kfrac](const int &I, const std::pair<int, std::array<int, 3>> &J_Ra)
+    {
+        const auto &Ra = J_Ra.second;
+        Vector3<double> R_IJ(Ra[0], Ra[1], Ra[2]);
+        const auto ang = (kfrac * R_IJ) * TWO_PI;
+        return complex<double>{std::cos(ang), std::sin(ang)};
+    };
+
+    C_nao_nao.zero_out();
+    C_Mu_nband.zero_out();
+    C_nband_nband.zero_out();
+    collect_block_from_IJ_storage_tensor_transform_triple(
+        C_nao_nao, desc_nao_nao, atomic_basis_wfc, atomic_basis_wfc, fourier, Cs_IJ, Mu, mu_local);
+    // ghj debug
+    // if (ik == 1 && mu == 4)
+    // {
+    //     for (const auto IJRc : Cs_IJ)
+    //     {
+    //         const auto I = IJRc.first;
+    //         for (const auto J_R : IJRc.second)
+    //         {
+    //             const auto J = J_R.first.first;
+    //             const auto R = J_R.first.second;
+    //             const auto &tensor = J_R.second;
+    //             ofs_myid << "Cs_IJ(" << I << "," << J << "," << R[0] << R[1] << R[2]
+    //                      << "):" << tensor(mu_local, 1, 2) << std::endl;
+    //         }
+    //     }
+    //     for (int i = 0; i < n_ao_Mu; i++)
+    //     {
+    //         const auto i_loc = desc_nao_nao.indx_g2l_r(i);
+    //         const auto j_loc = desc_nao_nao.indx_g2l_c(10);
+    //         if (i_loc >= 0 && j_loc >= 0)
+    //             ofs_myid << "C_nao_nao(" << i << ",10): " << C_nao_nao(i_loc, j_loc) <<
+    //             std::endl;
+    //     }
+    // }
+    //  prepare wave function BLACS
+    for (int ispin = 0; ispin != n_spin; ispin++)
     {
         for (int is1 = 0; is1 != n_soc; is1++)
         {
-            const ComplexMatrix eigenvectors1 = meanfield_df.get_eigenvectors()[isp][is1][ik];
             for (int is2 = 0; is2 != n_soc; is2++)
             {
-                const ComplexMatrix eigenvectors2 = meanfield_df.get_eigenvectors()[isp][is2][ik];
-                for (int i = 0; i != n_ao_Mu; i++)
+                const auto &wfc_isp1_k = meanfield_df.get_eigenvectors()[ispin][is1][ik];
+                ComplexMatrix wfc_Mu = ComplexMatrix(n_states, n_ao_Mu);
+                // #pragma omp parallel for schedule collapse(2)
+                for (int n = 0; n < n_states; n++)
                 {
-                    for (int J = 0; J != n_atom; J++)
+                    for (int i = 0; i < n_ao_Mu; i++)
                     {
-                        int n_ao_J = atomic_basis_wfc.get_atom_nb(J);
-                        for (int j = 0; j != n_ao_J; j++)
-                        {
-                            std::complex<double> term1 =
-                                conj(eigenvectors1(m, atomic_basis_wfc.get_global_index(Mu, i))) *
-                                Ctri_ij.data_libri[Mu][{J, k_array}](mu_local, i, j) *
-                                eigenvectors2(n, atomic_basis_wfc.get_global_index(J, j));
-                            std::complex<double> term2 =
-                                eigenvectors1(n, atomic_basis_wfc.get_global_index(Mu, i)) *
-                                conj(Ctri_ij.data_libri[Mu][{J, k_array}](mu_local, i, j)) *
-                                conj(eigenvectors2(m, atomic_basis_wfc.get_global_index(J, j)));
-                            // #pragma omp critical
-                            total += term1 + term2;
-                        }
+                        const auto i_Mu = atomic_basis_wfc.get_global_index(Mu, i);
+                        wfc_Mu(n, i) = wfc_isp1_k(n, i_Mu);
                     }
                 }
+                const auto &wfc_isp2_k = meanfield_df.get_eigenvectors()[ispin][is2][ik];
+                // blacs_ctxt_global_h.barrier();
+                auto wfc1_block = get_local_mat(wfc_Mu.c, MAJOR::ROW, desc_nband_Mu, MAJOR::COL);
+                auto wfc2_block =
+                    get_local_mat(wfc_isp2_k.c, MAJOR::ROW, desc_nband_nao, MAJOR::COL);
+                ScalapackConnector::pgemm_f(
+                    'N', 'T', n_ao_Mu, n_states, n_basis, 1.0, C_nao_nao.ptr(),
+                    1 + atomic_basis_wfc.get_part_range()[Mu], 1, desc_nao_nao.desc,
+                    wfc2_block.ptr(), 1, 1, desc_nband_nao.desc, 0.0, C_Mu_nband.ptr(), 1, 1,
+                    desc_Mu_nband.desc);
+                ScalapackConnector::pgemm_f('N', 'N', n_states, n_states, n_ao_Mu, 1.0,
+                                            conj(wfc1_block).ptr(), 1, 1, desc_nband_Mu.desc,
+                                            C_Mu_nband.ptr(), 1, 1, desc_Mu_nband.desc, 1.0,
+                                            C_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
+                ScalapackConnector::pgemm_f('C', 'T', n_states, n_states, n_ao_Mu, 1.0,
+                                            C_Mu_nband.ptr(), 1, 1, desc_Mu_nband.desc,
+                                            wfc1_block.ptr(), 1, 1, desc_nband_Mu.desc, 1.0,
+                                            C_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
+            }
+        }
+    }
+    // Profiler::stop("scalapack_multiply");
+    return std::make_pair(desc_nband_nband, C_nband_nband);
+};
+
+std::complex<double> diele_func::compute_wing(const int alpha, const int iomega, const int mu,
+                                              const int ik, const int ispin,
+                                              const Array_Desc &desc_nband_nband,
+                                              const matrix_m<complex<double>> &C_nband_nband)
+{
+    auto &velocity = this->meanfield_df.get_velocity();
+    auto &eigenvalues = this->meanfield_df.get_eigenvals();
+
+    double omega_ev = this->omega[iomega];  // * HA2EV;
+    std::complex<double> wing_term = 0.0;
+
+    auto &wg = this->meanfield_df.get_weight()[ispin];
+    std::complex<double> test_tot = 0.0;
+    for (int iocc = 0; iocc != n_states; iocc++)
+    {
+        for (int iunocc = 0; iunocc != n_states; iunocc++)
+        {
+            double egap =
+                (eigenvalues[ispin](ik, iunocc) - eigenvalues[ispin](ik, iocc));  // * HA2EV;
+            if (iocc < iunocc)
+            {
+                double factor1;
+                double factor2;
+                if (Params::use_soc)
+                {
+                    factor1 = wg.c[iocc] * (1.0 - wg.c[iunocc] * nk);
+                    factor2 = wg.c[iunocc] * (1.0 - wg.c[iocc] * nk);
+                }
+                else
+                {
+                    factor1 = wg.c[iocc] / 2 * n_spin * (1.0 - wg.c[iunocc] / 2 * n_spin * nk);
+                    factor2 = wg.c[iunocc] / 2 * n_spin * (1.0 - wg.c[iocc] / 2 * n_spin * nk);
+                }
+                if (factor1 > 1.e-8)
+                {
+                    auto loc_m = desc_nband_nband.indx_g2l_r(iocc);
+                    auto loc_n = desc_nband_nband.indx_g2l_c(iunocc);
+                    if (loc_m < 0 || loc_n < 0) continue;
+                    auto tmp = C_nband_nband(loc_m, loc_n);
+                    wing_term += factor1 * conj(tmp * velocity[ispin][ik][alpha](iunocc, iocc)) /
+                                 (omega_ev * omega_ev + egap * egap);
+                }
+                if (factor2 > 1.e-8)
+                {
+                    auto loc_m = desc_nband_nband.indx_g2l_r(iocc);
+                    auto loc_n = desc_nband_nband.indx_g2l_c(iunocc);
+                    if (loc_m < 0 || loc_n < 0) continue;
+                    auto tmp = C_nband_nband(loc_m, loc_n);
+                    // for metal
+                    wing_term += factor2 * tmp * velocity[ispin][ik][alpha](iunocc, iocc) /
+                                 (omega_ev * omega_ev + egap * egap);
+                }
+
+                /*if (Params::debug)
+                {
+                    if (alpha == 0 && iomega == 0 && mu == 0)
+                    {
+                        std::complex<double> test =
+                conj(Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]] *
+                                                         velocity[ispin][ik][alpha](iunocc,
+                iocc)) / (omega_ev * omega_ev + egap * egap); if (iocc == 0 && iunocc == 10)
+                        {
+                            std::cout << "C,p: " << Ctri_mn[mu][iocc][iunocc][kfrac_band[ik]] <<
+                ","
+                                      << velocity[ispin][ik][alpha](iunocc, iocc) << std::endl;
+                        }
+                        test_tot += test;
+                    }
+                }*/
             }
         }
     }
 
-    return total;
+    return wing_term;
 };
+
+void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blacs,
+                                   Array_Desc &desc_nabf_nabf_opt)
+{
+    Profiler::start("cal_wing");
+    int n_lambda = this->n_nonsingular - 1;
+    Array_Desc desc_wing_mu(blacs_ctxt_global_h);
+    desc_wing_mu.init_square_blk(n_abf, 3, 0, 0);
+    Array_Desc desc_wing(blacs_ctxt_global_h);
+    desc_wing.init_square_blk(n_nonsingular - 1, 3, 0, 0);
+    Array_Desc desc_body(blacs_ctxt_global_h);
+    desc_body.init_square_blk(n_nonsingular - 1, n_nonsingular - 1, 0, 0);
+    // opt descriptor for wing
+    Array_Desc desc_wing_opt(blacs_ctxt_global_h);
+    desc_wing_opt.init(n_nonsingular - 1, 3, desc_body.mb(), desc_wing.nb(), 0, 0);
+
+    for (int iomega = 0; iomega != this->omega.size(); iomega++)
+    {
+        auto &wing_tmp = this->wing.at(iomega);
+        wing_tmp = init_local_mat<complex<double>>(desc_wing_opt, MAJOR::COL);
+        // TODO: reconstruct wing_mu
+        auto wing_mu_tmp = init_local_mat<complex<double>>(desc_wing_mu, MAJOR::COL);
+        for (int alpha = 0; alpha != 3; alpha++)
+        {
+            auto loc_alpha = desc_wing_mu.indx_g2l_c(alpha);
+            if (loc_alpha < 0) continue;
+            for (int mu = 0; mu != n_abf; mu++)
+            {
+                auto loc_mu = desc_wing_mu.indx_g2l_r(mu);
+                if (loc_mu < 0) continue;
+                wing_mu_tmp(loc_mu, loc_alpha) = this->wing_mu.at(iomega)(mu, alpha);
+            }
+        }
+        // this->wing.at(iomega)(lambda, alpha) +=
+        // conj(sqrtveig_blacs(mu, lambda)) * this->wing_mu.at(iomega)(mu, alpha);
+        // drop the first column of sqrtveig_blacs, the largest eigenvalue
+        ScalapackConnector::pgemm_f('C', 'N', n_lambda, 3, n_abf, 1.0, sqrtveig_blacs.ptr(), 1, 2,
+                                    desc_nabf_nabf_opt.desc, wing_mu_tmp.ptr(), 1, 1,
+                                    desc_wing_mu.desc, 0.0, wing_tmp.ptr(), 1, 1,
+                                    desc_wing_opt.desc);
+    }
+
+    this->wing_mu.clear();
+    Profiler::stop("cal_wing");
+};
+
+// void diele_func::init_Cs()
+// {
+//     Profiler::start("init_Cs");
+//     using LIBRPA::atomic_basis_abf;
+//     using LIBRPA::atomic_basis_wfc;
+//     using RI::Tensor;
+//     const int n_atom = atom_mu.size();
+//     Vector3_Order<int> period{kv_nmp[0], kv_nmp[1], kv_nmp[2]};
+//     auto Rlist = construct_R_grid(period);
+
+//     for (int I = 0; I != n_atom; I++)
+//     {
+//         int n_mu_I = atomic_basis_abf.get_atom_nb(I);
+//         int n_ao_I = atomic_basis_wfc.get_atom_nb(I);
+//         for (int J = 0; J != n_atom; J++)
+//         {
+//             int n_ao_J = atomic_basis_wfc.get_atom_nb(J);
+//             size_t total = n_ao_I * n_ao_J * n_mu_I;
+//             const std::initializer_list<std::size_t> shape{static_cast<std::size_t>(n_mu_I),
+//                                                            static_cast<std::size_t>(n_ao_I),
+//                                                            static_cast<std::size_t>(n_ao_J)};
+//             for (int ik = 0; ik != nk; ik++)
+//             {
+//                 Vector3_Order<double> k_frac = kfrac_band[ik];
+//                 const std::array<double, 3> k_array = {k_frac.x, k_frac.y, k_frac.z};
+
+//                 this->Ctri_ij.data_libri[I][{J, k_array}] =
+//                 Tensor<std::complex<double>>(shape);
+//             }
+//             for (auto &R : Rlist)
+//             {
+//                 const std::array<int, 3> R_array = {R.x, R.y, R.z};
+
+//                 if (Params::use_shrink_abfs)
+//                 {
+//                     if (Cs_shrinked_data.data_libri.count(I) == 0 ||
+//                         Cs_shrinked_data.data_libri.at(I).count({J, R_array}) == 0)
+//                     {
+//                         Cs_IJR.data_libri[I][{J, R_array}] = Tensor<double>(shape);
+//                     }
+//                     else
+//                     {
+//                         Cs_IJR.data_libri[I][{J, R_array}] =
+//                             Cs_shrinked_data.data_libri[I][{J, R_array}];
+//                     }
+//                 }
+//                 else
+//                 {
+//                     if (Cs_data.data_libri.count(I) == 0 ||
+//                         Cs_data.data_libri.at(I).count({J, R_array}) == 0)
+//                     {
+//                         Cs_IJR.data_libri[I][{J, R_array}] = Tensor<double>(shape);
+//                     }
+//                     else
+//                     {
+//                         Cs_IJR.data_libri[I][{J, R_array}] = Cs_data.data_libri[I][{J,
+//                         R_array}];
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//     // mpi reduce Cs_IJR
+//     for (auto &IJRCs : Cs_IJR.data_libri)
+//     {
+//         auto &I = IJRCs.first;
+//         for (auto &JRCs : IJRCs.second)
+//         {
+//             auto &J = JRCs.first.first;
+//             auto &R = JRCs.first.second;
+//             auto &Cs = JRCs.second;
+//             int n_mu_I = atomic_basis_abf.get_atom_nb(I);
+//             int n_ao_I = atomic_basis_wfc.get_atom_nb(I);
+//             int n_ao_J = atomic_basis_wfc.get_atom_nb(J);
+//             double *data_ptr = Cs.ptr();
+//             size_t total_size = n_mu_I * n_ao_I * n_ao_J;
+
+//             std::vector<double> aligned_buffer(total_size);
+//             std::vector<double> recv_buffer(total_size);
+//             std::copy(data_ptr, data_ptr + total_size, aligned_buffer.data());
+//             MPI_Allreduce(aligned_buffer.data(), recv_buffer.data(), total_size, MPI_DOUBLE,
+//                           MPI_SUM, mpi_comm_global_h.comm);
+//             std::copy(recv_buffer.begin(), recv_buffer.end(), data_ptr);
+//             // MPI_Allreduce(MPI_IN_PLACE, &data_ptr, total_size, MPI_DOUBLE, MPI_SUM,
+//             //              mpi_comm_global_h.comm);
+//         }
+//     }
+
+//     // std::cout << "* Success: Initialize Ctri_ij and Ctri_mn.\n";
+//     Profiler::stop("init_Cs");
+// };
+
+// void diele_func::FT_R2k()
+// {
+//     Profiler::start("fourier_r2k");
+//     using LIBRPA::atomic_basis_abf;
+//     using LIBRPA::atomic_basis_wfc;
+//     const int n_atom = atom_mu.size();
+//     // std::cout << "Number of atom: " << n_atom << std::endl;
+
+//     for (int ik = 0; ik != nk; ik++)
+//     {
+//         for (int I = 0; I != n_atom; I++)
+//         {
+//             for (int J = 0; J != n_atom; J++)
+//             {
+//                 int n_mu_I = atomic_basis_abf.get_atom_nb(I);
+//                 int n_ao_I = atomic_basis_wfc.get_atom_nb(I);
+//                 int n_ao_J = atomic_basis_wfc.get_atom_nb(J);
+// #pragma omp parallel for schedule(dynamic) collapse(3)
+//                 for (int mu = 0; mu != n_mu_I; mu++)
+//                 {
+//                     for (int i = 0; i != n_ao_I; i++)
+//                     {
+//                         for (int j = 0; j != n_ao_J; j++)
+//                         {
+//                             Vector3_Order<double> k_frac = kfrac_band[ik];
+//                             const std::array<double, 3> k_array = {k_frac.x, k_frac.y,
+//                             k_frac.z};
+
+//                             this->Ctri_ij.data_libri[I][{J, k_array}](mu, i, j) =
+//                                 compute_Cijk(Cs_IJR, mu, I, i, J, j, ik);
+
+//                             /// this->Ctri_ij.data_libri[I][{J, k_array}](mu, i, j) =
+//                             //    compute_Cijk(Cs_data, mu, I, i, J, j, ik);
+
+//                             /*if (ik == 19 && I == 1 && J == 0 && i == 0 && j == 1)
+//                             {
+//                                 std::cout << "Cij: " << mu << ", "
+//                                           << this->Ctri_ij.data_libri[I][{J, k_array}](mu, i,
+//                                           j)
+//                                           << std::endl;
+//                             }*/
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//     Cs_IJR.clear();
+//     if (mpi_comm_global_h.is_root())
+//         std::cout << "* Success: Fourier transform from Cs(R) to Cs(k)." << std::endl;
+//     Profiler::stop("fourier_r2k");
+// };
+
+// std::complex<double> diele_func::compute_Cijk(Cs_LRI &Cs_in, int mu, int I, int i, int J, int
+// j,
+//                                               int ik)
+// {
+//     std::complex<double> Cijk = 0.0;
+//     Vector3_Order<double> k_frac = kfrac_band[ik];
+//     for (auto outer : Cs_in.data_libri[I])
+//     {
+//         auto J_Ra = outer.first;
+//         if (J_Ra.first == J)
+//         {
+//             auto Ra = J_Ra.second;
+//             Vector3_Order<int> R = {Ra[0], Ra[1], Ra[2]};
+//             double ang = k_frac * R * TWO_PI;
+//             complex<double> kphase = complex<double>(cos(ang), sin(ang));
+
+//             // std::cout << I << "," << J << "," << Ra[0] << "," << Ra[1] << "," << Ra[2] <<
+//             // std::endl;
+//             Cijk += kphase * Cs_in.data_libri[I][{J, Ra}](mu, i, j);
+//         }
+//     }
+//     return Cijk;
+// };
+
+// void diele_func::Cs_ij2mn()
+// {
+//     Profiler::start("transform_Cs_NAO_to_KS");
+//     this->Ctri_mn.resize(n_abf);
+//     for (int mu = 0; mu != n_abf; mu++)
+//     {
+//         this->Ctri_mn.at(mu).resize(n_states);
+//         for (int m = 0; m != n_states; m++)
+//         {
+//             this->Ctri_mn.at(mu).at(m).resize(n_states);
+//             for (int n = 0; n != n_states; n++)
+//             {
+//                 for (int ik = 0; ik != nk; ik++)
+//                 {
+//                     this->Ctri_mn.at(mu).at(m).at(n).insert(std::make_pair(kfrac_band[ik],
+//                     0.0));
+//                 }
+//             }
+//         }
+//     }
+// #pragma omp parallel for schedule(dynamic) collapse(4)
+//     for (int ik = 0; ik != nk; ik++)
+//     {
+//         for (int m = 0; m != n_states; m++)
+//         {
+//             for (int n = 0; n != n_states; n++)
+//             {
+//                 for (int mu = 0; mu != n_abf; mu++)
+//                 {
+//                     this->Ctri_mn.at(mu).at(m).at(n).at(kfrac_band[ik]) =
+//                         compute_Cs_ij2mn(mu, m, n, ik);
+//                     /*if (ik == 26 && m == 5 && n == 40)
+//                     {
+//                         lib_printf("Cmn: %5d, %15.5e, %15.5e\n", mu,
+//                                    Ctri_mn.at(mu).at(m).at(n).at(kfrac_band[ik]).real(),
+//                                    Ctri_mn.at(mu).at(m).at(n).at(kfrac_band[ik]).imag());
+//                     }*/
+//                 }
+//             }
+//         }
+//     }
+//     Ctri_ij.clear();
+//     if (mpi_comm_global_h.is_root())
+//         std::cout << "* Success: transform of Cs from NAO to KS." << std::endl;
+//     Profiler::stop("transform_Cs_NAO_to_KS");
+// };
+
+// std::complex<double> diele_func::compute_Cs_ij2mn(int mu, int m, int n, int ik)
+// {
+//     using LIBRPA::atomic_basis_abf;
+//     using LIBRPA::atomic_basis_wfc;
+//     const std::array<double, 3> k_array = {kfrac_band[ik].x, kfrac_band[ik].y,
+//     kfrac_band[ik].z}; std::complex<double> total = 0.0; int Mu =
+//     atomic_basis_abf.get_i_atom(mu); int mu_local = atomic_basis_abf.get_local_index(mu, Mu);
+//     const int n_atom = Ctri_ij.data_libri.size();
+//     const int n_ao_Mu = atomic_basis_wfc.get_atom_nb(Mu);
+//     const int n_spins = meanfield_df.get_n_spins();
+//     const int n_soc = meanfield_df.get_n_soc();
+
+//     // #pragma omp parallel for schedule(dynamic) collapse(2)
+//     for (int isp = 0; isp != n_spins; isp++)
+//     {
+//         for (int is1 = 0; is1 != n_soc; is1++)
+//         {
+//             const ComplexMatrix eigenvectors1 =
+//             meanfield_df.get_eigenvectors()[isp][is1][ik]; for (int is2 = 0; is2 != n_soc;
+//             is2++)
+//             {
+//                 const ComplexMatrix eigenvectors2 =
+//                 meanfield_df.get_eigenvectors()[isp][is2][ik]; for (int i = 0; i != n_ao_Mu;
+//                 i++)
+//                 {
+//                     for (int J = 0; J != n_atom; J++)
+//                     {
+//                         int n_ao_J = atomic_basis_wfc.get_atom_nb(J);
+//                         for (int j = 0; j != n_ao_J; j++)
+//                         {
+//                             std::complex<double> term1 =
+//                                 conj(eigenvectors1(m, atomic_basis_wfc.get_global_index(Mu,
+//                                 i)))
+//                                 * Ctri_ij.data_libri[Mu][{J, k_array}](mu_local, i, j) *
+//                                 eigenvectors2(n, atomic_basis_wfc.get_global_index(J, j));
+//                             std::complex<double> term2 =
+//                                 eigenvectors1(n, atomic_basis_wfc.get_global_index(Mu, i)) *
+//                                 conj(Ctri_ij.data_libri[Mu][{J, k_array}](mu_local, i, j)) *
+//                                 conj(eigenvectors2(m, atomic_basis_wfc.get_global_index(J,
+//                                 j)));
+//                             // #pragma omp critical
+//                             total += term1 + term2;
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+
+//     return total;
+// };
 
 // real double diagonalization
 // Note complex diagonalization conserves symmetry much better
-void diele_func::get_Xv_real()
-{
-    this->Coul_vector.clear();
-    this->Coul_value.clear();
-    const double CONE = 1.0;
-    std::array<double, 3> qa = {0.0, 0.0, 0.0};
-    Vector3_Order<double> q = {0.0, 0.0, 0.0};
-    size_t n_singular;
-    vec<double> eigenvalues(n_abf);
+// void diele_func::get_Xv_real()
+// {
+//     this->Coul_vector.clear();
+//     this->Coul_value.clear();
+//     const double CONE = 1.0;
+//     std::array<double, 3> qa = {0.0, 0.0, 0.0};
+//     Vector3_Order<double> q = {0.0, 0.0, 0.0};
+//     size_t n_singular;
+//     vec<double> eigenvalues(n_abf);
 
-    mpi_comm_global_h.barrier();
+//     mpi_comm_global_h.barrier();
 
-    Array_Desc desc_nabf_nabf(blacs_ctxt_global_h);
-    desc_nabf_nabf.init_square_blk(n_abf, n_abf, 0, 0);
-    const auto set_IJ_nabf_nabf = LIBRPA::utils::get_necessary_IJ_from_block_2D_sy(
-        'U', LIBRPA::atomic_basis_abf, desc_nabf_nabf);
-    const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nabf_nabf);
-    auto coul_eigen_block = init_local_mat<double>(desc_nabf_nabf, MAJOR::COL);
-    auto coulwc_block = init_local_mat<double>(desc_nabf_nabf, MAJOR::COL);
-    coulwc_block.zero_out();
-    std::map<int, std::map<std::pair<int, std::array<double, 3>>, RI::Tensor<double>>>
-        couleps_libri;
-    const auto atpair_local = dispatch_upper_trangular_tasks(
-        natom, blacs_ctxt_global_h.myid, blacs_ctxt_global_h.nprows, blacs_ctxt_global_h.npcols,
-        blacs_ctxt_global_h.myprow, blacs_ctxt_global_h.mypcol);
-    for (const auto &Mu_Nu : atpair_local)
-    {
-        const auto Mu = Mu_Nu.first;
-        const auto Nu = Mu_Nu.second;
-        // ofs_myid << "Mu " << Mu << " Nu " << Nu << endl;
-        if (Vq_cut.count(Mu) == 0 || Vq_cut.at(Mu).count(Nu) == 0 ||
-            Vq_cut.at(Mu).at(Nu).count(q) == 0)
-            continue;
-        auto Vq_cpl = *(Vq_cut.at(Mu).at(Nu).at(q));
-        // if (Vq.count(Mu) == 0 || Vq.at(Mu).count(Nu) == 0 || Vq.at(Mu).at(Nu).count(q) == 0)
-        //     continue;
-        // auto Vq_cpl = *(Vq.at(Mu).at(Nu).at(q));
-        const auto &Vq0 = std::make_shared<matrix>(Vq_cpl.real());
-        // const auto &Vq0 = Vq.at(Mu).at(Nu).at(q);
-        const auto n_mu = LIBRPA::atomic_basis_abf.get_atom_nb(Mu);
-        const auto n_nu = LIBRPA::atomic_basis_abf.get_atom_nb(Nu);
-        std::valarray<double> Vq_va(Vq0->c, Vq0->size);
-        auto pvq = std::make_shared<std::valarray<double>>();
-        *pvq = Vq_va;
-        couleps_libri[Mu][{Nu, qa}] = RI::Tensor<double>({n_mu, n_nu}, pvq);
-    }
-    const auto IJq_coul = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
-        mpi_comm_global_h.comm, couleps_libri, s0_s1.first, s0_s1.second);
-    collect_block_from_ALL_IJ_Tensor(coulwc_block, desc_nabf_nabf, LIBRPA::atomic_basis_abf, qa,
-                                     true, CONE, IJq_coul, MAJOR::ROW);
-    power_hemat_blacs_real(coulwc_block, desc_nabf_nabf, coul_eigen_block, desc_nabf_nabf,
-                           n_singular, eigenvalues.c, 1.0, Params::vq_threshold);
-    this->n_nonsingular = n_abf - n_singular;
-    for (int iv = 1; iv != n_nonsingular; iv++)
-    {
-        // Here eigen solved by Scalapack is ascending order,
-        // however, what we want is descending order.
-        this->Coul_value.push_back(eigenvalues.c[iv] + 0.0I);  // throw away the largest one
-        std::vector<std::complex<double>> newRow;
+//     Array_Desc desc_nabf_nabf(blacs_ctxt_global_h);
+//     desc_nabf_nabf.init_square_blk(n_abf, n_abf, 0, 0);
+//     const auto set_IJ_nabf_nabf = LIBRPA::utils::get_necessary_IJ_from_block_2D_sy(
+//         'U', LIBRPA::atomic_basis_abf, desc_nabf_nabf);
+//     const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nabf_nabf);
+//     auto coul_eigen_block = init_local_mat<double>(desc_nabf_nabf, MAJOR::COL);
+//     auto coulwc_block = init_local_mat<double>(desc_nabf_nabf, MAJOR::COL);
+//     coulwc_block.zero_out();
+//     std::map<int, std::map<std::pair<int, std::array<double, 3>>, RI::Tensor<double>>>
+//         couleps_libri;
+//     const auto atpair_local = dispatch_upper_trangular_tasks(
+//         natom, blacs_ctxt_global_h.myid, blacs_ctxt_global_h.nprows,
+//         blacs_ctxt_global_h.npcols, blacs_ctxt_global_h.myprow, blacs_ctxt_global_h.mypcol);
+//     for (const auto &Mu_Nu : atpair_local)
+//     {
+//         const auto Mu = Mu_Nu.first;
+//         const auto Nu = Mu_Nu.second;
+//         // ofs_myid << "Mu " << Mu << " Nu " << Nu << endl;
+//         if (Vq_cut.count(Mu) == 0 || Vq_cut.at(Mu).count(Nu) == 0 ||
+//             Vq_cut.at(Mu).at(Nu).count(q) == 0)
+//             continue;
+//         auto Vq_cpl = *(Vq_cut.at(Mu).at(Nu).at(q));
+//         // if (Vq.count(Mu) == 0 || Vq.at(Mu).count(Nu) == 0 || Vq.at(Mu).at(Nu).count(q) ==
+//         0)
+//         //     continue;
+//         // auto Vq_cpl = *(Vq.at(Mu).at(Nu).at(q));
+//         const auto &Vq0 = std::make_shared<matrix>(Vq_cpl.real());
+//         // const auto &Vq0 = Vq.at(Mu).at(Nu).at(q);
+//         const auto n_mu = LIBRPA::atomic_basis_abf.get_atom_nb(Mu);
+//         const auto n_nu = LIBRPA::atomic_basis_abf.get_atom_nb(Nu);
+//         std::valarray<double> Vq_va(Vq0->c, Vq0->size);
+//         auto pvq = std::make_shared<std::valarray<double>>();
+//         *pvq = Vq_va;
+//         couleps_libri[Mu][{Nu, qa}] = RI::Tensor<double>({n_mu, n_nu}, pvq);
+//     }
+//     const auto IJq_coul = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+//         mpi_comm_global_h.comm, couleps_libri, s0_s1.first, s0_s1.second);
+//     collect_block_from_ALL_IJ_Tensor(coulwc_block, desc_nabf_nabf, LIBRPA::atomic_basis_abf,
+//     qa,
+//                                      true, CONE, IJq_coul, MAJOR::ROW);
+//     power_hemat_blacs_real(coulwc_block, desc_nabf_nabf, coul_eigen_block, desc_nabf_nabf,
+//                            n_singular, eigenvalues.c, 1.0, Params::vq_threshold);
+//     this->n_nonsingular = n_abf - n_singular;
+//     for (int iv = 1; iv != n_nonsingular; iv++)
+//     {
+//         // Here eigen solved by Scalapack is ascending order,
+//         // however, what we want is descending order.
+//         this->Coul_value.push_back(eigenvalues.c[iv] + 0.0I);  // throw away the largest one
+//         std::vector<std::complex<double>> newRow;
 
-        for (int jabf = 0; jabf != n_abf; jabf++)
-        {
-            newRow.push_back(coul_eigen_block(jabf, iv) + 0.0I);
-        }
-        this->Coul_vector.push_back(newRow);
-    }
-
-    std::cout << "The largest/smallest eigenvalue of Coulomb matrix(non-singular): "
-              << this->Coul_value.front() << ", " << this->Coul_value.back() << std::endl;
-    std::cout << "The 1st/2nd/3rd/-1th eigenvalue of Coulomb matrix(Full): " << eigenvalues.c[0]
-              << ", " << eigenvalues.c[1] << ", " << eigenvalues.c[2] << ", "
-              << eigenvalues.c[n_abf - 1] << std::endl;
-    std::cout << "Dim of eigenvectors: " << coul_eigen_block.dataobj.nr() << ", "
-              << coul_eigen_block.dataobj.nc() << std::endl;
-    /*std::cout << "Coulomb vector: lambda=-1" << std::endl;
-    for (int j = 0; j != n_abf; j++)
-    {
-        std::cout << j << "," << coul_eigen_block(j, 0) << std::endl;
-    }
-    std::cout << "Coulomb vector: lambda=0" << std::endl;
-    for (int j = 0; j != n_abf; j++)
-    {
-        std::cout << j << "," << Coul_vector[0][j] << std::endl;
-    }
-    std::cout << "Coulomb vector: lambda=1" << std::endl;
-    for (int j = 0; j != n_abf; j++)
-    {
-        std::cout << j << "," << Coul_vector[1][j] << std::endl;
-    }*/
-    std::cout << "* Success: diagonalize Coulomb matrix in the ABFs repre." << std::endl;
-};
+//         for (int jabf = 0; jabf != n_abf; jabf++)
+//         {
+//             newRow.push_back(coul_eigen_block(jabf, iv) + 0.0I);
+//         }
+//         this->Coul_vector.push_back(newRow);
+//     }
+//     if (mpi_comm_global_h.is_root())
+//     {
+//         std::cout << "The largest/smallest eigenvalue of Coulomb matrix(non-singular): "
+//                   << this->Coul_value.front() << ", " << this->Coul_value.back() <<
+//                   std::endl;
+//         std::cout << "The 1st/2nd/3rd/-1th eigenvalue of Coulomb matrix(Full): " <<
+//         eigenvalues.c[0]
+//                   << ", " << eigenvalues.c[1] << ", " << eigenvalues.c[2] << ", "
+//                   << eigenvalues.c[n_abf - 1] << std::endl;
+//         std::cout << "Dim of eigenvectors: " << coul_eigen_block.dataobj.nr() << ", "
+//                   << coul_eigen_block.dataobj.nc() << std::endl;
+//     }
+//     /*std::cout << "Coulomb vector: lambda=-1" << std::endl;
+//     for (int j = 0; j != n_abf; j++)
+//     {
+//         std::cout << j << "," << coul_eigen_block(j, 0) << std::endl;
+//     }
+//     std::cout << "Coulomb vector: lambda=0" << std::endl;
+//     for (int j = 0; j != n_abf; j++)
+//     {
+//         std::cout << j << "," << Coul_vector[0][j] << std::endl;
+//     }
+//     std::cout << "Coulomb vector: lambda=1" << std::endl;
+//     for (int j = 0; j != n_abf; j++)
+//     {
+//         std::cout << j << "," << Coul_vector[1][j] << std::endl;
+//     }*/
+//     if (mpi_comm_global_h.is_root())
+//         std::cout << "* Success: diagonalize Coulomb matrix in the ABFs repre." << std::endl;
+// };
 
 // complex diagonalization
+// Not used now, just get the nonsingular number
 void diele_func::get_Xv_cpl()
 {
-    this->Coul_vector.clear();
-    this->Coul_value.clear();
+    Profiler::start("get_eigenvector_of_Coulomb_matrix");
     const complex<double> CONE{1.0, 0.0};
     std::array<double, 3> qa = {0.0, 0.0, 0.0};
     Vector3_Order<double> q = {0.0, 0.0, 0.0};
@@ -708,10 +952,9 @@ void diele_func::get_Xv_cpl()
         const auto Mu = Mu_Nu.first;
         const auto Nu = Mu_Nu.second;
         // ofs_myid << "Mu " << Mu << " Nu " << Nu << endl;
-        if (Vq_cut.count(Mu) == 0 || Vq_cut.at(Mu).count(Nu) == 0 ||
-            Vq_cut.at(Mu).at(Nu).count(q) == 0)
+        if (Vq.count(Mu) == 0 || Vq.at(Mu).count(Nu) == 0 || Vq.at(Mu).at(Nu).count(q) == 0)
             continue;
-        const auto &Vq0 = Vq_cut.at(Mu).at(Nu).at(q);
+        const auto &Vq0 = Vq.at(Mu).at(Nu).at(q);
         const auto n_mu = LIBRPA::atomic_basis_abf.get_atom_nb(Mu);
         const auto n_nu = LIBRPA::atomic_basis_abf.get_atom_nb(Nu);
         std::valarray<complex<double>> Vq_va(Vq0->c, Vq0->size);
@@ -726,31 +969,34 @@ void diele_func::get_Xv_cpl()
     power_hemat_blacs_desc(coulwc_block, desc_nabf_nabf, coul_eigen_block, desc_nabf_nabf,
                            n_singular, eigenvalues.c, 0.5, Params::sqrt_coulomb_threshold);
     this->n_nonsingular = n_abf - n_singular;
-    std::cout << "n_singular: " << n_singular << std::endl;
-    for (int iv = 1; iv != n_nonsingular; iv++)
+
+    // for (int iv = 1; iv != n_nonsingular; iv++)
+    //{
+    //  Here eigen solved by Scalapack is ascending order,
+    //  however, what we want is descending order.
+    //  this->Coul_value.push_back(eigenvalues.c[iv]);  // throw away the largest one
+    //    std::vector<std::complex<double>> newRow;
+
+    //    for (int jabf = 0; jabf != n_abf; jabf++)
+    //   {
+    //     newRow.push_back(coul_eigen_block(jabf, iv));
+    //}
+    // newRow.clear();
+    //}
+    if (mpi_comm_global_h.is_root())
     {
-        // Here eigen solved by Scalapack is ascending order,
-        // however, what we want is descending order.
-        this->Coul_value.push_back(eigenvalues.c[iv]);  // throw away the largest one
-        std::vector<std::complex<double>> newRow;
+        std::cout << "n_singular: " << n_singular << std::endl;
+        std::cout << "The largest/smallest eigenvalue of Coulomb matrix(non-singular): "
+                  << eigenvalues.c[1] << ", " << eigenvalues.c[n_nonsingular - 1] << std::endl;
+        std::cout << "The 1st/2nd/3rd/-1th eigenvalue of Coulomb matrix(Full): " << eigenvalues.c[0]
+                  << ", " << eigenvalues.c[1] << ", " << eigenvalues.c[2] << ", "
+                  << eigenvalues.c[n_abf - 1] << std::endl;
+        // std::cout << "Dim of eigenvectors: " << coul_eigen_block.dataobj.nr() << ", "
+        //           << coul_eigen_block.dataobj.nc() << std::endl;
 
-        for (int jabf = 0; jabf != n_abf; jabf++)
-        {
-            newRow.push_back(coul_eigen_block(jabf, iv));
-        }
-        this->Coul_vector.push_back(newRow);
-        newRow.clear();
+        std::cout << "* Success: diagonalize Coulomb matrix in the ABFs repre.\n";
     }
-
-    std::cout << "The largest/smallest eigenvalue of Coulomb matrix(non-singular): "
-              << this->Coul_value.front() << ", " << this->Coul_value.back() << std::endl;
-    std::cout << "The 1st/2nd/3rd/-1th eigenvalue of Coulomb matrix(Full): " << eigenvalues.c[0]
-              << ", " << eigenvalues.c[1] << ", " << eigenvalues.c[2] << ", "
-              << eigenvalues.c[n_abf - 1] << std::endl;
-    std::cout << "Dim of eigenvectors: " << coul_eigen_block.dataobj.nr() << ", "
-              << coul_eigen_block.dataobj.nc() << std::endl;
-
-    std::cout << "* Success: diagonalize Coulomb matrix in the ABFs repre.\n";
+    Profiler::stop("get_eigenvector_of_Coulomb_matrix");
 };
 
 std::vector<double> diele_func::get_head_vec()
@@ -770,117 +1016,204 @@ std::vector<double> diele_func::get_head_vec()
 
 void diele_func::test_head()
 {
-    std::cout << "BEGIN test head !!!!!!!!!!" << std::endl;
-    for (int iomega = 0; iomega != this->omega.size(); iomega++)
+    using LIBRPA::utils::lib_printf;
+    if (mpi_comm_global_h.is_root())
     {
-        std::complex<double> df = 0;
+        std::cout << "Freqency node & Head of dielectric function(Re, Im): " << std::endl;
+        for (int iomega = 0; iomega != this->omega.size(); iomega++)
+        {
+            std::complex<double> df = 0;
+            for (int alpha = 0; alpha != 3; alpha++)
+            {
+                df += this->head.at(iomega)(alpha, alpha);
+            }
+            lib_printf("%2d %15.8f %15.8f %15.8f\n", iomega, this->omega[iomega], df.real() / 3.0,
+                       df.imag() / 3.0);
+        }
+        std::cout << "The first freqency head tensor: " << std::endl;
         for (int alpha = 0; alpha != 3; alpha++)
         {
-            df += this->head.at(iomega)(alpha, alpha);
+            const auto &c0 = this->head.at(0)(alpha, 0);
+            const auto &c1 = this->head.at(0)(alpha, 1);
+            const auto &c2 = this->head.at(0)(alpha, 2);
+
+            lib_printf("(%8.4f, %8.4f)  (%8.4f, %8.4f)  (%8.4f, %8.4f)\n", c0.real(), c0.imag(),
+                       c1.real(), c1.imag(), c2.real(), c2.imag());
         }
-        std::cout << this->omega[iomega] << " " << df.real() / 3.0 << " " << df.imag() / 3.0
-                  << std::endl;
     }
-    std::cout << "END test head !!!!!!!!!!" << std::endl;
     // std::exit(0);
 };
 
 void diele_func::test_wing()
 {
-    std::cout << "BEGIN test wing !!!!!!!!!!" << std::endl;
-    /*std::cout << "wing(z, mu=0) vs omega" << std::endl;
-    for (int iomega = 0; iomega != this->omega.size(); iomega++)
+    using LIBRPA::utils::lib_printf;
+    if (mpi_comm_global_h.is_root())
     {
-        std::complex<double> df = 0;
-        // z direction and the first lambda
-        df = this->wing_mu.at(2).at(0).at(iomega);
+        std::cout << "Index of abfs & wing(iomega=0, z) of dielectric function(Re, Im): "
+                  << std::endl;
+        for (int mu = 0; mu != n_abf; mu++)
+        {
+            std::complex<double> df = 0;
+            // z direction
+            df = this->wing_mu.at(0)(mu, 2);
 
-        std::cout << this->omega[iomega] << " " << df.real() << " " << df.imag() << std::endl;
-    }*/
-    std::cout << "wing_mu(z, iomega=0) vs mu" << std::endl;
-    for (int mu = 0; mu != n_abf; mu++)
-    {
-        std::complex<double> df = 0;
-        // z direction
-        df = this->wing_mu.at(0)(mu, 2);
-
-        std::cout << mu << " " << df.real() << " " << df.imag() << std::endl;
+            lib_printf("%2d %15.8f %15.8f\n", mu, df.real(), df.imag());
+        }
     }
-    /*std::cout << "wing_lambda(z, iomega=0) vs lambda" << std::endl;
-    for (int lambda = 0; lambda != n_nonsingular - 1; lambda++)
-    {
-        std::complex<double> df = 0;
-        // z direction
-        df = this->wing.at(0)(lambda, 2);
+    // if (mpi_comm_global_h.myid == 1)
+    // {
+    //     std::cout << "id=1 Index of abfs & wing(iomega=0, z) of dielectric function(Re, Im): "
+    //               << std::endl;
+    //     for (int mu = 0; mu != n_abf; mu++)
+    //     {
+    //         std::complex<double> df = 0;
+    //         // z direction
+    //         df = this->wing_mu.at(0)(mu, 2);
 
-        std::cout << lambda << " " << df.real() << " " << df.imag() << std::endl;
-    }
-    std::cout << "END test wing !!!!!!!!!!" << std::endl;*/
+    //         lib_printf("%2d %15.8f %15.8f\n", mu, df.real(), df.imag());
+    //     }
+    // }
     // std::exit(0);
 };
 
-// M
-void diele_func::get_body_inv(matrix_m<std::complex<double>> &chi0_block)
+Array_Desc diele_func::get_body_inv(matrix_m<std::complex<double>> &chi0_block,
+                                    Array_Desc &desc_nabf_nabf_opt)
 {
+    Profiler::start("get_inverse_body_of_chi0");
     mpi_comm_global_h.barrier();
-    Array_Desc desc_nabf_nabf(blacs_ctxt_global_h);
-    desc_nabf_nabf.init_square_blk(n_nonsingular - 1, n_nonsingular - 1, 0, 0);
-    this->body_inv = init_local_mat<complex<double>>(desc_nabf_nabf, MAJOR::COL);
 
-    for (int ilambda = 0; ilambda < n_nonsingular - 1; ilambda++)
+    Array_Desc desc_body(blacs_ctxt_global_h);
+    desc_body.init_square_blk(n_nonsingular - 1, n_nonsingular - 1, 0, 0);
+    this->body_inv = init_local_mat<complex<double>>(desc_body, MAJOR::COL);
+
+    /* for (int ilambda = 0; ilambda < n_nonsingular - 1; ilambda++)
     {
         for (int jlambda = 0; jlambda < n_nonsingular - 1; jlambda++)
         {
             body_inv(ilambda, jlambda) = chi0_block(1 + ilambda, 1 + jlambda);
         }
-    }
-    /*std::cout << "Here body: " << std::endl;
-    for (int i = 0; i < 5; i++)
-    {
-        std::cout << i << "," << body_inv(i, i) << std::endl;
-    }*/
-    invert_scalapack(body_inv, desc_nabf_nabf);
-    /*std::cout << "Here binv: " << std::endl;
-    for (int i = 0; i < 5; i++)
-    {
-        std::cout << i << "," << body_inv(i, i) << std::endl;
-    }*/
+    } */
+    ScalapackConnector::pgemr2d_f(n_nonsingular - 1, n_nonsingular - 1, chi0_block.ptr(), 2, 2,
+                                  desc_nabf_nabf_opt.desc, this->body_inv.ptr(), 1, 1,
+                                  desc_body.desc, blacs_ctxt_global_h.ictxt);
+    invert_scalapack(this->body_inv, desc_body);
 
-    // test invert
-    /*matrix_m<std::complex<double>> test(2, 2, MAJOR::COL);
-    Array_Desc desc_2_2(blacs_ctxt_global_h);
-    desc_2_2.init_square_blk(2, 2, 0, 0);
-    test = init_local_mat<complex<double>>(desc_2_2, MAJOR::COL);
-    test(0, 0) = 1;
-    test(0, 1) = 2;
-    test(1, 0) = 3;
-    test(1, 1) = 4;
-    invert_scalapack(test, desc_2_2);
-    std::cout << test(0, 0) << "," << test(0, 1) << "," << test(1, 0) << "," << test(1, 1)
-              << std::endl;*/
-    // test invert
+    if (Params::debug)
+    {
+        const int ilo = desc_body.indx_g2l_r(0);
+        const int jlo = desc_body.indx_g2l_c(0);
+        if (ilo >= 0 && jlo >= 0) std::cout << "inv_body(0,0)=" << body_inv(ilo, jlo) << endl;
+    }
 
     // std::cout << "* Success: get inverse body of chi0.\n";
+    Profiler::stop("get_inverse_body_of_chi0");
+    return desc_body;
 };
 
-void diele_func::construct_L(const int ifreq)
+void diele_func::construct_L(const int ifreq, Array_Desc &desc_body)
 {
-    matrix_m<std::complex<double>> tmp(3, 3, MAJOR::COL);
-    tmp = head.at(ifreq) - transpose(wing.at(ifreq), true) * body_inv * wing.at(ifreq);
-    this->Lind = tmp;
+    Profiler::start("cal_L");
+    this->Lind.resize(3, 3, MAJOR::COL);
+    this->bw.resize(n_nonsingular - 1, 3, MAJOR::COL);
+    this->wb.resize(3, n_nonsingular - 1, MAJOR::COL);
+    Array_Desc desc_wing(blacs_ctxt_global_h);
+    desc_wing.init_square_blk(n_nonsingular - 1, 3, 0, 0);
+    // opt descriptor for wing
+    Array_Desc desc_wing_opt(blacs_ctxt_global_h);
+    desc_wing_opt.init(n_nonsingular - 1, 3, desc_body.mb(), desc_wing.nb(), 0, 0);
+
+    Array_Desc desc_lam_3(blacs_ctxt_global_h);
+    desc_lam_3.init_square_blk(n_nonsingular - 1, 3, 0, 0);
+
+    Array_Desc desc_3_lam(blacs_ctxt_global_h);
+    desc_3_lam.init_square_blk(3, n_nonsingular - 1, 0, 0);
+
+    Array_Desc desc_3_3(blacs_ctxt_global_h);
+    desc_3_3.init_square_blk(3, 3, 0, 0);
+
+    auto lam_3 = init_local_mat<complex<double>>(desc_lam_3, MAJOR::COL);
+    auto _3_lam = init_local_mat<complex<double>>(desc_3_lam, MAJOR::COL);
+    auto Lind_loc = init_local_mat<complex<double>>(desc_3_3, MAJOR::COL);
+    // tmp = head.at(ifreq) - transpose(wing.at(ifreq), true) * body_inv * wing.at(ifreq);
+    ScalapackConnector::pgemm_f('N', 'N', n_nonsingular - 1, 3, n_nonsingular - 1, 1.0,
+                                body_inv.ptr(), 1, 1, desc_body.desc, wing.at(ifreq).ptr(), 1, 1,
+                                desc_wing_opt.desc, 0.0, lam_3.ptr(), 1, 1, desc_lam_3.desc);
+    ScalapackConnector::pgemm_f('C', 'N', 3, 3, n_nonsingular - 1, 1.0, wing.at(ifreq).ptr(), 1, 1,
+                                desc_wing_opt.desc, lam_3.ptr(), 1, 1, desc_lam_3.desc, 0.0,
+                                Lind_loc.ptr(), 1, 1, desc_3_3.desc);
+    ScalapackConnector::pgemm_f('C', 'N', 3, n_nonsingular - 1, n_nonsingular - 1, 1.0,
+                                wing.at(ifreq).ptr(), 1, 1, desc_wing_opt.desc, body_inv.ptr(), 1,
+                                1, desc_body.desc, 0.0, _3_lam.ptr(), 1, 1, desc_3_lam.desc);
+
+    for (int i = 0; i != 3; i++)
+    {
+        auto loc_i = desc_3_3.indx_g2l_r(i);
+        for (int ilambda = 0; ilambda < n_nonsingular - 1; ilambda++)
+        {
+            auto loc_ilambda = desc_lam_3.indx_g2l_r(ilambda);
+            auto loc_ibw = desc_lam_3.indx_g2l_c(i);
+            if (loc_ibw >= 0 && loc_ilambda >= 0)
+                this->bw(ilambda, i) = lam_3(loc_ilambda, loc_ibw);
+
+            loc_ilambda = desc_3_lam.indx_g2l_c(ilambda);
+            auto loc_iwb = desc_3_lam.indx_g2l_r(i);
+            if (loc_iwb >= 0 && loc_ilambda >= 0)
+                this->wb(i, ilambda) = _3_lam(loc_iwb, loc_ilambda);
+
+            MPI_Allreduce(MPI_IN_PLACE, &bw(ilambda, i), 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
+                          mpi_comm_global_h.comm);
+            MPI_Allreduce(MPI_IN_PLACE, &wb(i, ilambda), 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
+                          mpi_comm_global_h.comm);
+        }
+
+        for (int j = 0; j != 3; j++)
+        {
+            auto loc_j = desc_3_3.indx_g2l_c(j);
+            if (loc_j >= 0 && loc_i >= 0)
+                this->Lind(i, j) = head.at(ifreq)(i, j) - Lind_loc(loc_i, loc_j);
+            MPI_Allreduce(MPI_IN_PLACE, &Lind(i, j), 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
+                          mpi_comm_global_h.comm);
+        }
+    }
+
+    Profiler::stop("cal_L");
 };
 
 void diele_func::get_Leb_points()
 {
-    auto quad_order = lebedev::QuadratureOrder::order_590;
-    auto quad_points = lebedev::QuadraturePoints(quad_order);
-    qx_leb = quad_points.get_x();
-    qy_leb = quad_points.get_y();
-    qz_leb = quad_points.get_z();
-    qw_leb = quad_points.get_weights();
-    for (int ileb = 0; ileb != qw_leb.size(); ileb++)
+    if (Params::use_2d_dielectric)
     {
-        qw_leb[ileb] *= 2 * TWO_PI;
+        const int n = 5000;
+        qx_leb.clear();
+        qy_leb.clear();
+        qz_leb.clear();
+        qw_leb.clear();
+
+        qx_leb.resize(n);
+        qy_leb.resize(n);
+        qz_leb.resize(n);
+        qw_leb.resize(n);
+        for (int ileb = 0; ileb != n; ileb++)
+        {
+            double ang = TWO_PI * ileb / n;
+            qx_leb[ileb] = std::cos(ang);
+            qy_leb[ileb] = std::sin(ang);
+            qz_leb[ileb] = 0.0;
+            qw_leb[ileb] = TWO_PI / n;
+        }
+    }
+    else
+    {
+        auto quad_order = lebedev::QuadratureOrder::order_5810;
+        auto quad_points = lebedev::QuadraturePoints(quad_order);
+        qx_leb = quad_points.get_x();
+        qy_leb = quad_points.get_y();
+        qz_leb = quad_points.get_z();
+        qw_leb = quad_points.get_weights();
+        for (int ileb = 0; ileb != qw_leb.size(); ileb++)
+        {
+            qw_leb[ileb] *= 2 * TWO_PI;
+        }
     }
 };
 
@@ -907,6 +1240,23 @@ void diele_func::get_g_enclosing_gamma()
     }
 };
 
+void diele_func::get_g_enclosing_gamma_2d()
+{
+    g_enclosing_gamma.clear();
+    g_enclosing_gamma.resize(8);
+    int ik = 0;
+    for (int a = -1; a <= 1; a++)
+    {
+        for (int b = -1; b <= 1; b++)
+        {
+            if (a == 0 && b == 0) continue;
+            g_enclosing_gamma.at(ik) = {G.e11 * a / kv_nmp[0] + G.e12 * b / kv_nmp[1],
+                                        G.e21 * a / kv_nmp[0] + G.e22 * b / kv_nmp[1], 0.0};
+            ik++;
+        }
+    }
+};
+
 void diele_func::calculate_q_gamma()
 {
     q_gamma.clear();
@@ -926,25 +1276,168 @@ void diele_func::calculate_q_gamma()
                 qmax = min(qmax, temp);
             }
         }
+
         q_gamma[ileb] = qmax;
     }
 };
 
-void diele_func::cal_eps(const int ifreq)
+void diele_func::calculate_q_gamma_2d()
 {
-    mpi_comm_global_h.barrier();
-    Array_Desc desc_nabf_nabf(blacs_ctxt_global_h);
-    desc_nabf_nabf.init_square_blk(n_abf, n_abf, 0, 0);
-    this->chi0 = init_local_mat<complex<double>>(desc_nabf_nabf, MAJOR::COL);
+    q_gamma.clear();
+    q_gamma.resize(qw_leb.size());
+#pragma omp parallel for schedule(dynamic)
+    for (int ileb = 0; ileb != qw_leb.size(); ileb++)
+    {
+        double qmax = 1.0e10;
+        Vector3_Order<double> q_quta = {qx_leb[ileb], qy_leb[ileb], qz_leb[ileb]};
+        if (Params::use_2d_dielectric)
+        {
+            for (int ik = 0; ik != 8; ik++)
+            {
+                double denominator =
+                    q_quta.x * g_enclosing_gamma[ik].x + q_quta.y * g_enclosing_gamma[ik].y;
+                if (denominator > 1.0e-10)
+                {
+                    double numerator = 0.5 * g_enclosing_gamma[ik] * g_enclosing_gamma[ik];
+                    double temp = numerator / denominator;
+                    qmax = min(qmax, temp);
+                }
+            }
+        }
+        q_gamma[ileb] = qmax;
+    }
+};
 
-    const double k_volume = std::abs(G.Det());
+/**
+ * Compute
+ * I(q1) = ∫_0^{q1} q / (1 - exp(-q L / 2)) dq
+ * using the analytic series representation.
+ *
+ * Numerically stable for small q1*L.
+ */
+double diele_func::I_q_series(const double q_gamma, const double L, const int nmax)
+{
+    // trivial cases
+    assert(q_gamma >= 0.0);
+    assert(L > 0.0);
+
+    const double pref = 4.0 / (L * L);
+
+    double sum = 0.0;
+    for (int n = 1; n <= nmax; ++n)
+    {
+        double x = 0.5 * n * L * q_gamma;
+
+        // expm1(-x) = exp(-x) - 1, stable for small x
+        double em1 = std::expm1(-x);
+
+        // term = 1 - (1 + x) * exp(-x)
+        //       = -em1 - x * (em1 + 1)
+        double term = -em1 - x * (em1 + 1.0);
+
+        sum += pref * term / (n * n);
+    }
+
+    // n = 0 contribution
+    return 0.5 * q_gamma * q_gamma + sum;
+}
+
+inline std::complex<double> diele_func::integrand_head(double q, double L, std::complex<double> qLq)
+{
+    double x = -0.5 * q * L;
+    // 1 - exp(-qL/2) = -expm1(-qL/2)
+    return q / (1.0 + (qLq - 1.0) * (-std::expm1(x)));
+}
+
+inline std::complex<double> diele_func::integrand_wing(double q, double L, std::complex<double> qLq)
+{
+    double x = -0.5 * q * L;
+    // 1 - exp(-qL/2) = -expm1(-qL/2)
+    return q * (-std::expm1(x)) / (1.0 + (qLq - 1.0) * (-std::expm1(x)));
+}
+
+std::complex<double> diele_func::I_q_simpson_head(double q1, double L, std::complex<double> qLq,
+                                                  int N)
+{
+    // N must be even
+    if (N % 2 != 0) ++N;
+
+    double h = q1 / N;
+    std::complex<double> sum = integrand_head(0.0, L, qLq) + integrand_head(q1, L, qLq);
+
+    // odd
+    for (int i = 1; i < N; i += 2)
+    {
+        double q = i * h;
+        sum += 4.0 * integrand_head(q, L, qLq);
+    }
+
+    // even
+    for (int i = 2; i < N; i += 2)
+    {
+        double q = i * h;
+        sum += 2.0 * integrand_head(q, L, qLq);
+    }
+
+    return sum * h / 3.0;
+}
+
+std::complex<double> diele_func::I_q_simpson_wing(double q1, double L, std::complex<double> qLq,
+                                                  int N)
+{
+    // N must be even
+    if (N % 2 != 0) ++N;
+
+    double h = q1 / N;
+    std::complex<double> sum = integrand_wing(0.0, L, qLq) + integrand_wing(q1, L, qLq);
+
+    // odd
+    for (int i = 1; i < N; i += 2)
+    {
+        double q = i * h;
+        sum += 4.0 * integrand_wing(q, L, qLq);
+    }
+
+    // even
+    for (int i = 2; i < N; i += 2)
+    {
+        double q = i * h;
+        sum += 2.0 * integrand_wing(q, L, qLq);
+    }
+
+    return sum * h / 3.0;
+}
+
+void diele_func::cal_eps(const int ifreq, Array_Desc &desc_nabf_nabf_opt, Array_Desc &desc_body)
+{
+    Profiler::start("cal_inverse_dielectric_matrix");
+    // mpi_comm_global_h.barrier();
+    this->chi0 = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
+    double k_volume;
+    if (Params::use_2d_dielectric)
+        k_volume = std::abs(G.e11 * G.e22 - G.e12 * G.e21);
+    else
+        k_volume = std::abs(G.Det());
+
     this->vol_gamma = k_volume / nk;
     double vol_gamma_numeric = 0.0;
-    if (ifreq == 0)
+    if (ifreq == 0 && mpi_comm_global_h.is_root())
     {
-        for (int ileb = 0; ileb != qw_leb.size(); ileb++)
+        if (Params::use_2d_dielectric)
         {
-            vol_gamma_numeric += qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / 3.0;
+            std::cout << "Using 2D average inverse dielectric matrix." << std::endl;
+            std::cout << "Height is " << std::abs(latvec.e33) << " Bohr." << std::endl;
+            for (int ileb = 0; ileb != qw_leb.size(); ileb++)
+            {
+                vol_gamma_numeric += qw_leb[ileb] * std::pow(q_gamma[ileb], 2) / 2.0;
+            }
+        }
+        else
+        {
+            for (int ileb = 0; ileb != qw_leb.size(); ileb++)
+            {
+                vol_gamma_numeric += qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / 3.0;
+            }
         }
         std::cout << "Number of angular grids for average inverse dielectric matrix: "
                   << qw_leb.size() << std::endl;
@@ -956,64 +1449,151 @@ void diele_func::cal_eps(const int ifreq)
     /*std::cout << "major of Matz: " << wing[0].is_row_major() << "," << body_inv.is_row_major()
               << "," << transpose(wing.at(0), true).is_row_major() << "," << Lind.is_row_major()
               << std::endl;*/
-    construct_L(ifreq);
+    construct_L(ifreq, desc_body);
 
-#pragma omp parallel for schedule(dynamic) collapse(2)
-    for (int i = 0; i != n_nonsingular; i++)
+    Profiler::start("precompute_q_data");
+
+    const size_t nleb = qw_leb.size();
+    std::vector<std::complex<double>> weights;
+    // std::vector<std::complex<double>> weights_head;
+    // std::vector<std::complex<double>> weights_wing;
+    //  if (Params::use_2d_dielectric)
+    //  {
+    //      weights_head.resize(nleb);
+    //      weights_wing.resize(nleb);
+    //  }
+    //  else
+    weights.resize(nleb);
+
+    std::vector<std::array<double, 3>> q_vectors(nleb);
+
+    const auto L00 = Lind(0, 0), L01 = Lind(0, 1), L02 = Lind(0, 2);
+    const auto L10 = Lind(1, 0), L11 = Lind(1, 1), L12 = Lind(1, 2);
+    const auto L20 = Lind(2, 0), L21 = Lind(2, 1), L22 = Lind(2, 2);
+
+#pragma omp parallel for schedule(static)
+    for (int ileb = 0; ileb < nleb; ++ileb)
     {
-        for (int j = 0; j != n_nonsingular; j++)
+        const double qx = qx_leb[ileb];
+        const double qy = qy_leb[ileb];
+        const double qz = qz_leb[ileb];
+
+        q_vectors[ileb] = {qx, qy, qz};
+
+        const auto qLq = qx * (qx * L00 + qy * L01 + qz * L02) +
+                         qy * (qx * L10 + qy * L11 + qz * L12) +
+                         qz * (qx * L20 + qy * L21 + qz * L22);
+
+        if (Params::use_2d_dielectric)
         {
-            if (i == 0 || j == 0)
+            weights[ileb] = qw_leb[ileb] * std::pow(q_gamma[ileb], 2) / (2.0 * vol_gamma) / qLq;
+            // Assume z-direction e33 is the vaccum height
+            // weights_head[ileb] = qw_leb[ileb] *
+            //                      I_q_simpson_head(q_gamma[ileb], std::abs(latvec.e33), qLq) /
+            //                      vol_gamma;
+            // weights_wing[ileb] = qw_leb[ileb] *
+            //                      I_q_simpson_wing(q_gamma[ileb], std::abs(latvec.e33), qLq) /
+            //                      vol_gamma;
+        }
+        else
+            weights[ileb] = qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / (3.0 * vol_gamma) / qLq;
+    }
+    Profiler::stop("precompute_q_data");
+
+    Profiler::start("cal_inverse_dielectric_matrix_ij");
+    int i_start = 0, i_end = n_nonsingular;
+    int j_start = 0, j_end = n_nonsingular;
+#pragma omp parallel for schedule(dynamic, 4) collapse(2)
+    for (int i = i_start; i != i_end; i++)
+    {
+        for (int j = j_start; j != j_end; j++)
+        {
+            const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
+            if (ilo < 0) continue;
+            const int jlo = desc_nabf_nabf_opt.indx_g2l_c(j);
+            if (jlo < 0) continue;
+
+            complex<double> result = 0.0;
+
+            if (i == 0 && j == 0)
             {
-                if (i == 0 && j == 0)
+                for (int ileb = 0; ileb < nleb; ++ileb)
                 {
-                    chi0(i, j) = compute_chi0_inv_00(ifreq);
+                    result += weights[ileb];
                 }
-                else
-                    chi0(i, j) = 0.0;
+                // if (Params::use_2d_dielectric)
+                // {
+                //     for (int ileb = 0; ileb < nleb; ++ileb)
+                //     {
+                //         result += weights_head[ileb];
+                //     }
+                // }
+                // else
+                // {
+                //     for (int ileb = 0; ileb < nleb; ++ileb)
+                //     {
+                //         result += weights[ileb];
+                //     }
+                // }
+            }
+            else if (i == 0 || j == 0)
+            {
+                result = 0.0;
             }
             else
-                chi0(i, j) = compute_chi0_inv_ij(ifreq, i - 1, j - 1);
-            /*if (i == j)
             {
-                chi0(i, j) -= 1.0;
-            }*/
+                const int idx_i = i - 1, idx_j = j - 1;
+
+                const auto bw_i0 = bw(idx_i, 0), bw_i1 = bw(idx_i, 1), bw_i2 = bw(idx_i, 2);
+                const auto wb_j0 = wb(0, idx_j), wb_j1 = wb(1, idx_j), wb_j2 = wb(2, idx_j);
+
+                for (int ileb = 0; ileb < nleb; ++ileb)
+                {
+                    const auto &[qx, qy, qz] = q_vectors[ileb];
+                    const auto bwq = bw_i0 * qx + bw_i1 * qy + bw_i2 * qz;
+                    const auto qwb = qx * wb_j0 + qy * wb_j1 + qz * wb_j2;
+
+                    result += weights[ileb] * bwq * qwb;
+
+                    // result += Params::use_2d_dielectric ? weights_wing[ileb] * bwq * qwb
+                    //                                     : weights[ileb] * bwq * qwb;
+                }
+            }
+            chi0(ilo, jlo) = result;
         }
     }
-    std::cout << "* Success: calculate average inverse dielectric matrix no." << ifreq + 1 << "."
-              << std::endl;
+    // auto identity = init_local_mat<complex<double>>(desc_body, MAJOR::COL);
+    // for (int i = 0; i < n_nonsingular - 1; i++)
+    // {
+    //     const int ilo = desc_body.indx_g2l_r(i);
+    //     if (ilo < 0) continue;
+    //     for (int j = 0; j < n_nonsingular - 1; j++)
+    //     {
+    //         const int jlo = desc_body.indx_g2l_c(j);
+    //         if (jlo < 0) continue;
+    //         if (i == j)
+    //             identity(ilo, jlo) = 1.0;
+    //         else
+    //             identity(ilo, jlo) = 0.0;
+    //     }
+    // }
+    // ScalapackConnector::pgemm_f('N', 'N', n_nonsingular - 1, n_nonsingular - 1, n_nonsingular -
+    // 1,
+    //                             1.0, body_inv.ptr(), 1, 1, desc_body.desc, identity.ptr(), 1, 1,
+    //                             desc_body.desc, 1.0, chi0.ptr(), 2, 2, desc_nabf_nabf_opt.desc);
+    ScalapackConnector::pgeadd_f('N', n_nonsingular - 1, n_nonsingular - 1, 1.0, body_inv.ptr(), 1,
+                                 1, desc_body.desc, 1.0, chi0.ptr(), 2, 2, desc_nabf_nabf_opt.desc);
+    Profiler::stop("cal_inverse_dielectric_matrix_ij");
+    if (mpi_comm_global_h.is_root())
+        std::cout << "* Success: calculate average inverse dielectric matrix no." << ifreq + 1
+                  << "." << std::endl;
+    Profiler::stop("cal_inverse_dielectric_matrix");
 };
 
-std::complex<double> diele_func::compute_chi0_inv_00(const int ifreq)
-{
-    std::complex<double> total = 0.0;
-
-    for (int ileb = 0; ileb != qw_leb.size(); ileb++)
-    {
-        matrix_m<std::complex<double>> q_unit(3, 1, MAJOR::COL);
-        q_unit(0, 0) = qx_leb[ileb];
-        q_unit(1, 0) = qy_leb[ileb];
-        q_unit(2, 0) = qz_leb[ileb];
-
-        auto den = transpose(q_unit, false) * Lind * q_unit;
-        total += qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / den(0, 0);
-    }
-    total *= 1.0 / 3.0 / vol_gamma;
-
-    return total;
-};
-
-std::complex<double> diele_func::compute_chi0_inv_ij(const int ifreq, int i, int j)
+/*std::complex<double> diele_func::compute_chi0_inv_00(const int ifreq)
 {
     std::complex<double> total = 0.0;
     std::vector<std::complex<double>> partial_sum(qw_leb.size(), 0.0);
-    matrix_m<std::complex<double>> body_inv_i(1, n_nonsingular - 1, MAJOR::COL);
-    matrix_m<std::complex<double>> body_inv_j(n_nonsingular - 1, 1, MAJOR::COL);
-    for (int ii = 0; ii != n_nonsingular - 1; ii++)
-    {
-        body_inv_i(0, ii) = body_inv(i, ii);
-        body_inv_j(ii, 0) = body_inv(ii, j);
-    }
 #pragma omp parallel for schedule(dynamic)
     for (int ileb = 0; ileb != qw_leb.size(); ileb++)
     {
@@ -1021,40 +1601,82 @@ std::complex<double> diele_func::compute_chi0_inv_ij(const int ifreq, int i, int
         q_unit(0, 0) = qx_leb[ileb];
         q_unit(1, 0) = qy_leb[ileb];
         q_unit(2, 0) = qz_leb[ileb];
+
         auto den = transpose(q_unit, false) * Lind * q_unit;
-        /*std::complex<double> den = 0.0;
-        for (int ii = 0; ii != 3; ii++)
-        {
-            for (int jj = 0; jj != 3; jj++)
-            {
-                den += q_unit(ii, 0) * Lind(ii, jj) * q_unit(jj, 0);
-            }
-        }*/
-        auto bwq_i = body_inv_i * wing.at(ifreq) * q_unit;
-        auto qwb_j = transpose(q_unit, false) * transpose(wing.at(ifreq), true) * body_inv_j;
-
-        partial_sum[ileb] =
-            qw_leb[ileb] * std::pow(q_gamma[ileb], 3) * bwq_i(0, 0) * qwb_j(0, 0) / den(0, 0);
+        // total += qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / den(0, 0);
+        partial_sum[ileb] = qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / den(0, 0);
     }
-    total = std::accumulate(partial_sum.begin(), partial_sum.end(), std::complex<double>(0.0, 0.0));
-    total *= 1.0 / 3.0 / vol_gamma;
-    total += body_inv(i, j);
+    total = std::accumulate(partial_sum.begin(), partial_sum.end(), std::complex<double>(0.0,
+0.0)); total *= 1.0 / 3.0 / vol_gamma;
 
-    // if (ifreq == 0 && i == 1 && j == 1) std::cout << "* Success: calculate epsilon_11.\n";
     return total;
 };
 
-void diele_func::rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq)
+std::complex<double> diele_func::compute_chi0_inv_ij(const int ifreq, int i, int j)
 {
-    get_body_inv(chi0_block);
-    cal_eps(ifreq);
-    chi0_block = this->chi0;
+    const std::complex<double> bw_i0 = this->bw(i, 0);
+    const std::complex<double> bw_i1 = this->bw(i, 1);
+    const std::complex<double> bw_i2 = this->bw(i, 2);
+    const std::complex<double> wb_j0 = this->wb(0, j);
+    const std::complex<double> wb_j1 = this->wb(1, j);
+    const std::complex<double> wb_j2 = this->wb(2, j);
 
-    // this->chi0.clear(); // quote by chi0_block, should not be clear
-    this->body_inv.clear();
+    const std::complex<double> L00 = Lind(0, 0);
+    const std::complex<double> L01 = Lind(0, 1);
+    const std::complex<double> L02 = Lind(0, 2);
+    const std::complex<double> L10 = Lind(1, 0);
+    const std::complex<double> L11 = Lind(1, 1);
+    const std::complex<double> L12 = Lind(1, 2);
+    const std::complex<double> L20 = Lind(2, 0);
+    const std::complex<double> L21 = Lind(2, 1);
+    const std::complex<double> L22 = Lind(2, 2);
+
+    std::complex<double> total = 0.0;
+
+    const size_t nleb = qw_leb.size();
+
+#pragma omp parallel for reduction(+ : total)
+    for (int ileb = 0; ileb < nleb; ++ileb)
+    {
+        const double qx = qx_leb[ileb];
+        const double qy = qy_leb[ileb];
+        const double qz = qz_leb[ileb];
+
+        const std::complex<double> qLq = qx * (qx * L00 + qy * L01 + qz * L02) +
+                                         qy * (qx * L10 + qy * L11 + qz * L12) +
+                                         qz * (qx * L20 + qy * L21 + qz * L22);
+
+        const std::complex<double> bwq = bw_i0 * qx + bw_i1 * qy + bw_i2 * qz;
+        const std::complex<double> qwb = qx * wb_j0 + qy * wb_j1 + qz * wb_j2;
+
+        total += qw_leb[ileb] * std::pow(q_gamma[ileb], 3) * bwq * qwb / qLq;
+    }
+
+    return total * (1.0 / (3.0 * vol_gamma));
+}*/
+
+void diele_func::assign_chi0(matrix_m<std::complex<double>> &chi0_block,
+                             Array_Desc &desc_nabf_nabf_opt)
+{
+    Profiler::start("assign_chi0");
+    mpi_comm_global_h.barrier();
+
+    ScalapackConnector::pgemr2d_f(n_abf, n_abf, this->chi0.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                  chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                  blacs_ctxt_global_h.ictxt);
+
+    Profiler::stop("assign_chi0");
+}
+
+void diele_func::rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
+                             Array_Desc &desc_nabf_nabf_opt)
+{
+    auto desc_body = get_body_inv(chi0_block, desc_nabf_nabf_opt);
+    cal_eps(ifreq, desc_nabf_nabf_opt, desc_body);
+    assign_chi0(chi0_block, desc_nabf_nabf_opt);
+    // this->chi0.clear();
     this->Lind.clear();
-    /*if (ifreq == 0)
-        std::cout << "* Success: replace average inverse dielectric matrix with head and wing.\n";*/
+    this->body_inv.clear();
 };
 
 diele_func df_headwing = diele_func();

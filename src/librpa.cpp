@@ -259,6 +259,10 @@ void set_ao_basis_aux(int I, int J, int nbasis_i, int nbasis_j, int naux_mu, int
         atom_nw.insert(pair<atom_t, size_t>(I, nbasis_i));
         atom_mu.insert(pair<atom_t, size_t>(I, naux_mu));
     }
+    else if (keyword == "Cs_shrinked_data")
+    {
+        atom_mu_s.insert(pair<atom_t, size_t>(I, naux_mu));
+    }
 
     if (insert_index_only)
     {
