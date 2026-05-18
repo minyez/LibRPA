@@ -128,7 +128,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
                     auto pvq = std::make_shared<std::valarray<double>>();
                     *pvq = Vq_va;
                     coul_libri[Mu][{Nu, std::array<double, 3>{0,0,0}}] = Tensor<double>({n_mu, n_nu}, pvq);
-                    coulmat.at(Mu).at(Nu).at(q).reset();
+                    // coulmat.at(Mu).at(Nu).at(q).reset();
                 }
             }
 
@@ -1853,7 +1853,7 @@ map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     auto pvq = std::make_shared<std::valarray<complex<double>>>();
                     *pvq = Vq_va;
                     couleps_libri[Mu][{Nu, qa}] = Tensor<complex<double>>({n_mu, n_nu}, pvq);
-                    coulmat_wc.at(Mu).at(Nu).at(q).reset();
+                    // coulmat_wc.at(Mu).at(Nu).at(q).reset();
                 }
             }
             global::profiler.stop("epsilon_prepare_coulwc_sqrt_1");
@@ -2088,32 +2088,39 @@ map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             global::profiler.stop("epsilon_compute_eps");
             // now chi0_block is actually the dielectric matrix
             // perform inversion
-            global::profiler.start("epsilon_invert_eps", "Invert dielectric matrix");
-            invert_scalapack(chi0_block, desc_nabf_nabf_opt);
-            // subtract 1 from diagonal
-            for (int i = 0; i != n_abf; i++)
-            {
-                const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
-                if (ilo < 0) continue;
-                const int jlo = desc_nabf_nabf_opt.indx_g2l_c(i);
-                if (jlo < 0) continue;
-                chi0_block(ilo, jlo) -= 1.0;
-            }
-            global::profiler.stop("epsilon_invert_eps");
+            global::profiler.start("epsilon_solver_coulwc_1", "epsilon_solver_coulwc");
+            // invert_scalapack(chi0_block, desc_nabf_nabf_opt);
+            // // subtract 1 from diagonal
+            // for (int i = 0; i != n_abf; i++)
+            // {
+            //     const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
+            //     if (ilo < 0) continue;
+            //     const int jlo = desc_nabf_nabf_opt.indx_g2l_c(i);
+            //     if (jlo < 0) continue;
+            //     chi0_block(ilo, jlo) -= 1.0;
+            // }
+            memcpy(coul_chi0_block.ptr(), coulwc_block.ptr(), coulwc_block.size() * sizeof(std::complex<double>));
+            std::vector<int> ipiv(std::max(desc_nabf_nabf_opt.m_loc(), desc_nabf_nabf_opt.n_loc()));
+            int info;
+            ScalapackConnector::pgesv_f(n_abf, n_abf, 
+                    chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, ipiv.data(),
+                    coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, info);
+            LapackConnector::axpy(coulwc_block.size(), -1.0, coulwc_block.ptr(), 1, coul_chi0_block.ptr(), 1);
+            global::profiler.stop("epsilon_solver_coulwc_1");
 
-            global::profiler.start("epsilon_multiply_coulwc", "Multiply truncated Coulomb");
+            global::profiler.start("epsilon_multiply_coulwc_2", "Multiply truncated Coulomb");
+            // ScalapackConnector::pgemm_f('N', 'N', n_abf, n_abf, n_abf, 1.0,
+            //         chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+            //         coulwc_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
+            //         coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
             ScalapackConnector::pgemm_f('N', 'N', n_abf, n_abf, n_abf, 1.0,
                     coulwc_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                    chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
-                    coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
-            ScalapackConnector::pgemm_f('N', 'N', n_abf, n_abf, n_abf, 1.0,
-                    coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                    coulwc_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
+                    coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
                     chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
             // convert back to initial distribution
             ScalapackConnector::pgemr2d_f(n_abf, n_abf, chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
                                           temp_block.ptr(), 1, 1, desc_nabf_nabf.desc, blacs_h.ictxt);
-            global::profiler.stop("epsilon_multiply_coulwc");
+            global::profiler.stop("epsilon_multiply_coulwc_2");
             // lib_printf("chi0_block\n%s", str(chi0_block).c_str());
             global::profiler.stop("epsilon_wc_work_q_omega");
             // now temp_block contains the screened Coulomb interaction Wc (i.e. W-V)
