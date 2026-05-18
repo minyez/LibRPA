@@ -5,21 +5,38 @@
 #include "../interface/blacs_scalapack.h"
 #include "lapack_connector.h"
 
+#if defined(__CUDACC__) || defined(__HIP_DEVICE_COMPILE__)
+#define __HOST__DEVICE__ __host__ __device__
+#else
+#define __HOST__DEVICE__
+#endif
+
 namespace librpa_int {
 
 class ScalapackConnector
 {
 public:
     // indexing functions adapted from ScaLAPACK TOOLS
+    __HOST__DEVICE__
     inline static int indxg2p(const int &indxglob, const int &nb, const int &iproc, const int &isrcproc, const int &nprocs)
     {
         return (isrcproc + indxglob / nb) % nprocs;
     }
-    inline static int indxg2l(const int &indxglob, const int &nb, const int &iproc, const int &isrcproc, const int &nprocs)
+    __HOST__DEVICE__
+    inline static int indxg2p(const int &indxglob, const int &nb,
+                              const int &isrcproc, const int &nprocs)
     {
         return nb * (indxglob/ (nb * nprocs)) + indxglob % nb;
     }
-    inline static int indxl2g(const int &indxloc, const int &nb, const int &iproc, const int &isrcproc, const int &nprocs)
+    __HOST__DEVICE__
+    inline static int indxg2l(const int &indxglob, const int &nb, const int &iproc,
+                              const int &isrcproc, const int &nprocs)
+    {
+        return nb * (indxglob / (nb * nprocs)) + indxglob % nb;
+    }
+    __HOST__DEVICE__
+    inline static int indxl2g(const int &indxloc, const int &nb, const int &iproc,
+                              const int &isrcproc, const int &nprocs)
     {
         return nprocs * nb * (indxloc / nb) + indxloc % nb +
                ((nprocs + iproc - isrcproc) % nprocs) * nb;
@@ -483,7 +500,33 @@ public:
     }
 
     static inline
-    void pgetri_f(const int &n, float *a, const int &ia, const int &ja, const int *desca, int *ipiv, float *work, const int &lwork, int *iwork, const int &liwork, int &info)
+    void pgesv_f(const int &n, const int &nrhs, std::complex<double> *a,
+                                const int &ia, const int &ja, const int *desca, int *ipiv,
+                                std::complex<double> *b, const int &ib, const int &jb,
+                                const int *descb, int &info)
+    {
+        pzgesv_(&n, &nrhs, a, &ia, &ja, desca, ipiv, b, &ib, &jb, descb, &info);
+    }
+
+    static inline
+    void pposv_f(
+        const char& uplo, const int& n, const int& nrhs,   
+        std::complex<double> *a, const int& ia, const int& ja, const int *descA,  
+        std::complex<double> *b, const int& ib, const int& jb, const int *descB,  
+        int& info
+    ){
+        pzposv_(
+            &uplo, &n, &nrhs,
+            a, &ia, &ja, descA,
+            b, &ib, &jb, descB,
+            &info
+        );
+    }
+
+    static inline
+    void pgetri_f(const int &n, float *a, const int &ia, const int &ja,
+                                const int *desca, int *ipiv, float *work, const int &lwork,
+                                int *iwork, const int &liwork, int &info)
     {
         psgetri_(&n, a, &ia, &ja, desca, ipiv, work, &lwork, iwork, &liwork, &info);
     }
@@ -505,7 +548,15 @@ public:
     {
         pzgetri_(&n, a, &ia, &ja, desca, ipiv, work, &lwork, iwork, &liwork, &info);
     }
-
+    static inline
+    void pgeadd_f(const char &transa, const int &m, const int &n,
+                                const std::complex<double> &alpha, const std::complex<double> *a,
+                                const int &ia, const int &ja, const int *desca,
+                                const std::complex<double> &beta, std::complex<double> *c,
+                                const int &ic, const int &jc, const int *descc)
+    {
+        pzgeadd_(&transa, &m, &n, &alpha, a, &ia, &ja, desca, &beta, c, &ic, &jc, descc);
+    }
 };
 
 }
