@@ -2100,7 +2100,7 @@ map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             //     chi0_block(ilo, jlo) -= 1.0;
             // }
             memcpy(coul_chi0_block.ptr(), coulwc_block.ptr(), coulwc_block.size() * sizeof(std::complex<double>));
-            std::vector<int> ipiv(std::max(desc_nabf_nabf_opt.m_loc(), desc_nabf_nabf_opt.n_loc()));
+            std::vector<int> ipiv(std::max(desc_nabf_nabf_opt.m_loc() + desc_nabf_nabf_opt.mb(), desc_nabf_nabf_opt.n_loc() + desc_nabf_nabf_opt.nb()));
             int info;
             ScalapackConnector::pgesv_f(n_abf, n_abf, 
                     chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, ipiv.data(),
