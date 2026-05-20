@@ -109,7 +109,7 @@ void librpa_set_wfc(LibrpaHandler* h, int ispin, int ik, int nstates_local, int 
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &meanfield = pds->mf;
 
-    auto& wfc = meanfield.get_eigenvectors()[ispin][ik][0];
+    auto& wfc = meanfield.get_eigenvectors()[ispin][0][ik];
     wfc.create(nstates_local, nbasis_local);
     const size_t n = meanfield.get_n_bands() * meanfield.get_n_aos();
     for (size_t i = 0; i < n; i++)
@@ -169,7 +169,7 @@ void librpa_set_wfc_packed(LibrpaHandler* h, int ispin, int ik, int nstates_loca
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &meanfield = pds->mf;
 
-    auto& wfc = meanfield.get_eigenvectors()[ispin][ik][0];
+    auto& wfc = meanfield.get_eigenvectors()[ispin][0][ik];
     wfc.create(nstates_local, nbasis_local);
     const size_t n = meanfield.get_n_bands() * meanfield.get_n_aos();
     for (size_t i = 0; i < n; i++)
@@ -795,14 +795,15 @@ void librpa_set_wfc_band_spinor(LibrpaHandler* h, int ik_band, int nstates_local
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &mfb = pds->mf_band;
 
-    auto& wfcs = mfb.get_eigenvectors()[0][ik_band];
-    wfcs[0].create(nstates_local, nbasis_local);
-    wfcs[1].create(nstates_local, nbasis_local);
+    auto& wfcs_up = mfb.get_eigenvectors()[0][0][ik_band];
+    auto& wfcs_dn = mfb.get_eigenvectors()[0][1][ik_band];
+    wfcs_up.create(nstates_local, nbasis_local);
+    wfcs_dn.create(nstates_local, nbasis_local);
     const size_t n = mfb.get_n_bands() * mfb.get_n_aos();
     for (size_t i = 0; i < n; i++)
     {
-        wfcs[0].c[i] = std::complex<double>(wfc_up_real[i], wfc_up_imag[i]);
-        wfcs[1].c[i] = std::complex<double>(wfc_dn_real[i], wfc_dn_imag[i]);
+        wfcs_up.c[i] = std::complex<double>(wfc_up_real[i], wfc_up_imag[i]);
+        wfcs_dn.c[i] = std::complex<double>(wfc_dn_real[i], wfc_dn_imag[i]);
     }
     // std::cout << "Maxabs: " << wfc.get_max_abs() << std::endl;
     librpa_int::global::ofs_myid
@@ -852,14 +853,15 @@ void librpa_set_wfc_band_spinor_packed(LibrpaHandler* h, int ik_band, int nstate
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &mfb = pds->mf_band;
 
-    auto& wfcs = mfb.get_eigenvectors()[0][ik_band];
-    wfcs[0].create(nstates_local, nbasis_local);
-    wfcs[1].create(nstates_local, nbasis_local);
+    auto& wfcs_up = mfb.get_eigenvectors()[0][0][ik_band];
+    auto& wfcs_dn = mfb.get_eigenvectors()[0][1][ik_band];
+    wfcs_up.create(nstates_local, nbasis_local);
+    wfcs_dn.create(nstates_local, nbasis_local);
     const size_t n = mfb.get_n_bands() * mfb.get_n_aos();
     for (size_t i = 0; i < n; i++)
     {
-        wfcs[0].c[i] = std::complex<double>(wfc_up_ri[2*i], wfc_up_ri[2*i+1]);
-        wfcs[1].c[i] = std::complex<double>(wfc_dn_ri[2*i], wfc_dn_ri[2*i+1]);
+        wfcs_up.c[i] = std::complex<double>(wfc_up_ri[2*i], wfc_up_ri[2*i+1]);
+        wfcs_dn.c[i] = std::complex<double>(wfc_dn_ri[2*i], wfc_dn_ri[2*i+1]);
     }
     // std::cout << "Maxabs: " << wfc.get_max_abs() << std::endl;
     librpa_int::global::ofs_myid
