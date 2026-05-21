@@ -52,7 +52,7 @@ void librpa_set_scf_dimension(LibrpaHandler* h, int nspins, int nkpts, int nstat
         lib_printf("| number of k-points        : %d\n", meanfield.get_n_kpoints());
         lib_printf("| number of bands           : %d\n", meanfield.get_n_bands());
         lib_printf("| number of NAOs            : %d\n", meanfield.get_n_aos());
-        lib_printf("| number of spin components : %d\n", meanfield.get_n_aos());
+        lib_printf("| number of spin components : %d\n", meanfield.get_n_spinor());
     }
     pds->comm_h.barrier();
 
