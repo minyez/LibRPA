@@ -243,6 +243,7 @@ void parse_inputfile_to_params(const std::string& fn)
     // GW specific
     _parse_double(opts, sqrt_coulomb_threshold);
     _parse_switch(opts, use_scalapack_gw_wc);
+    _parse_switch(opts, use_cholesky_gw_wc);
     _parse_double(opts, libri_g0w0_threshold_C);
     _parse_double(opts, libri_g0w0_threshold_G);
     _parse_double(opts, libri_g0w0_threshold_Wc);
