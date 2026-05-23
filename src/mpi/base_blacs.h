@@ -6,6 +6,22 @@
 #include "base_mpi.h"
 #include "../math/scalapack_connector.h"
 
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#include <ddla/ddla.h>
+#endif
+
+#if defined(__CUDACC__) || defined(__HIP_DEVICE_COMPILE__)
+#define __HOST__DEVICE__ __host__ __device__
+// #pragma message("define hip") 
+#else
+#define __HOST__DEVICE__
+// #pragma message("not define hip") 
+#endif
+
+#ifdef ENABLE_ELPA
+#include <elpa/elpa.h>
+#endif
+
 namespace librpa_int
 {
 
@@ -33,6 +49,9 @@ public:
     int npcols;
     int myprow;
     int mypcol;
+    #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    ddla::DdlaHandle_t ddla_handle;
+    #endif
     BlacsCtxtHandler();
     BlacsCtxtHandler(MPI_Comm comm_in);
     ~BlacsCtxtHandler() { this->exit(); }
@@ -129,6 +148,14 @@ private:
     //! flag for initialization
     bool initialized_ = false;
 
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    ddla::DdlaDesc ddla_desc_;
+#endif
+
+#ifdef ENABLE_ELPA
+    elpa_t elpa_handle_;
+#endif
+
 public:
     int desc[9];
     ArrayDesc();
@@ -156,20 +183,20 @@ public:
     inline int myid() const noexcept { return myid_; }
     inline int ictxt() const noexcept { return ictxt_; }
     inline MPI_Comm comm() const noexcept { return comm_; }
-    inline int m() const noexcept { return m_; }
-    inline int n() const noexcept { return n_; }
-    inline int mb() const noexcept { return mb_; }
-    inline int nb() const noexcept { return nb_; }
-    inline int lld() const noexcept { return lld_; }
-    inline int irsrc() const noexcept { return irsrc_; }
-    inline int icsrc() const noexcept { return icsrc_; }
-    inline int m_loc() const noexcept { return m_local_; }
-    inline int n_loc() const noexcept { return n_local_; }
-    inline int myprow() const noexcept { return myprow_; }
-    inline int mypcol() const noexcept { return mypcol_; }
-    inline int nprocs() const noexcept { return nprocs_; }
-    inline int nprows() const noexcept { return nprows_; }
-    inline int npcols() const noexcept { return npcols_; }
+    __HOST__DEVICE__ inline int m() const noexcept { return m_; }
+    __HOST__DEVICE__ inline int n() const noexcept { return n_; }
+    __HOST__DEVICE__ inline int mb() const noexcept { return mb_; }
+    __HOST__DEVICE__ inline int nb() const noexcept { return nb_; }
+    __HOST__DEVICE__ inline int lld() const noexcept { return lld_; }
+    __HOST__DEVICE__ inline int irsrc() const noexcept { return irsrc_; }
+    __HOST__DEVICE__ inline int icsrc() const noexcept { return icsrc_; }
+    __HOST__DEVICE__ inline int m_loc() const noexcept { return m_local_; }
+    __HOST__DEVICE__ inline int n_loc() const noexcept { return n_local_; }
+    __HOST__DEVICE__ inline int myprow() const noexcept { return myprow_; }
+    __HOST__DEVICE__ inline int mypcol() const noexcept { return mypcol_; }
+    __HOST__DEVICE__ inline int nprocs() const noexcept { return nprocs_; }
+    __HOST__DEVICE__ inline int nprows() const noexcept { return nprows_; }
+    __HOST__DEVICE__ inline int npcols() const noexcept { return npcols_; }
     inline void get_pcoord(int pid, int &prow, int &pcol) const { Cblacs_pcoord(ictxt_, myid_, &prow, &pcol); };
     inline pcoord_t get_pcoord(int pid) const { int prow, pcol; Cblacs_pcoord(ictxt_, myid_, &prow, &pcol); return {prow, pcol}; };
     inline int get_pnum(int prow, int pcol) const { return Cblacs_pnum(ictxt_, prow, pcol); };
@@ -188,6 +215,61 @@ public:
     bool initialized() const noexcept { return this->initialized_; };  // to deprecate
     bool is_initialized() const noexcept { return this->initialized_; };
     void barrier(CTXT_SCOPE scope = CTXT_SCOPE::A) const;
+
+    #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    const ddla::DdlaDesc& ddla_desc() const noexcept { return ddla_desc_; }
+    void set_ddla_desc(const ddla::DdlaHandle_t& ddla_handle){
+        ddla_desc_.set_ddla_handle(ddla_handle);
+        ddla_desc_.init(this->m_, this->n_, this->mb_, this->nb_, this->irsrc_, this->icsrc_);
+    }
+    #endif
+    #ifdef ENABLE_ELPA
+    void set_elpa_handle(){
+        int error;
+        elpa_handle_ = elpa_allocate(&error);
+        if(error != ELPA_OK){
+            throw std::runtime_error("elpa allocate failure\n");
+        }
+        elpa_set(elpa_handle_, "na", m_, &error);  
+        elpa_set(elpa_handle_, "nev", m_, &error);  
+        elpa_set(elpa_handle_, "local_nrows", m_local_, &error);  
+        elpa_set(elpa_handle_, "local_ncols", n_local_, &error);  
+        elpa_set(elpa_handle_, "nblk", mb_, &error);  
+        elpa_set(elpa_handle_, "mpi_comm_parent", MPI_Comm_c2f(this->comm_), &error);  
+        elpa_set(elpa_handle_, "process_row", myprow_, &error);  
+        elpa_set(elpa_handle_, "process_col", mypcol_, &error);  
+    
+        elpa_setup(elpa_handle_);  
+    
+        #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+        #ifdef ENABLE_HIP
+        elpa_set(elpa_handle_, "amd-gpu", 1, &error);
+        #endif
+        #ifdef ENABLE_CUDA
+        elpa_set(elpa_handle_, "nvidia-gpu", 1, &error);
+        #endif
+        // printf("after set amd-gpu\n");
+        // elpa_set(handle, "solver", ELPA_SOLVER_2STAGE, &error);  
+        // 选择 AMD GPU 内核  
+        // elpa_set(handle, "real_kernel", ELPA_2STAGE_REAL_AMD_GPU, &error);  
+        // elpa_set(handle, "complex_kernel", ELPA_2STAGE_COMPLEX_AMD_GPU, &error);  
+        elpa_set(elpa_handle_, "use_ccl", 0, &error);
+        // printf("before set\n");
+        // 初始化 GPU  
+        elpa_setup_gpu(elpa_handle_);
+        #endif
+    }
+    const elpa_t& elpa_handle() const { return elpa_handle_; }
+    ~Array_Desc(){
+        if(elpa_handle_ != nullptr){
+            int error;
+            elpa_deallocate(elpa_handle_, &error);  
+            if(error != ELPA_OK){
+                throw std::runtime_error("elpa deallocate failure\n");
+            }
+        }
+    }
+    #endif
 };
 
 

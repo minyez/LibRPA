@@ -120,7 +120,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     {
         Wc_freq_q = compute_Wc_freq_q_blacs(chi0, pds->vq, pds->vq_cut, opts.sqrt_coulomb_threshold,
                                             epsmac_LF_imagfreq, pds->blacs_h, pds->desc_abf,
-                                            debug, opts.output_dir, opts.use_cholesky_gw_wc);
+                                            debug, opts.output_dir, opts.use_cholesky_gw_wc, opts.use_gpu_gw_wc);
     }
     else
     {

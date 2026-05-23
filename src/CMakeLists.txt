@@ -102,6 +102,33 @@ if(LIBRPA_USE_LIBRI)
     )
 endif()
 
+if(LIBRPA_ENABLE_CUDA)
+  list(APPEND lib_sources 
+    # device_stream.cpp
+    # matrix_device.cpp
+    gpu/device_connector.cpp
+  )
+  set_source_files_properties(
+    mpi/base_blacs.cpp
+    gpu/device_connector.cpp
+    PROPERTIES
+    LANGUAGE CUDA
+  )
+endif()
+
+if(LIBRPA_ENABLE_HIP)
+  list(APPEND lib_sources
+    # matrix_device.cpp
+    gpu/device_connector.cpp
+  )
+#  set_source_files_properties(
+ #   base_blacs.cpp
+  #  device_connector.cpp
+   # PROPERTIES
+    #LANGUAGE HIP
+ # )
+endif()
+
 # source must be PRIVATE to avoid recompilation when linking driver to this library
 target_sources(rpa_lib PRIVATE ${lib_sources})
 target_link_libraries(rpa_lib PRIVATE ${math_libs} ${parallel_libs})
