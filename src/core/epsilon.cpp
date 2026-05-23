@@ -2068,38 +2068,67 @@ map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             // for Gamma point, overwrite the head term
             if (epsmac_LF_imagfreq.size() > 0 && is_gamma_point(q))
             {
+                std::complex<double>* sqrtveig_blacs_ptr = sqrtveig_blacs.ptr();
+
+// #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+//             if(use_gpu_gw_wc){
+//                 sqrtveig_blacs_ptr = coul_block_ptr;
+//                 DEVICE_CHECK(deviceMemcpyAsync(sqrtveig_blacs_ptr, sqrtveig_blacs.ptr(), sqrtveig_blacs.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+//             }
+// #endif
                 ofs_myid << get_timestamp() << " Entering dielectric matrix head overwrite" << endl;
                 // rotate to Coulomb-eigenvector basis
-                ScalapackConnector::pgemm_f('N', 'N', n_abf, n_nonsingular, n_abf, 1.0,
-                        chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                        sqrtveig_blacs.ptr(), 1, n_singular + 1, desc_nabf_nabf_opt.desc, 0.0,
-                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
-                ScalapackConnector::pgemm_f('C', 'N', n_nonsingular, n_nonsingular, n_abf, -1.0,
-                        sqrtveig_blacs.ptr(), 1, n_singular + 1, desc_nabf_nabf_opt.desc,
-                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
-                        chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+                global::profiler.start("epsilon_compute_eps_pgemm_1");
+                LaConnector::pgemm('N', 'N', n_abf, n_nonsingular, n_abf, {1.0, 0.0},
+                        chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt,
+                        sqrtveig_blacs_ptr, 1, n_singular + 1, desc_nabf_nabf_opt, {0.0, 0.0},
+                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt);
+                LaConnector::pgemm('C', 'N', n_nonsingular, n_nonsingular, n_abf, {-1.0, 0.0},
+                        sqrtveig_blacs_ptr, 1, n_singular + 1, desc_nabf_nabf_opt,
+                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt, {0.0, 0.0},
+                        chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt);
                 const int ilo = desc_nabf_nabf_opt.indx_g2l_r(n_nonsingular - 1);
                 const int jlo = desc_nabf_nabf_opt.indx_g2l_c(n_nonsingular - 1);
                 if (ilo >= 0 && jlo >= 0)
                 {
                     ofs_myid << get_timestamp() << "Perform the head element overwrite" << endl;
-                    chi0_block(ilo, jlo) = epsmac_LF_imagfreq[ifreq] - 1.0;
+                    std::complex<double> head_correction = epsmac_LF_imagfreq[ifreq] - 1.0;
+// #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+//                     if(use_gpu_gw_wc){
+//                         DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr + ilo + jlo * desc_nabf_nabf_opt.lld(), &head_correction, sizeof(std::complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+//                     }else
+// #endif
+                    chi0_block(ilo, jlo) = head_correction;
+                    
                 }
+                global::profiler.stop("epsilon_compute_eps_pgemm_1");
                 // rotate back to ABF
-                ScalapackConnector::pgemm_f('N', 'N', n_abf, n_nonsingular, n_nonsingular, 1.0,
-                        coul_eigen_block.ptr(), 1, n_singular + 1, desc_nabf_nabf_opt.desc,
-                        chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
-                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
-                ScalapackConnector::pgemm_f('N', 'C', n_abf, n_abf, n_nonsingular, 1.0,
-                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                        coul_eigen_block.ptr(), 1, n_singular + 1, desc_nabf_nabf_opt.desc, 0.0,
-                        chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+// #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+//                 if(use_gpu_gw_wc){
+//                     coul_eigen_block_ptr = coul_block_ptr;
+//                     DEVICE_CHECK(deviceMemcpyAsync(coul_eigen_block_ptr, coul_eigen_block.ptr(), coul_eigen_block.size() * sizeof(std::complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+//                 }
+// #endif       
+                global::profiler.start("epsilon_compute_eps_pgemm_2");
+                LaConnector::pgemm('N', 'N', n_abf, n_nonsingular, n_nonsingular, {1.0, 0.0},
+                        coul_eigen_block.ptr(), 1, n_singular + 1, desc_nabf_nabf_opt,
+                        chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt, {0.0, 0.0},
+                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt);
+                LaConnector::pgemm('N', 'C', n_abf, n_abf, n_nonsingular, {1.0, 0.0},
+                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt,
+                        coul_eigen_block.ptr(), 1, n_singular + 1, desc_nabf_nabf_opt, {0.0, 0.0},
+                        chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt);
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+                if(use_gpu_gw_wc)
+                    DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr, chi0_block.ptr(), chi0_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+#endif
+                global::profiler.stop("epsilon_compute_eps_pgemm_2");
             }
             else
             {
 #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
                 if(use_gpu_gw_wc){
-                    DEVICE_CHECK(deviceMemcpyAsync(coul_block_ptr, coul_block.ptr(), coul_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+                    DEVICE_CHECK(deviceMemcpyAsync(coul_block_ptr, coul_block.ptr(), coul_block.size() * sizeof(std::complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
                 }
 #endif
                 global::profiler.start("epsilon_compute_eps_pgemm_1");
