@@ -171,7 +171,8 @@ inline void pposv(
     const int & n, const int& nrhs,
     T* d_A, const int& ia, const int& ja, const ArrayDesc& array_descA,
     T* d_B, const int& ib, const int& jb, const ArrayDesc& array_descB,
-    int& info // device pointer
+    int& info, // device pointer
+    bool is_head = false, int location = -1
 )
 {
     assert(side == 'L');
@@ -185,7 +186,8 @@ inline void pposv(
             n, nrhs,
             d_A, 1, 1, array_descA.ddla_desc(),
             d_B, 1, 1, array_descB.ddla_desc(),
-            info
+            info,
+            is_head, location
         );
     }else
     #endif
