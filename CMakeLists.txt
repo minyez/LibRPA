@@ -30,6 +30,9 @@ option(LIBRPA_ENABLE_FORTRAN_BIND  "Flag to build LibRPA Fotran binding" OFF)
 option(LIBRPA_VERBOSE_OUTPUT       "Flag to print verbose information in stdout and process output of LibRPA" OFF)
 # NOTE: static library not tested
 # option(BUILD_LIBRPA_SHARED  "Flag to build shared libraries" ON)
+option(LIBRPA_ENABLE_ELPA "Use elpa for calculation" OFF )
+option(LIBRPA_ENABLE_CUDA "Enable CUDA language support" OFF)
+option(LIBRPA_ENABlE_HIP "Enable HIP language support" OFF)
 
 option(LIBRPA_ENABLE_CPP_TEST      "Flag to build tests for C++ components" ON)
 option(LIBRPA_ENABLE_FORTRAN_TEST  "Flag to build tests for Fortran bindings" ON)
@@ -85,6 +88,15 @@ if(LIBRPA_USE_BUNDLED_ELPA)
   enable_language(CXX C Fortran)
 else()
   enable_language(CXX Fortran)
+endif()
+
+if(LIBRPA_ENABLE_CUDA)
+  enable_language(CUDA)
+endif()
+
+if(LIBRPA_ENABLE_HIP)
+  # find_package(hip REQUIRED)
+  # enable_language(HIP)
 endif()
 
 # bypass the deprecation warning of classic C++ of oneAPI
@@ -262,6 +274,47 @@ if(LIBRPA_USE_LIBRI)
   endif()
 
   add_compile_definitions("LIBRPA_USE_LIBRI")
+endif()
+
+if(LIBRPA_ENABLE_CUDA)
+  # find_package(CUDA REQUIRED)
+  find_package(CUDAToolkit REQUIRED)
+  add_definitions(-DADD_)
+  # include_directories(${MAGMA_ROOT}/include)
+  # set(MAGMA_INCLUDE_DIR "${MAGMA_ROOT}/include")
+  # link_directories(${MAGMA_ROOT}/lib)
+  set(CMAKE_CUDA_STANDARD 17)
+  set(CUDA_LIBRARIES "-lcudart -lcublas -lcusolver -lnccl -lcurand")
+  list(APPEND math_libs
+    ${CUDA_LIBRARIES}
+    # CUDA::cudart
+    # CUDA::cublas
+    # CUDA::cusolver
+    # CUDA::nccl
+    # CUDA::curand
+    # ${MAGMA_ROOT}/lib/libmagma.so
+    )
+  add_compile_definitions("ENABLE_CUDA")
+endif()
+
+if(LIBRPA_ENABLE_CUDA OR LIBRPA_ENABLE_HIP)
+  list(APPEND math_libs "-lddla")
+  add_compile_definitions("ENABLE_CCL")
+endif()
+
+if(LIBRPA_ENABLE_HIP)
+  add_compile_definitions("ENABLE_HIP")
+  add_compile_definitions("__HIP_PLATFORM_AMD__")
+  set(HIP_LIBRARIES "-lamdhip64 -lgalaxyhip -lhipblas -lhipsolver -lrccl -lhiprand")
+  list(APPEND math_libs
+      ${HIP_LIBRARIES}
+  )
+endif()
+
+if(LIBRPA_ENABLE_ELPA)
+  add_compile_definitions("ENABLE_ELPA")
+  list(APPEND math_libs
+    -lelpa)
 endif()
 
 if(CMAKE_BUILD_TYPE MATCHES "Debug")

@@ -167,6 +167,9 @@ typedef struct
     //! Flag of using cholesky factorization for computing Wc from chi0
     LibrpaSwitch use_cholesky_gw_wc;
 
+    // ! Flag of using GPU for computing Wc from chi0
+    LibrpaSwitch use_gpu_gw_wc;
+
     //! Flag of replacing head of screened interaction by macroscopic dielectric function
     LibrpaSwitch replace_w_head;
 

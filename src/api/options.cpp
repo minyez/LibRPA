@@ -52,6 +52,7 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->override_qpe_solver_nan = LIBRPA_SWITCH_OFF;
     opts->use_scalapack_gw_wc = LIBRPA_SWITCH_ON;
     opts->use_cholesky_gw_wc = LIBRPA_SWITCH_OFF;
+    opts->use_gpu_gw_wc = LIBRPA_SWITCH_OFF;
     opts->replace_w_head = LIBRPA_SWITCH_OFF;
     opts->option_dielect_func = 0;
     opts->use_2d_dielectric = LIBRPA_SWITCH_OFF;

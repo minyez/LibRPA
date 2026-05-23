@@ -36,6 +36,9 @@ BlacsCtxtHandler::BlacsCtxtHandler()
       npcols(0),
       myprow(0),
       mypcol(0)
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+      , ddla_handle(nullptr)
+#endif
 {
 }
 
@@ -53,6 +56,9 @@ BlacsCtxtHandler::BlacsCtxtHandler(MPI_Comm comm_in)
       npcols(0),
       myprow(0),
       mypcol(0)
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    , ddla_handle(nullptr)
+#endif
 {
 }
 
@@ -64,6 +70,9 @@ void BlacsCtxtHandler::init()
     this->myid = mpi_comm_h.myid;
     this->nprocs = mpi_comm_h.nprocs;
     this->initialized_ = true;
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+        ddla::ddla_init(ddla_handle);
+#endif
 }
 
 void BlacsCtxtHandler::reset_comm()
@@ -75,6 +84,12 @@ void BlacsCtxtHandler::reset_comm()
     this->comm_set_ = false;
     this->initialized_ = false;
     this->pgrid_set_ = false;
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    if(ddla_handle!=nullptr){
+        ddla::ddla_destroy(ddla_handle);
+        ddla_handle = nullptr;
+    }
+#endif
 }
 
 void BlacsCtxtHandler::reset_comm(MPI_Comm comm_in, bool init_on_reset)
@@ -87,6 +102,12 @@ void BlacsCtxtHandler::reset_comm(MPI_Comm comm_in, bool init_on_reset)
     this->comm_set_ = true;
     this->pgrid_set_ = false;
     if (init_on_reset) this->init();
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    if(ddla_handle!=nullptr){
+        ddla::ddla_destroy(ddla_handle);
+        ddla_handle = nullptr;
+    }
+#endif
 }
 
 void BlacsCtxtHandler::set_grid(const int &nprows_in, const int &npcols_in,
@@ -108,6 +129,9 @@ void BlacsCtxtHandler::set_grid(const int &nprows_in, const int &npcols_in,
     Cblacs_gridinit(&ictxt, &layout_ch, nprows_in, npcols_in);
     Cblacs_gridinfo(ictxt, &nprows, &npcols, &myprow, &mypcol);
     pgrid_set_ = true;
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    ddla::ddla_set(ddla_handle, mpi_comm_h.comm, nprows, npcols, layout_ch);
+#endif
 }
 
 void BlacsCtxtHandler::set_square_grid(bool more_rows, CTXT_LAYOUT layout_in)
@@ -144,6 +168,12 @@ void BlacsCtxtHandler::exit()
             ictxt = Csys2blacs_handle(mpi_comm_h.comm);
         pgrid_set_ = false;
     }
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    if(ddla_handle!=nullptr){
+        ddla::ddla_destroy(ddla_handle);
+        ddla_handle = nullptr;
+    }
+#endif
 }
 
 std::string BlacsCtxtHandler::info() const
@@ -359,6 +389,14 @@ ArrayDesc::ArrayDesc()
       g2l_r_(), g2l_c_(), l2g_r_(), l2g_c_(),
       is_loc_consecutive_r_(false), is_loc_consecutive_c_(false),
       empty_local_mat_(false), initialized_(false)
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    , ddla_desc_()
+#endif
+
+#ifdef ENABLE_ELPA
+    , elpa_handle_(nullptr)
+#endif
+
 {}
 
 ArrayDesc::ArrayDesc(const BlacsCtxtHandler &blacs_h)
@@ -370,6 +408,13 @@ ArrayDesc::ArrayDesc(const BlacsCtxtHandler &blacs_h)
       g2l_r_(), g2l_c_(), l2g_r_(), l2g_c_(),
       is_loc_consecutive_r_(false), is_loc_consecutive_c_(false),
       empty_local_mat_(false), initialized_(false)
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    , ddla_desc_()
+#endif
+
+#ifdef ENABLE_ELPA
+    , elpa_handle_(nullptr)
+#endif
 {
     this->reset_handler(blacs_h);
 }
@@ -383,6 +428,13 @@ ArrayDesc::ArrayDesc(const int &ictxt)
       g2l_r_(), g2l_c_(), l2g_r_(), l2g_c_(),
       is_loc_consecutive_r_(false), is_loc_consecutive_c_(false),
       empty_local_mat_(false), initialized_(false)
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    , ddla_desc_()
+#endif
+
+#ifdef ENABLE_ELPA
+    , elpa_handle_(nullptr)
+#endif
 {
     // TODO: how to check if ictxt is a valid context?
     int nprocs, myid, nprows, npcols, myprow, mypcol;

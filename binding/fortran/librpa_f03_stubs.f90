@@ -176,6 +176,8 @@ module librpa_f03
       logical :: use_scalapack_gw_wc
       !> Experimental: use Cholesky factorization for computing \f$W^c\f$ from \f$\chi^0\f$.
       logical :: use_cholesky_gw_wc
+      !> Experimental: use GPU for computing Wc from chi0
+      logical :: use_gpu_gw_wc
       !> Experimental: replace dielectric matrix head by the macroscopic dielectric function.
       logical :: replace_w_head
       !> Experimental: dielectric-function handling on the imaginary axis.
