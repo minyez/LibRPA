@@ -259,8 +259,8 @@ public:
         elpa_setup_gpu(elpa_handle_);
         #endif
     }
-    const elpa_t& elpa_handle() const { return elpa_handle_; }
-    ~Array_Desc(){
+    const elpa_t& elpa_handle() const noexcept { return elpa_handle_; }
+    ~ArrayDesc(){
         if(elpa_handle_ != nullptr){
             int error;
             elpa_deallocate(elpa_handle_, &error);  

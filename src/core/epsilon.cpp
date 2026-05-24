@@ -1761,6 +1761,9 @@ map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     std::complex<double>* coul_chi0_block_ptr;
     std::complex<double>* coul_eigen_block_ptr;
     std::complex<double>* coulwc_block_ptr;
+#if defined(ENABLE_ELPA)
+    desc_nabf_nabf_opt.set_elpa_handle();
+#endif
 
 #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
     if(use_gpu_gw_wc){
