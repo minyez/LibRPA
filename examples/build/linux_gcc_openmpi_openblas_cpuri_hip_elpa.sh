@@ -70,6 +70,7 @@ INSTALL_DIR=../librpa_hip
 echo Start Time: `date`
 # rm -rf $BUILD_DIR
 
+rm -rf $INSTALL_DIR
 export LANGUAGE=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 export LANG=en_US.UTF-8
@@ -83,6 +84,8 @@ cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
         -DUSE_LIBRI=ON \
         -DLIBRI_INCLUDE_DIR=$LIBRI/include \
         -DLIBCOMM_INCLUDE_DIR=$LIBCOMM/include \
+        -DBUILD_SHARED_LIBS=ON \
+        -DLIBRPA_VERBOSE_OUTPUT=ON\
         -DCMAKE_CXX_FLAGS="-dwarf-4 -g -O2 -fopenmp -fgpu-rdc -Wno-implicit-interface -Wno-return-type -Wno-return-stack-address -Wno-format -Wno-unused-command-line-argument -Wno-format-security -Wno-exceptions" \
         -DLIBRPA_ENABLE_HIP=ON \
         -DUSE_GREENX_API=ON \
