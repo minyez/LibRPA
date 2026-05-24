@@ -62,17 +62,38 @@ inline void scal(
     const T1& alpha,
     T2* X,
     const int& incX,
-    const BlacsCtxtHandler &blacs_h
+    const ArrayDesc &array_desc
 ){
     #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
     if(DeviceConnector::check_device_ptr((void*)X)){
-        BLAS_CHECK(ddla::deblasScal(blacs_h.ddla_handle->blasH, N, alpha, X, incX));
+        ddla::BLAS_CHECK(ddla::deblasScal(array_desc.ddla_desc().ddla_handle()->blasH, N, alpha, X, incX));
     }else
     #endif
     {
         LapackConnector::scal(N, alpha, X, incX);
     }
 }
+
+// template <typename T1, typename T2>
+// inline void pscal(
+//     const int& N,
+//     const T1& alpha,
+//     T2* X,
+//     int ix,
+//     int jx,
+//     ArrayDesc array_desc,
+//     const int incx
+// ){
+//     #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+//     if(DeviceConnector::check_device_ptr((void*)X)){
+//         ix--;jx--;
+//         BLAS_CHECK(ddla::deblasScal(array_desc.ddla_desc().ddla_handle()->blasH, N, alpha, X, incX));
+//     }else
+//     #endif
+//     {
+//         ScalapackConnector::scal(N, alpha, X, ix, jx,array_desc.desc, incX);
+//     }
+// }
 
 template <typename T1, typename T2>
 inline void pdam(const T1& num, T2* A, const ArrayDesc& array_desc)
