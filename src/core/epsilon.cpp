@@ -1827,8 +1827,8 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
 #endif
 
 #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+    desc_nabf_nabf_opt.set_ddla_desc(blacs_h.ddla_handle); // set the descriptor for the device
     if(use_gpu_gw_wc){
-        desc_nabf_nabf_opt.set_ddla_desc(blacs_h.ddla_handle); // set the descriptor for the device
         DEVICE_CHECK(deviceMallocAsync((void**)&chi0_block_ptr, chi0_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
         DEVICE_CHECK(deviceMallocAsync((void**)&coul_block_ptr, coul_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
         DEVICE_CHECK(deviceMallocAsync((void**)&coul_chi0_block_ptr, coul_chi0_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
@@ -2149,13 +2149,13 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 // rotate to Coulomb-eigenvector basis
                 // descending order
                 LaConnector::pgemm(
-                    'N', 'N', n_abf, n_nonsingular, n_abf, 1.0, chi0_block.ptr(), 1, 1,
+                    'N', 'N', n_abf, n_nonsingular, n_abf, {1.0, 0.0}, chi0_block.ptr(), 1, 1,
                     desc_nabf_nabf_opt, sqrtveig_blacs_ptr, 1, 1, desc_nabf_nabf_opt,
-                    0.0, coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
-                LaConnector::pgemm('C', 'N', n_nonsingular, n_nonsingular, n_abf, 1.0,
-                                            sqrtveig_blacs_ptr, 1, 1, desc_nabf_nabf_opt,
-                                            coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt,
-                                            0.0, chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
+                    {0.0, 0.0}, coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt);
+                LaConnector::pgemm(
+                    'C', 'N', n_nonsingular, n_nonsingular, n_abf, {1.0, 0.0},
+                    sqrtveig_blacs_ptr, 1, 1, desc_nabf_nabf_opt, coul_chi0_block.ptr(),
+                     1, 1, desc_nabf_nabf_opt, {0.0, 0.0}, chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
 
                 if (option_dielect_func == 3)
                 {
@@ -2323,16 +2323,14 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 int info = 0;
                 if (use_cholesky_gw_wc)
                 {
-                    LaConnector::pposv('L', n_abf, n_abf, chi0_block_ptr, 1, 1,
-                                                desc_nabf_nabf_opt, coul_chi0_block_ptr, 1,
-                                                1, desc_nabf_nabf_opt, info);
+                    LaConnector::pposv('L', 'L', 'N', n_abf, n_abf, chi0_block_ptr, 1, 1,
+                        desc_nabf_nabf_opt, coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt, info);
                 }
                 else
                 {
-                    std::vector<int> ipiv(std::max(desc_nabf_nabf_opt.m_loc() + desc_nabf_nabf_opt.mb(), desc_nabf_nabf_opt.n_loc() + desc_nabf_nabf_opt.nb()));
-                    LaConnector::pgesv(n_abf, n_abf, 
-                            chi0_block_ptr, 1, 1, desc_nabf_nabf_opt, ipiv.data(),
-                            coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt, info);
+                    LaConnector::pgesv(
+                        n_abf, n_abf, chi0_block_ptr, 1, 1, desc_nabf_nabf_opt,
+                        coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt, info);
                 }
                 assert(info == 0);
                 LaConnector::axpy(coulwc_block.size(), {-1.0, 0.0}, coulwc_block_ptr, 1, coul_chi0_block_ptr, 1, blacs_h);
