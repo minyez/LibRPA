@@ -154,7 +154,8 @@ template <typename T>
 inline void pgesv(
     const int& n, const int& nrhs,
     T* d_A, const int& ia, const int& ja, const ArrayDesc& array_descA,
-    T* d_B, const int& ib, const int& jb, const ArrayDesc& array_descB
+    T* d_B, const int& ib, const int& jb, const ArrayDesc& array_descB,
+    int& info
 )
 {
     #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
@@ -171,7 +172,6 @@ inline void pgesv(
     #endif
     {
         std::vector<int> ipiv(array_descA.m_loc() + array_descA.mb());
-        int info = 1;
         ScalapackConnector::pgesv_f(
             n, nrhs,
             d_A, ia, ja, array_descA.desc,
