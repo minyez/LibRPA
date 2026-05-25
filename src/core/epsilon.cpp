@@ -30,6 +30,12 @@
 #include "pbc.h"
 #include "utils_atomic_basis_blacs.h"
 
+#include "../gpu/la_connector.h"
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#include <ddla/ddla_connector.h>
+using namespace ddla;
+#endif
+
 #ifdef LIBRPA_USE_LIBRI
 #include <RI/comm/mix/Communicate_Tensors_Map_Judge.h>
 #include <RI/global/Tensor.h>
@@ -1764,7 +1770,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps, atpair_k_cplx_mat_t &coulmat_wc,
     const double sqrt_coulomb_threshold, const bool replace_w_head, int option_dielect_func,
     const vector<std::complex<double>> &epsmac_LF_imagfreq, diele_func &df_headwing,
-    const BlacsCtxtHandler &blacs_h, const ArrayDesc &ad, const bool debug, const char *output_dir, bool use_cholesky_gw_wc)
+    const BlacsCtxtHandler &blacs_h, const ArrayDesc &ad, const bool debug, const char *output_dir, bool use_cholesky_gw_wc, bool use_gpu_gw_wc)
 {
     using std::cout;
     using std::endl;
@@ -1810,6 +1816,31 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     auto coul_eigen_block = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
     auto coul_chi0_block = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
     auto coulwc_block = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
+
+    std::complex<double>* chi0_block_ptr;
+    std::complex<double>* coul_block_ptr;
+    std::complex<double>* coul_chi0_block_ptr;
+    std::complex<double>* coul_eigen_block_ptr;
+    std::complex<double>* coulwc_block_ptr;
+#if defined(ENABLE_ELPA)
+    desc_nabf_nabf_opt.set_elpa_handle();
+#endif
+
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+    if(use_gpu_gw_wc){
+        desc_nabf_nabf_opt.set_ddla_desc(blacs_h.ddla_handle); // set the descriptor for the device
+        DEVICE_CHECK(deviceMallocAsync((void**)&chi0_block_ptr, chi0_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&coul_block_ptr, coul_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&coul_chi0_block_ptr, coul_chi0_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
+    }else
+#endif
+    {
+        chi0_block_ptr = chi0_block.ptr();
+        coul_block_ptr = coul_block.ptr();
+        coul_chi0_block_ptr = coul_chi0_block.ptr();
+        coul_eigen_block_ptr = coul_eigen_block.ptr();
+        coulwc_block_ptr = coulwc_block.ptr();
+    }
 
     const double mem_blocks = (chi0_block.size() + coul_block.size() + coul_eigen_block.size() +
                                coul_chi0_block.size() + coulwc_block.size()) *
@@ -2104,21 +2135,27 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             }
             global::profiler.stop("epsilon_prepare_chi0_2d");
 
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+            if(use_gpu_gw_wc){
+                DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr, chi0_block.ptr(), chi0_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+            }
+#endif
             // for Gamma point, overwrite the head term
             if (epsmac_LF_imagfreq.size() > 0 && is_gamma_point(q))
             {
+                std::complex<double>* sqrtveig_blacs_ptr = sqrtveig_blacs.ptr();
                 profiler.start("epsilon_compute_eps", "Compute dielectric matrix");
                 ofs_myid << get_timestamp() << " Entering dielectric matrix head overwrite" << endl;
                 // rotate to Coulomb-eigenvector basis
                 // descending order
-                ScalapackConnector::pgemm_f(
+                LaConnector::pgemm(
                     'N', 'N', n_abf, n_nonsingular, n_abf, 1.0, chi0_block.ptr(), 1, 1,
-                    desc_nabf_nabf_opt.desc, sqrtveig_blacs.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                    0.0, coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
-                ScalapackConnector::pgemm_f('C', 'N', n_nonsingular, n_nonsingular, n_abf, 1.0,
-                                            sqrtveig_blacs.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                                            coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                                            0.0, chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+                    desc_nabf_nabf_opt, sqrtveig_blacs_ptr, 1, 1, desc_nabf_nabf_opt,
+                    0.0, coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
+                LaConnector::pgemm('C', 'N', n_nonsingular, n_nonsingular, n_abf, 1.0,
+                                            sqrtveig_blacs_ptr, 1, 1, desc_nabf_nabf_opt,
+                                            coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt,
+                                            0.0, chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
 
                 if (option_dielect_func == 3)
                 {
@@ -2154,16 +2191,17 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                         chi0_block(ilo, jlo) = 1.0 - epsmac_LF_imagfreq[ifreq];
                     }
                 }
+                global::profiler.stop("epsilon_compute_eps_pgemm_1");
                 // rotate back to ABF
                 // descending order
-                ScalapackConnector::pgemm_f('N', 'N', n_abf, n_nonsingular, n_nonsingular, 1.0,
-                                            coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                                            chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
-                                            coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
-                ScalapackConnector::pgemm_f('N', 'C', n_abf, n_abf, n_nonsingular, -1.0,
-                                            coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                                            coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                                            0.0, chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+                LaConnector::pgemm('N', 'N', n_abf, n_nonsingular, n_nonsingular, {1.0, 0.0},
+                                            coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt,
+                                            chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt, {0.0, 0.0},
+                                            coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt);
+                LaConnector::pgemm('N', 'C', n_abf, n_abf, n_nonsingular, {-1.0, 0.0},
+                                            coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt,
+                                            coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt,
+                                   {0.0, 0.0}, chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt);
                 if (option_dielect_func != 3)
                 {
                     // now chi0_block is actually -v1/2 chi v1/2
@@ -2177,32 +2215,41 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     }
                     // now chi0_block is actually the dielectric matrix
                 }
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+                if(use_gpu_gw_wc)
+                    DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr, chi0_block.ptr(), chi0_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+#endif
                 profiler.stop("epsilon_compute_eps");
             }
             else // !(epsmac_LF_imagfreq.size() > 0 && is_gamma_point(q))
             {
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+                if(use_gpu_gw_wc)
+                    DEVICE_CHECK(deviceMemcpyAsync(coul_block_ptr, coul_block.ptr(), coul_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+#endif
                 profiler.start("epsilon_compute_eps", "Compute dielectric matrix");
                 profiler.start("epsilon_compute_eps_pgemm_1");
-                ScalapackConnector::pgemm_f('N', 'N', n_abf, n_abf, n_abf, 1.0, coul_block.ptr(), 1,
-                                            1, desc_nabf_nabf_opt.desc, chi0_block.ptr(), 1, 1,
-                                            desc_nabf_nabf_opt.desc, 0.0, coul_chi0_block.ptr(), 1,
-                                            1, desc_nabf_nabf_opt.desc);
+                LaConnector::pgemm('N', 'N', n_abf, n_abf, n_abf, {1.0, 0.0}, coul_block_ptr, 1,
+                                            1, desc_nabf_nabf_opt, chi0_block_ptr, 1, 1,
+                                            desc_nabf_nabf_opt, {0.0, 0.0}, coul_chi0_block_ptr, 1,
+                                            1, desc_nabf_nabf_opt);
                 profiler.stop("epsilon_compute_eps_pgemm_1");
                 profiler.start("epsilon_compute_eps_pgemm_2");
-                ScalapackConnector::pgemm_f('N', 'N', n_abf, n_abf, n_abf, -1.0,
-                                            coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                                            coul_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
-                                            chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+                LaConnector::pgemm('N', 'N', n_abf, n_abf, n_abf, {-1.0, 0.0},
+                                            coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt,
+                                            coul_block_ptr, 1, 1, desc_nabf_nabf_opt, {0.0, 0.0},
+                                            chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
                 profiler.stop("epsilon_compute_eps_pgemm_2");
                 // now chi0_block is actually -v1/2 chi v1/2
-                for (int i = 0; i != n_abf; i++)
-                {
-                    const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
-                    if (ilo < 0) continue;
-                    const int jlo = desc_nabf_nabf_opt.indx_g2l_c(i);
-                    if (jlo < 0) continue;
-                    chi0_block(ilo, jlo) += 1.0;
-                }
+//                 for (int i = 0; i != n_abf; i++)
+//                 {
+//                     const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
+//                     if (ilo < 0) continue;
+//                     const int jlo = desc_nabf_nabf_opt.indx_g2l_c(i);
+//                     if (jlo < 0) continue;
+//                     chi0_block(ilo, jlo) += 1.0;
+//                 }
+                LaConnector::pdam(1.0, chi0_block_ptr, desc_nabf_nabf_opt);
                 profiler.stop("epsilon_compute_eps");
             }
             // debug for Coulomb, epsilon^{-1} - 1 = -0.75
@@ -2240,61 +2287,71 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             if (epsmac_LF_imagfreq.size() > 0 && is_gamma_point(q) && option_dielect_func == 3)
             {
                 // Dielectric matrix is already inverted, only multiply by square root coulwc from both sides
-                for (int i = 0; i != n_abf; i++)
-                {
-                    const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
-                    if (ilo < 0) continue;
-                    const int jlo = desc_nabf_nabf_opt.indx_g2l_c(i);
-                    if (jlo < 0) continue;
-                    chi0_block(ilo, jlo) -= 1.0;
-                }
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+                if(use_gpu_gw_wc){
+                    coulwc_block_ptr = coul_block_ptr;
+                    DEVICE_CHECK(deviceMemcpyAsync(coulwc_block_ptr, coulwc_block.ptr(), coulwc_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+                    DEVICE_CHECK(deviceMemcpyAsync(coul_chi0_block_ptr, coulwc_block_ptr, coulwc_block.size() * sizeof(complex<double>), deviceMemcpyDeviceToDevice, blacs_h.ddla_handle->stream));
+                }else
+#endif
+                memcpy(coul_chi0_block_ptr, coulwc_block_ptr, coulwc_block.size() * sizeof(std::complex<double>));
+                LaConnector::pdam(-1.0, chi0_block_ptr, desc_nabf_nabf_opt);
                 global::profiler.start("epsilon_multiply_coulwc", "Multiply truncated Coulomb");
-                ScalapackConnector::pgemm_f('N', 'N', n_abf, n_abf, n_abf, 1.0,
-                        coulwc_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                        chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
-                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
-                ScalapackConnector::pgemm_f('N', 'N', n_abf, n_abf, n_abf, 1.0,
-                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                        coulwc_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
-                        chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+                LaConnector::pgemm('N', 'N', n_abf, n_abf, n_abf, {1.0, 0.0},
+                        coulwc_block_ptr, 1, 1, desc_nabf_nabf_opt,
+                        chi0_block_ptr, 1, 1, desc_nabf_nabf_opt, {0.0, 0.0},
+                        coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
+                LaConnector::pgemm('N', 'N', n_abf, n_abf, n_abf, {1.0, 0.0},
+                        coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt,
+                        coulwc_block_ptr, 1, 1, desc_nabf_nabf_opt, {0.0, 0.0},
+                        chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
                 global::profiler.stop("epsilon_multiply_coulwc");
             }
             else
-            {
+            {   
                 // now chi0_block is actually the dielectric matrix
                 // perform inversion
                 global::profiler.start("epsilon_solver_coulwc_1", "epsilon_solver_coulwc");
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+                if(use_gpu_gw_wc){
+                    coulwc_block_ptr = coul_block_ptr;
+                    DEVICE_CHECK(deviceMemcpyAsync(coulwc_block_ptr, coulwc_block.ptr(), coulwc_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+                    DEVICE_CHECK(deviceMemcpyAsync(coul_chi0_block_ptr, coulwc_block_ptr, coulwc_block.size() * sizeof(complex<double>), deviceMemcpyDeviceToDevice, blacs_h.ddla_handle->stream));
+                }else
+#endif
                 memcpy(coul_chi0_block.ptr(), coulwc_block.ptr(), coulwc_block.size() * sizeof(std::complex<double>));
                 int info = 0;
                 if (use_cholesky_gw_wc)
                 {
-                    ScalapackConnector::pposv_f('L', n_abf, n_abf, chi0_block.ptr(), 1, 1,
-                                                desc_nabf_nabf_opt.desc, coul_chi0_block.ptr(), 1,
-                                                1, desc_nabf_nabf_opt.desc, info);
+                    LaConnector::pposv('L', n_abf, n_abf, chi0_block_ptr, 1, 1,
+                                                desc_nabf_nabf_opt, coul_chi0_block_ptr, 1,
+                                                1, desc_nabf_nabf_opt, info);
                 }
                 else
                 {
                     std::vector<int> ipiv(std::max(desc_nabf_nabf_opt.m_loc() + desc_nabf_nabf_opt.mb(), desc_nabf_nabf_opt.n_loc() + desc_nabf_nabf_opt.nb()));
-                    ScalapackConnector::pgesv_f(n_abf, n_abf, 
-                            chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, ipiv.data(),
-                            coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, info);
+                    LaConnector::pgesv(n_abf, n_abf, 
+                            chi0_block_ptr, 1, 1, desc_nabf_nabf_opt, ipiv.data(),
+                            coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt, info);
                 }
                 assert(info == 0);
-                LapackConnector::axpy(coulwc_block.size(), -1.0, coulwc_block.ptr(), 1, coul_chi0_block.ptr(), 1);
+                LaConnector::axpy(coulwc_block.size(), {-1.0, 0.0}, coulwc_block_ptr, 1, coul_chi0_block_ptr, 1, blacs_h);
                 global::profiler.stop("epsilon_solver_coulwc_1");
 
                 global::profiler.start("epsilon_multiply_coulwc_2", "Multiply truncated Coulomb");
-                // ScalapackConnector::pgemm_f('N', 'N', n_abf, n_abf, n_abf, 1.0,
-                //         chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                //         coulwc_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
-                //         coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
-                ScalapackConnector::pgemm_f('N', 'N', n_abf, n_abf, n_abf, 1.0,
-                        coulwc_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
-                        chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+                LaConnector::pgemm('N', 'N', n_abf, n_abf, n_abf, {1.0, 0.0},
+                    coulwc_block_ptr, 1, 1, desc_nabf_nabf_opt,
+                    coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt, {0.0, 0.0},
+                    chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
                 // convert back to initial distribution
                 global::profiler.stop("epsilon_multiply_coulwc_2");
             }
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+            if(use_gpu_gw_wc){
+                DEVICE_CHECK(deviceMemcpyAsync(chi0_block.ptr(), chi0_block_ptr, chi0_block.size() * sizeof(complex<double>), deviceMemcpyDeviceToHost, blacs_h.ddla_handle->stream));
+                DEVICE_CHECK(deviceStreamSynchronize(blacs_h.ddla_handle->stream));
+            }
+#endif
             ScalapackConnector::pgemr2d_f(n_abf, n_abf, chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
                                         temp_block.ptr(), 1, 1, desc_nabf_nabf.desc, blacs_h.ictxt);
             // lib_printf("chi0_block\n%s", str(chi0_block).c_str());
@@ -2312,6 +2369,13 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
 #else
     throw std::logic_error("need compilation with LibRI");
 #endif
+    #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+    if(use_gpu_gw_wc){
+        DEVICE_CHECK(deviceFreeAsync(chi0_block_ptr, blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(coul_block_ptr, blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(coul_chi0_block_ptr, blacs_h.ddla_handle->stream));
+    }
+    #endif
     global::profiler.stop("compute_Wc_freq_q_work");
     librpa_int::global::lib_printf_root("Time for Wc computation (seconds, Wall/CPU): %f %f\n",
             global::profiler.get_wall_time_last("compute_Wc_freq_q_work"),

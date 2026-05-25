@@ -19,6 +19,10 @@
 #include "../utils/utils_cmake.h"
 #include "../version.h"
 
+#ifdef ENABLE_ELPA
+#include <elpa/elpa.h>
+#endif
+
 const char* librpa_get_build_info(void)
 {
     return librpa_int::cmake_info_storage().c_str();
@@ -39,6 +43,12 @@ static void librpa_init_global_common(MPI_Comm comm, LibrpaSwitch switch_redirec
     const bool redirect_stdout = switch_redirect_stdout == LIBRPA_SWITCH_ON;
     const bool process_output = switch_process_output == LIBRPA_SWITCH_ON;
     librpa_int::global::init_global_io(redirect_stdout, redirect_path, process_output);
+
+#ifdef ENABLE_ELPA
+    if (elpa_init(ELPA_API_VERSION) != ELPA_OK) {  
+        throw std::runtime_error("elpa_init failure\n");
+    }
+#endif
 
     mpi_comm_global_h.barrier();
     lib_printf_root("Initialized LibRPA global environment\n");
@@ -66,6 +76,14 @@ void librpa_finalize_global(void)
     mpi_comm_global_h.barrier();
     lib_printf_root("Finalizing LibRPA global environment\n");
     mpi_comm_global_h.barrier();
+
+#ifdef ENABLE_ELPA
+    int error;
+    elpa_uninit(&error);
+    if(error != ELPA_OK){
+        throw std::runtime_error("elpa uninit failure\n");
+    }
+#endif
 
     // print per-process profiling
     if (ofs_myid.is_open())

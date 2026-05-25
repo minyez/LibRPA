@@ -43,7 +43,6 @@ public:
     {
         return nb * (indxglob / (nb * nprocs)) + indxglob % nb;
     }
-
     __HOST__DEVICE__
     inline static int indxl2g(const int &indxloc, const int &nb, const int &iproc,
                               const int &isrcproc, const int &nprocs)
