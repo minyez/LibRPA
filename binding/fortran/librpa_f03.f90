@@ -133,7 +133,6 @@ module librpa_f03
       integer(c_int) :: parallel_routing
       integer(c_int) :: output_level
       real(c_double) :: vq_threshold
-      integer(c_int) :: use_soc
       integer(c_int) :: use_kpara_scf_eigvec
       integer(c_int) :: tfgrids_type
       integer(c_int) :: nfreq
@@ -143,15 +142,32 @@ module librpa_f03
       real(c_double) :: tfgrids_time_min
       real(c_double) :: tfgrids_time_interval
 
+      real(c_double) :: minimax_emin
+      real(c_double) :: minimax_emax
+      real(c_double) :: minimax_regulation
+
+      integer(c_int) :: use_fullcoul_eps
+      integer(c_int) :: use_fullcoul_exx
+      integer(c_int) :: use_fullcoul_wc
+
+      integer(c_int) :: n_bands_chi0
+      integer(c_int) :: n_bands_sigc
+
       ! RPA specific
       real(c_double) :: gf_threshold
       integer(c_int) :: use_scalapack_ecrpa
 
+      integer(c_int) :: use_shrink_abfs
+      integer(c_int) :: use_shrink_chi
+
       ! GW specific
       integer(c_int) :: n_params_anacon
       integer(c_int) :: use_scalapack_gw_wc
+      integer(c_int) :: use_cholesky_gw_wc
       integer(c_int) :: replace_w_head
       integer(c_int) :: option_dielect_func
+      integer(c_int) :: use_2d_dielectric
+      integer(c_int) :: load_sigc_from_file
       real(c_double) :: sqrt_coulomb_threshold
       real(c_double) :: libri_chi0_threshold_C
       real(c_double) :: libri_chi0_threshold_G
@@ -166,48 +182,107 @@ module librpa_f03
       integer(c_int) :: output_gw_sigc_mat
       integer(c_int) :: output_gw_sigc_mat_rt
       integer(c_int) :: output_gw_sigc_mat_rf
+      integer(c_int) :: option_output_Wc_Rf_mat
    end type LibrpaOptions_c
 
    !> @brief High-level Fortran wrapper for runtime options.
    !>
    !> This type provides a Fortran-friendly interface to LibRPA options.
    !> Initialize with init() method or call librpa_init_options() before use.
+   !> For full defaults and support status, see the runtime parameters guide.
    !>
-   !> @note The data layout must match the C struct. Do not add or remove members.
+   !> @note Keep these members synchronized with the C LibrpaOptions struct.
    type :: LibrpaOptions
       type(LibrpaOptions_c), private :: opts_c
 
+      !> Output directory for result files.
       character(len=LIBRPA_MAX_STRLEN) :: output_dir
+      !> Parallel distribution strategy; use LIBRPA_ROUTING_* constants.
       integer :: parallel_routing
+      !> Verbosity level; use LIBRPA_VERBOSE_* constants.
       integer :: output_level
+      !> Real-space Coulomb matrix screening threshold.
       real(dp) :: vq_threshold
-      logical :: use_soc
+      !> Experimental: use k-point-parallel distribution of SCF eigenvectors.
       logical :: use_kpara_scf_eigvec
+      !> Time-frequency integration grid type; use LIBRPA_TFGRID_* constants.
       integer :: tfgrids_type
+      !> Number of frequency integration grid points.
       integer :: nfreq
+      !> Minimum frequency for grid generation, in Hartree.
       real(dp) :: tfgrids_freq_min
+      !> Frequency interval for even-spaced grids, in Hartree.
       real(dp) :: tfgrids_freq_interval
+      !> Maximum frequency for grid generation, in Hartree.
       real(dp) :: tfgrids_freq_max
+      !> Minimum time for grid generation, in Hartree^-1.
       real(dp) :: tfgrids_time_min
+      !> Time interval for even-spaced grids, in Hartree^-1.
       real(dp) :: tfgrids_time_interval
+      !> Experimental: minimum transition energy for minimax grid generation.
+      real(dp) :: minimax_emin
+      !> Experimental: maximum transition energy for minimax grid generation.
+      real(dp) :: minimax_emax
+      !> Experimental: regulation parameter for minimax transformation matrix.
+      real(dp) :: minimax_regulation
+      !> Experimental: use full Coulomb interaction in \f$\varepsilon = 1 - v \chi^0\f$.
+      logical :: use_fullcoul_eps
+      !> Experimental: use full Coulomb interaction in the exact-exchange operator.
+      logical :: use_fullcoul_exx
+      !> Experimental: use full Coulomb interaction in \f$W^c = (\varepsilon^{-1} - 1) v\f$.
+      logical :: use_fullcoul_wc
+      !> Experimental: maximum number of bands for response-function construction.
+      integer :: n_bands_chi0
+      !> Experimental: maximum number of bands for correlation self-energy construction.
+      integer :: n_bands_sigc
+      !> Real-space Green's function screening threshold for response function.
       real(dp) :: gf_threshold
+      !> Use ScaLAPACK to calculate \f$E_\text{c}^{\text{RPA}}\f$.
       logical :: use_scalapack_ecrpa
+      !> Experimental: use a compressed auxiliary basis.
+      logical :: use_shrink_abfs
+      !> Experimental: build response matrices in the compressed auxiliary basis.
+      logical :: use_shrink_chi
+      !> Number of parameters for analytic continuation.
       integer :: n_params_anacon
+      !> Use ScaLAPACK for computing \f$W^c\f$ from \f$\chi^0\f$.
       logical :: use_scalapack_gw_wc
+      !> Experimental: use Cholesky factorization for computing \f$W^c\f$ from \f$\chi^0\f$.
+      logical :: use_cholesky_gw_wc
+      !> Experimental: replace dielectric matrix head by the macroscopic dielectric function.
       logical :: replace_w_head
+      !> Experimental: dielectric-function handling on the imaginary axis.
       integer :: option_dielect_func
+      !> Experimental: use the 2D dielectric-function branch where supported.
+      logical :: use_2d_dielectric
+      !> Experimental: load correlation self-energy matrix from file where supported.
+      logical :: load_sigc_from_file
+      !> Threshold for eigenvalues when taking the square root of Coulomb matrices.
       real(dp) :: sqrt_coulomb_threshold
+      !> LibRI threshold of LRI triple coefficients for response function.
       real(dp) :: libri_chi0_threshold_C
+      !> LibRI threshold of Green's function for response function.
       real(dp) :: libri_chi0_threshold_G
+      !> LibRI threshold of LRI triple coefficients for exact exchange.
       real(dp) :: libri_exx_threshold_C
+      !> LibRI threshold of density matrices for exact exchange.
       real(dp) :: libri_exx_threshold_D
+      !> LibRI threshold of Coulomb matrices for exact exchange.
       real(dp) :: libri_exx_threshold_V
+      !> LibRI threshold of LRI triple coefficients for G0W0 correlation self-energy.
       real(dp) :: libri_g0w0_threshold_C
+      !> LibRI threshold of Green's function for G0W0 correlation self-energy.
       real(dp) :: libri_g0w0_threshold_G
+      !> LibRI threshold of screened Coulomb matrix for G0W0 correlation self-energy.
       real(dp) :: libri_g0w0_threshold_Wc
+      !> Experimental: output correlation self-energy matrix in k-space and imaginary frequencies.
       logical :: output_gw_sigc_mat
+      !> Experimental: output correlation self-energy matrix in real space and imaginary time.
       logical :: output_gw_sigc_mat_rt
+      !> Experimental: output correlation self-energy matrix in real space and imaginary frequencies.
       logical :: output_gw_sigc_mat_rf
+      !> Experimental: output \f$W^c\f$ matrix in real space and imaginary frequency.
+      integer :: option_output_Wc_Rf_mat
 
       contains
          procedure :: init => librpa_init_options
@@ -289,7 +364,7 @@ module librpa_f03
    !> call h%destroy()
    !> @endcode
    type :: LibrpaHandler
-      type(c_ptr) :: ptr_c_handle = c_null_ptr
+      type(c_ptr), private :: ptr_c_handle = c_null_ptr
       contains
          ! Initialization and destruction
          procedure :: init => librpa_create_handler
@@ -298,6 +373,7 @@ module librpa_f03
          procedure :: set_scf_dimension => librpa_set_scf_dimension
          procedure :: set_wg_ekb_efermi => librpa_set_wg_ekb_efermi
          procedure :: set_wfc => librpa_set_wfc
+         procedure :: set_wfc_spinor => librpa_set_wfc_spinor
          procedure :: set_ao_basis_wfc => librpa_set_ao_basis_wfc
          procedure :: set_ao_basis_aux => librpa_set_ao_basis_aux
          procedure :: set_latvec_and_G => librpa_set_latvec_and_G
@@ -312,6 +388,7 @@ module librpa_f03
          procedure :: set_dielect_func_imagfreq => librpa_set_dielect_func_imagfreq
          procedure :: set_band_kvec => librpa_set_band_kvec
          procedure :: set_wfc_band => librpa_set_wfc_band
+         procedure :: set_wfc_band_spinor => librpa_set_wfc_band_spinor
          procedure :: set_band_occ_eigval => librpa_set_band_occ_eigval
          procedure :: reset_band_data => librpa_reset_band_data
          ! Compute
@@ -343,11 +420,11 @@ module librpa_f03
    ! Input functions interface
    !> \cond INTERNAL
    interface
-      subroutine librpa_set_scf_dimension_c(h, nspins, nkpts, nstates, nbasis) &
+      subroutine librpa_set_scf_dimension_c(h, nspins, nkpts, nstates, nbasis, nspinor) &
             bind(c, name="librpa_set_scf_dimension")
          import :: c_ptr, c_int
          type(c_ptr), value :: h
-         integer(c_int), value :: nspins, nkpts, nstates, nbasis
+         integer(c_int), value :: nspins, nkpts, nstates, nbasis, nspinor
       end subroutine librpa_set_scf_dimension_c
 
       subroutine librpa_set_wg_ekb_efermi_c(h, nspins, nkpts, nstates, wg, ekb, efermi) &
@@ -369,6 +446,15 @@ module librpa_f03
          real(c_double), dimension(*), intent(in) :: wfc_imag
       end subroutine librpa_set_wfc_c
 
+      subroutine librpa_set_wfc_spinor_c(h, ik, nstates_local, nbasis_local, wfc_up_real, wfc_up_imag, wfc_dn_real, wfc_dn_imag) &
+            bind(c, name="librpa_set_wfc_spinor")
+         import :: c_ptr, c_int, c_double
+         type(c_ptr), value :: h
+         integer(c_int), value :: ik, nstates_local, nbasis_local
+         real(c_double), dimension(*), intent(in) :: wfc_up_real, wfc_up_imag
+         real(c_double), dimension(*), intent(in) :: wfc_dn_real, wfc_dn_imag
+      end subroutine librpa_set_wfc_spinor_c
+
       subroutine librpa_set_wfc_packed_c(h, ispin, ik, nstates_local, nbasis_local, wfc) &
             bind(c, name="librpa_set_wfc_packed")
          import :: c_ptr, c_int
@@ -376,6 +462,14 @@ module librpa_f03
          integer(c_int), value :: ispin, ik, nstates_local, nbasis_local
          type(c_ptr), value :: wfc
       end subroutine librpa_set_wfc_packed_c
+
+      subroutine librpa_set_wfc_spinor_packed_c(h, ik, nstates_local, nbasis_local, wfc_up, wfc_dn) &
+            bind(c, name="librpa_set_wfc_spinor_packed")
+         import :: c_ptr, c_int
+         type(c_ptr), value :: h
+         integer(c_int), value :: ik, nstates_local, nbasis_local
+         type(c_ptr), value :: wfc_up, wfc_dn
+      end subroutine librpa_set_wfc_spinor_packed_c
 
       subroutine librpa_set_ao_basis_wfc_c(h, natoms, nbs_wfc) &
             bind(c, name="librpa_set_ao_basis_wfc")
@@ -508,6 +602,15 @@ module librpa_f03
          real(c_double), dimension(*), intent(in) :: wfc_imag
       end subroutine librpa_set_wfc_band_c
 
+      subroutine librpa_set_wfc_band_spinor_c(h, ik_band, nstates_local, nbasis_local, wfc_up_real, wfc_up_imag, wfc_dn_real, wfc_dn_imag) &
+            bind(c, name="librpa_set_wfc_band_spinor")
+         import :: c_ptr, c_int, c_double
+         type(c_ptr), value :: h
+         integer(c_int), value :: ik_band, nstates_local, nbasis_local
+         real(c_double), dimension(*), intent(in) :: wfc_up_real, wfc_up_imag
+         real(c_double), dimension(*), intent(in) :: wfc_dn_real, wfc_dn_imag
+      end subroutine librpa_set_wfc_band_spinor_c
+
       subroutine librpa_set_wfc_band_packed_c(h, ispin, ik_band, nstates_local, nbasis_local, wfc) &
             bind(c, name="librpa_set_wfc_band_packed")
          import :: c_ptr, c_int
@@ -515,6 +618,14 @@ module librpa_f03
          integer(c_int), value :: ispin, ik_band, nstates_local, nbasis_local
          type(c_ptr), value :: wfc
       end subroutine librpa_set_wfc_band_packed_c
+
+      subroutine librpa_set_wfc_band_spinor_packed_c(h, ik_band, nstates_local, nbasis_local, wfc_up, wfc_dn) &
+            bind(c, name="librpa_set_wfc_band_spinor_packed")
+         import :: c_ptr, c_int
+         type(c_ptr), value :: h
+         integer(c_int), value :: ik_band, nstates_local, nbasis_local
+         type(c_ptr), value :: wfc_up, wfc_dn
+      end subroutine librpa_set_wfc_band_spinor_packed_c
 
       subroutine librpa_reset_band_data_c(h) bind(c, name="librpa_reset_band_data")
          import :: c_ptr
@@ -771,7 +882,6 @@ contains
       call sync_opt(opts%parallel_routing,        opts%opts_c%parallel_routing,        direction)
       call sync_opt(opts%output_level,            opts%opts_c%output_level,            direction)
       call sync_opt(opts%vq_threshold,            opts%opts_c%vq_threshold,            direction)
-      call sync_opt(opts%use_soc,                 opts%opts_c%use_soc,                 direction)
       call sync_opt(opts%use_kpara_scf_eigvec,    opts%opts_c%use_kpara_scf_eigvec,    direction)
       call sync_opt(opts%tfgrids_type,            opts%opts_c%tfgrids_type,            direction)
       call sync_opt(opts%nfreq,                   opts%opts_c%nfreq,                   direction)
@@ -780,11 +890,24 @@ contains
       call sync_opt(opts%tfgrids_freq_max,        opts%opts_c%tfgrids_freq_max,        direction)
       call sync_opt(opts%tfgrids_time_min,        opts%opts_c%tfgrids_time_min,        direction)
       call sync_opt(opts%tfgrids_time_interval,   opts%opts_c%tfgrids_time_interval,   direction)
+      call sync_opt(opts%minimax_emin,            opts%opts_c%minimax_emin,            direction)
+      call sync_opt(opts%minimax_emax,            opts%opts_c%minimax_emax,            direction)
+      call sync_opt(opts%minimax_regulation,      opts%opts_c%minimax_regulation,      direction)
+      call sync_opt(opts%use_fullcoul_eps,        opts%opts_c%use_fullcoul_eps,        direction)
+      call sync_opt(opts%use_fullcoul_exx,        opts%opts_c%use_fullcoul_exx,        direction)
+      call sync_opt(opts%use_fullcoul_wc,         opts%opts_c%use_fullcoul_wc,         direction)
+      call sync_opt(opts%n_bands_chi0,            opts%opts_c%n_bands_chi0,            direction)
+      call sync_opt(opts%n_bands_sigc,            opts%opts_c%n_bands_sigc,            direction)
       call sync_opt(opts%gf_threshold,            opts%opts_c%gf_threshold,            direction)
       call sync_opt(opts%use_scalapack_ecrpa,     opts%opts_c%use_scalapack_ecrpa,     direction)
+      call sync_opt(opts%use_shrink_abfs,         opts%opts_c%use_shrink_abfs,         direction)
+      call sync_opt(opts%use_shrink_chi,          opts%opts_c%use_shrink_chi,          direction)
       call sync_opt(opts%n_params_anacon,         opts%opts_c%n_params_anacon,         direction)
       call sync_opt(opts%option_dielect_func,     opts%opts_c%option_dielect_func,     direction)
+      call sync_opt(opts%use_2d_dielectric,       opts%opts_c%use_2d_dielectric,       direction)
+      call sync_opt(opts%load_sigc_from_file,     opts%opts_c%load_sigc_from_file,     direction)
       call sync_opt(opts%use_scalapack_gw_wc,     opts%opts_c%use_scalapack_gw_wc,     direction)
+      call sync_opt(opts%use_cholesky_gw_wc,      opts%opts_c%use_cholesky_gw_wc,      direction)
       call sync_opt(opts%sqrt_coulomb_threshold,  opts%opts_c%sqrt_coulomb_threshold,  direction)
       call sync_opt(opts%replace_w_head,          opts%opts_c%replace_w_head,          direction)
       call sync_opt(opts%libri_chi0_threshold_C,  opts%opts_c%libri_chi0_threshold_C,  direction)
@@ -798,6 +921,7 @@ contains
       call sync_opt(opts%output_gw_sigc_mat,      opts%opts_c%output_gw_sigc_mat,      direction)
       call sync_opt(opts%output_gw_sigc_mat_rt,   opts%opts_c%output_gw_sigc_mat_rt,   direction)
       call sync_opt(opts%output_gw_sigc_mat_rf,   opts%opts_c%output_gw_sigc_mat_rf,   direction)
+      call sync_opt(opts%option_output_Wc_Rf_mat, opts%opts_c%option_output_Wc_Rf_mat, direction)
    end subroutine
 
    !> @brief Initialize runtime options to default values.
@@ -829,9 +953,9 @@ contains
    !>
    !> It should be called after MPI initialization and before other LibRPA functions.
    !>
-   !> @param  sw_redirect    Switch of redirecting standard output (default false)
-   !> @param  redirect_path  Path of redirected output, only used when `sw_redirect` is true
-   !> @param  sw_process     Switch of writing per-process output (default true)
+   !> @param[in] sw_redirect    Switch of redirecting standard output (default false)
+   !> @param[in] redirect_path  Path of redirected output, only used when `sw_redirect` is true
+   !> @param[in] sw_process     Switch of writing per-process output (default true)
    subroutine librpa_init_global(sw_redirect, redirect_path, sw_process)
       use iso_c_binding, only: c_null_char
       use mpi, only: MPI_COMM_WORLD
@@ -972,24 +1096,31 @@ contains
    !> @param[in]     nkpts    Number of k-points.
    !> @param[in]     nstates  Number of electronic states.
    !> @param[in]     nbasis   Number of basis functions.
-   subroutine librpa_set_scf_dimension(this, nspins, nkpts, nstates, nbasis)
+   !> @param[in]     nspinor  Number of spin components per wavefunction (default 1)
+   subroutine librpa_set_scf_dimension(this, nspins, nkpts, nstates, nbasis, nspinor)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
       integer, intent(in) :: nspins, nkpts, nstates, nbasis
+      integer, intent(in), optional :: nspinor
 
-      integer(c_int) :: nspins_c, nkpts_c, nstates_c, nbasis_c
+      integer(c_int) :: nspins_c, nkpts_c, nstates_c, nbasis_c, nspinor_c
       ! integer(c_int) :: st_istate_c, nstates_local_c, st_ibasis_c, nbasis_local_c
 
       nspins_c = int(nspins, kind=c_int)
       nkpts_c = int(nkpts, kind=c_int)
       nstates_c = int(nstates, kind=c_int)
       nbasis_c = int(nbasis, kind=c_int)
+      if (present(nspinor)) then
+         nspinor_c = int(nspinor, kind=c_int)
+      else
+         nspinor_c = 1
+      end if
       ! st_istate_c = int(st_istate, kind=c_int) - 1
       ! nstates_local_c = int(nstates_local, kind=c_int)
       ! st_ibasis_c = int(st_ibasis, kind=c_int) - 1
       ! nbasis_local_c = int(nbasis_local, kind=c_int)
 
-      call librpa_set_scf_dimension_c(this%ptr_c_handle, nspins_c, nkpts_c, nstates_c, nbasis_c)
+      call librpa_set_scf_dimension_c(this%ptr_c_handle, nspins_c, nkpts_c, nstates_c, nbasis_c, nspinor_c)
    end subroutine librpa_set_scf_dimension
 
    !> @brief Set occupation numbers, eigenvalues, and Fermi level.
@@ -1030,11 +1161,12 @@ contains
 
    !> @brief Set the wave-function expansion coefficients
    !>
-   !> @param ispin          spin index (starting from 1) of the wave function
-   !> @param ik             (global) k-point index (starting from 1) of the wave function
-   !> @param nstates_local  local dimenstion (number of states) of the parsed wave-function
-   !> @param nbasis_local   local dimenstion (number of basis functions) of the parsed wave-function
-   !> @param wfc_cplx       Complex-valued wave function to parse
+   !> @param[in,out] this           Handler.
+   !> @param[in]     ispin          Spin index (starting from 1) of the wave function.
+   !> @param[in]     ik             (Global) k-point index (starting from 1) of the wave function.
+   !> @param[in]     nstates_local  Local dimension (number of states) of the parsed wave function.
+   !> @param[in]     nbasis_local   Local dimension (number of basis functions) of the parsed wave function.
+   !> @param[in]     wfc_cplx       Complex-valued wave function to parse.
    subroutine librpa_set_wfc(this, ispin, ik, nstates_local, nbasis_local, wfc_cplx)
       use iso_c_binding, only: c_int, c_double, c_loc
       implicit none
@@ -1066,6 +1198,51 @@ contains
       end if
    end subroutine librpa_set_wfc
 
+   !> @brief Set the wave-function expansion coefficients, spinor format
+   !>
+   !> @param[in,out] this           Handler.
+   !> @param[in]     ik             (Global) k-point index (starting from 1) of the wave function.
+   !> @param[in]     nstates_local  Local dimension (number of states) of the parsed wave function.
+   !> @param[in]     nbasis_local   Local dimension (number of basis functions) of the parsed wave function.
+   !> @param[in]     wfc_up_cplx    Complex-valued wave function to parse (spin-up component).
+   !> @param[in]     wfc_dn_cplx    Complex-valued wave function to parse (spin-down component).
+   subroutine librpa_set_wfc_spinor(this, ik, nstates_local, nbasis_local, wfc_up_cplx, wfc_dn_cplx)
+      use iso_c_binding, only: c_int, c_double, c_loc
+      implicit none
+      class(LibrpaHandler), intent(inout) :: this
+      integer, intent(in) :: ik, nstates_local, nbasis_local
+      complex(dp), intent(in), target :: wfc_up_cplx(nbasis_local, nstates_local)
+      complex(dp), intent(in), target :: wfc_dn_cplx(nbasis_local, nstates_local)
+
+      real(c_double), allocatable :: wfc_up_real(:,:), wfc_up_imag(:,:)
+      real(c_double), allocatable :: wfc_dn_real(:,:), wfc_dn_imag(:,:)
+      integer(c_int) :: ik_c, nstates_local_c, nbasis_local_c
+
+      ik_c = int(ik-1, kind=c_int)
+      nstates_local_c = int(nstates_local, kind=c_int)
+      nbasis_local_c = int(nbasis_local, kind=c_int)
+
+      if (dp == c_double) then
+         ! Fast path without create intermediate Fortran arrays
+         call librpa_set_wfc_spinor_packed_c(&
+            this%ptr_c_handle, ik_c, &
+            nstates_local_c, nbasis_local_c, c_loc(wfc_up_cplx), c_loc(wfc_dn_cplx))
+      else
+         allocate(wfc_up_real(nbasis_local, nstates_local))
+         allocate(wfc_up_imag(nbasis_local, nstates_local))
+         allocate(wfc_dn_real(nbasis_local, nstates_local))
+         allocate(wfc_dn_imag(nbasis_local, nstates_local))
+         wfc_up_real = real(wfc_up_cplx, kind=c_double)
+         wfc_up_imag = real(aimag(wfc_up_cplx), kind=c_double)
+         wfc_dn_real = real(wfc_dn_cplx, kind=c_double)
+         wfc_dn_imag = real(aimag(wfc_dn_cplx), kind=c_double)
+         call librpa_set_wfc_spinor_c(this%ptr_c_handle, ik_c, &
+            nstates_local_c, nbasis_local_c, wfc_up_real, wfc_up_imag, wfc_dn_real, wfc_dn_imag)
+         deallocate(wfc_up_real, wfc_up_imag)
+         deallocate(wfc_dn_real, wfc_dn_imag)
+      end if
+   end subroutine librpa_set_wfc_spinor
+
    subroutine set_ao_basis(h, natoms, nbs, is_aux)
       implicit none
       type(LibrpaHandler), intent(inout) :: h
@@ -1089,8 +1266,9 @@ contains
 
    !> @brief Set the wave-function atomic basis
    !>
-   !> @param natoms   number of atoms
-   !> @param nbs_wfc  number of wave-function basis on each atom
+   !> @param[in,out] this     Handler.
+   !> @param[in]     natoms   Number of atoms.
+   !> @param[in]     nbs_wfc  Number of wave-function basis functions on each atom.
    subroutine librpa_set_ao_basis_wfc(this, natoms, nbs_wfc)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
@@ -1102,8 +1280,9 @@ contains
 
    !> @brief Set the auxiliary atomic basis
    !>
-   !> @param natoms   number of atoms
-   !> @param nbs_aux  number of auxiliary basis functions on each atom
+   !> @param[in,out] this     Handler.
+   !> @param[in]     natoms   Number of atoms.
+   !> @param[in]     nbs_aux  Number of auxiliary basis functions on each atom.
    subroutine librpa_set_ao_basis_aux(this, natoms, nbs_aux)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
@@ -1117,8 +1296,9 @@ contains
    !>
    !> Each column is a lattice/reciprocal lattice vector.
    !>
-   !> @param latt     lattice vectors (in Bohr)
-   !> @param recplatt reciprocal lattice vectors (in Bohr^-1)
+   !> @param[in,out] this      Handler.
+   !> @param[in]     latt      Lattice vectors (in Bohr).
+   !> @param[in]     recplatt  Reciprocal lattice vectors (in Bohr^-1).
    !>
    subroutine librpa_set_latvec_and_G(this, latt, recplatt)
       implicit none
@@ -1134,9 +1314,10 @@ contains
 
    !> @brief Set types and coordinates of the atoms in the model
    !>
-   !> @param natoms     number of atoms
-   !> @param types      species type of each atom
-   !> @param pos_cart   Cartesian coordinates of each atom
+   !> @param[in,out] this       Handler.
+   !> @param[in]     natoms     Number of atoms.
+   !> @param[in]     types      Species type of each atom.
+   !> @param[in]     posi_cart  Cartesian coordinates of each atom.
    !>
    subroutine librpa_set_atoms(this, natoms, types, posi_cart)
       implicit none
@@ -1201,8 +1382,9 @@ contains
    !> Example: four-k-point case where the first two and last points are in the irreducbile sector,
    !>          and the third point is mapped to the second, then map_ibzk should be (1, 2, 2, 4)
    !>
-   !> @param nkpts     number of k-points in the full Brillouin zone
-   !> @param map_ibzk  mapping to the k-point in the irreducible sector
+   !> @param[in,out] this      Handler.
+   !> @param[in]     nkpts     Number of k-points in the full Brillouin zone.
+   !> @param[in]     map_ibzk  Mapping to the k-point in the irreducible sector.
    !>
    subroutine librpa_set_ibz_mapping(this, nkpts, map_ibzk)
       implicit none
@@ -1223,14 +1405,15 @@ contains
 
    !> @brief Set the local RI coefficients
    !>
-   !> @param routing  Parallel routing, should be one of the `LIBRPA_ROUTING_*` parameters
-   !> @param i_atom   Index of atom I (starting from 1)
-   !> @param j_atom   Index of atom J (starting from 1)
-   !> @param nao_i    Number of wave-functions basis on atom I
-   !> @param nao_j    Number of wave-functions basis on atom J
-   !> @param naux_i   Number of auxiliary basis on atom I
-   !> @param r        Index of unit cell in the crystal, with (0,0,0) at the origin
-   !> @param coeff    Local RI coefficients associated with atom pair I-J, with auxiliary basis on I.
+   !> @param[in,out] this     Handler.
+   !> @param[in]     routing  Parallel routing, should be one of the `LIBRPA_ROUTING_*` parameters.
+   !> @param[in]     i_atom   Index of atom I (starting from 1).
+   !> @param[in]     j_atom   Index of atom J (starting from 1).
+   !> @param[in]     nao_i    Number of wave-function basis functions on atom I.
+   !> @param[in]     nao_j    Number of wave-function basis functions on atom J.
+   !> @param[in]     naux_i   Number of auxiliary basis functions on atom I.
+   !> @param[in]     r        Index of unit cell in the crystal, with (0,0,0) at the origin.
+   !> @param[in]     coeff    Local RI coefficients associated with atom pair I-J, with auxiliary basis on I.
    !>
    subroutine librpa_set_lri_coeff(this, routing, i_atom, j_atom, nao_i, nao_j, naux_i, r, coeff)
       implicit none
@@ -1525,11 +1708,12 @@ contains
 
    !> @brief Set the wave-function expansion coefficients for band calculation
    !>
-   !> @param ispin          spin index (starting from 1) of the wave function
-   !> @param ik_band        (global) k-point index (starting from 1) of the wave function
-   !> @param nstates_local  local dimenstion (number of states) of the parsed wave-function
-   !> @param nbasis_local   local dimenstion (number of basis functions) of the parsed wave-function
-   !> @param wfc_cplx       Complex-valued wave function to parse
+   !> @param[in,out] this           Handler.
+   !> @param[in]     ispin          Spin index (starting from 1) of the wave function.
+   !> @param[in]     ik_band        (Global) k-point index (starting from 1) of the wave function.
+   !> @param[in]     nstates_local  Local dimension (number of states) of the parsed wave function.
+   !> @param[in]     nbasis_local   Local dimension (number of basis functions) of the parsed wave function.
+   !> @param[in]     wfc_cplx       Complex-valued wave function to parse.
    subroutine librpa_set_wfc_band(this, ispin, ik_band, nstates_local, nbasis_local, wfc_cplx)
       use iso_c_binding, only: c_int, c_double, c_loc
       implicit none
@@ -1561,6 +1745,52 @@ contains
          deallocate(wfc_real, wfc_imag)
       end if
    end subroutine librpa_set_wfc_band
+
+   !> @brief Set the wave-function expansion coefficients for band calculation, spinor format
+   !>
+   !> @param[in,out] this           Handler.
+   !> @param[in]     ik_band        (Global) k-point index (starting from 1) of the wave function.
+   !> @param[in]     nstates_local  Local dimension (number of states) of the parsed wave function.
+   !> @param[in]     nbasis_local   Local dimension (number of basis functions) of the parsed wave function.
+   !> @param[in]     wfc_up_cplx    Complex-valued wave function to parse (spin-up component).
+   !> @param[in]     wfc_dn_cplx    Complex-valued wave function to parse (spin-down component).
+   subroutine librpa_set_wfc_band_spinor(this, ik_band, nstates_local, nbasis_local, wfc_up_cplx, wfc_dn_cplx)
+      use iso_c_binding, only: c_int, c_double, c_loc
+      implicit none
+
+      class(LibrpaHandler), intent(inout) :: this
+      integer, intent(in) :: ik_band, nstates_local, nbasis_local
+      complex(dp), intent(in), target :: wfc_up_cplx(nbasis_local, nstates_local)
+      complex(dp), intent(in), target :: wfc_dn_cplx(nbasis_local, nstates_local)
+
+      real(c_double), allocatable :: wfc_up_real(:,:), wfc_up_imag(:,:)
+      real(c_double), allocatable :: wfc_dn_real(:,:), wfc_dn_imag(:,:)
+      integer(c_int) :: ikb_c, nstates_local_c, nbasis_local_c
+
+      ikb_c = int(ik_band-1, kind=c_int)
+      nstates_local_c = int(nstates_local, kind=c_int)
+      nbasis_local_c = int(nbasis_local, kind=c_int)
+
+      if (dp == c_double) then
+         ! Fast path without create intermediate Fortran arrays
+         call librpa_set_wfc_band_spinor_packed_c(&
+            this%ptr_c_handle, ikb_c, &
+            nstates_local_c, nbasis_local_c, c_loc(wfc_up_cplx), c_loc(wfc_dn_cplx))
+      else
+         allocate(wfc_up_real(nbasis_local, nstates_local))
+         allocate(wfc_up_imag(nbasis_local, nstates_local))
+         allocate(wfc_dn_real(nbasis_local, nstates_local))
+         allocate(wfc_dn_imag(nbasis_local, nstates_local))
+         wfc_up_real = real(wfc_up_cplx, kind=c_double)
+         wfc_up_imag = real(aimag(wfc_up_cplx), kind=c_double)
+         wfc_dn_real = real(wfc_dn_cplx, kind=c_double)
+         wfc_dn_imag = real(aimag(wfc_dn_cplx), kind=c_double)
+         call librpa_set_wfc_band_spinor_c(this%ptr_c_handle, ikb_c, &
+            nstates_local_c, nbasis_local_c, wfc_up_real, wfc_up_imag, wfc_dn_real, wfc_dn_imag)
+         deallocate(wfc_up_real, wfc_up_imag)
+         deallocate(wfc_dn_real, wfc_dn_imag)
+      end if
+   end subroutine librpa_set_wfc_band_spinor
 
    !> @brief Reset band structure data.
    !> @param[in,out] this  Handler.

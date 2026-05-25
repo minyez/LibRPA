@@ -20,7 +20,14 @@ list(APPEND exe_sources
   # task/screened_coulomb.cpp
   task/print_minimax.cpp
   # task/test.cpp
-)
+  # task_qsgw.cpp
+  # task_qsgwA.cpp
+  # task_qsgw_band.cpp
+  # task_hf_band.cpp
+  # task_scRPA.cpp
+  # task_scRPA_band.cpp
+  # task_screened_coulomb.cpp
+  )
 
 target_include_directories(rpa_exe PRIVATE rpa_lib)
 target_sources(rpa_exe PRIVATE ${exe_sources})

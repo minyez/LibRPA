@@ -1,6 +1,6 @@
 #include "../core/meanfield.h"
-#include <utility>
 #include <map>
+
 #include "testutils.h"
 
 void test_BCC_He_gamma_minimal_basis_aims()
@@ -22,7 +22,7 @@ void test_BCC_He_gamma_minimal_basis_aims()
           1.130014642,
           1.130014642,
     };
-    std::vector<complex<double>> wkc_gamma_T 
+    std::vector<complex<double>> wkc_gamma_T
     {
        0.635395184437372,  0.747426907197624, -0.000000000000000,  0.000000000000000,  0.000000000000000, -0.000000000000000,  0.000000000000000, -0.000000000000000,
        0.000000000000000,  0.000000000000000,  0.000000046406191, -0.379780880349053, -0.566034156121301, -0.000000021962747, -0.074956542623863,  0.783355936987987,
@@ -33,15 +33,15 @@ void test_BCC_He_gamma_minimal_basis_aims()
       -0.000000000000000,  0.000000000000000, -0.000000013452817, -0.566034156121295,  0.379780880349048, -0.000000008499557,  0.783355936987995,  0.074956542623863,
        0.000000000000000, -0.000000000000000,  0.681636400857993,  0.000000014684413,  0.000000046031304, -0.786933928164535, -0.000000006368930, -0.000000022672483,
     };
-    mf.get_eigenvectors()[0][0].create(8, 8);
+    mf.get_eigenvectors()[0][0][0].create(8, 8);
     for (int ib = 0; ib < 8; ib++)
         mf.get_eigenvals()[0](0, ib) = eig[ib];
     for (int iw = 0; iw < 8; iw++)
         for (int ib = 0; ib < 8; ib++)
-            mf.get_eigenvectors()[0][0](ib, iw) = wkc_gamma_T[iw*8+ib];
+            mf.get_eigenvectors()[0][0][0](ib, iw) = wkc_gamma_T[iw * 8 + ib];
 
     // test density matrix
-    const auto dmat_gamma = mf.get_dmat_cplx(0, 0);
+    const auto dmat_gamma = mf.get_dmat_cplx(0, 0, 0, 0);
     const complex<double> thres = 1e-10;
     assert(fequal(dmat_gamma(0, 0), { 0.962374022009208e-00, 0}, thres));
     assert(fequal(dmat_gamma(4, 0), {-1.549199411968699e-01, 0}, thres));
@@ -49,14 +49,14 @@ void test_BCC_He_gamma_minimal_basis_aims()
     assert(fequal(dmat_gamma(4, 4), { 0.962374022009208e+00, 0}, thres));
 
     // test Green's function G(i \tau). approaches to (minus) density matrix for \tau -> 0^-
-    const auto gf_gamma = mf.get_gf_cplx_imagtime(0, 0, -1e-12);
+    const auto gf_gamma = mf.get_gf_cplx_imagtime(0, 0, 0, 0, -1e-12);
     assert(fequal(gf_gamma(0, 0), {-0.962374022009208e-00, 0}, thres));
     assert(fequal(gf_gamma(4, 0), { 1.549199411968699e-01, 0}, thres));
     assert(fequal(gf_gamma(0, 4), { 1.549199411968699e-01, 0}, thres));
     assert(fequal(gf_gamma(4, 4), {-0.962374022009208e+00, 0}, thres));
 }
 
-int main (int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     test_BCC_He_gamma_minimal_basis_aims();
     return 0;

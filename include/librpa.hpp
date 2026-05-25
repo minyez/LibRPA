@@ -104,9 +104,9 @@ int get_patch_version(void);
  *
  * Must be called after MPI_Init() and before any other LibRPA functions.
  *
- * @param switch_redirect_stdout If true, redirect stdout to a file.
- * @param redirect_path          Path for redirected output (default: "stdout").
- * @param switch_process_output  If true, enable per-process output (default: true).
+ * @param[in] switch_redirect_stdout If true, redirect stdout to a file.
+ * @param[in] redirect_path          Path for redirected output (default: "stdout").
+ * @param[in] switch_process_output  If true, enable per-process output (default: true).
  * @see librpa_init_global
  */
 void init_global(Switch switch_redirect_stdout = LIBRPA_SWITCH_OFF, const char *redirect_path = "stdout",
@@ -165,7 +165,7 @@ public:
 
     /**
      * @brief Construct and initialize handler with MPI communicator.
-     * @param comm MPI communicator for parallel computation.
+     * @param[in] comm MPI communicator for parallel computation.
      */
     Handler(MPI_Comm comm);
 
@@ -174,7 +174,7 @@ public:
 
     /**
      * @brief Initialize handler with given MPI communicator.
-     * @param comm MPI communicator.
+     * @param[in] comm MPI communicator.
      */
     void init(MPI_Comm comm);
 
@@ -192,8 +192,8 @@ public:
 
     /* Input (set) functions */
 
-    /** @brief Set SCF wavefunction dimension (numbers of spins, k-points, states, basis). */
-    void set_scf_dimension(int nspins, int nkpts, int nstates, int nbasis);
+    /** @brief Set mean-field wavefunction dimensions (numbers of spins, k-points, states, basis and spin components). */
+    void set_scf_dimension(int nspins, int nkpts, int nstates, int nbasis, int nspinor = 1);
 
     /** @brief Set occupation numbers, eigenvalues, and Fermi level. */
     void set_wg_ekb_efermi(int nspins, int nkpts, int nstates, const double *wg, const double *ekb,
@@ -203,9 +203,19 @@ public:
     void set_wfc(int ispin, int ik, int nstates_local, int nbasis_local, const double *wfc_real,
                  const double *wfc_imag);
 
+    /** @brief Set wavefunction coefficients of spinor format (separated real/imag arrays). */
+    void set_wfc_spinor(int ik, int nstates_local, int nbasis_local,
+                        const double* wfc_up_real, const double* wfc_up_imag,
+                        const double* wfc_dn_real, const double* wfc_dn_imag);
+
     /** @brief Set wavefunction coefficients (packed complex array). */
     void set_wfc_packed(int ispin, int ik, int nstates_local, int nbasis_local,
                         const std::complex<double> *wfc);
+
+    /** @brief Set wavefunction coefficients of spinor format (packed complex array). */
+    void set_wfc_spinor_packed(int ik, int nstates_local, int nbasis_local,
+                               const std::complex<double> *wfc_up,
+                               const std::complex<double> *wfc_dn);
 
     /** @brief Set atomic orbital basis size for wavefunctions. */
     void set_ao_basis_wfc(const std::vector<size_t> &nbs_wfc);
@@ -262,9 +272,19 @@ public:
     void set_wfc_band(int ispin, int ik_band, int nstates_local, int nbasis_local,
                       const double *wfc_real, const double *wfc_imag);
 
+    /** @brief Set wavefunction coefficients of spinor format for band k-point (separated real/imag arrays). */
+    void set_wfc_band_spinor(int ik_band, int nstates_local, int nbasis_local,
+                             const double* wfc_up_real, const double* wfc_up_imag,
+                             const double* wfc_dn_real, const double* wfc_dn_imag);
+
     /** @brief Set wavefunction for band k-point (packed complex). */
     void set_wfc_band_packed(int ispin, int ik_band, int nstates_local, int nbasis_local,
                              const std::complex<double> *wfc);
+
+    /** @brief Set wavefunction coefficients of spinor format for band k-point (packed complex array). */
+    void set_wfc_band_spinor_packed(int ik_band, int nstates_local, int nbasis_local,
+                                    const std::complex<double> *wfc_up,
+                                    const std::complex<double> *wfc_dn);
 
     /** @brief Reset band structure data. */
     void reset_band_data();

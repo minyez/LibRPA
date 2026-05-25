@@ -15,6 +15,12 @@
 #include "../src/utils/profiler.h"
 #include "../src/utils/utils_mem.h"
 #include "../src/io/fs.h"
+// #include "task_qsgw.h"
+// #include "task_qsgwA.h"
+// #include "task_qsgw_band.h"
+// #include "task_hf_band.h"
+// #include "task_scRPA.h"
+// #include "task_scRPA_band.h"
 
 static void initialize(int argc, char **argv)
 {
@@ -66,11 +72,11 @@ static void finalize(bool success)
     driver::h.free();
     profiler.stop("driver_total");
 
-    int is_root = mpi_comm_global_h.myid;
+    bool is_root = mpi_comm_global_h.myid == 0;
     mpi_comm_global_h.barrier();
     librpa::finalize_global();
 
-    if (is_root == 0)
+    if (is_root)
     {
         librpa::print_profile();
         if (success)
@@ -122,7 +128,6 @@ int main(int argc, char **argv)
 
     task_t task = get_task(driver_params.task);
 
-    // Parse strucutre, RI, Coulomb data if the task is going beyond just print minimax grids
     if (task != task_t::print_minimax)
     {
         profiler.start("driver_struct", "Structure");
@@ -174,6 +179,15 @@ int main(int argc, char **argv)
         read_ri(driver_params.input_dir, driver::opts.parallel_routing);
         lib_printf_root("Actual parallel routing used: %s\n", get_routing_string(driver::opts.parallel_routing).c_str());
         profiler.stop("driver_read_ri");
+
+        const bool use_shrink_abfs = opts.use_shrink_abfs;
+        // TODO: need to include the shrinked basis information in another AtomicBasis object
+        if (use_shrink_abfs)
+        {
+            read_ri_shrink(driver_params.input_dir);
+        }
+        // Vq distributed using the same strategy
+        // There should be no duplicate for V
     }
 
     mpi_comm_global_h.barrier();
@@ -184,7 +198,6 @@ int main(int argc, char **argv)
             const auto cputime = profiler.get_cpu_time_last("driver_read_common_input_data") / 60.0;
             const auto walltime = profiler.get_wall_time_last("driver_read_common_input_data") / 60.0;
             lib_printf("Initialization finished, Wall/CPU time [min]: %12.4f %12.4f\n", walltime, cputime);
-
         }
         double freemem;
         auto flag = get_node_free_mem(freemem);

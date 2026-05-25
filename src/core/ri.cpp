@@ -3,6 +3,7 @@
 #include <memory.h>
 
 // #include "../math/utils_matrix_mpi.h"
+// #include "../math/matrix.h"
 // #include "../mpi/global_mpi.h"
 // #include "params.h"
 // #include "pbc.h"
@@ -85,6 +86,11 @@ size_t Cs_LRI::n_data_bytes() const
 }
 
 // Cs_LRI Cs_data;
+void Cs_LRI_clx::clear()
+{
+    this->data_IJR.clear();
+    this->data_libri.clear();
+}
 
 // atpair_k_cplx_mat_t Vq;
 // atpair_k_cplx_mat_t Vq_cut;

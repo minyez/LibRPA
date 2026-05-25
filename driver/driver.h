@@ -17,8 +17,19 @@ struct DriverParams
     std::string constants_choice;
     std::string input_dir;
 
+    bool use_spinor_wfc;
+
     // Threshold for real-space LRI triple coefficients.
     double cs_threshold;
+
+    // Output energy_qp file for external BSE calculation
+    bool output_energy_qp;
+
+    // Output gw energy for HamGNN machine learning
+    bool output_hamgnn;
+
+    // Switch of using pyatb meanfield for head/wing calculation
+    bool use_pyatb;
 
     // TODO: Move the following to the public LibrpaOptions class
     bool output_gw_spec_func;
@@ -51,6 +62,8 @@ extern int n_ibz_kpoints;
 extern int n_kpoints_band;
 extern int n_states;
 extern int n_basis_wfc;
+extern int n_basis_ao;
+extern int n_spinor;
 
 // Used for parallel distribution of input SCF KS eigenvectors over k-points
 extern std::vector<int> iks_eigvec_this;

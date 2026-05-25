@@ -6,6 +6,7 @@
 #include "../core/atom.h"
 #include "../core/atomic_basis.h"
 #include "../core/chi0.h"
+#include "../core/dielecmodel.h"
 #include "../core/exx.h"
 #include "../core/geometry.h"
 #include "../core/gw.h"
@@ -58,16 +59,21 @@ public:
     std::vector<Vector3_Order<int>> Rs_local;
 
     // Physical system.
-    //! Handling object for basic set functions for wave function expansion.
+    //! Handling object for basis functions for wave function expansion.
     AtomicBasis basis_wfc;
-    //! Handling object for auxiliary basic set functions for RI
+    //! Handling object for auxiliary basis functions for RI
     AtomicBasis basis_aux;
+    //! Handling object for shrinked auxiliary basis functions for RI
+    AtomicBasis basis_aux_shrink;
     //! Atomic structure
     Atoms atoms;
     //! Periodic boundary setting
     PeriodicBoundaryData pbc;
     //! Fractional coordiantes of k-points for band calculation
     std::vector<Vector3_Order<double>> kfrac_band_list;
+
+    //! Overlap matrix between normal and shrinked ABFs
+    std::map<Vector3_Order<double>, ComplexMatrix> sinvS;
 
     // Input data.
     //! Mean-field starting point
@@ -78,6 +84,8 @@ public:
     TFGrids tfg;
     //! Real-space RI coefficient tensors (local RI)
     Cs_LRI cs_data;
+    //! Real-space RI coefficient tensors (local RI) of shrinked auxiliary basis
+    Cs_LRI cs_data_shrink;
     // atom-pair distribution of Coulomb matrices
     atpair_k_cplx_mat_t vq;
     atpair_k_cplx_mat_t vq_cut;
@@ -94,6 +102,8 @@ public:
     // Only used for head correction of GW calculation
     std::vector<double> epsmacs_imagfreq;
     std::vector<double> omegas_imagfreq;
+
+    std::unique_ptr<diele_func> p_headwing;
 
     // Output data, held by computation objects
     // All computation data objects should be contained here as pointers

@@ -12,11 +12,17 @@
 #include "../src/math/vector3_order.h"
 #include "librpa.hpp"
 
+// TODO: remove this include and internal datatypes in signature.
+// Data objects of internal types should be accessed in the implementation.
+#include "../src/core/meanfield.h"
+
 using std::string;
 using librpa_int::matrix;
 using librpa_int::atpair_t;
 using librpa_int::Vector3_Order;
 using librpa_int::atpair_R_mat_t;
+using librpa_int::MeanField;
+using librpa_int::ComplexMatrix;
 
 /*!
  * @brief Read occupation numbers and eigenvalues of SCF calculation
@@ -38,11 +44,20 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing);
 
 size_t read_Cs(const string &dir_path, double threshold, const std::vector<atpair_t> &local_atpair);
 
-size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int myid, int nprocs);
+void read_velocity(const string &file_path, MeanField &mf);
+void read_velocity_aims(MeanField &mf, const std::string &file_path);
+
+size_t read_Cs_evenly_distribute(const std::string &dir_path, double threshold, int myid, int nprocs,
+                                 const std::string keyword = "Cs_data");
 
 size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cut_coulomb);
 
-size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double threshold,
+void read_ri_shrink(const string &dir_path);
+
+size_t read_shrink_sinvS(const string &dir_path, const string &vq_fprefix,
+                         std::map<Vector3_Order<double>, ComplexMatrix> &sinvS);
+
+size_t read_Vq_row(const std::string &dir_path, const std::string &vq_fprefix, double threshold,
                    const std::vector<atpair_t> &local_atpair, bool is_cut_coulomb);
 
 void read_stru(const std::string &file_path);
@@ -66,8 +81,9 @@ void read_band_kpath_info(const string &file_path);
 
 void read_band_meanfield_data(const string &dir_path);
 
-std::vector<matrix> read_vxc_band(const string &dir_path, int n_states, int n_spin, int n_kpoints_band);
+std::vector<matrix> read_vxc_band(const string &dir_path, int n_states, int n_spin,
+                                  int n_kpoints_band);
 
-//! Read ELSI CSC format matrix file
-void read_elsi_csc(const string &file_path, bool save_row_major, std::vector<double> &mat, int &n_basis, bool &is_real);
-#endif // !READ_DATA_H
+void read_elsi_csc(const std::string &file_path, bool save_row_major, std::vector<double> &mat,
+                   int &n_basis, bool &is_real);
+#endif  // !READ_DATA_H

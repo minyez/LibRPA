@@ -49,7 +49,7 @@ static MeanField init_mf_pbc(int nk, int nb, int nocc, double gap,
             // Every eigenvector matrix is identity
             // Only (0,0,0) has non-zero density matrix. Other R-point are cancelled out.
             mat.set_as_identity_matrix();
-            mf.get_eigenvectors()[0][ik] = std::move(mat);
+            mf.get_eigenvectors()[0][0][ik] = std::move(mat);
         }
     }
 
@@ -68,6 +68,10 @@ static void test_dmat_cplx_Rs_kpara(int nk, int nb, int nocc)
     std::vector<Vector3_Order<double>> kfrac_list;
     std::vector<Vector3_Order<int>> Rs;
     const auto mf = init_mf_pbc(nk, nb, nocc, 1.0, kfrac_list, Rs);
+
+    // cout << mf.get_n_kpoints() << endl;
+    // cout << mf.get_n_spinor() << endl;
+    // cout << mf.get_n_spins() << endl;
 
     const auto dm_Rs = get_dmat_cplx_Rs_kpara(0, mf, kfrac_list, Rs, mpi_comm_global_h);
     assert(dm_Rs.size() == Rs.size());
@@ -186,7 +190,7 @@ static void test_dmat_cplx_Rs_BCC_He_k222_light_min_2p_aims()
     for (int ik = 0; ik < nk; ik++)
     {
         if (ik % size_global != myid_global) continue;
-        auto &eig = mf.get_eigenvectors()[0][ik];
+        auto &eig = mf.get_eigenvectors()[0][0][ik];
         eig.create(nb, nb);
         for (int iao = 0; iao < nb; iao++)
         {
@@ -212,7 +216,7 @@ static void test_dmat_cplx_Rs_BCC_He_k222_light_min_2p_aims()
 
     if (size_global == 1)
     {
-        auto dmat_serial = mf.get_dmat_cplx_R(0, kfrac_list, R).real();
+        auto dmat_serial = mf.get_dmat_cplx_R(0, 0, 0, kfrac_list, R).real();
         // print_matrix("dmat_serial[-1,0,0]", dmat_serial, ofs_myid, true);
         assert(fequal_array(nb * nb, dmat_ref_m100.ptr(), dmat_serial.c, false));
     }

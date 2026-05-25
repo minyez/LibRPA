@@ -884,6 +884,34 @@ T get_determinant(const matrix_m<T> &m)
     return det;
 }
 
+template <typename T>
+void eigsh(const matrix_m<std::complex<T>> &mat, std::vector<T> &w, matrix_m<std::complex<T>> &v)
+{
+    assert (mat.nr() == mat.nc());
+    const char jobz = 'V';
+    const char uplo = 'U';
+    const int n = mat.nr();
+    int nb;
+    if (matrix_m<T>::is_double)
+        nb = LapackConnector::ilaenv(1, "zheev", "VU", n, -1, -1, -1);
+    else
+        nb = LapackConnector::ilaenv(1, "cheev", "VU", n, -1, -1, -1);
+
+    // Copy matrix data to output
+    v = mat.copy();
+
+    int lwork = mat.nc() * (nb+1);
+    int info = 0;
+    w.resize(n);
+    T wpow[n];
+    T rwork[3*n-2];
+    std::complex<T> work[lwork];
+    if (v.is_row_major())
+        LapackConnector::heev(jobz, uplo, n, v.ptr(), n, w.data(), work, lwork, rwork, info);
+    else
+        LapackConnector::heev_f(jobz, uplo, n, v.ptr(), n, w.data(), work, lwork, rwork, info);
+}
+
 template <typename T> matrix_m<std::complex<T>>
 power_hemat(matrix_m<std::complex<T>> &mat,
             T power, bool keep_ev, bool filter_original,
@@ -1067,28 +1095,56 @@ inline matrix_m<std::complex<T>> random_he(int n, const std::complex<T> &lb, con
     return m;
 }
 
-//! generate a random unitary matrix, implemented as using ?heev upon hermitian matrix
 template <typename T>
-inline matrix_m<std::complex<T>> random_unitary(int n, MAJOR major = MAJOR::ROW)
+inline matrix_m<T> random_orthogonal(int n, MAJOR major = MAJOR::ROW)
 {
     int info;
     // always use column major here to ensure that the eigvec construction is correct
-    auto mat = random_he<T>(n, {-1.0, -1.0}, {1.0, 1.0}, MAJOR::COL);
-    const char *name = mat.is_double? "ZHETRD" : "CHETRD";
-    // printf("%s\n", name);
+    auto mat = random_sy<T>(n, -1.0, 1.0, MAJOR::COL);
+    const char *name = mat.is_double? "DSYTRD" : "SSYTRD";
     int nb = LapackConnector::ilaenv(1, name, "VU", n, -1, -1, -1);
     if (nb <= 1) nb = std::max(1, n);
-    const int lwork = n * (nb + 1);
+    const int lwork = n * (nb + 2);
 
     T *w = new T[n];
-    std::complex<T> *work = new std::complex<T>[lwork];
-    T *rwork = new T[std::max(1, 3 * n - 2)];
+    T *work = new T[lwork];
 
-    LapackConnector::heev_f('V', 'U', n, mat.ptr(), mat.nr(), w, work, lwork, rwork, info);
-    delete [] rwork;
+    LapackConnector::syev_f('V', 'U', n, mat.ptr(), mat.nr(), w, work, lwork, info);
     delete [] w;
     delete [] work;
-    return matrix_m<std::complex<T>>(n, n, mat.ptr(), MAJOR::COL, major);
+    return matrix_m<T>(n, n, mat.ptr(), MAJOR::COL, major);
+}
+
+//! generate a random unitary matrix, implemented as using ?heev upon hermitian matrix
+template <typename T>
+inline matrix_m<T> random_unitary(int n, MAJOR major = MAJOR::ROW)
+{
+    typedef typename to_real<T>::type Treal;
+    constexpr bool is_complex = is_complex_t<T>::value;
+
+    if constexpr (is_complex)
+    {
+        int info;
+        // always use column major here to ensure that the eigvec construction is correct
+        auto mat = random_he<Treal>(n, {-1.0, -1.0}, {1.0, 1.0}, MAJOR::COL);
+        const char *name = mat.is_double? "ZHETRD" : "CHETRD";
+        // printf("%s\n", name);
+        int nb = LapackConnector::ilaenv(1, name, "VU", n, -1, -1, -1);
+        if (nb <= 1) nb = std::max(1, n);
+        const int lwork = n * (nb + 1);
+
+        Treal *w = new Treal[n];
+        T *work = new T[lwork];
+        Treal *rwork = new Treal[std::max(1, 3 * n - 2)];
+
+        LapackConnector::heev_f('V', 'U', n, mat.ptr(), mat.nr(), w, work, lwork, rwork, info);
+        delete [] rwork;
+        delete [] w;
+        delete [] work;
+        return matrix_m<T>(n, n, mat.ptr(), MAJOR::COL, major);
+    }
+    else
+        return random_orthogonal<T>(n, major);
 }
 
 //! generate a random Hermitian matrix with selected eigenvalues.
@@ -1100,11 +1156,27 @@ inline matrix_m<std::complex<T>> random_he_selected_ev(int n, const std::vector<
     const int nvec = evs.size();
     if (nvec == 0) return matrix_m<std::complex<T>>{0, 0, major};
 
-    auto eigvec = random_unitary<T>(n, major);
+    auto eigvec = random_unitary<std::complex<T>>(n, major);
     auto eigvec_H = eigvec.get_transpose(true);
     for (int ie = 0; ie != n; ie++)
         eigvec_H.scale_row(ie, ie < nvec? evs[ie]: padding_zero);
     return eigvec * eigvec_H;
+}
+
+//! generate a random symmetric matrix with selected eigenvalues.
+//! when the number of provided eigenvalues is smaller than the dimension,
+//! padding_zero will be used as the missing eigenvalues
+template <typename T>
+inline matrix_m<T> random_sy_selected_ev(int n, const std::vector<T> &evs, MAJOR major = MAJOR::ROW, const T& padding_zero = 1e-14)
+{
+    const int nvec = evs.size();
+    if (nvec == 0) return matrix_m<T>{0, 0, major};
+
+    auto eigvec = random_orthogonal<T>(n, major);
+    auto eigvec_T = eigvec.get_transpose();
+    for (int ie = 0; ie != n; ie++)
+        eigvec_T.scale_row(ie, ie < nvec? evs[ie]: padding_zero);
+    return eigvec * eigvec_T;
 }
 
 //! print the matrix in matrix-market style
@@ -1192,6 +1264,18 @@ void print_matrix_mm_file(const matrix_m<T> &mat, const std::string &fn, Treal t
 {
     ofstream fs;
     fs.open(fn);
+    print_matrix_mm(mat, fs, threshold, row_first);
+    fs.close();
+}
+
+template <typename T, typename Treal = typename to_real<T>::type>
+void print_matrix_mm_file(const matrix_m<T> &mat, const std::string &fn, const std::string& header_comment, Treal threshold = 1e-15, bool row_first = true)
+{
+    ofstream fs;
+    fs.open(fn);
+    if (!header_comment.empty()){
+        fs << header_comment << std::endl;
+    }
     print_matrix_mm(mat, fs, threshold, row_first);
     fs.close();
 }

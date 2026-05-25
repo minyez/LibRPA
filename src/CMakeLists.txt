@@ -29,6 +29,7 @@ target_include_directories(rpa_lib
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/lebedev-quadrature>
   )
 configure_file(utils/envs_cmake.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/envs_cmake.cpp)
 configure_file(utils/envs_cmake.h ${CMAKE_CURRENT_BINARY_DIR}/envs_cmake.h)  # only to make the configured envs_cmake.cpp compile
@@ -69,6 +70,7 @@ list(APPEND lib_sources
 
         io/fs.cpp
         io/global_io.cpp
+        io/input_elsi.cpp
         io/output_aims.cpp
 
         interface/gx_minimax_wrp.f90
@@ -86,6 +88,9 @@ list(APPEND lib_sources
         mpi/base_mpi.cpp
         mpi/utils_blacs.cpp
         mpi/global_mpi.cpp
+
+        # qsgw/fermi_energy_occupation.cpp
+        # qsgw/Hamiltonian.cpp
 
         utils/constants.cpp
         utils/profiler.cpp

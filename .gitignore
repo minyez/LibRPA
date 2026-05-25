@@ -17,7 +17,9 @@
 
 # Compiled Dynamic libraries
 *.so
+*.so.*
 *.dylib
+*.dylib.*
 *.dll
 
 # Fortran module files
@@ -81,3 +83,6 @@ install/
 utilities/*
 !utilities/*.sh
 !utilities/*.py
+
+# regression test workspace
+regression_tests/workspace

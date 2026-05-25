@@ -1,0 +1,259 @@
+<regressionsuite>
+
+  <group name="RPA correlation energy" prefix="RPA">
+    <testcase name="Water molecule in box (aims input)" directory="rpa_aims_mole_H2O_libri">
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <validate name="Correlation energy"
+                regex="Total EcRPA: \s+([-+]?\d*\.\d+)"
+                comparison="cmp_float.abs_diff(1e-4)"
+      />
+    </testcase>
+  </group>
+
+  <group name="Exact-exchange (EXX) potentials" prefix="EXX">
+    <testcase name="BCC He, with eigenvector parllelized over k (aims input)" directory="exx_aims_bccHe_k_parallel_libri">
+      <build require_libri="true"
+      />
+      <validate name="EXX potential on k-grid"
+                regex="Band\s+e_exx.*e_exx"
+                headers="1"
+                rows="8"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+    </testcase>
+  </group>
+
+  <group name="One-shot GW quasi-particle energies (QPE)" prefix="G0W0">
+    <testcase name="BN headwing (abacus input)" directory="g0w0_band_abacus_BN_headwing_libri">
+      <labels disable="experimental"
+      />
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <validate name="Quasi-particle energies on k-grid"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="26"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+    </testcase>
+
+    <testcase name="BN shrink (abacus input)" directory="g0w0_band_abacus_BN_shrink_libri">
+      <labels disable="experimental"
+      />
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <validate name="Quasi-particle energies on k-grid"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="26"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+    </testcase>
+
+    <testcase name="BN SOC (abacus input)" directory="g0w0_band_abacus_BN_soc_libri">
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <!-- A relative large thres is used here, since the original ref is not updated. -->
+      <!-- This could be due to an old bug in QPE solver. -->
+      <!-- Nevertheless, the difference is generally below 1 meV. -->
+      <!-- 5 meV happens for high empty states. -->
+      <validate name="Quasi-particle energies on k-grid"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="52"
+                comparison="cmp_table.abs_diff(5e-3)"
+      />
+      <!-- <validate name="GW bandgap" -->
+      <!--           regex="GW bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
+      <!--           comparison="cmp_float.abs_diff(1e-4)" -->
+      <!-- /> -->
+      <!-- <validate name="EXX bandgap" -->
+      <!--           regex="EXX bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
+      <!--           comparison="cmp_float.abs_diff(1e-4)" -->
+      <!-- /> -->
+      <!-- <validate name="DFT bandgap" -->
+      <!--           regex="DFT bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
+      <!--           comparison="cmp_float.abs_diff(1e-4)" -->
+      <!-- /> -->
+    </testcase>
+
+    <testcase name="BN headwing shrink SOC (abacus input)" directory="g0w0_band_abacus_BN_headwing_shrink_soc_libri">
+      <labels disable="experimental"
+      />
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <validate name="Quasi-particle energies on k-grid"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="76"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <!-- <validate name="GW bandgap" -->
+      <!--           regex="GW bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
+      <!--           comparison="cmp_float.abs_diff(1e-4)" -->
+      <!-- /> -->
+      <!-- <validate name="EXX bandgap" -->
+      <!--           regex="EXX bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
+      <!--           comparison="cmp_float.abs_diff(1e-4)" -->
+      <!-- /> -->
+      <!-- <validate name="DFT bandgap" -->
+      <!--           regex="DFT bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
+      <!--           comparison="cmp_float.abs_diff(1e-4)" -->
+      <!-- /> -->
+    </testcase>
+
+    <testcase name="MnO2 nspin2 shrink wing (abacus input)" directory="g0w0_band_abacus_MnO2_nspin2_shrink_wing_libri">
+      <labels disable="experimental"
+      />
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <validate name="Quasi-particle energies on k-grid"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="36"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <!-- <validate name="GW bandgap" -->
+      <!--           regex="GW bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
+      <!--           comparison="cmp_float.abs_diff(1e-4)" -->
+      <!-- /> -->
+      <!-- <validate name="EXX bandgap" -->
+      <!--           regex="EXX bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
+      <!--           comparison="cmp_float.abs_diff(1e-4)" -->
+      <!-- /> -->
+      <!-- <validate name="DFT bandgap" -->
+      <!--           regex="DFT bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
+      <!--           comparison="cmp_float.abs_diff(1e-4)" -->
+      <!-- /> -->
+      <!-- <validate name="Spin1-k1-state1-eqp" -->
+      <!--           regex="^\s*1\s+1\.00000\s+[-+0-9.Ee]+\s+[-+0-9.Ee]+\s+[-+0-9.Ee]+\s+[-+0-9.Ee]+\s+[-+0-9.Ee]+\s+([-+0-9.Ee]+)\s*$" -->
+      <!--           occurences="0" -->
+      <!--           comparison="cmp_float.abs_diff(1e-4)" -->
+      <!-- /> -->
+    </testcase>
+
+    <testcase name="BN symmetry shrink (abacus input)" directory="g0w0_band_abacus_BN_sym_shrink_libri">
+      <labels disable="experimental"
+      />
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <validate name="Quasi-particle energies on k-grid"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="26"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <!-- <validate name="GW bandgap" -->
+      <!--           regex="GW bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
+      <!--           comparison="cmp_float.abs_diff(1e-4)" -->
+      <!-- /> -->
+      <!-- <validate name="EXX bandgap" -->
+      <!--           regex="EXX bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
+      <!--           comparison="cmp_float.abs_diff(1e-4)" -->
+      <!-- /> -->
+      <!-- <validate name="DFT bandgap" -->
+      <!--           regex="DFT bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
+      <!--           comparison="cmp_float.abs_diff(1e-4)" -->
+      <!-- /> -->
+    </testcase>
+
+    <testcase name="Bulk silicon (aims input)" directory="g0w0_aims_Si_libri">
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <validate name="Quasi-particle energies on k-grid"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="18"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+    </testcase>
+
+    <testcase name="Water molecule in box (aims input)" directory="g0w0_aims_mole_H2O_libri">
+      <build require_libri="true"
+      />
+      <validate name="Quasi-particle energies"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="24"
+                comparison="cmp_table.abs_diff(5e-4)"
+      />
+    </testcase>
+
+    <testcase name="Bulk silicon, band structure (aims input)" directory="g0w0_band_aims_Si_libri">
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <validate name="Quasi-particle energies on k-grid"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="18"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="Non-SCF EXX band structure"
+                file="librpa/EXX_band_spin_*.dat"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="QP band structure"
+                file="librpa/GW_band_spin_*.dat"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+    </testcase>
+
+    <testcase name="Lithium atom, spin-polarized (aims input)" directory="g0w0_aims_Li_atom_libri">
+      <build require_libri="true"
+      />
+      <validate name="Quasi-particle energies"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="5"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+    </testcase>
+  </group>
+
+</regressionsuite>

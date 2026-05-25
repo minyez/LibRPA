@@ -16,9 +16,15 @@ They are centered around two management structures:
 - {librpa}`LibrpaHandler`, which manages input parsing and computations
 - {librpa}`LibrpaOptions`, which stores runtime parameters
 
+```{note}
+Some advanced options and diagnostic output paths are marked `Experimental` in the
+[runtime parameter guide](runtime_parameters). They are exposed for development and
+validation workflows, but are not as broadly tested as the default RPA, EXX, and G0W0 paths.
+```
+
 ## Handler object
 
-The {librpa}`LibrpaHandler` (C) / {librpa}`librpa::Handler` (C++) / `type(LibrpaHandler)` (Fortran) is the central object that manages the LibRPA computation. It encapsulates all input data and computation state.
+The {librpa}`LibrpaHandler` (C) / {librpa}`librpa::Handler` (C++) / {librpa}`type(LibrpaHandler) <librpahandler>` (Fortran) is the central object that manages the LibRPA computation. It encapsulates all input data and computation state.
 
 The typical workflow is:
 1. Create a handler using the MPI communicator
@@ -63,11 +69,13 @@ Any calls to input parsing and computation APIs should be surrounded by calls to
 
 To configure runtime parameters for computation, an {librpa}`LibrpaOptions` object should be created, modified and passed to computation functions.
 Parameters are attributes of `LibrpaOptions` object, and can be initialized using `librpa_init_options`.
-For example, to configure the number of frequency grids and Green's function threshold:
+For API calls, set the time-frequency grid type explicitly before computation.
+For example, to configure a minimax grid, the number of frequency points, and Green's function threshold:
 ```c
 // C API
 LibrpaOptions opts;
 librpa_init_options(&opts);
+opts.tfgrids_type = Minimax;
 opts.nfreq = 16;
 opts.gf_threshold = 1.e-3;
 opts.output_level = LIBRPA_VERBOSE_INFO;
@@ -76,19 +84,25 @@ opts.output_level = LIBRPA_VERBOSE_INFO;
 ```cpp
 // C++ API
 librpa::Options opts;
+opts.tfgrids_type = LibrpaTimeFreqGrid::Minimax;
 opts.nfreq = 16;
 opts.gf_threshold = 1.e-3;
-opts.output_level = librpa::Verbose::LIBRPA_VERBOSE_INFO;
+opts.output_level = LIBRPA_VERBOSE_INFO;
 ```
 
 ```fortran
 ! Fortran API
 type(LibrpaOptions) :: opts
 call opts%init()
+opts%tfgrids_type = LIBRPA_TFGRID_MINIMAX
 opts%nfreq = 16
 opts%gf_threshold = 1.0d-3
 opts%output_level = LIBRPA_VERBOSE_INFO
 ```
+
+The API uses enum/integer constants from the public headers, while the driver reads string values
+such as `tfgrids_type = minimax` and maps them to the same internal options.
+Driver-only parameters, such as `task` and `input_dir`, are not part of `LibrpaOptions`.
 
 ## Input parsing
 
@@ -97,6 +111,7 @@ Input parsing APIs common to all tasks include (C/C++/Fortran):
 - {librpa}`librpa_set_scf_dimension` / {librpa}`Handler::set_scf_dimension` / {librpa}`handler%set_scf_dimension <librpahandler::set_scf_dimension>`
 - {librpa}`librpa_set_wg_ekb_efermi` / {librpa}`Handler::set_wg_ekb_efermi` / {librpa}`handler%set_wg_ekb_efermi <librpahandler::set_wg_ekb_efermi>`
 - {librpa}`librpa_set_wfc` / {librpa}`Handler::set_wfc` / {librpa}`handler%set_wfc <librpahandler::set_wfc>`
+- {librpa}`librpa_set_wfc_spinor` / {librpa}`Handler::set_wfc_spinor` / {librpa}`handler%set_wfc_spinor <librpahandler::set_wfc_spinor>`
 - {librpa}`librpa_set_ao_basis_wfc` / {librpa}`Handler::set_ao_basis_wfc` / {librpa}`handler%set_ao_basis_wfc <librpahandler::set_ao_basis_wfc>`
 - {librpa}`librpa_set_ao_basis_aux` / {librpa}`Handler::set_ao_basis_aux` / {librpa}`handler%set_ao_basis_aux <librpahandler::set_ao_basis_aux>`
 - {librpa}`librpa_set_latvec_and_G` / {librpa}`Handler::set_latvec_and_G` / {librpa}`handler%set_latvec_and_G <librpahandler::set_latvec_and_g>`
@@ -111,6 +126,7 @@ Input parsing APIs common to all tasks include (C/C++/Fortran):
 - {librpa}`librpa_set_band_kvec` / {librpa}`Handler::set_band_kvec` / {librpa}`handler%set_band_kvec <librpahandler::set_band_kvec>`
 - {librpa}`librpa_set_band_occ_eigval` / {librpa}`Handler::set_band_occ_eigval` / {librpa}`handler%set_band_occ_eigval <librpahandler::set_band_occ_eigval>`
 - {librpa}`librpa_set_wfc_band` / {librpa}`Handler::set_wfc_band` / {librpa}`handler%set_wfc_band <librpahandler::set_wfc_band>`
+- {librpa}`librpa_set_wfc_band_spinor` / {librpa}`Handler::set_wfc_band_spinor` / {librpa}`handler%set_wfc_band_spinor <librpahandler::set_wfc_band_spinor>`
 
 These functions parse information from the hosting DFT code to LibRPA, such as:
 - dimension of lattice vectors, orbital basis and auxiliary basis
@@ -122,6 +138,12 @@ These functions parse information from the hosting DFT code to LibRPA, such as:
 
 They have to be called after the runtime environment is initialized,
 see [Environment setup](#environment-setup) above.
+
+For spinor workflows, initialize the handler with two spinor components, then use the spinor
+wavefunction setters. Internally, LibRPA selects the normal or spinor path from the mean-field
+`n_spinor` attribute through `get_n_spinor()`.
+Driver users can select spinor-format input with `use_spinor_wfc`; API users should pass
+`nspinor = 2` to `set_scf_dimension` instead.
 
 ## Computation
 
@@ -170,9 +192,10 @@ int main()
 
     // *** Set up runtime parameters ***
     librpa::Options opts;
+    opts.tfgrids_type = LibrpaTimeFreqGrid::Minimax;
     opts.nfreq = 16;
     opts.gf_threshold = 1e-3;
-    opts.output_level = librpa::Verbose::LIBRPA_VERBOSE_INFO;
+    opts.output_level = LIBRPA_VERBOSE_INFO;
 
     // *** Create handler ***
     librpa::Handler h(MPI_COMM_WORLD);
@@ -190,7 +213,7 @@ int main()
     for (int i = 0; i < natoms; ++i) {
         for (int j = 0; j < natoms; ++j) {
             for (auto& R : r_cells) {
-                h.set_lri_coeff(LIBRPA_ROUTING_AUTO, i, j, nbasis_i, nbasis_j, naux_mu, R.data(), Cs.data());
+                h.set_lri_coeff(LibrpaParallelRouting::AUTO, i, j, nbasis_i, nbasis_j, naux_mu, R.data(), Cs.data());
             }
         }
     }
@@ -242,6 +265,7 @@ call librpa_init_global()
 
 ! Set up options
 call opts%init()
+opts%tfgrids_type = LIBRPA_TFGRID_MINIMAX
 opts%nfreq = 16
 opts%gf_threshold = 1.0d-3
 

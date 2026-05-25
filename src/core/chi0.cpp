@@ -14,6 +14,8 @@
 #include "../math/matrix.h"
 #include "../math/scalapack_connector.h"
 #include "../math/utils_matrix_mpi.h"
+#include "../math/utils_matrix_m_mpi.h"
+#include "../mpi/base_blacs.h"
 #include "../utils/constants.h"
 #include "../io/global_io.h"
 #include "../utils/error.h"
@@ -24,6 +26,7 @@
 #include "meanfield_mpi.h"
 #include "pbc.h"
 #include "ri.h"
+#include "utils_atomic_basis_blacs.h"
 #ifdef LIBRPA_USE_LIBRI
 #include <RI/physics/RPA.h>
 #endif
@@ -32,8 +35,6 @@
 
 
 namespace librpa_int {
-
-using librpa_int::global::lib_printf;
 
 Chi0::Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const AtomicBasis &atbasis_abf_in, const PeriodicBoundaryData &pbc_in,
@@ -55,14 +56,25 @@ Chi0::Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
 
 void Chi0::build(LibrpaParallelRouting routing,
                  const Cs_LRI &Cs,
-                 const std::vector<atpair_t> &atpairs_ABF)
+                 const std::vector<atpair_t> &atpairs_ABF,
+                 const AtomicBasis &abf_Cs,
+                 std::map<Vector3_Order<double>, ComplexMatrix> &sinvS,
+                 const BlacsCtxtHandler &blacs_ctxt_h)
 {
+    using librpa_int::global::lib_printf;
+
     gf_save = gf_discard = 0;
     // reset chi0_q in case the method was called before
     chi0_q.clear();
 
     bool use_space_time = false;
 
+    // If not using shrinking (sinvS is empty), abf_Cs must be the same as the initial atbasis_abf
+    if (sinvS.size() == 0)
+    {
+        if (abf_Cs != atbasis_abf)
+            throw LIBRPA_RUNTIME_ERROR("abf_Cs != atbasis_abf for non-shrinking chi0");
+    }
     // Switch on space-time method when time grids and weights are available
     if (tfg.has_time_grids())
     {
@@ -94,9 +106,9 @@ void Chi0::build(LibrpaParallelRouting routing,
         }
         else
         {
-            for ( auto tau: tfg.get_time_nodes() )
+            for (auto tau : tfg.get_time_nodes())
             {
-                for ( auto R: Rlist_gf)
+                for (auto R : Rlist_gf)
                 {
                     build_gf_Rt(R, tau);
                     build_gf_Rt(R, -tau);
@@ -110,7 +122,7 @@ void Chi0::build(LibrpaParallelRouting routing,
                 global::lib_printf("| Discarded Green's function: %zu\n\n", gf_discard);
             }
         }
-        build_chi0_q_space_time(routing, Cs, atpairs_ABF);
+        build_chi0_q_space_time(routing, Cs, atpairs_ABF, abf_Cs, sinvS, blacs_ctxt_h);
     }
     else
     {
@@ -132,96 +144,114 @@ void Chi0::build_gf_Rt(Vector3_Order<int> R, double tau)
     const auto naos = mf.get_n_aos();
     const int natom = atbasis_abf.n_atoms;
 
-    assert (tau != 0);
+    const int nbands_G = 0; // TODO: replace with a runtime option
+    const auto nsoc = 1; // TODO replace with meanfield member variable
+    const bool use_soc = mf.get_n_spinor() > 1;
+
+    assert(tau != 0);
 
     // temporary Green's function
     matrix gf_Rt_is_global(naos, naos);
 
     for (int is = 0; is != nspins; is++)
     {
-        gf_Rt_is_global.zero_out();
-        if (is_mf_eigvec_k_distributed_)
+        for (int isoc1 = 0; isoc1 != nsoc; isoc1++)
         {
-            const auto gf_tau_R = get_gf_cplx_imagtimes_Rs_kpara(is, this->mf, pbc.kfrac_list, {tau}, {R}, comm_h);
-            gf_Rt_is_global += gf_tau_R.at(tau).at(R).real();
-        }
-        else
-        {
-            auto wg = mf.get_weight()[is];
-            if ( tau > 0)
-                for (size_t i = 0; i != wg.size; i++)
+            for (int isoc2 = 0; isoc2 != nsoc; isoc2++)
+            {
+                gf_Rt_is_global.zero_out();
+                if (is_mf_eigvec_k_distributed_)
                 {
-                    //wg.c[i] = 1.0 / nkpts *nspins - wg.c[i];
-                    wg.c[i] = 1.0 / nkpts  - wg.c[i]/2*nspins;//
-                    if (wg.c[i] < 0) wg.c[i] = 0;
-                }
-            else
-            {
-                wg *=0.5 *nspins;
-            }
-            matrix scale(nkpts, nbands);
-            // tau-energy phase
-            scale = - tau * (mf.get_eigenvals()[is] - mf.get_efermi());
-            /* print_matrix("-(e-ef)*tau", scale); */
-            for (size_t ie = 0; ie != scale.size; ie++)
-            {
-                // NOTE: enforce non-positive phase
-                if ( scale.c[ie] > 0) scale.c[ie] = 0;
-                scale.c[ie] = std::exp(scale.c[ie]) * wg.c[ie];
-            }
-            /* print_matrix("exp(-dE*tau)", scale); */
-            for (int ik = 0; ik != nkpts; ik++)
-            {
-                double ang = - pbc.klist[ik] * (R * pbc.latvec) * TWO_PI;
-                complex<double> kphase = complex<double>(cos(ang), sin(ang));
-                /* librpa_int::global::lib_printf("kphase %f %fj\n", kphase.real(), kphase.imag()); */
-                const auto &ev = mf.get_eigenvectors().at(is).at(ik);
-                auto scaled_wfc_conj = conj(ev);
-                for ( int ib = 0; ib != nbands; ib++)
-                    LapackConnector::scal(naos, scale(ik, ib), scaled_wfc_conj.c + naos * ib, 1);
-                gf_Rt_is_global += (kphase * transpose(ev, false) * scaled_wfc_conj).real();
-            }
-            if ( tau < 0 ) gf_Rt_is_global *= -1.;
-        }
-        omp_lock_t gf_lock;
-        omp_init_lock(&gf_lock);
-#pragma omp parallel for schedule(dynamic)
-        for ( int I = 0; I != natom; I++)
-        {
-            const auto I_num = atbasis_wfc[I];
-            for (int J = 0; J != natom; J++)
-            {
-                const auto J_num = atbasis_wfc[J];
-                matrix tmp_green(I_num, J_num);
-                for (size_t i = 0; i != I_num; i++)
-                {
-                    size_t i_glo = atbasis_wfc.get_global_index(I, i);
-                    for (size_t j = 0; j != J_num; j++)
-                    {
-                        size_t j_glo = atbasis_wfc.get_global_index(J, j);
-                        tmp_green(i, j) = gf_Rt_is_global(i_glo, j_glo);
-                    }
-                }
-                if (tmp_green.absmax() > gf_threshold)
-                {
-                    // cout<<" max_green_ele:  "<<tmp_green.absmax()<<endl;
-                    omp_set_lock(&gf_lock);
-                    gf_is_R_tau[is][I][J][R][tau] = std::move(tmp_green);
-                    omp_unset_lock(&gf_lock);
-                    // cout << is << " " << I << " " << J << " " << R << " " << tau << endl;
-                    // print_matrix("gf_is_itau_R[is][I][J][R][itau]", gf_is_R_tau[is][I][J][R][tau]);
-                    gf_save++;
+                    const auto gf_tau_R = get_gf_cplx_imagtimes_Rs_kpara(is, isoc1, isoc2, this->mf, pbc.kfrac_list, {tau}, {R}, comm_h);
+                    gf_Rt_is_global += gf_tau_R.at(tau).at(R).real();
                 }
                 else
                 {
-                    // librpa_int::global::lib_printf("Discarding GF of spin %1d, IJR {%d, %d, (%d, %d, %d)}, t %f\n",
-                    //        is, I, J, R.x, R.y, R.z, tau);
-                    gf_discard++;
+                    auto wg = mf.get_weight()[is];
+                    if (tau > 0)
+                        for (int i = 0; i != wg.size; i++)
+                        {
+                            // wg.c[i] = 1.0 / nkpts *nspins - wg.c[i];
+                            if (use_soc)
+                                wg.c[i] = 1.0 / nkpts - wg.c[i];
+                            else
+                                wg.c[i] = 1.0 / nkpts - wg.c[i] / 2 * nspins;  //
+                            if (wg.c[i] < 0) wg.c[i] = 0;
+                        }
+                    else
+                    {
+                        if (!use_soc) wg *= 0.5 * nspins;
+                    }
+                    matrix scale(nkpts, nbands);
+                    // tau-energy phase
+                    scale = -tau * (mf.get_eigenvals()[is] - mf.get_efermi());
+                    /* print_matrix("-(e-ef)*tau", scale); */
+                    for (int ie = 0; ie != scale.size; ie++)
+                    {
+                        // NOTE: enforce non-positive phase
+                        if (scale.c[ie] > 0) scale.c[ie] = 0;
+                        scale.c[ie] = std::exp(scale.c[ie]) * wg.c[ie];
+                    }
+                    /* print_matrix("exp(-dE*tau)", scale); */
+                    for (int ik = 0; ik != nkpts; ik++)
+                    {
+                        double ang = - pbc.klist[ik] * (R * pbc.latvec) * TWO_PI;
+                        complex<double> kphase = complex<double>(cos(ang), sin(ang));
+                        const auto &ev1 = mf.get_eigenvectors().at(is).at(isoc1).at(ik);
+                        const auto &ev2 = mf.get_eigenvectors().at(is).at(isoc2).at(ik);
+                        auto scaled_wfc_conj = conj(ev2);
+                        for (int ib = 0; ib != nbands; ib++)
+                            LapackConnector::scal(naos, scale(ik, ib), scaled_wfc_conj.c + naos * ib,
+                                                1);
+                        if (nbands_G >= 0)
+                        {
+                            for (int ib = nbands_G; ib != nbands; ib++)
+                            {
+                                for (int inaos = 0; inaos != naos; inaos++)
+                                    scaled_wfc_conj(ib, inaos) = 0.0;
+                            }
+                        }
+                        gf_Rt_is_global += (kphase * transpose(ev1, false) * scaled_wfc_conj).real();
+                    }
+                    if (tau < 0) gf_Rt_is_global *= -1.;
+                    omp_lock_t gf_lock;
+                    omp_init_lock(&gf_lock);
+#pragma omp parallel for schedule(dynamic)
+                    for (int I = 0; I != natom; I++)
+                    {
+                        const auto I_num = atbasis_wfc[I];
+                        for (int J = 0; J != natom; J++)
+                        {
+                            const auto J_num = atbasis_wfc[J];
+                            matrix tmp_green(I_num, J_num);
+                            for (size_t i = 0; i != I_num; i++)
+                            {
+                                size_t i_glo = atbasis_wfc.get_global_index(I, i);
+                                for (size_t j = 0; j != J_num; j++)
+                                {
+                                    size_t j_glo = atbasis_wfc.get_global_index(J, j);
+                                    tmp_green(i, j) = gf_Rt_is_global(i_glo, j_glo);
+                                }
+                            }
+                            if (tmp_green.absmax() > gf_threshold)
+                            {
+                                // cout<<" max_green_ele:  "<<tmp_green.absmax()<<endl;
+                                omp_set_lock(&gf_lock);
+                                gf_is_R_tau[is][isoc1][isoc2][I][J][R][tau] = std::move(tmp_green);
+                                omp_unset_lock(&gf_lock);
+                                gf_save++;
+                            }
+                            else
+                            {
+                                gf_discard++;
+                            }
+                        }
+                    }
+                    omp_destroy_lock(&gf_lock);
+#pragma omp barrier
                 }
             }
         }
-        omp_destroy_lock(&gf_lock);
-#pragma omp barrier
     }
     global::profiler.stop("cal_Green_func");
 }
@@ -235,16 +265,25 @@ void Chi0::free_gf_Rt()
 
 void Chi0::build_chi0_q_space_time(const LibrpaParallelRouting routing,
                                    const Cs_LRI &Cs,
-                                   const vector<atpair_t> &atpairs_ABF)
+                                   const vector<atpair_t> &atpairs_ABF,
+                                   const AtomicBasis &abf_shrink,
+                                   std::map<Vector3_Order<double>, ComplexMatrix> &sinvS,
+                                   const BlacsCtxtHandler &blacs_ctxt_h)
 {
+    const bool use_soc = mf.get_n_spinor() > 1;
    // int R_tau_size = Rlist_gf.size() * tfg_.size();
-    if(routing == LibrpaParallelRouting::LIBRI)
+    if (routing == LibrpaParallelRouting::LIBRI)
     {
         if (comm_h.is_root())
         {
             std::cout << "Use LibRI for chi0" << std::endl;
         }
-        build_chi0_q_space_time_LibRI_routing(Cs, atpairs_ABF);
+        if (use_soc)
+            build_chi0_q_space_time_LibRI_routing<std::complex<double>>(Cs, atpairs_ABF, abf_shrink,
+                                                                        sinvS, blacs_ctxt_h);
+        else
+            build_chi0_q_space_time_LibRI_routing<double>(Cs, atpairs_ABF, abf_shrink, sinvS,
+                                                          blacs_ctxt_h);
     }
     else if (routing == LibrpaParallelRouting::RTAU)
     {
@@ -261,14 +300,15 @@ void Chi0::build_chi0_q_space_time(const LibrpaParallelRouting routing,
 }
 
 #ifdef LIBRPA_USE_LIBRI
+template <typename Tdata>
 static void build_gf_Rt_libri_serial(
-    const MeanField &mf,
+    const MeanField &mf, const int nbands_G,
     const AtomicBasis &atbasis_wfc,
-    int ispin,
+    int ispin, int isoc1, int isoc2,
     const vector<Vector3_Order<double>> &kfrac_list,
-    const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs, 
+    const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs,
     double tau,
-    std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<double>>> &gf_libri)
+    std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> &gf_libri)
 {
     global::profiler.start("build_gf_Rt_libri_serial");
 
@@ -276,11 +316,13 @@ static void build_gf_Rt_libri_serial(
     const auto nspins = mf.get_n_spins();
     const auto nbands = mf.get_n_bands();
     const auto naos = mf.get_n_aos();
+    const bool use_soc = mf.get_n_spinor() > 1;
 
     assert(kfrac_list.size() == as_size(nkpts));
+    assert(nbands_G < nbands);
 
     std::map<Vector3_Order<int>, std::vector<atpair_t>> map_R_IJs;
-    for (const auto &IJR: IJRs)
+    for (const auto &IJR : IJRs)
     {
         const auto &R = IJR.second;
         map_R_IJs[R].push_back(IJR.first);
@@ -292,25 +334,29 @@ static void build_gf_Rt_libri_serial(
     {
         for (size_t i = 0; i != wg.size; i++)
         {
-            wg.c[i] = 1.0 / nkpts - wg.c[i] / 2 * nspins;  //
+            if (use_soc)
+                wg.c[i] = 1.0 / nkpts - wg.c[i];
+            else
+                wg.c[i] = 1.0 / nkpts - wg.c[i] / 2 * nspins;  //
             if (wg.c[i] < 0) wg.c[i] = 0;
         }
     }
     else
     {
-        wg *= 0.5 * nspins;
+        if (!use_soc) wg *= 0.5 * nspins;
     }
     auto scale = - tau * (mf.get_eigenvals()[ispin] - mf.get_efermi());
     for (size_t ie = 0; ie != scale.size; ie++)
     {
         // NOTE: enforce non-positive phase
-        if ( scale.c[ie] > 0) scale.c[ie] = 0;
+        if (scale.c[ie] > 0) scale.c[ie] = 0;
         scale.c[ie] = std::exp(scale.c[ie]) * wg.c[ie];
     }
 
-    for (const auto &R_IJs: map_R_IJs)
+    for (const auto &R_IJs : map_R_IJs)
     {
-        matrix gf_global(naos, naos, true);
+        ComplexMatrix gf_cplx(naos, naos, true);
+        // matrix gf_global(naos, naos, true);
 
         const auto R = R_IJs.first;
         const auto IJs = R_IJs.second;
@@ -323,41 +369,53 @@ static void build_gf_Rt_libri_serial(
         {
             double ang = - (kfrac_list[ik] * R) * TWO_PI;
             complex<double> kphase = complex<double>(cos(ang), sin(ang));
-            const auto &ev = mf.get_eigenvectors().at(ispin).at(ik);
-            auto scaled_wfc_conj = conj(ev);
+            const auto &ev1 = mf.get_eigenvectors().at(ispin).at(isoc1).at(ik);
+            const auto &ev2 = mf.get_eigenvectors().at(ispin).at(isoc2).at(ik);
+            auto scaled_wfc_conj = conj(ev2);
+            // global::ofs_myid << "nkpts " << nkpts << " ik " << ik << " nbands_G " <<  nbands_G << " " << isoc1 << " " << isoc2 << std::endl;
             for (int ib = 0; ib != nbands; ib++)
                 LapackConnector::scal(naos, scale(ik, ib), scaled_wfc_conj.c + naos * ib, 1);
-            auto mat = (kphase * transpose(ev, false) * scaled_wfc_conj).real();
+            if (nbands_G >= 0)
+            {
+                for (int ib = nbands_G; ib < nbands; ib++)
+                {
+                    for (int inaos = 0; inaos != naos; inaos++) scaled_wfc_conj(ib, inaos) = 0.0;
+                }
+            }
+            auto mat = (kphase * transpose(ev1, false) * scaled_wfc_conj);
 #pragma omp critical
             {
-                gf_global += mat;
+                gf_cplx += mat;
             }
         }
-        if ( tau < 0 ) gf_global *= -1.;
+        if (tau < 0) gf_cplx *= -1.;
 
         // Divide the full matrix to atom-pair blocks
         omp_lock_t gf_lock;
         omp_init_lock(&gf_lock);
 #pragma omp parallel for schedule(dynamic)
-        for (const auto &IJ: IJs)
+        for (const auto &IJ : IJs)
         {
             const auto &I = IJ.first;
             const auto &J = IJ.second;
             const auto nI = atbasis_wfc[I];
             const auto nJ = atbasis_wfc[J];
             // 1D representation for row-major 2D array
-            auto ptr = std::make_shared<std::valarray<double>>(nI * nJ);
+            auto ptr = std::make_shared<std::valarray<Tdata>>(nI * nJ);
             for (size_t i = 0; i != nI; i++)
             {
                 size_t i_glo = atbasis_wfc.get_global_index(I, i);
                 for (size_t j = 0; j != nJ; j++)
                 {
                     size_t j_glo = atbasis_wfc.get_global_index(J, j);
-                    (*ptr)[i*nJ+j] = gf_global(i_glo, j_glo);
+                    if constexpr (std::is_same<Tdata, std::complex<double>>::value)
+                        (*ptr)[i*nJ+j] = gf_cplx(i_glo, j_glo);
+                    else
+                        (*ptr)[i*nJ+j] = gf_cplx(i_glo, j_glo).real();
                 }
             }
             omp_set_lock(&gf_lock);
-            gf_libri[I][{J, Ra}] = RI::Tensor<double>({nI, nJ}, ptr);
+            gf_libri[I][{J, Ra}] = RI::Tensor<Tdata>({nI, nJ}, ptr);
             omp_unset_lock(&gf_lock);
         }
 #pragma omp barrier
@@ -367,19 +425,21 @@ static void build_gf_Rt_libri_serial(
     global::profiler.stop("build_gf_Rt_libri_serial");
 }
 
+template <typename Tdata>
 static void build_gf_Rt_libri_kpara(
-    const MeanField &mf,
+    const MeanField &mf, const int nbands_G,
     const MpiCommHandler &comm_h,
     const AtomicBasis &atbasis_wfc,
-    int ispin,
+    int ispin, int ispinor_bra, int ispinor_ket,
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs, 
     double tau,
-    std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<double>>> &gf_libri)
+    std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> &gf_libri)
 {
     using namespace global;
     profiler.start("build_gf_Rt_libri_kpara");
     std::map<Vector3_Order<int>, std::vector<atpair_t>> map_R_IJs;
+    const int n_basis = atbasis_wfc.nb_total;
     for (const auto &[IJ, R]: IJRs)
     {
         map_R_IJs[R].emplace_back(IJ);
@@ -392,14 +452,20 @@ static void build_gf_Rt_libri_kpara(
     int n_Rs_max = n_Rs_this;
     MPI_Allreduce(MPI_IN_PLACE, &n_Rs_max, 1, MPI_INT, MPI_MAX, comm_h.comm);
     // Compute the full G({R}, tau) matrices
-    const auto gf_Rs_cplx = get_gf_cplx_imagtimes_Rs_kpara(ispin, mf, kfrac_list, {tau}, Rs_this, comm_h).at(tau);
+    const auto gf_Rs_cplx = get_gf_cplx_imagtimes_Rs_kpara(ispin, ispinor_bra, ispinor_ket, mf,
+                                                           kfrac_list, {tau}, Rs_this, comm_h)
+                                .at(tau);
 
-    for (const auto &[R, gf_cplx]: gf_Rs_cplx)
+    for (auto it = gf_Rs_cplx.cbegin(); it != gf_Rs_cplx.cend(); it++)
     {
+        const auto &R = it->first;
+        const auto &gf_cplx = it->second;
         const std::array<int,3> Ra{R.x,R.y,R.z};
-        const auto gf_global = gf_cplx.real();
+        matrix gf_global;
+        if constexpr (!std::is_same<Tdata, std::complex<double>>::value)
+            gf_global = gf_cplx.real();
         const auto IJs = map_R_IJs.at(R);
-        global::ofs_myid << "Chi0 Handling IJs: " << IJs << " - R " << Ra << std::endl;
+        // global::ofs_myid << "Chi0 Handling IJs: " << IJs << " - R " << Ra << std::endl;
         // Divide the full matrix to atom-pair blocks
         omp_lock_t gf_lock;
         omp_init_lock(&gf_lock);
@@ -411,18 +477,22 @@ static void build_gf_Rt_libri_kpara(
             const auto nI = atbasis_wfc[I];
             const auto nJ = atbasis_wfc[J];
             // 1D representation for row-major 2D array
-            auto ptr = std::make_shared<std::valarray<double>>(nI * nJ);
+            auto ptr = std::make_shared<std::valarray<Tdata>>(nI * nJ);
             for (size_t i = 0; i != nI; i++)
             {
-                size_t i_glo = atbasis_wfc.get_global_index(I, i);
+                const size_t i_glo = atbasis_wfc.get_global_index(I, i);
                 for (size_t j = 0; j != nJ; j++)
                 {
-                    size_t j_glo = atbasis_wfc.get_global_index(J, j);
-                    (*ptr)[i*nJ+j] = gf_global(i_glo, j_glo);
+                    const size_t j_glo = atbasis_wfc.get_global_index(J, j);
+                    const size_t index = j_glo + i_glo * n_basis;
+                    if constexpr (std::is_same<Tdata, std::complex<double>>::value)
+                        (*ptr)[i*nJ+j] = gf_cplx.c[index];
+                    else
+                        (*ptr)[i*nJ+j] = gf_global.c[index];
                 }
             }
             omp_set_lock(&gf_lock);
-            gf_libri[I][{J, Ra}] = RI::Tensor<double>({nI, nJ}, ptr);
+            gf_libri[I][{J, Ra}] = RI::Tensor<Tdata>({nI, nJ}, ptr);
             omp_unset_lock(&gf_lock);
         }
 #pragma omp barrier
@@ -431,8 +501,10 @@ static void build_gf_Rt_libri_kpara(
     profiler.stop("build_gf_Rt_libri_kpara");
 }
 
+
 // Perform both R-k Fourier transform and time-freq cosine transform of chi0
 // Only for LibRI routing
+template <typename Tdata>
 static void chi_libri_ft_ct(
     const int &isp,
     const int &nspins,
@@ -440,10 +512,11 @@ static void chi_libri_ft_ct(
     const TFGrids &tfg,
     const AtomicBasis &atbasis_abf,
     const Matrix3 &latvec,
-    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &chi0s_IJR,
+    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<Tdata>>> &chi0s_IJR,
     const vector<Vector3_Order<double>> &qlist, const vector<atpair_t> &atpairs_ABF,
     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &chi0_q)
 {
+    const bool use_soc = std::is_same<Tdata, std::complex<double>>::value;
     const auto tau = tfg.get_time_nodes()[it];
     // a simple vector container for OpenMP parallel
     vector<pair<std::array<int, 4>, std::vector<std::array<int, 3>>>> ifreq_iq_mu_nu_to_Rs;
@@ -477,7 +550,7 @@ static void chi_libri_ft_ct(
     // print_keys(ofs_myid, chi0s_IJR);
     // ofs_myid << endl;
 #pragma omp parallel for schedule(dynamic)
-    for (const auto &index_Rs: ifreq_iq_mu_nu_to_Rs)
+    for (const auto &index_Rs : ifreq_iq_mu_nu_to_Rs)
     {
         // ofs_myid << index_Rs.first << endl;
         const auto &ifreq = index_Rs.first[0];
@@ -493,36 +566,357 @@ static void chi_libri_ft_ct(
         const auto &chi = chi0_q[freq][q][static_cast<atom_t>(Mu)][static_cast<atom_t>(Nu)];
         // ofs_myid << n_mu << " " << n_nu << endl;
         ComplexMatrix cm_chi0(n_mu, n_nu);
-        // ofs_myid << "created cm_chi0" << endl;
         for (const auto &R: index_Rs.second)
         {
             const auto &chi_tensor = chi0s_IJR.at(Mu).at({Nu, R});
             Vector3_Order<int> Rint(R[0], R[1], R[2]);
-            // global::profiler.start("chi0_libri_routing_ft_ct_1");
-            LapackConnector::copy(cm_chi0.size, chi_tensor.ptr(), 1, reinterpret_cast<double*>(cm_chi0.c), 2);
-            // global::profiler.stop("chi0_libri_routing_ft_ct_1");
+            // profiler.start("chi0_libri_routing_ft_ct_1");
+            // NOTE: ``if constexpr`` needs C++-17
+            if constexpr (std::is_same<Tdata, std::complex<double>>::value)
+            {
+                LapackConnector::copy(cm_chi0.size, chi_tensor.ptr(), 1,
+                                      reinterpret_cast<std::complex<double> *>(cm_chi0.c), 1);
+            }
+            else
+            {
+                LapackConnector::copy(cm_chi0.size, chi_tensor.ptr(), 1,
+                                      reinterpret_cast<double *>(cm_chi0.c), 2);
+            }
+            // profiler.stop("chi0_libri_routing_ft_ct_1");
 
             const double arg = q * (Rint * latvec) * TWO_PI;
             const complex<double> kphase = complex<double>(cos(arg), sin(arg));
-            LapackConnector::axpy(cm_chi0.size, 2.0 / nspins * (trans * kphase),
-                    cm_chi0.c, 1, chi.c, 1);
+            if (use_soc)
+                LapackConnector::axpy(cm_chi0.size, (trans * kphase), cm_chi0.c, 1, chi.c, 1);
+            else
+                LapackConnector::axpy(cm_chi0.size, 2.0 / nspins * (trans * kphase), cm_chi0.c, 1,
+                                      chi.c, 1);
+        }
+    }
+}
+
+template <typename Tdata>
+static void chi_libri_ft_Rq(
+    const int &isp, const int &nspins, const int &it, const TFGrids &tfg,
+    const AtomicBasis &atbasis_abf,
+    const Matrix3 &latvec,
+    const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<Tdata>>> &chi0s_IJR,
+    const vector<Vector3_Order<double>> &qlist, const vector<atpair_t> &atpairs_ABF,
+    map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &chi0_q)
+{
+    const bool use_soc = std::is_same<Tdata, std::complex<double>>::value;
+    const auto tau = tfg.get_time_nodes()[it];
+    // a simple vector container for OpenMP parallel
+    vector<pair<std::array<int, 3>, std::vector<std::array<int, 3>>>> iq_mu_nu_to_Rs;
+    map<int, vector<pair<int, std::array<int, 3>>>> Mu_NuRs;
+
+    for (int iq = 0; iq < qlist.size(); iq++)
+    {
+        for (const auto &atpair : atpairs_ABF)
+        {
+            const auto &Mu = atpair.first;
+            const auto &Nu = atpair.second;
+            std::vector<std::array<int, 3>> Rs;
+            if (chi0s_IJR.count(Mu) == 0) continue;
+            for (const auto &chi0s_JR : chi0s_IJR.at(Mu))
+            {
+                if (chi0s_JR.first.first == Nu)
+                {
+                    Rs.push_back(chi0s_JR.first.second);
+                }
+            }
+            iq_mu_nu_to_Rs.push_back({{iq, static_cast<int>(Mu), static_cast<int>(Nu)}, Rs});
         }
     }
 
+    global::ofs_myid << "is: " << isp << " tau: " << tau << " q_atpair_all.size()" << iq_mu_nu_to_Rs.size()
+         << std::endl;
+#pragma omp parallel for schedule(dynamic)
+    for (const auto &index_Rs : iq_mu_nu_to_Rs)
+    {
+        const auto &iq = index_Rs.first[0];
+        const auto &q = qlist[iq];
+        const auto &Mu = index_Rs.first[1];
+        const auto &Nu = index_Rs.first[2];
+        const auto &n_mu = atbasis_abf.get_atom_nb(Mu);
+        const auto &n_nu = atbasis_abf.get_atom_nb(Nu);
+        auto &chi = chi0_q[tau][q][Mu][Nu];
+        ComplexMatrix cm_chi0(n_mu, n_nu);
+        for (const auto &R : index_Rs.second)
+        {
+            const auto &chi_tensor = chi0s_IJR.at(Mu).at({Nu, R});
+            Vector3_Order<int> Rint(R[0], R[1], R[2]);
+            // profiler.start("chi0_libri_routing_ft_ct_1");
+            if constexpr (std::is_same<Tdata, std::complex<double>>::value)
+            {
+                LapackConnector::copy(cm_chi0.size, chi_tensor.ptr(), 1,
+                                      reinterpret_cast<std::complex<double> *>(cm_chi0.c), 1);
+            }
+            else
+            {
+                LapackConnector::copy(cm_chi0.size, chi_tensor.ptr(), 1,
+                                      reinterpret_cast<double *>(cm_chi0.c), 2);
+            }
+            // profiler.stop("chi0_libri_routing_ft_ct_1");
+
+            const double arg = q * (Rint * latvec) * TWO_PI;
+            const complex<double> kphase = complex<double>(cos(arg), sin(arg));
+            if (use_soc)
+                LapackConnector::axpy(cm_chi0.size, kphase, cm_chi0.c, 1, chi.c, 1);
+            else
+                LapackConnector::axpy(cm_chi0.size, 2.0 / nspins * kphase, cm_chi0.c, 1, chi.c, 1);
+        }
+    }
+}
+
+static void chi_libri_ft_tw(
+    const int &isp, const int &nspins, const int &it, const TFGrids &tfg,
+    map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &chi0_tau_q,
+    const vector<Vector3_Order<double>> &qlist, const vector<atpair_t> &atpairs_ABF,
+    map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &chi0_q)
+{
+    const auto tau = tfg.get_time_nodes()[it];
+    // a simple vector container for OpenMP parallel
+    vector<std::array<int, 4>> ifreq_iq_mu_nu;
+    map<int, vector<pair<int, std::array<int, 3>>>> Mu_NuRs;
+    for (int ifreq = 0; ifreq < tfg.get_n_grids(); ++ifreq)
+    {
+        for (int iq = 0; iq < qlist.size(); iq++)
+        {
+            for (const auto &atpair : atpairs_ABF)
+            {
+                const auto &Mu = atpair.first;
+                const auto &Nu = atpair.second;
+                ifreq_iq_mu_nu.push_back({ifreq, iq, static_cast<int>(Mu), static_cast<int>(Nu)});
+            }
+        }
+    }
+
+#pragma omp parallel for schedule(dynamic)
+    for (const auto &index : ifreq_iq_mu_nu)
+    {
+        const auto &ifreq = index[0];
+        const auto &iq = index[1];
+        const auto &q = qlist[iq];
+        const auto &Mu = index[2];
+        const auto &Nu = index[3];
+        const double freq = tfg.get_freq_nodes()[ifreq];
+        const double trans = tfg.get_costrans_t2f()(ifreq, it);
+        auto &chi = chi0_q[freq][q][Mu][Nu];
+        const auto &cm_chi0 = chi0_tau_q.at(tau).at(q).at(Mu).at(Nu);
+        LapackConnector::axpy(cm_chi0.size, trans, cm_chi0.c, 1, chi.c, 1);
+    }
+}
+
+static void shrink_abfs_chi0(
+    map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old> &chi0_q_in,
+    map<Vector3_Order<double>, ComplexMatrix> &sinvS, const vector<Vector3_Order<double>> &qlist,
+    const AtomicBasis &abf_large, const AtomicBasis &abf_small,
+    const BlacsCtxtHandler &blacs_ctxt_h)
+{
+    // before reset atom_mu: large abfs
+    int all_mu = abf_large.nb_total;
+    bool debug = false;
+
+    const auto &comm_h = blacs_ctxt_h.comm_h();
+
+    // after reset atom_mu: small abfs
+    int all_mu_s = abf_small.nb_total;
+    assert (abf_small.n_atoms == abf_large.n_atoms);
+    int natom = abf_large.n_atoms;
+
+    const complex<double> CONE{1.0, 0.0};
+    ArrayDesc desc_nabf_nabf_ll(blacs_ctxt_h);
+    ArrayDesc desc_nabf_nabf_sl(blacs_ctxt_h);
+    ArrayDesc desc_nabf_nabf_ss(blacs_ctxt_h);
+    desc_nabf_nabf_ll.init_square_blk(all_mu, all_mu, 0, 0);
+    desc_nabf_nabf_sl.init_square_blk(all_mu_s, all_mu, 0, 0);
+    desc_nabf_nabf_ss.init_square_blk(all_mu_s, all_mu_s, 0, 0);
+    const auto set_IJ_nabf_nabf =
+        get_necessary_IJ_from_block_2D_sy('U', abf_large, desc_nabf_nabf_ll);
+    const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nabf_nabf);
+    auto chi0_block = init_local_mat<complex<double>>(desc_nabf_nabf_ll, MAJOR::COL);
+    auto chi0ss_block = init_local_mat<complex<double>>(desc_nabf_nabf_ss, MAJOR::COL);
+    auto u_block = init_local_mat<complex<double>>(desc_nabf_nabf_sl, MAJOR::COL);
+    auto u_chi0 = init_local_mat<complex<double>>(desc_nabf_nabf_sl, MAJOR::COL);
+    // for 2D->IJ
+    int I, iI;
+    map<int, vector<int>> map_lor_v;
+    map<int, vector<int>> map_loc_v;
+    for (int i_lo = 0; i_lo != desc_nabf_nabf_ss.m_loc(); i_lo++)
+    {
+        int i_glo = desc_nabf_nabf_ss.indx_l2g_r(i_lo);
+        abf_small.get_local_index(i_glo, I, iI);
+        map_lor_v[I].push_back(iI);
+    }
+    for (int i_lo = 0; i_lo != desc_nabf_nabf_ss.n_loc(); i_lo++)
+    {
+        int i_glo = desc_nabf_nabf_ss.indx_l2g_c(i_lo);
+        abf_small.get_local_index(i_glo, I, iI);
+        map_loc_v[I].push_back(iI);
+    }
+    // IJ pair of shrinked chi0 to be returned
+    std::pair<std::set<int>, std::set<int>> Iset_Jset_c;
+    const auto atpair_local = dispatch_upper_triangular_tasks(
+        natom, blacs_ctxt_h.myid, blacs_ctxt_h.nprows, blacs_ctxt_h.npcols,
+        blacs_ctxt_h.myprow, blacs_ctxt_h.mypcol);
+    for (const auto &ap : atpair_local)
+    {
+        Iset_Jset_c.first.insert(ap.first);
+        Iset_Jset_c.second.insert(ap.second);
+    }
+    for (int iq = 0; iq < qlist.size(); iq++)
+    {
+        const auto &q = qlist[iq];
+        std::array<double, 3> qa = {q.x, q.y, q.z};
+        const auto &U = sinvS.at(q);
+        // profiler.start("shrink_prepare_chi0_2d", "Prepare Chi0 2D block for shrink");
+        chi0_block.zero_out();
+        chi0ss_block.zero_out();
+        u_block.zero_out();
+        u_chi0.zero_out();
+        {
+            std::map<int,
+                     std::map<std::pair<int, std::array<double, 3>>, RI::Tensor<complex<double>>>>
+                chi0_libri;
+
+            if (chi0_q_in.count(q) > 0)
+            {
+                const auto &chi0_wq = chi0_q_in.at(q);
+                for (const auto &M_Nchi : chi0_wq)
+                {
+                    const auto &M = M_Nchi.first;
+                    const auto n_mu = abf_large.get_atom_nb(M);
+                    for (const auto &N_chi : M_Nchi.second)
+                    {
+                        const auto &N = N_chi.first;
+                        const auto n_nu = abf_large.get_atom_nb(N);
+                        const auto &chi = N_chi.second;
+                        std::valarray<complex<double>> chi_va(chi.c, chi.size);
+                        auto pchi = std::make_shared<std::valarray<complex<double>>>();
+                        *pchi = chi_va;
+                        chi0_libri[M][{N, qa}] = RI::Tensor<complex<double>>({n_mu, n_nu}, pchi);
+                    }
+                }
+            }
+            // wait for all mpi to calculate chi0_libri
+            // then collect chi0_libri to chi0_block
+            comm_h.barrier();
+            // profiler.start("shrink_prepare_chi0_2d_comm_map2");
+            const auto IJq_chi0 = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+                comm_h.comm, chi0_libri, s0_s1.first, s0_s1.second);
+            // profiler.stop("shrink_prepare_chi0_2d_comm_map2");
+            // profiler.start("shrink_prepare_chi0_2d_collect_block");
+            collect_block_from_ALL_IJ_Tensor(chi0_block, desc_nabf_nabf_ll,
+                                             abf_large, qa, true, CONE, IJq_chi0,
+                                             MAJOR::ROW);
+            // profiler.stop("shrink_prepare_chi0_2d_collect_block");
+        }
+        // profiler.stop("shrink_prepare_chi0_2d");
+        for (int ir = 0; ir < U.nr; ir++)
+        {
+            const int ilo = desc_nabf_nabf_sl.indx_g2l_r(ir);
+            if (ilo < 0) continue;
+            for (int ic = 0; ic < U.nc; ic++)
+            {
+                const int jlo = desc_nabf_nabf_sl.indx_g2l_c(ic);
+                if (jlo < 0) continue;
+                u_block(ilo, jlo) = U(ir, ic);
+            }
+        }
+        // Shape of u_block is N_small x N_large
+        ScalapackConnector::pgemm_f('N', 'N', all_mu_s, all_mu, all_mu, 1.0, u_block.ptr(), 1, 1,
+                                    desc_nabf_nabf_sl.desc, chi0_block.ptr(), 1, 1,
+                                    desc_nabf_nabf_ll.desc, 0.0, u_chi0.ptr(), 1, 1,
+                                    desc_nabf_nabf_sl.desc);
+        ScalapackConnector::pgemm_f('N', 'C', all_mu_s, all_mu_s, all_mu, 1.0, u_chi0.ptr(), 1, 1,
+                                    desc_nabf_nabf_sl.desc, u_block.ptr(), 1, 1,
+                                    desc_nabf_nabf_sl.desc, 0.0, chi0ss_block.ptr(), 1, 1,
+                                    desc_nabf_nabf_ss.desc);
+
+        // shrinked_chi0 = U * large_chi0 * transpose(U, true);
+
+        map<int, map<int, matrix_m<complex<double>>>> chi0s_MNmap;
+        map_block_to_IJ_storage_new(chi0s_MNmap, abf_small, map_lor_v, map_loc_v,
+                                    chi0ss_block, desc_nabf_nabf_ss, MAJOR::ROW);
+
+        std::map<int, std::map<std::pair<int, std::array<double, 3>>, RI::Tensor<complex<double>>>>
+            shrinked_chi0_libri;
+        for (const auto &M_Nc : chi0s_MNmap)
+        {
+            const auto &M = M_Nc.first;
+            const auto n_mu = abf_small[M];
+            for (const auto &N_c : M_Nc.second)
+            {
+                const auto &N = N_c.first;
+                const auto n_nu = abf_small[N];
+                const auto &c = N_c.second;
+                shrinked_chi0_libri[M][{N, qa}] =
+                    RI::Tensor<complex<double>>({n_mu, n_nu}, c.sptr());
+            }
+        }
+        const auto IJq_chi = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+            comm_h.comm, shrinked_chi0_libri, Iset_Jset_c.first, Iset_Jset_c.second);
+        if (debug)
+        {
+            for (auto &IJqc : IJq_chi)
+            {
+                auto &I = IJqc.first;
+                for (auto &Jqc : IJqc.second)
+                {
+                    auto &J = Jqc.first.first;
+                    auto &c = Jqc.second;
+                    global::ofs_myid << "chi0ss I " << I << " J " << J << std::endl;
+                }
+            }
+        }
+        if (chi0_q_in.count(q) > 0)
+        {
+            for (auto &Ip : chi0_q_in[q])
+            {
+                auto I = as_int(Ip.first);
+                for (auto &Jm : Ip.second)
+                {
+                    auto J = as_int(Jm.first);
+                    // ofs_myid << "IJ=" << I << J << std::endl;
+                    ComplexMatrix cm_chi0(abf_small[I], abf_small[J]);
+                    for (int ir = 0; ir < abf_small[I]; ir++)
+                    {
+                        for (int ic = 0; ic < abf_small[J]; ic++)
+                        {
+                            cm_chi0(ir, ic) = IJq_chi.at(I).at({J, qa})(ir, ic);
+                        }
+                    }
+                    Jm.second = cm_chi0;
+                    Jm.second.nr = abf_small[I];
+                    Jm.second.nc = abf_small[J];
+                    Jm.second.size = abf_small[I] * abf_small[J];
+                }
+            }
+        }
+    }
 }
 #endif
 
+template <typename Tdata>
 void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
-                                                 const std::vector<atpair_t> &atpairs_ABF)
+                                                 const std::vector<atpair_t> &atpairs_ABF,
+                                                 const AtomicBasis &abf_Cs,
+                                                 std::map<Vector3_Order<double>, ComplexMatrix> &sinvS,
+                                                 const BlacsCtxtHandler &blacs_ctxt_h)
 {
+    using global::profiler;
+    using global::lib_printf;
 #ifndef LIBRPA_USE_LIBRI
     std::cout << "LibRI routing requested, but the executable is not compiled with LibRI" << std::endl;
     std::cout << "Please recompiler libRPA with -DUSE_LIBRI and configure include path" << std::endl;
     global::mpi_comm_global_h.barrier();
     throw LIBRPA_RUNTIME_ERROR("compilation");
 #else
+    const bool use_shrink_chi = sinvS.size() > 0;
     global::profiler.start("LibRI_routing", "Loop over LibRI");
-    map<int,std::array<double,3>> atoms_pos;
+
+    map<int, std::array<double, 3>> atoms_pos;
     for (int i = 0; i != atbasis_wfc.n_atoms; i++)
     {
         atoms_pos.insert(pair<int, std::array<double, 3>>{i, {0, 0, 0}});
@@ -530,7 +924,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
 
     // Estimate memory consumption of chi0_q
     double chi0_q_mem_gb = 0.0;
-    for (auto atpair: atpairs_ABF)
+    for (auto atpair : atpairs_ABF)
     {
         auto Mu = atpair.first;
         auto Nu = atpair.second;
@@ -543,21 +937,23 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     global::ofs_myid << "Estimated chi0_q memory [GB]: " << chi0_q_mem_gb << std::endl;
 
     // Preapre relevant ComplexMatrix objects
-    for ( auto freq: tfg.get_freq_nodes() )
-        for ( auto q: qlist)
+    for (auto freq : tfg.get_freq_nodes())
+    {
+        for (auto q : qlist)
         {
-            for ( auto atpair: atpairs_ABF)
+            for (auto atpair : atpairs_ABF)
             {
                 auto Mu = atpair.first;
                 auto Nu = atpair.second;
                 chi0_q[freq][q][Mu][Nu].create(atbasis_abf[Mu], atbasis_abf[Nu]);
             }
         }
+    }
     const auto &lat_array = this->pbc.latvec_array;
 
     const auto &period_array = this->pbc.period_array;
 
-    RI::RPA<int,int,3,double> rpa;
+    RI::RPA<int, int, 3, Tdata> rpa;
     global::profiler.start("chi0_libri_routing_set_parallel");
     rpa.set_parallel(comm_h.comm, atoms_pos, lat_array, period_array);
     global::profiler.stop("chi0_libri_routing_set_parallel");
@@ -577,7 +973,26 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     //     // printf("chi0_freq_q size: %d,  freq: %f, q:( %f, %f, %f )\n",chi0_wq.size(),freq, q.x,q.y,q.z );
     // }
 
-    rpa.set_Cs(Cs.data_libri, libri_threshold_C);
+    // TODO: template Cs_LRI
+    if constexpr (std::is_same<Tdata, std::complex<double>>::value)
+    {
+        std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<Tdata>>> data_libri;
+        for (const auto &I_JR_C : Cs.data_libri)
+        {
+            const auto I = I_JR_C.first;
+            for (const auto &JR_C : I_JR_C.second)
+            {
+                const auto J = JR_C.first.first;
+                const auto R = JR_C.first.second;
+                const auto &C = JR_C.second;
+                auto JR = std::pair<int, std::array<int, 3>>(J, R);
+                data_libri[I][JR] = RI::Global_Func::convert<Tdata>(C);
+            }
+        }
+        rpa.set_Cs(data_libri, libri_threshold_C);
+    }
+    else
+        rpa.set_Cs(Cs.data_libri, libri_threshold_C);
 
     // Cs_libri.clear();
     // librpa_int::utils::release_free_mem();
@@ -591,6 +1006,8 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     // cout << "Cs of rpa object set" << endl;
     global::profiler.stop("chi0_libri_routing_set_cs");
 
+    const int n_soc = mf.get_n_spinor();
+
     // omp_lock_t lock_chi0_fourier_cosine;
     // omp_init_lock(&lock_chi0_fourier_cosine);
     int count_gf = 0;
@@ -600,82 +1017,156 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         // cout << tau << " ";
         for (auto isp = 0; isp < this->mf.get_n_spins(); isp++)
         {
-            std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<double>>> gf_po_libri;
-            std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<double>>> gf_ne_libri;
-
+            std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> chi0s_IJR;
             std::clock_t cpu_clock_start_isp_tau = clock();
             double wtime_start_isp_tau = omp_get_wtime();
+            for (auto is1 = 0; is1 < n_soc; is1++)
+            {
+                for (auto is2 = 0; is2 < n_soc; is2++)
+                {
+                    std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> gf_po_libri;
+                    std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> gf_ne_libri;
 
-            // On-the-fly build of Green's function at specific spin channel and imaginary time
-            if (this->is_mf_eigvec_k_distributed_)
-            {
-                build_gf_Rt_libri_kpara(this->mf, this->comm_h, this->atbasis_wfc, isp, this->pbc.kfrac_list,
-                                        this->IJRs_gf_local, tau, gf_po_libri);
-                build_gf_Rt_libri_kpara(this->mf, this->comm_h, this->atbasis_wfc, isp, this->pbc.kfrac_list,
-                                        this->IJRs_gf_local, -tau, gf_ne_libri);
-            }
-            else
-            {
-                build_gf_Rt_libri_serial(this->mf, this->atbasis_wfc, isp, this->pbc.kfrac_list,
-                                         this->IJRs_gf_local, tau, gf_po_libri);
-                build_gf_Rt_libri_serial(this->mf, this->atbasis_wfc, isp, this->pbc.kfrac_list,
-                                         this->IJRs_gf_local, -tau, gf_ne_libri);
-            }
-            global::profiler.start("chi0_set_Gs");
-            rpa.set_Gs_pos(gf_po_libri, libri_threshold_G);
-            rpa.set_Gs_neg(gf_ne_libri, libri_threshold_G);
-            global::profiler.stop("chi0_set_Gs");
-            // ofs_myid << "gf_po_libri\n" << gf_po_libri << "\n";
-            // ofs_myid << "gf_ne_libri\n" << gf_ne_libri << "\n";
-            // comm_h.barrier();
-            // std::clock_t cpu_clock_done_init_gf = clock();
-            global::ofs_myid << "rpa.cal_chi0s begin,    tau = " << tau << "\n";
-            global::profiler.start("chi0_libri_routing_cal_chi0s", "Call cal_chi0s");
-            rpa.cal_chi0s();
-            global::profiler.stop("chi0_libri_routing_cal_chi0s");
-            global::ofs_myid << "rpa.cal_chi0s finished, tau = " << tau << "\n";
+                    // On-the-fly build of Green's function at specific spin channel and imaginary
+                    // time
+                    const auto nbands = mf.get_n_bands();
+                    assert(nbands_G < nbands);
+                    if (comm_h.is_root())
+                    {
+                        if (nbands_G >= 0)
+                            std::cout << "Green's Function sums over " << nbands_G
+                                      << " states." << std::endl;
+                        else
+                            std::cout << "Green's Function sums over all states." << std::endl;
+                    }
+                    if (this->is_mf_eigvec_k_distributed_)
+                    {
+                        build_gf_Rt_libri_kpara(this->mf, this->nbands_G, this->comm_h, this->atbasis_wfc, isp, is1,
+                                                is2, this->pbc.kfrac_list, this->IJRs_gf_local, tau,
+                                                gf_po_libri);
+                        build_gf_Rt_libri_kpara(this->mf, this->nbands_G, this->comm_h, this->atbasis_wfc, isp, is1,
+                                                is2, this->pbc.kfrac_list, this->IJRs_gf_local,
+                                                -tau, gf_ne_libri);
+                    }
+                    else
+                    {
+                        build_gf_Rt_libri_serial(this->mf, this->nbands_G, this->atbasis_wfc, isp, is1, is2,
+                                                 this->pbc.kfrac_list, this->IJRs_gf_local, tau,
+                                                 gf_po_libri);
+                        build_gf_Rt_libri_serial(this->mf, this->nbands_G, this->atbasis_wfc, isp, is1, is2,
+                                                 this->pbc.kfrac_list, this->IJRs_gf_local, -tau,
+                                                 gf_ne_libri);
+                    }
+                    global::profiler.start("chi0_set_Gs");
+                    rpa.set_Gs_pos(gf_po_libri, libri_threshold_G);
+                    rpa.set_Gs_neg(gf_ne_libri, libri_threshold_G);
+                    global::profiler.stop("chi0_set_Gs");
+                    global::ofs_myid << "rpa.cal_chi0s begin,    tau = " << tau << "\n";
+                    global::profiler.start("chi0_libri_routing_cal_chi0s", "Call cal_chi0s");
+                    rpa.cal_chi0s();
+                    global::profiler.stop("chi0_libri_routing_cal_chi0s");
+                    global::ofs_myid << "rpa.cal_chi0s finished, tau = " << tau << "\n";
 
-            global::profiler.start("chi0_libri_routing_free_gf");
-            rpa.free_Gs_neg();
-            rpa.free_Gs_pos();
-            global::profiler.stop("chi0_libri_routing_free_gf");
+                    global::profiler.start("chi0_libri_routing_free_gf");
+                    rpa.free_Gs_neg();
+                    rpa.free_Gs_pos();
+                    global::profiler.stop("chi0_libri_routing_free_gf");
 
-            // collect chi0 on selected atpairs of all R
-            global::profiler.start("chi0_libri_routing_collect_Rs", "Collect all R blocks");
-            std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<double>>> chi0s_IJR;
-            if (comm_h.nprocs > 1)
-            {
-                chi0s_IJR = RI::Communicate_Tensors_Map_Judge::comm_map2_first(comm_h.comm, rpa.chi0s, s0_s1.first, s0_s1.second);
-                rpa.chi0s.clear(); // release chi0s at this tau
+                    // collect chi0 on selected atpairs of all R
+                    global::profiler.start("chi0_libri_routing_collect_Rs", "Collect all R blocks");
+                    std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> tmp_chi0;
+                    if (comm_h.nprocs > 1)
+                    {
+                        tmp_chi0 = RI::Communicate_Tensors_Map_Judge::comm_map2_first(comm_h.comm, rpa.chi0s, s0_s1.first, s0_s1.second);
+                        rpa.chi0s.clear(); // release chi0s at this tau
+                    }
+                    else
+                    {
+                        // Single MPI task, no need to perform communication
+                        tmp_chi0 = std::move(rpa.chi0s);
+                    }
+                    global::profiler.stop("chi0_libri_routing_collect_Rs");
+                    for (const auto &IJRc : tmp_chi0)
+                    {
+                        auto I = IJRc.first;
+                        for (const auto &JRc : IJRc.second)
+                        {
+                            auto J = JRc.first.first;
+                            auto R = JRc.first.second;
+                            auto &chi0 = JRc.second;
+                            if (chi0s_IJR[I][{J, R}].empty())
+                            {
+                                chi0s_IJR[I][{J, R}] = RI::Tensor<Tdata>({chi0.shape[0], chi0.shape[1]});
+                            }
+                            chi0s_IJR[I][{J, R}] += chi0;
+                        }
+                    }
+                }
             }
-            else
-            {
-                // Single MPI task, no need to perform communication
-                chi0s_IJR = std::move(rpa.chi0s);
-            }
-            global::profiler.stop("chi0_libri_routing_collect_Rs");
+
             std::clock_t cpu_clock_done_chi0s = clock();
 
             // parse back to chi0
-            global::profiler.start("chi0_libri_routing_ft_ct", "Fourier and Cosine transform");
-            chi_libri_ft_ct(isp, mf.get_n_spins(), it, tfg, atbasis_abf, pbc.latvec, chi0s_IJR, qlist,
-                            atpairs_ABF, chi0_q);
-            chi0s_IJR.clear();
-            global::profiler.stop("chi0_libri_routing_ft_ct");
+            if (use_shrink_chi)
+            {
+                map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>>
+                    chi0_tau_q;
+                for (auto q : qlist)
+                {
+                    for (auto atpair : atpairs_ABF)
+                    {
+                        auto Mu = atpair.first;
+                        auto Nu = atpair.second;
+                        chi0_tau_q[tau][q][Mu][Nu].create(abf_Cs[Mu], abf_Cs[Nu]);
+                    }
+                }
+                profiler.start("chi0_libri_routing_ft_Rq");
+                chi_libri_ft_Rq<Tdata>(isp, mf.get_n_spins(), it, tfg, abf_Cs, pbc.latvec, 
+                                       chi0s_IJR, qlist,
+                                       atpairs_ABF, chi0_tau_q);
+                profiler.stop("chi0_libri_routing_ft_Rq");
+                chi0s_IJR.clear();
+                profiler.start("shrink_chi0_abfs", "Do shrink transformation");
+                shrink_abfs_chi0(chi0_tau_q[tau], sinvS, qlist, abf_Cs, atbasis_abf, blacs_ctxt_h);
+                profiler.stop("shrink_chi0_abfs");
+                profiler.start("chi0_libri_routing_ft_tw");
+                chi_libri_ft_tw(isp, mf.get_n_spins(), it, tfg, chi0_tau_q, qlist, atpairs_ABF,
+                                chi0_q);
+                profiler.start("chi0_libri_routing_ft_tw");
+                chi0_tau_q.clear();
+            }
+            else
+            {
+                profiler.start("chi0_libri_routing_ft_ct", "Fourier and Cosine transform");
+                chi_libri_ft_ct<Tdata>(isp, mf.get_n_spins(), it, tfg, atbasis_abf, pbc.latvec, chi0s_IJR, qlist,
+                                       atpairs_ABF, chi0_q);
+                profiler.stop("chi0_libri_routing_ft_ct");
+                chi0s_IJR.clear();
+            }
 
             std::clock_t cpu_clock_done_trans = clock();
             double wtime_end_isp_tau = omp_get_wtime();
             if (comm_h.myid == 0)
             {
-                lib_printf("chi0s for time point %f, spin %d. CPU time: %f (tensor), %f (trans). Wall time %f\n",
-                       tau, isp, cpu_time_from_clocks_diff(cpu_clock_start_isp_tau, cpu_clock_done_chi0s),
-                       cpu_time_from_clocks_diff(cpu_clock_done_chi0s, cpu_clock_done_trans),
-                       wtime_end_isp_tau - wtime_start_isp_tau);
+                lib_printf(
+                    "chi0s for time point %f, spin %d. CPU time: %f "
+                    "(tensor), %f (trans). "
+                    "Wall "
+                    "time %f\n",
+                    tau, isp,
+                    cpu_time_from_clocks_diff(cpu_clock_start_isp_tau, cpu_clock_done_chi0s),
+                    cpu_time_from_clocks_diff(cpu_clock_done_chi0s, cpu_clock_done_trans),
+                    wtime_end_isp_tau - wtime_start_isp_tau);
             }
             // Release freed memory to OS, to resolve memory fragments in LibRI
             release_free_mem();
-        }
-    }
+        } // ispin
+    } // itau
+
+    // if (use_shrink_chi)
+    // {
+    //     sinvS.clear();
+    // }
     // omp_destroy_lock(&lock_chi0_fourier_cosine);
 
     if (comm_h.is_root()) lib_printf("\n");
@@ -684,11 +1175,13 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
 #endif
 }
 
-
 void Chi0::build_chi0_q_space_time_R_tau_routing(const Cs_LRI &Cs,
                                                  const vector<atpair_t> &atpairs_ABF)
 {
-    assert (!Cs.use_libri);
+    using global::lib_printf;
+    using global::profiler;
+
+    assert(!Cs.use_libri);
     const auto &LRI_Cs = Cs.data_IJR;
 
     global::profiler.start("R_tau_routing", "Loop over R-tau");
@@ -705,15 +1198,16 @@ void Chi0::build_chi0_q_space_time_R_tau_routing(const Cs_LRI &Cs,
     {
         auto id_qlist = librpa_int::dispatch_vector(qlist, id, comm_h.nprocs, true);
         for(auto &id_q:id_qlist)
-            qlist2myid.insert(std::make_pair(id_q,id));
+            qlist2myid.insert(std::make_pair(id_q, id));
     }
 
+    const int n_soc = mf.get_n_spinor();
 
     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> chi0_q_tmp;
-    for ( auto freq: tfg.get_freq_nodes() )
-        for ( auto q: qlist)
+    for (auto freq : tfg.get_freq_nodes())
+        for (auto q : qlist)
         {
-            for ( auto atpair: atpairs_ABF)
+            for (auto atpair : atpairs_ABF)
             {
                 auto Mu = atpair.first;
                 auto Nu = atpair.second;
@@ -726,63 +1220,75 @@ void Chi0::build_chi0_q_space_time_R_tau_routing(const Cs_LRI &Cs,
     // double t_chi0_begin = omp_get_wtime();
     // double t_chi0_tot = 0;
 #pragma omp parallel for schedule(dynamic)
-    for ( size_t i=0;i!= itauiRs_local.size();i++)
+    for (int i = 0; i != itauiRs_local.size(); i++)
     {
         auto itau = itauiRs_local[i].first;
         auto tau = tfg.get_time_nodes()[itau];
         auto iR = itauiRs_local[i].second;
         auto R = Rlist_gf[iR];
         double t_Rtau_begin = omp_get_wtime();
-        for ( auto atpair: atpairs_ABF)
+        for (auto atpair : atpairs_ABF)
         {
             atom_t Mu = atpair.first;
             atom_t Nu = atpair.second;
-            for ( int is = 0; is != mf.get_n_spins(); is++ )
+            for (int is = 0; is != mf.get_n_spins(); is++)
             {
-                // double chi0_ele_begin = omp_get_wtime();
-                matrix chi0_tau;
-                /* if (itau == 0) // debug first itau */
-                    chi0_tau = 2.0 /mf.get_n_spins() * compute_chi0_s_munu_tau_R(LRI_Cs, is, Mu, Nu, tau, R);
-                // print_matrix("", chi0_tau);
-                /* else continue; // debug first itau */
-                // double chi0_ele_t = omp_get_wtime() - chi0_ele_begin;
-                omp_set_lock(&chi0_lock);
-                for ( auto q: qlist )
+                for (int isoc1 = 0; isoc1 != n_soc; isoc1++)
                 {
-                    double arg = q * (R * pbc.latvec) * TWO_PI;
-                    const complex<double> kphase = complex<double>(cos(arg), sin(arg));
-                    for ( size_t ifreq = 0; ifreq != tfg.size(); ifreq++ )
+                    for (int isoc2 = 0; isoc2 != n_soc; isoc2++)
                     {
-                        double freq = tfg.get_freq_nodes()[ifreq];
-                        double trans = tfg.get_costrans_t2f()(ifreq, itau);
-                        const complex<double> weight = trans * kphase;
-                        /* cout << weight << endl; */
-                        // if(freq==tfg_.get_freq_nodes()[10] && tau == tfg_.get_time_nodes()[10])
-                        //     cout <<"freq:  "<<freq<<"   Mu Nu:"<<Mu<<", "<<Nu<<";  "<<complex<double>(cos(arg), sin(arg)) << " * " << trans <<"   chi0_tau: "<<chi0_tau(0,0)<<"   chi0_freq:"<<chi0_q_tmp[freq][q][Mu][Nu](0,0)<<endl;
-                        chi0_q_tmp[freq][q][Mu][Nu] += ComplexMatrix(chi0_tau) * weight;
+                        // double chi0_ele_begin = omp_get_wtime();
+                        matrix chi0_tau;
+                        /* if (itau == 0) // debug first itau */
+                        chi0_tau = 2.0 / mf.get_n_spins() *
+                                   compute_chi0_s_munu_tau_R(LRI_Cs, is, isoc1, isoc2, Mu,
+                                                             Nu, tau, R);
+                        // print_matrix("", chi0_tau);
+                        /* else continue; // debug first itau */
+                        // double chi0_ele_t = omp_get_wtime() - chi0_ele_begin;
+                        omp_set_lock(&chi0_lock);
+                        for (auto q : qlist)
+                        {
+                            double arg = q * (R * pbc.latvec) * TWO_PI;
+                            const complex<double> kphase = complex<double>(cos(arg), sin(arg));
+                            for (int ifreq = 0; ifreq != tfg.size(); ifreq++)
+                            {
+                                double freq = tfg.get_freq_nodes()[ifreq];
+                                double trans = tfg.get_costrans_t2f()(ifreq, itau);
+                                const complex<double> weight = trans * kphase;
+                                /* cout << weight << endl; */
+                                // if(freq==tfg.get_freq_nodes()[10] && tau ==
+                                // tfg.get_time_nodes()[10])
+                                //     cout <<"freq:  "<<freq<<"   Mu Nu:"<<Mu<<", "<<Nu<<";
+                                //     "<<complex<double>(cos(arg), sin(arg)) << " * " << trans <<"
+                                //     chi0_tau: "<<chi0_tau(0,0)<<"
+                                //     chi0_freq:"<<chi0_q_tmp[freq][q][Mu][Nu](0,0)<<endl;
+                                chi0_q_tmp[freq][q][Mu][Nu] += ComplexMatrix(chi0_tau) * weight;
+                            }
+                        }
+                        omp_unset_lock(&chi0_lock);
                     }
                 }
-                omp_unset_lock(&chi0_lock);
             }
         }
         double t_Rtau_end = omp_get_wtime();
         double time_used = t_Rtau_end - t_Rtau_begin;
         // t_chi0_tot += time_used;
         lib_printf("CHI0 p_id: %3d, thread: %3d, R: ( %d,  %d,  %d ), tau: %f , TIME_USED: %f\n",
-               comm_h.myid, omp_get_thread_num(), R.x, R.y, R.z, tau, time_used);
+                   comm_h.myid, omp_get_thread_num(), R.x, R.y, R.z, tau, time_used);
     }
 
     const int nfreq = tfg.size();
     omp_destroy_lock(&chi0_lock);
     // Reduce to MPI
 #pragma omp barrier
-    for ( int ifreq = 0; ifreq < nfreq; ifreq++ )
+    for (int ifreq = 0; ifreq < nfreq; ifreq++)
     {
         double freq = tfg.get_freq_nodes()[ifreq];
-        for ( auto q: qlist )
+        for (auto q : qlist)
         {
             int id_contain_q = qlist2myid[q];
-            for ( auto &[Mu, Nu]: atpairs_ABF)
+            for (auto &[Mu, Nu]: atpairs_ABF)
             {
                 ComplexMatrix tmp_chi0_recv(atbasis_abf[Mu], atbasis_abf[Nu]);
                 tmp_chi0_recv.zero_out();
@@ -799,7 +1305,8 @@ void Chi0::build_chi0_q_space_time_R_tau_routing(const Cs_LRI &Cs,
                 /* { */
                 /*     cout <<  "freq: " << freq << ", q: " << q << endl; */
                 /*     lib_printf("Mu %zu Nu %zu\n", Mu, Nu); */
-                /*     print_complex_matrix("chi0_q ap, first freq first q", chi0_q[freq][q][Mu][Nu]); */
+                /*     print_complex_matrix("chi0_q ap, first freq first q",
+                 * chi0_q[freq][q][Mu][Nu]); */
                 /* } */
                 chi0_q_tmp[freq][q][Mu].erase(Nu);
             }
@@ -811,7 +1318,10 @@ void Chi0::build_chi0_q_space_time_R_tau_routing(const Cs_LRI &Cs,
 void Chi0::build_chi0_q_space_time_atom_pair_routing(const Cs_LRI &Cs,
                                                      const vector<atpair_t> &atpairs_ABF)
 {
-    global::profiler.start("atom_pair_routing", "Loop over atom pairs");
+    using global::lib_printf;
+    using global::profiler;
+
+    profiler.start("atom_pair_routing", "Loop over atom pairs");
     //auto tot_pair = dispatch_vector(atpairs_ABF, librpa_int::mpi_comm_global_h.myid, para_mpi.get_size(), false);
     lib_printf("Number of atom pairs on Proc %4d: %zu\n", comm_h.myid, atpairs_ABF.size());
     comm_h.barrier();
@@ -819,12 +1329,14 @@ void Chi0::build_chi0_q_space_time_atom_pair_routing(const Cs_LRI &Cs,
     omp_init_lock(&chi0_lock);
     double t_chi0_begin = omp_get_wtime();
 
-    assert (!Cs.use_libri);
+    assert(!Cs.use_libri);
     const auto &LRI_Cs = Cs.data_IJR;
 
     const auto &latvec = this->pbc.latvec;
     const auto &qlist = this->pbc.klist_ibz;
     const int nfreq = tfg.size();
+
+    const auto n_spinor = mf.get_n_spinor();
 
 #pragma omp parallel
     {
@@ -837,46 +1349,61 @@ void Chi0::build_chi0_q_space_time_atom_pair_routing(const Cs_LRI &Cs,
             // const size_t nu_num = atom_mu[Nu];
             double task_begin = omp_get_wtime();
             map<double, map<Vector3_Order<double>, ComplexMatrix>> tmp_chi0_freq_k;
-            for ( auto freq: tfg.get_freq_nodes() )
-                for ( auto q: qlist)
+            for (auto freq : tfg.get_freq_nodes())
+                for (auto q : qlist)
                 {
                     tmp_chi0_freq_k[freq][q].create(atbasis_abf[Mu], atbasis_abf[Nu]);
                 }
 
-            for ( int is = 0; is != mf.get_n_spins(); is++ )
-                for (auto &R : Rlist_gf)
+            for (int is = 0; is != mf.get_n_spins(); is++)
+            {
+                for (int isoc1 = 0; isoc1 != n_spinor; isoc1++)
                 {
-                    for (int it = 0; it != nfreq; it++)
+                    for (int isoc2 = 0; isoc2 != n_spinor; isoc2++)
                     {
-                        double tau = tfg.get_time_nodes()[it];
-                        ComplexMatrix tmp_chi0_tau(2.0 /mf.get_n_spins() * ComplexMatrix(compute_chi0_s_munu_tau_R(LRI_Cs, is, Mu, Nu, tau, R)));
-                        // print_complex_matrix("", tmp_chi0_tau);
-                        for (auto &q : qlist)
+                        for (auto &R : Rlist_gf)
                         {
-                            const double arg = (q * (R * latvec)) * TWO_PI;
-                            const complex<double> kphase = complex<double>(cos(arg), sin(arg));
-                            for (int ifreq = 0; ifreq != nfreq; ifreq++)
+                            for (auto it = 0; it != tfg.size(); it++)
                             {
-                                double freq = tfg.get_freq_nodes()[ifreq];
-                                double trans = tfg.get_costrans_t2f()(ifreq, it);
-                                const complex<double> weight = trans * kphase;
-                                /* const complex<double> cos_weight_kpashe = kphase * tfg.get_costrans_t2f()[ifreq, it]; */
-                                //  cout<<"  tmp_chi0  nr nc:  "<<tmp_chi0_freq_k[ifreq][ik_vec].nr<<"  "<<tmp_chi0_freq_k[ifreq][ik_vec].nc<<"    chi0_tau: "<<tmp_chi0_tau.nr<<"  "<<tmp_chi0_tau.nr<<endl;
-                                tmp_chi0_freq_k[freq][q] += tmp_chi0_tau * weight;
+                                double tau = tfg.get_time_nodes()[it];
+                                ComplexMatrix tmp_chi0_tau(
+                                    2.0 / mf.get_n_spins() *
+                                    ComplexMatrix(compute_chi0_s_munu_tau_R(
+                                        LRI_Cs, is, isoc1, isoc2, Mu, Nu, tau, R)));
+                                // print_complex_matrix("", tmp_chi0_tau);
+                                for (auto &q : qlist)
+                                {
+                                    const double arg = (q * (R * latvec)) * TWO_PI;
+                                    const complex<double> kphase =
+                                        complex<double>(cos(arg), sin(arg));
+                                    for (auto ifreq = 0; ifreq != tfg.size(); ifreq++)
+                                    {
+                                        double freq = tfg.get_freq_nodes()[ifreq];
+                                        double trans = tfg.get_costrans_t2f()(ifreq, it);
+                                        const complex<double> weight = trans * kphase;
+                                        /* const complex<double> cos_weight_kpashe = kphase *
+                                         * tfg.get_costrans_t2f()[ifreq, it]; */
+                                        //  cout<<"  tmp_chi0  nr nc:
+                                        //  "<<tmp_chi0_freq_k[ifreq][ik_vec].nr<<"
+                                        //  "<<tmp_chi0_freq_k[ifreq][ik_vec].nc<<"    chi0_tau:
+                                        //  "<<tmp_chi0_tau.nr<<"  "<<tmp_chi0_tau.nr<<endl;
+                                        tmp_chi0_freq_k[freq][q] += tmp_chi0_tau * weight;
+                                    }
+                                }
                             }
+                            // vector<matrix>
+                            // chi0_freq_tmp(tmp_cosine_tran(freq_grid.size(),chi0_tau_tmp));
                         }
                     }
-                    // vector<matrix> chi0_freq_tmp(tmp_cosine_tran(freq_grid.size(),chi0_tau_tmp));
                 }
-
+            }
             double task_end = omp_get_wtime();
             double time_used = task_end - task_begin;
             /* time_task_tot += time_used; */
             omp_set_lock(&chi0_lock);
-            for (auto &freq : tfg.get_freq_nodes() )
+            for (auto &freq : tfg.get_freq_nodes())
             {
-                for (auto &q : qlist)
-                    chi0_q[freq][q][Mu][Nu] = std::move(tmp_chi0_freq_k[freq][q]);
+                for (auto &q : qlist) chi0_q[freq][q][Mu][Nu] = std::move(tmp_chi0_freq_k[freq][q]);
             }
             double add_end = omp_get_wtime();
             double add_time = add_end - task_end;
@@ -892,13 +1419,13 @@ void Chi0::build_chi0_q_space_time_atom_pair_routing(const Cs_LRI &Cs,
 }
 
 matrix Chi0::compute_chi0_s_munu_tau_R(const atpair_R_mat_t &Cs_IJR,
-                                       int spin_channel,
+                                       int spin_channel, int isoc1, int isoc2,
                                        atom_t Mu, atom_t Nu, double tau, Vector3_Order<int> R)
 {
     global::profiler.start("cal_chi0_element", "chi(tau,R,I,J)");
     /* lib_printf("     begin chi0  thread: %d,  I: %zu, J: %zu\n",omp_get_thread_num(), Mu, Nu); */
 
-    assert ( tau > 0 );
+    assert(tau > 0);
     // Local RI requires
     const atom_t I_index = Mu;
     const atom_t J_index = Nu;
@@ -914,15 +1441,13 @@ matrix Chi0::compute_chi0_s_munu_tau_R(const atpair_R_mat_t &Cs_IJR,
 
     /* lib_printf("     check if already calculated\n"); */
     /* lib_printf("     size of Green_atom: %zu\n", Green_atom.size()); */
-    const auto & gf_R_tau = gf_is_R_tau.at(spin_channel);
+    const auto &gf_R_tau = gf_is_R_tau.at(spin_channel).at(isoc1).at(isoc2);
     if (gf_R_tau.at(I_index).count(J_index))
         if (gf_R_tau.at(I_index).at(J_index).count(R))
         {
-            if (gf_R_tau.at(I_index).at(J_index).at(R).count(tau))
-                flag_G_IJRt = 1;
+            if (gf_R_tau.at(I_index).at(J_index).at(R).count(tau)) flag_G_IJRt = 1;
 
-            if (gf_R_tau.at(I_index).at(J_index).at(R).count(-tau))
-                flag_G_IJRNt = 1;
+            if (gf_R_tau.at(I_index).at(J_index).at(R).count(-tau)) flag_G_IJRNt = 1;
         }
 
     matrix X_R2(i_num, j_num * nu_num);
@@ -965,7 +1490,6 @@ matrix Chi0::compute_chi0_s_munu_tau_R(const atpair_R_mat_t &Cs_IJR,
                         X_conj_R2 += gf_R_tau.at(I_index).at(L_index).at(R_temp_2).at(-tau) * Cs2_reshape;
                         // global::profiler.stop("X");
                     }
-
                 }
             }
         }
@@ -984,102 +1508,103 @@ matrix Chi0::compute_chi0_s_munu_tau_R(const atpair_R_mat_t &Cs_IJR,
             const auto R1 = R1_index.first;
             const auto &Cs_mat1 = R1_index.second;
             // cout<<"R1:  begin  "<<R1<<endl;
-                // matrix X_R2(i_num,j_num*nu_num);
-                // matrix X_conj_R2(i_num,j_num*nu_num);
-                matrix O(i_num, k_num * nu_num);
-                matrix Z(k_num, i_num * nu_num);
+            // matrix X_R2(i_num,j_num*nu_num);
+            // matrix X_conj_R2(i_num,j_num*nu_num);
+            matrix O(i_num, k_num * nu_num);
+            matrix Z(k_num, i_num * nu_num);
 
-                if (flag_G_IJRt || flag_G_IJRNt)
+            if (flag_G_IJRt || flag_G_IJRNt)
+            {
+                matrix N_R2(k_num, j_num * nu_num);
+                matrix N_conj_R2(k_num, j_num * nu_num);
+                for (const auto &L_pair : Cs_IJR.at(J_index))
                 {
-                    matrix N_R2(k_num, j_num * nu_num);
-                    matrix N_conj_R2(k_num, j_num * nu_num);
-                    for (const auto &L_pair : Cs_IJR.at(J_index))
+                    const auto L_index = L_pair.first;
+                    const size_t l_num = atbasis_wfc[L_index];
+                    if (gf_R_tau.at(K_index).count(L_index))
                     {
-                        const auto L_index = L_pair.first;
-                        const size_t l_num = atbasis_wfc[L_index];
-                        if (gf_R_tau.at(K_index).count(L_index))
+                        for (const auto &R2_index : L_pair.second)
                         {
-                            for (const auto &R2_index : L_pair.second)
+                            const auto R2 = R2_index.first;
+                            const auto &Cs_mat2 = R2_index.second;
+                            Vector3_Order<int> R_temp_1(Vector3_Order<int>(R + R2 - R1) % R_period);
+                            // Vector3_Order<int> R_temp_2(R2+R);
+                            if (gf_R_tau.at(K_index).at(L_index).count(R_temp_1))
                             {
-                                const auto R2 = R2_index.first;
-                                const auto &Cs_mat2 = R2_index.second;
-                                Vector3_Order<int> R_temp_1(Vector3_Order<int>(R + R2 - R1) % R_period);
-                                // Vector3_Order<int> R_temp_2(R2+R);
-                                if (gf_R_tau.at(K_index).at(L_index).count(R_temp_1))
+                                assert(j_num * l_num == (*Cs_mat2).nr);
+                                // LIBRPA::utils::lib_printf("          thread: %d, IJKL:
+                                // %d,%d,%d,%d  R:(  %d,%d,%d  )
+                                // tau:%f\n",omp_get_thread_num(),I_index,J_index,K_index,L_index,R.x,R.y,R.z,time_tau);
+                                matrix Cs2_reshape(reshape_Cs(j_num, l_num, nu_num, Cs_mat2));
+                                if (flag_G_IJRNt && gf_R_tau.at(K_index).at(L_index).at(R_temp_1).count(tau))
                                 {
-
-                                    assert(j_num * l_num == (*Cs_mat2).nr);
-                                    // librpa_int::global::lib_printf("          thread: %d, IJKL:   %d,%d,%d,%d  R:(  %d,%d,%d  )  tau:%f\n",omp_get_thread_num(),I_index,J_index,K_index,L_index,R.x,R.y,R.z,time_tau);
-                                    matrix Cs2_reshape(reshape_Cs(j_num, l_num, nu_num, Cs_mat2));
-                                    if (flag_G_IJRNt && gf_R_tau.at(K_index).at(L_index).at(R_temp_1).count(tau))
-                                    {
-                                        // cout<<"A";
-                                        // global::profiler.start("N");
-                                        N_R2 += gf_R_tau.at(K_index).at(L_index).at(R_temp_1).at(tau) * Cs2_reshape;
-                                        // global::profiler.stop("N");
-                                    }
-                                    if (flag_G_IJRt && gf_R_tau.at(K_index).at(L_index).at(R_temp_1).count(-tau))
-                                    {
-                                        // cout<<"B";
-                                        // global::profiler.start("N");
-                                        N_conj_R2 += gf_R_tau.at(K_index).at(L_index).at(R_temp_1).at(-tau) * Cs2_reshape;
-                                        // global::profiler.stop("N");
-                                    }
-
+                                    // cout<<"A";
+                                    // profiler.start("N");
+                                    N_R2 += gf_R_tau.at(K_index).at(L_index).at(R_temp_1).at(tau) * Cs2_reshape;
+                                    // profiler.stop("N");
+                                }
+                                if (flag_G_IJRt && gf_R_tau.at(K_index).at(L_index).at(R_temp_1).count(-tau))
+                                {
+                                    // cout<<"B";
+                                    // profiler.start("N");
+                                    N_conj_R2 += gf_R_tau.at(K_index).at(L_index).at(R_temp_1).at(-tau) * Cs2_reshape;
+                                    // profiler.stop("N");
                                 }
                             }
                         }
                     }
-                    if (flag_G_IJRt)
-                    {
-                        // global::profiler.start("O");
-                        matrix N_conj_R2_rs(reshape_mat(k_num, j_num, nu_num, N_conj_R2));
-                        O += gf_R_tau.at(I_index).at(J_index).at(R).at(tau) * N_conj_R2_rs;
-                        // global::profiler.stop("O");
-                    }
-                    if (flag_G_IJRNt)
-                    {
-                        // global::profiler.start("O");
-                        matrix N_R2_rs(reshape_mat(k_num, j_num, nu_num, N_R2));
-                        O += gf_R_tau.at(I_index).at(J_index).at(R).at(-tau) * N_R2_rs;
-                        // global::profiler.stop("O");
-                    }
                 }
-                Vector3_Order<int> R_temp_3(Vector3_Order<int>(R - R1) % R_period);
-                if (gf_R_tau.at(K_index).count(J_index))
+                if (flag_G_IJRt)
                 {
-                    if (gf_R_tau.at(K_index).at(J_index).count(R_temp_3))
+                    // profiler.start("O");
+                    matrix N_conj_R2_rs(reshape_mat(k_num, j_num, nu_num, N_conj_R2));
+                    O += gf_R_tau.at(I_index).at(J_index).at(R).at(tau) * N_conj_R2_rs;
+                    // profiler.stop("O");
+                }
+                if (flag_G_IJRNt)
+                {
+                    // profiler.start("O");
+                    matrix N_R2_rs(reshape_mat(k_num, j_num, nu_num, N_R2));
+                    O += gf_R_tau.at(I_index).at(J_index).at(R).at(-tau) * N_R2_rs;
+                    // profiler.stop("O");
+                }
+            }
+            Vector3_Order<int> R_temp_3(Vector3_Order<int>(R - R1) % R_period);
+            if (gf_R_tau.at(K_index).count(J_index))
+            {
+                if (gf_R_tau.at(K_index).at(J_index).count(R_temp_3))
+                {
+                    if (gf_R_tau.at(K_index).at(J_index).at(R_temp_3).count(-tau))
                     {
-                        if (gf_R_tau.at(K_index).at(J_index).at(R_temp_3).count(-tau))
-                        {
-                            // global::profiler.start("Z");
-                            Z += gf_R_tau.at(K_index).at(J_index).at(R_temp_3).at(-tau) * X_R2_rs;
-                            // global::profiler.stop("Z");
-                        }
+                        // profiler.start("Z");
+                        Z += gf_R_tau.at(K_index).at(J_index).at(R_temp_3).at(-tau) * X_R2_rs;
+                        // profiler.stop("Z");
+                    }
 
-                        if (gf_R_tau.at(K_index).at(J_index).at(R_temp_3).count(tau))
-                        {
-                            // global::profiler.start("Z");
-                            Z += gf_R_tau.at(K_index).at(J_index).at(R_temp_3).at(tau) * X_conj_R2_rs;
-                            // global::profiler.stop("Z");
-                        }
+                    if (gf_R_tau.at(K_index).at(J_index).at(R_temp_3).count(tau))
+                    {
+                        // profiler.start("Z");
+                        Z += gf_R_tau.at(K_index).at(J_index).at(R_temp_3).at(tau) * X_conj_R2_rs;
+                        // profiler.stop("Z");
                     }
                 }
+            }
 
-                matrix Z_rs(reshape_mat(k_num, i_num, nu_num, Z));
+            matrix Z_rs(reshape_mat(k_num, i_num, nu_num, Z));
 
-                O += Z_rs;
-                matrix OZ(reshape_mat_21(i_num, k_num, nu_num, O));
-                matrix Cs1_tran(transpose(*Cs_mat1));
-                // global::profiler.start("O");
-                O_sum += Cs1_tran * OZ;
-                // global::profiler.stop("O");
-                // cout<<"   K, R1:   "<<K_index<<"   "<<R1;
-                // rt_m_max(O_sum);
+            O += Z_rs;
+            matrix OZ(reshape_mat_21(i_num, k_num, nu_num, O));
+            matrix Cs1_tran(transpose(*Cs_mat1));
+            // profiler.start("O");
+            O_sum += Cs1_tran * OZ;
+            // profiler.stop("O");
+            // cout<<"   K, R1:   "<<K_index<<"   "<<R1;
+            // rt_m_max(O_sum);
         }
     }
 
-    /* if ( librpa_int::mpi_comm_global_h.myid==0 && Mu == 1 && Nu == 1 && tau == tfg_.get_time_nodes()[0]) */
+    /* if ( LIBRPA::mpi_comm_global_h.myid==0 && Mu == 1 && Nu == 1 && tau ==
+     * tfg.get_time_nodes()[0]) */
     /* { */
     /*     cout << R << " Mu=" << Mu << " Nu=" << Nu << " tau:" << tau << endl; */
     /*     print_matrix("space-time chi0", O_sum); */
@@ -1102,7 +1627,8 @@ void Chi0::build_chi0_q_conventional(const Cs_LRI &Cs,
 
 //! Compute the real-space independent reponse function in space-time method on a particular time
 /*!
- * @param[in] gf_occ_ab_t: occupied Green's function at time tau in a particular spin alpha-beta channel
+ * @param[in] gf_occ_ab_t: occupied Green's function at time tau in a particular spin alpha-beta
+ * channel
  * @param[in] gf_unocc_ab_t: same as above, but for unoccupied Green's function
  * @param[in] LRI_Cs: LRI coefficients
  * @param[in] Rlist: the integer list of unit cell coordinates
@@ -1128,11 +1654,11 @@ static map<size_t, matrix> compute_chi0_munu_tau_LRI_saveN_noreshape(
 
     // Store N and N* so one does not need to recompute for each R of chi
     // the extra memory consumption scales as Cs/nR/natoms,
-    // which is a small amount compared to Cs for either small (small natoms, large nR) or large (small nR, large natoms) system
-    // N(tau) at R and atom K, at(iR, iK)
+    // which is a small amount compared to Cs for either small (small natoms, large nR) or large
+    // (small nR, large natoms) system N(tau) at R and atom K, at(iR, iK)
     map<pair<Vector3_Order<int>, atom_t>, matrix> N;
     // N*(-tau) at R and atom K, at(iR, iK)
-    map<pair<Vector3_Order<int>, atom_t>, matrix> Ncnt; // c -> conjugate, nt -> negative time
+    map<pair<Vector3_Order<int>, atom_t>, matrix> Ncnt;  // c -> conjugate, nt -> negative time
 
     const atom_t iI = Mu;
     const atom_t iJ = Nu;
@@ -1143,13 +1669,14 @@ static map<size_t, matrix> compute_chi0_munu_tau_LRI_saveN_noreshape(
 
     // pre-compute N and N*
     // only need to calculate N on R-R1, with R in Green's function and R1 from Cs
-    // TODO: may reuse the N code to compute N*, by parsing G(t) and G(-t) in same map as done by Shi Rong
+    // TODO: may reuse the N code to compute N*, by parsing G(t) and G(-t) in same map as done by
+    // Shi Rong
     // TODO: decouple N and N*, reduce memory usage
     std::cout << "Mu: " << Mu << ", Nu: " << Nu << std::endl;
-    for ( auto iR: iRs )
+    for (auto iR : iRs)
     {
         /* cout << "iR: " << iR << endl; */
-        for ( auto const & iK_R1_Cs: LRI_Cs.at(Mu) )
+        for (auto const &iK_R1_Cs : LRI_Cs.at(Mu))
         {
             auto iK = iK_R1_Cs.first;
             /* cout << "iK: " << iK << endl; */
@@ -1157,71 +1684,73 @@ static map<size_t, matrix> compute_chi0_munu_tau_LRI_saveN_noreshape(
             const size_t n_k = basis_wfc[iK];
             for ( auto const & R1_Cs: iK_R1_Cs.second )
             {
-                auto const & R1 = R1_Cs.first;
-                auto const & RmR1 = Vector3_Order<int>(Rlist[iR] - R1);
+                auto const &R1 = R1_Cs.first;
+                auto const &RmR1 = Vector3_Order<int>(Rlist[iR] - R1);
                 /* cout << "iRmR1: " << iRmR1 << endl; */
                 /* cout << "Testing N.count(iRmR1, iK): " << N.count({iRmR1, iK}) << endl; */
                 /* cout << "Testing gf_occ_ab_t.count(iR): " << gf_occ_ab_t.count(iR) << endl; */
                 // N part, do not recompute and should have the GF counterpart
-                if ( N.count({RmR1, iK}) == 0 && gf_occ_ab_t.count(iR) )
+                if (N.count({RmR1, iK}) == 0 && gf_occ_ab_t.count(iR))
                 {
-                    N[{RmR1, iK}].create(n_nu, n_j*n_k);
-                    matrix & N_iRiK = N[{RmR1, iK}];
-                    for (auto const & iL_R2_Cs: LRI_Cs.at(Nu))
+                    N[{RmR1, iK}].create(n_nu, n_j * n_k);
+                    matrix &N_iRiK = N[{RmR1, iK}];
+                    for (auto const &iL_R2_Cs : LRI_Cs.at(Nu))
                     {
                         auto const & iL = iL_R2_Cs.first;
                         const size_t n_l = basis_wfc[iL];
-                        for ( auto const & R2_Cs: iL_R2_Cs.second )
+                        for (auto const & R2_Cs: iL_R2_Cs.second)
                         {
-                            auto const & R2 = R2_Cs.first;
-                            auto mRpR1mR2 = Vector3_Order<int>(-RmR1-R2) % R_period;
+                            auto const &R2 = R2_Cs.first;
+                            auto mRpR1mR2 = Vector3_Order<int>(-RmR1 - R2) % R_period;
                             int i_mRpR1mR2 = get_R_index(Rlist, mRpR1mR2);
-                            if ( gf_unocc_ab_t.count(i_mRpR1mR2) )
+                            if (gf_unocc_ab_t.count(i_mRpR1mR2))
                             {
                                 if (gf_unocc_ab_t.at(i_mRpR1mR2).count(iL) == 0 ||
-                                    gf_unocc_ab_t.at(i_mRpR1mR2).at(iL).count(iK) == 0) continue;
-                                const matrix & gf_unocc = gf_unocc_ab_t.at(i_mRpR1mR2).at(iL).at(iK);
-                                auto const & Cs_nu_jlR2 = R2_Cs.second;
-                                assert( Cs_nu_jlR2->nr == n_j * n_l && Cs_nu_jlR2->nc == n_nu );
+                                    gf_unocc_ab_t.at(i_mRpR1mR2).at(iL).count(iK) == 0)
+                                    continue;
+                                const matrix &gf_unocc = gf_unocc_ab_t.at(i_mRpR1mR2).at(iL).at(iK);
+                                auto const &Cs_nu_jlR2 = R2_Cs.second;
+                                assert(Cs_nu_jlR2->nr == n_j * n_l && Cs_nu_jlR2->nc == n_nu);
                                 matrix tran_Cs_nu_jlR2 = transpose(*Cs_nu_jlR2);
                                 assert( gf_unocc.nr == n_l && gf_unocc.nc == n_k );
-                                for ( size_t i_nu = 0; i_nu != n_nu; i_nu++ )
+                                for (size_t i_nu = 0; i_nu != n_nu; i_nu++)
                                     LapackConnector::gemm('N', 'N', n_j, n_k, n_l, 1.0,
-                                                          tran_Cs_nu_jlR2.c+i_nu*n_j*n_l, n_l,
-                                                          gf_unocc.c, gf_unocc.nc,
-                                                          1.0, N_iRiK.c + i_nu*n_j*n_k, n_k);
+                                                          tran_Cs_nu_jlR2.c + i_nu * n_j * n_l, n_l,
+                                                          gf_unocc.c, gf_unocc.nc, 1.0,
+                                                          N_iRiK.c + i_nu * n_j * n_k, n_k);
                             }
                         }
                     }
                 }
                 // N* part
-                if ( !Ncnt.count({RmR1, iK}) && gf_unocc_ab_t.count(iR) )
+                if (!Ncnt.count({RmR1, iK}) && gf_unocc_ab_t.count(iR))
                 {
-                    Ncnt[{RmR1, iK}].create(n_nu, n_j*n_k);
-                    matrix & Ncnt_iRiK = Ncnt.at({RmR1, iK});
-                    for (auto const & iL_R2_Cs: LRI_Cs.at(Nu))
+                    Ncnt[{RmR1, iK}].create(n_nu, n_j * n_k);
+                    matrix &Ncnt_iRiK = Ncnt.at({RmR1, iK});
+                    for (auto const &iL_R2_Cs : LRI_Cs.at(Nu))
                     {
                         auto const & iL = iL_R2_Cs.first;
                         const size_t n_l = basis_wfc[iL];
-                        for ( auto const & R2_Cs: iL_R2_Cs.second )
+                        for (auto const & R2_Cs: iL_R2_Cs.second)
                         {
-                            auto const & R2 = R2_Cs.first;
-                            auto mRpR1mR2 = Vector3_Order<int>(-RmR1-R2) % R_period;
+                            auto const &R2 = R2_Cs.first;
+                            auto mRpR1mR2 = Vector3_Order<int>(-RmR1 - R2) % R_period;
                             int i_mRpR1mR2 = get_R_index(Rlist, mRpR1mR2);
-                            if ( gf_occ_ab_t.count(i_mRpR1mR2) )
+                            if (gf_occ_ab_t.count(i_mRpR1mR2))
                             {
                                 if (gf_occ_ab_t.at(i_mRpR1mR2).count(iL) == 0 ||
-                                    gf_occ_ab_t.at(i_mRpR1mR2).at(iL).count(iK) == 0) continue;
-                                const matrix & gf_occ = gf_occ_ab_t.at(i_mRpR1mR2).at(iL).at(iK);
-                                auto const & Cs_nu_jlR2 = R2_Cs.second;
-                                assert( Cs_nu_jlR2->nr == n_j * n_l && Cs_nu_jlR2->nc == n_nu );
+                                    gf_occ_ab_t.at(i_mRpR1mR2).at(iL).count(iK) == 0)
+                                    continue;
+                                const matrix &gf_occ = gf_occ_ab_t.at(i_mRpR1mR2).at(iL).at(iK);
+                                auto const &Cs_nu_jlR2 = R2_Cs.second;
+                                assert(Cs_nu_jlR2->nr == n_j * n_l && Cs_nu_jlR2->nc == n_nu);
                                 matrix tran_Cs_nu_jlR2 = transpose(*Cs_nu_jlR2);
-                                assert( gf_occ.nr == n_l && gf_occ.nc == n_k );
-                                for ( size_t i_nu = 0; i_nu != n_nu; i_nu++ )
+                                assert(gf_occ.nr == n_l && gf_occ.nc == n_k);
+                                for (size_t i_nu = 0; i_nu != n_nu; i_nu++)
                                     LapackConnector::gemm('N', 'N', n_j, n_k, n_l, 1.0,
-                                                          tran_Cs_nu_jlR2.c+i_nu*n_j*n_l, n_l,
-                                                          gf_occ.c, n_k,
-                                                          1.0, Ncnt_iRiK.c + i_nu*n_j*n_k, n_k);
+                                                          tran_Cs_nu_jlR2.c + i_nu * n_j * n_l, n_l,
+                                                          gf_occ.c, n_k, 1.0,
+                                                          Ncnt_iRiK.c + i_nu * n_j * n_k, n_k);
                             }
                         }
                     }
@@ -1232,31 +1761,31 @@ static map<size_t, matrix> compute_chi0_munu_tau_LRI_saveN_noreshape(
     std::cout << "Size N: " << N.size() << std::endl;
     /* cout << "Precalcualted N, size (iR1 x iK): " << N.size() << endl; */
 
-    for ( auto iR: iRs )
+    for (auto iR : iRs)
     {
-        chi0_tau[iR].create(n_mu, n_nu); // TODO: selectively create by G
+        chi0_tau[iR].create(n_mu, n_nu);  // TODO: selectively create by G
 
-        for ( auto const & iK_R1_Cs: LRI_Cs.at(Mu) )
+        for (auto const &iK_R1_Cs : LRI_Cs.at(Mu))
         {
             auto const iK = iK_R1_Cs.first;
             const size_t n_k = basis_wfc[iK];
-            for (auto const & R1_Cs: iK_R1_Cs.second)
+            for (auto const &R1_Cs: iK_R1_Cs.second)
             {
-                const auto & Cs = R1_Cs.second;
+                const auto &Cs = R1_Cs.second;
                 // a temporary matrix to store the sum of M(t) and M*(-t)
-                matrix MpMc(n_nu, n_i*n_k);
-                auto RmR1 = Vector3_Order<int>(Rlist[iR]-R1_Cs.first);
+                matrix MpMc(n_nu, n_i * n_k);
+                auto RmR1 = Vector3_Order<int>(Rlist[iR] - R1_Cs.first);
                 // M(t)=G(t)N(t)
-                if ( gf_occ_ab_t.count(iR) && N.count({RmR1, iK}))
+                if (gf_occ_ab_t.count(iR) && N.count({RmR1, iK}))
                 {
-                    if ( gf_occ_ab_t.at(iR).count(iI) != 0 &&
-                         gf_occ_ab_t.at(iR).at(iI).count(iJ) != 0)
+                    if (gf_occ_ab_t.at(iR).count(iI) != 0 &&
+                        gf_occ_ab_t.at(iR).at(iI).count(iJ) != 0)
                     {
                         /* cout << "Computing GN" << endl; */
-                        const matrix & gf = gf_occ_ab_t.at(iR).at(iI).at(iJ);
-                        const matrix & _N = N.at({RmR1, iK});
-                        assert( _N.nr == n_nu && _N.nc == n_j * n_k);
-                        for ( size_t i_nu = 0; i_nu != n_nu; i_nu++ )
+                        const matrix &gf = gf_occ_ab_t.at(iR).at(iI).at(iJ);
+                        const matrix &_N = N.at({RmR1, iK});
+                        assert(_N.nr == n_nu && _N.nc == n_j * n_k);
+                        for (size_t i_nu = 0; i_nu != n_nu; i_nu++)
                             LapackConnector::gemm('N', 'N', n_i, n_k, n_j, 1.0,
                                                   gf.c, n_j,
                                                   _N.c+i_nu*n_j*n_k, n_k,
@@ -1264,15 +1793,15 @@ static map<size_t, matrix> compute_chi0_munu_tau_LRI_saveN_noreshape(
                     }
                 }
                 // M*(-t)=G*(-t)N*(-t)
-                if ( gf_unocc_ab_t.count(iR) && N.count({RmR1, iK}))
+                if (gf_unocc_ab_t.count(iR) && N.count({RmR1, iK}))
                 {
-                    if ( gf_unocc_ab_t.at(iR).count(iI) != 0 &&
-                         gf_unocc_ab_t.at(iR).at(iI).count(iJ) != 0)
+                    if (gf_unocc_ab_t.at(iR).count(iI) != 0 &&
+                        gf_unocc_ab_t.at(iR).at(iI).count(iJ) != 0)
                     {
                         /* cout << "Computing G*N*" << endl; */
-                        const matrix & gf = gf_unocc_ab_t.at(iR).at(iI).at(iJ);
-                        const matrix & _Ncnt = Ncnt.at({RmR1, iK});
-                        assert( _Ncnt.nr == n_nu && _Ncnt.nc == n_j * n_k);
+                        const matrix &gf = gf_unocc_ab_t.at(iR).at(iI).at(iJ);
+                        const matrix &_Ncnt = Ncnt.at({RmR1, iK});
+                        assert(_Ncnt.nr == n_nu && _Ncnt.nc == n_j * n_k);
                         for ( size_t i_nu = 0; i_nu != n_nu; i_nu++ )
                             LapackConnector::gemm('N', 'N', n_i, n_k, n_j, 1.0,
                                                   gf.c, n_j,
@@ -1280,9 +1809,8 @@ static map<size_t, matrix> compute_chi0_munu_tau_LRI_saveN_noreshape(
                                                   1.0, MpMc.c+i_nu*n_i*n_k, n_k);
                     }
                 }
-                LapackConnector::gemm('T', 'T', n_mu, n_nu, n_i*n_k, 1.0,
-                        Cs->c, n_mu,
-                        MpMc.c, n_i*n_k, 1.0, chi0_tau[iR].c, n_nu);
+                LapackConnector::gemm('T', 'T', n_mu, n_nu, n_i * n_k, 1.0, Cs->c, n_mu, MpMc.c,
+                                      n_i * n_k, 1.0, chi0_tau[iR].c, n_nu);
             }
         }
     }
@@ -1291,102 +1819,92 @@ static map<size_t, matrix> compute_chi0_munu_tau_LRI_saveN_noreshape(
     N.clear();
     Ncnt.clear();
 
-    for ( auto iR: iRs )
+    for (auto iR : iRs)
     {
-        matrix X(n_nu, n_j*n_i), Ynt(n_nu, n_i*n_j);
-        matrix Xcnt(n_nu, n_j*n_i), Yc(n_nu, n_i*n_j);
+        matrix X(n_nu, n_j * n_i), Ynt(n_nu, n_i * n_j);
+        matrix Xcnt(n_nu, n_j * n_i), Yc(n_nu, n_i * n_j);
         // X
-        for ( auto const & iL_R2_Cs: LRI_Cs.at(Nu) )
+        for (auto const &iL_R2_Cs : LRI_Cs.at(Nu))
         {
             auto const iL = iL_R2_Cs.first;
             auto const n_l = basis_wfc[iL];
-            for ( auto & R2_Cs: iL_R2_Cs.second )
+            for (auto & R2_Cs: iL_R2_Cs.second)
             {
                 auto const R2 = R2_Cs.first;
-                auto const & Cs = R2_Cs.second;
-                auto mR2mR = Vector3_Order<int>(-Rlist[iR]-R2) % R_period;
+                auto const &Cs = R2_Cs.second;
+                auto mR2mR = Vector3_Order<int>(-Rlist[iR] - R2) % R_period;
                 auto i_mR2mR = get_R_index(Rlist, mR2mR);
-                if ( gf_unocc_ab_t.count(i_mR2mR) &&
-                     gf_unocc_ab_t.at(i_mR2mR).count(iL) &&
-                     gf_unocc_ab_t.at(i_mR2mR).at(iL).count(iI) )
+                if (gf_unocc_ab_t.count(i_mR2mR) && gf_unocc_ab_t.at(i_mR2mR).count(iL) &&
+                    gf_unocc_ab_t.at(i_mR2mR).at(iL).count(iI))
                 {
                     const auto tran_Cs_nu_jl = transpose(*Cs);
-                    auto const & gfu = gf_unocc_ab_t.at(i_mR2mR).at(iL).at(iI);
-                    for (size_t i_nu = 0; i_nu < n_nu; i_nu++ )
+                    auto const &gfu = gf_unocc_ab_t.at(i_mR2mR).at(iL).at(iI);
+                    for (size_t i_nu = 0; i_nu < n_nu; i_nu++)
                         LapackConnector::gemm('N', 'N', n_j, n_i, n_l, 1.0,
-                                              tran_Cs_nu_jl.c+i_nu*n_j*n_l, n_l,
-                                              gfu.c, n_i,
-                                              1.0, X.c+i_nu*n_j*n_i, n_i);
+                                              tran_Cs_nu_jl.c + i_nu * n_j * n_l, n_l, gfu.c, n_i,
+                                              1.0, X.c + i_nu * n_j * n_i, n_i);
                 }
-                if ( gf_occ_ab_t.count(i_mR2mR) &&
-                     gf_occ_ab_t.at(i_mR2mR).count(iL) &&
-                     gf_occ_ab_t.at(i_mR2mR).at(iL).count(iI) )
+                if (gf_occ_ab_t.count(i_mR2mR) && gf_occ_ab_t.at(i_mR2mR).count(iL) &&
+                    gf_occ_ab_t.at(i_mR2mR).at(iL).count(iI))
                 {
                     const auto tran_Cs_nu_jl = transpose(*Cs);
                     // gf shall take conjugate here
-                    auto const & gf = gf_occ_ab_t.at(i_mR2mR).at(iL).at(iI);
-                    for ( size_t i_nu = 0; i_nu < n_nu; i_nu++ )
+                    auto const &gf = gf_occ_ab_t.at(i_mR2mR).at(iL).at(iI);
+                    for (size_t i_nu = 0; i_nu < n_nu; i_nu++)
                         LapackConnector::gemm('N', 'N', n_j, n_i, n_l, 1.0,
-                                              tran_Cs_nu_jl.c+i_nu*n_j*n_l, n_l,
-                                              gf.c, n_i,
-                                              1.0, Xcnt.c+i_nu*n_j*n_i, n_i);
+                                              tran_Cs_nu_jl.c + i_nu * n_j * n_l, n_l, gf.c, n_i,
+                                              1.0, Xcnt.c + i_nu * n_j * n_i, n_i);
                 }
             }
         }
         // Y
-        for ( auto const & iK_R1_Cs: LRI_Cs.at(Mu) )
+        for (auto const &iK_R1_Cs : LRI_Cs.at(Mu))
         {
-            auto const iK= iK_R1_Cs.first;
+            auto const iK = iK_R1_Cs.first;
             auto const n_k = basis_wfc[iK];
-            for ( auto & R1_Cs: iK_R1_Cs.second )
+            for (auto & R1_Cs: iK_R1_Cs.second)
             {
                 auto const R1 = R1_Cs.first;
                 auto const Cs = R1_Cs.second;
-                auto RmR1 = Vector3_Order<int>(Rlist[iR]-R1) % R_period;
+                auto RmR1 = Vector3_Order<int>(Rlist[iR] - R1) % R_period;
                 auto i_RmR1 = get_R_index(Rlist, RmR1);
-                if ( gf_occ_ab_t.count(i_RmR1) &&
-                     gf_occ_ab_t.at(i_RmR1).count(iK) &&
-                     gf_occ_ab_t.at(i_RmR1).at(iK).count(iJ) )
+                if (gf_occ_ab_t.count(i_RmR1) && gf_occ_ab_t.at(i_RmR1).count(iK) &&
+                    gf_occ_ab_t.at(i_RmR1).at(iK).count(iJ))
                 {
                     const matrix tran_Cs_mu_ik = transpose(*Cs);
-                    auto const & gf = gf_occ_ab_t.at(i_RmR1).at(iK).at(iJ);
-                    for ( int i_mu = 0; i_mu != n_mu; i_mu++ )
+                    auto const &gf = gf_occ_ab_t.at(i_RmR1).at(iK).at(iJ);
+                    for (int i_mu = 0; i_mu != n_mu; i_mu++)
                         // transpose so that result stored in ji order
-                        LapackConnector::gemm('T', 'T', n_j, n_i, n_k, 1.0,
-                                              gf.c, n_j,
-                                              tran_Cs_mu_ik.c+i_mu*n_i*n_k, n_k,
-                                              1.0, Ynt.c+i_mu*n_j*n_i, n_i);
+                        LapackConnector::gemm('T', 'T', n_j, n_i, n_k, 1.0, gf.c, n_j,
+                                              tran_Cs_mu_ik.c + i_mu * n_i * n_k, n_k, 1.0,
+                                              Ynt.c + i_mu * n_j * n_i, n_i);
                 }
-                if ( gf_unocc_ab_t.count(i_RmR1) &&
-                     gf_unocc_ab_t.at(i_RmR1).count(iK) &&
-                     gf_unocc_ab_t.at(i_RmR1).at(iK).count(iJ) )
+                if (gf_unocc_ab_t.count(i_RmR1) && gf_unocc_ab_t.at(i_RmR1).count(iK) &&
+                    gf_unocc_ab_t.at(i_RmR1).at(iK).count(iJ))
                 {
                     const matrix tran_Cs_mu_ik = transpose(*Cs);
-                    auto const & gfu = gf_unocc_ab_t.at(i_RmR1).at(iK).at(iJ);
+                    auto const &gfu = gf_unocc_ab_t.at(i_RmR1).at(iK).at(iJ);
                     for ( size_t i_mu = 0; i_mu < n_mu; i_mu++ )
                         // transpose so that result stored in ji order
-                        LapackConnector::gemm('T', 'T', n_j, n_i, n_k, 1.0,
-                                              gfu.c, n_j,
-                                              tran_Cs_mu_ik.c+i_mu*n_i*n_k, n_k,
-                                              1.0, Yc.c+i_mu*n_j*n_i, n_i);
+                        LapackConnector::gemm('T', 'T', n_j, n_i, n_k, 1.0, gfu.c, n_j,
+                                              tran_Cs_mu_ik.c + i_mu * n_i * n_k, n_k, 1.0,
+                                              Yc.c + i_mu * n_j * n_i, n_i);
                 }
             }
         }
-        LapackConnector::gemm('N', 'T', n_mu, n_nu, n_i*n_j, 1.0,
-                Ynt.c, n_i*n_j,
-                X.c, n_i*n_j, 1.0, chi0_tau[iR].c, n_nu);
-        LapackConnector::gemm('N', 'T', n_mu, n_nu, n_i*n_j, 1.0,
-                Yc.c, n_i*n_j,
-                Xcnt.c, n_i*n_j, 1.0, chi0_tau[iR].c, n_nu);
+        LapackConnector::gemm('N', 'T', n_mu, n_nu, n_i * n_j, 1.0, Ynt.c, n_i * n_j, X.c,
+                              n_i * n_j, 1.0, chi0_tau[iR].c, n_nu);
+        LapackConnector::gemm('N', 'T', n_mu, n_nu, n_i * n_j, 1.0, Yc.c, n_i * n_j, Xcnt.c,
+                              n_i * n_j, 1.0, chi0_tau[iR].c, n_nu);
     }
     /* if (librpa_int::mpi_comm_global_h.myid==0 && Mu == 0 && Nu == 0) */
     if (comm_h.myid==0 && Mu == 0 && Nu == 1)
     {
         /* for (auto iR_chi0_tau: chi0_tau) */
         /* { */
-            /* if (iR_chi0_tau.first!=4) continue; */
-            /* cout << Rlist[iR_chi0_tau.first] << " Mu=" << Mu << " Nu=" << Nu; */
-            /* print_matrix("chi tauR at first tau and R", iR_chi0_tau.second); */
+        /* if (iR_chi0_tau.first!=4) continue; */
+        /* cout << Rlist[iR_chi0_tau.first] << " Mu=" << Mu << " Nu=" << Nu; */
+        /* print_matrix("chi tauR at first tau and R", iR_chi0_tau.second); */
         /* } */
     }
     /* cout << "Done real-space chi0" << endl; */
@@ -1400,5 +1918,264 @@ void Chi0::free_chi0_q(const double freq, const Vector3_Order<double> q)
     chi0_for_free.clear();
     ap_n_map<ComplexMatrix>().swap(chi0_for_free);
 }
+
+void Chi0::unfold_abfs_Wc(
+    map<Vector3_Order<double>, ComplexMatrix> &sinvS,
+    map<double,
+        atom_mapping<std::map<Vector3_Order<double>, matrix_m<complex<double>>>>::pair_t_old> &Wc,
+    const vector<Vector3_Order<double>> &qlist,
+    const AtomicBasis &abf_unfold,
+    const BlacsCtxtHandler &blacs_ctxt_h)
+{
+    using global::profiler;
+    using global::ofs_myid;
+
+    const bool debug = false;
+    const int all_mu = abf_unfold.nb_total;
+    const int all_mu_s = this->atbasis_abf.nb_total;
+    const int natom = abf_unfold.n_atoms;
+    const auto comm_h = blacs_ctxt_h.comm_h();
+
+    assert (natom == as_int(atbasis_abf.n_atoms));
+
+    const complex<double> CONE{1.0, 0.0};
+    ArrayDesc desc_nabf_nabf_ll(blacs_ctxt_h);
+    ArrayDesc desc_nabf_nabf_ss(blacs_ctxt_h);
+    ArrayDesc desc_nabf_nabf_sl(blacs_ctxt_h);
+    desc_nabf_nabf_ll.init_square_blk(all_mu, all_mu, 0, 0);
+    desc_nabf_nabf_ss.init_square_blk(all_mu_s, all_mu_s, 0, 0);
+    desc_nabf_nabf_sl.init_square_blk(all_mu_s, all_mu, 0, 0);
+    const auto set_IJ_nabf_nabf = get_necessary_IJ_from_block_2D_sy(
+        'U', this->atbasis_abf, desc_nabf_nabf_ss);
+    const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nabf_nabf);
+    auto Wc_block = init_local_mat<complex<double>>(desc_nabf_nabf_ss, MAJOR::COL);
+    auto Wcll_block = init_local_mat<complex<double>>(desc_nabf_nabf_ll, MAJOR::COL);
+    auto u_block = init_local_mat<complex<double>>(desc_nabf_nabf_sl, MAJOR::COL);
+    auto Wc_u = init_local_mat<complex<double>>(desc_nabf_nabf_sl, MAJOR::COL);
+    // for 2D->IJ
+    int I, iI;
+    map<int, vector<int>> map_lor_v;
+    map<int, vector<int>> map_loc_v;
+    for (int i_lo = 0; i_lo != desc_nabf_nabf_ll.m_loc(); i_lo++)
+    {
+        int i_glo = desc_nabf_nabf_ll.indx_l2g_r(i_lo);
+        abf_unfold.get_local_index(i_glo, I, iI);
+        map_lor_v[I].push_back(iI);
+    }
+    for (int i_lo = 0; i_lo != desc_nabf_nabf_ll.n_loc(); i_lo++)
+    {
+        int i_glo = desc_nabf_nabf_ll.indx_l2g_c(i_lo);
+        abf_unfold.get_local_index(i_glo, I, iI);
+        map_loc_v[I].push_back(iI);
+    }
+
+    // IJ pair of shrinked chi0 to be returned
+    std::pair<std::set<int>, std::set<int>> Iset_Jset_c;
+    const auto atpair_local = dispatch_upper_triangular_tasks(
+        natom, blacs_ctxt_h.myid, blacs_ctxt_h.nprows, blacs_ctxt_h.npcols,
+        blacs_ctxt_h.myprow, blacs_ctxt_h.mypcol);
+    for (const auto &ap : atpair_local)
+    {
+        Iset_Jset_c.first.insert(ap.first);
+        Iset_Jset_c.second.insert(ap.second);
+    }
+
+    for (int ifreq = 0; ifreq < this->tfg.get_n_grids(); ++ifreq)
+    {
+        for (int iq = 0; iq < qlist.size(); iq++)
+        {
+            const auto &q = qlist[iq];
+            std::array<double, 3> qa = {q.x, q.y, q.z};
+            const double freq = this->tfg.get_freq_nodes().at(ifreq);
+            const auto &U = sinvS.at(q);
+            profiler.start("unfold_prepare_Wc_2d", "Prepare Wc 2D block for unfold");
+            Wc_block.zero_out();
+            Wcll_block.zero_out();
+            u_block.zero_out();
+            Wc_u.zero_out();
+            {
+                std::map<int, std::map<std::pair<int, std::array<double, 3>>,
+                                       RI::Tensor<complex<double>>>>
+                    wc_libri;
+                atom_mapping<ComplexMatrix>::pair_t_old Wc_IJ;
+                if (Wc.count(freq) > 0)
+                {
+                    for (const auto &IJqc : Wc.at(freq))
+                    {
+                        const auto &I = IJqc.first;
+                        for (const auto &Jqc : IJqc.second)
+                        {
+                            const auto &J = Jqc.first;
+                            if (!Wc_IJ[I].count(J))
+                            {
+                                Wc_IJ[I][J].create(atbasis_abf[I], atbasis_abf[J]);
+                            }
+                            for (const auto &qc : Jqc.second)
+                            {
+                                const auto &qq = qc.first;
+                                if (qq == q)
+                                {
+                                    const auto &c = qc.second;
+                                    for (int ir = 0; ir < c.nr(); ir++)
+                                    {
+                                        for (int ic = 0; ic < c.nc(); ic++)
+                                        {
+                                            Wc_IJ[I][J](ir, ic) = c(ir, ic);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    for (const auto &M_Nchi : Wc_IJ)
+                    {
+                        const auto &M = M_Nchi.first;
+                        const auto n_mu = atbasis_abf.get_atom_nb(M);
+                        for (const auto &N_chi : M_Nchi.second)
+                        {
+                            const auto &N = N_chi.first;
+                            const auto n_nu = atbasis_abf.get_atom_nb(N);
+                            const auto &chi = N_chi.second;
+                            std::valarray<complex<double>> chi_va(chi.c, chi.size);
+                            auto pchi = std::make_shared<std::valarray<complex<double>>>();
+                            *pchi = chi_va;
+                            wc_libri[M][{N, qa}] = RI::Tensor<complex<double>>({n_mu, n_nu}, pchi);
+                        }
+                    }
+                }
+                // wait for all mpi to calculate chi0_libri
+                // then collect chi0_libri to chi0_block
+                comm_h.barrier();
+                profiler.start("unfold_prepare_Wc_2d_comm_map2");
+                const auto IJq_wc = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+                    comm_h.comm, wc_libri, s0_s1.first, s0_s1.second);
+                profiler.stop("unfold_prepare_Wc_2d_comm_map2");
+                profiler.start("unfold_prepare_Wc_2d_collect_block");
+                collect_block_from_ALL_IJ_Tensor(Wc_block, desc_nabf_nabf_ss,
+                                                 atbasis_abf, qa, true, CONE, IJq_wc,
+                                                 MAJOR::ROW);
+                profiler.stop("unfold_prepare_Wc_2d_collect_block");
+            }
+            profiler.stop("unfold_prepare_Wc_2d");
+            for (int ir = 0; ir < U.nr; ir++)
+            {
+                const int ilo = desc_nabf_nabf_sl.indx_g2l_r(ir);
+                if (ilo < 0) continue;
+                for (int ic = 0; ic < U.nc; ic++)
+                {
+                    const int jlo = desc_nabf_nabf_sl.indx_g2l_c(ic);
+                    if (jlo < 0) continue;
+                    u_block(ilo, jlo) = U(ir, ic);
+                }
+            }
+            // Shape of u_block is N_small x N_large
+            ScalapackConnector::pgemm_f('N', 'N', all_mu_s, all_mu, all_mu_s, 1.0, Wc_block.ptr(),
+                                        1, 1, desc_nabf_nabf_ss.desc, u_block.ptr(), 1, 1,
+                                        desc_nabf_nabf_sl.desc, 0.0, Wc_u.ptr(), 1, 1,
+                                        desc_nabf_nabf_sl.desc);
+            ScalapackConnector::pgemm_f('C', 'N', all_mu, all_mu, all_mu_s, 1.0, u_block.ptr(), 1,
+                                        1, desc_nabf_nabf_sl.desc, Wc_u.ptr(), 1, 1,
+                                        desc_nabf_nabf_sl.desc, 0.0, Wcll_block.ptr(), 1, 1,
+                                        desc_nabf_nabf_ll.desc);
+
+            map<int, map<int, matrix_m<complex<double>>>> chi0s_MNmap;
+            map_block_to_IJ_storage_new(chi0s_MNmap, abf_unfold, map_lor_v, map_loc_v,
+                                        Wcll_block, desc_nabf_nabf_ll, MAJOR::ROW);
+
+            std::map<int,
+                     std::map<std::pair<int, std::array<double, 3>>, RI::Tensor<complex<double>>>>
+                unfold_Wc_libri;
+            for (const auto &M_Nc : chi0s_MNmap)
+            {
+                const auto &M = M_Nc.first;
+                const auto n_mu = abf_unfold[M];
+                for (const auto &N_c : M_Nc.second)
+                {
+                    const auto &N = N_c.first;
+                    const auto n_nu = abf_unfold[N];
+                    const auto &c = N_c.second;
+                    unfold_Wc_libri[M][{N, qa}] =
+                        RI::Tensor<complex<double>>({n_mu, n_nu}, c.sptr());
+                }
+            }
+            const auto IJq_chi = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+                comm_h.comm, unfold_Wc_libri, Iset_Jset_c.first, Iset_Jset_c.second);
+            if (debug)
+            {
+                for (auto &IJqc : IJq_chi)
+                {
+                    auto &I = IJqc.first;
+                    for (auto &Jqc : IJqc.second)
+                    {
+                        auto &J = Jqc.first.first;
+                        auto &c = Jqc.second;
+                        ofs_myid << "Wcll I " << I << " J " << J << std::endl;
+                    }
+                }
+            }
+            if (Wc.count(freq) > 0)
+            {
+                for (auto &IJqc : Wc.at(freq))
+                {
+                    auto I = IJqc.first;
+                    for (auto &Jqc : IJqc.second)
+                    {
+                        auto J = Jqc.first;
+                        for (auto &qc : Jqc.second)
+                        {
+                            auto qq = qc.first;
+                            if (qq != q) continue;
+                            Matz matz_Wc(abf_unfold[I], abf_unfold[J]);
+                            for (int ir = 0; ir < abf_unfold[I]; ir++)
+                            {
+                                for (int ic = 0; ic < abf_unfold[J]; ic++)
+                                {
+                                    matz_Wc(ir, ic) = IJq_chi.at(I).at({J, qa})(ir, ic);
+                                }
+                            }
+                            qc.second = matz_Wc;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// template void Chi0::build_chi0_q_space_time_LibRI_routing<double>(
+//     const Cs_LRI &, const Vector3_Order<int> &, const vector<atpair_t> &,
+//     const vector<Vector3_Order<double>> &, std::map<Vector3_Order<double>, ComplexMatrix> &);
+// template void Chi0::build_chi0_q_space_time_LibRI_routing<std::complex<double>>(
+//     const Cs_LRI &, const Vector3_Order<int> &, const vector<atpair_t> &,
+//     const vector<Vector3_Order<double>> &, std::map<Vector3_Order<double>, ComplexMatrix> &);
+//
+// template void chi_libri_ft_ct<double>(
+//     const int &, const int &, const int &, const TFGrids &,
+//     const AtomicBasis &atbasis_abf, const Matrix3 &latvec,
+//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &,
+//     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
+//     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
+//
+// template void chi_libri_ft_ct<std::complex<double>>(
+//     const int &, const int &, const int &, const TFGrids &,
+//     const AtomicBasis &atbasis_abf, const Matrix3 &latvec,
+//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>> &,
+//     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
+//     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
+//
+// template void chi_libri_ft_Rq<double>(
+//     const int &, const int &, const int &, const TFGrids &,
+//     const AtomicBasis &atbasis_abf, const Matrix3 &latvec,
+//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &,
+//     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
+//     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
+//
+// template void chi_libri_ft_Rq<std::complex<double>>(
+//     const int &, const int &, const int &, const TFGrids &,
+//     const AtomicBasis &atbasis_abf, const Matrix3 &latvec,
+//     const std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<std::complex<double>>>> &,
+//     const vector<Vector3_Order<double>> &, const vector<atpair_t> &,
+//     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &);
 
 }

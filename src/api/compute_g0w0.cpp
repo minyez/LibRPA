@@ -53,7 +53,10 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     auto &chi0 = *(pds->p_chi0);
 
     profiler.start("chi0_build", "Build response function chi0");
-    chi0.build(routing, pds->cs_data, pds->atpairs_local);
+    if (opts.use_shrink_abfs)
+        chi0.build(routing, pds->cs_data_shrink, pds->atpairs_local, pds->basis_aux_shrink, pds->sinvS, pds->blacs_h);
+    else
+        chi0.build(routing, pds->cs_data, pds->atpairs_local, pds->basis_aux, pds->sinvS, pds->blacs_h);
     profiler.stop("chi0_build");
     pds->comm_h.barrier();
 
@@ -118,8 +121,10 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     std::map<double, std::map<Vector3_Order<double>, librpa_int::matrix_m<std::complex<double>>>> Wc_freq_q;
     if (opts.use_scalapack_gw_wc == LIBRPA_SWITCH_ON)
     {
+        bool replace_w_head = opts.replace_w_head == LIBRPA_SWITCH_ON;
         Wc_freq_q = compute_Wc_freq_q_blacs(chi0, pds->vq, pds->vq_cut, opts.sqrt_coulomb_threshold,
-                                            epsmac_LF_imagfreq, pds->blacs_h, pds->desc_abf,
+                                            replace_w_head, opts.option_dielect_func,
+                                            epsmac_LF_imagfreq, *(pds->p_headwing), pds->blacs_h, pds->desc_abf,
                                             debug, opts.output_dir, opts.use_cholesky_gw_wc, opts.use_gpu_gw_wc);
     }
     else

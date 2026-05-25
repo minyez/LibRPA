@@ -2,7 +2,6 @@
 
 #include <regex>
 #include <fstream>
-#include <sstream>
 #include <iostream>
 #include <stdexcept>
 
@@ -10,22 +9,23 @@
 
 #include "librpa_enums.h"
 #include "../src/utils/constants.h"
+#include <regex>
+#include <sstream>
+
+#include "driver.h"
 
 static const std::string SPACE_SEP = "[ \r\f\t]*";
 
 const std::string InputParser::KV_SEP = "=";
 const std::string InputParser::COMMENTS_IDEN = "[#!]";
 
-static std::string get_last_matched(const std::string &s,
-                                    const std::string &key,
-                                    const std::string &vregex,
-                                    int igroup)
+static std::string get_last_matched(const std::string &s, const std::string &key,
+                                    const std::string &vregex, int igroup)
 {
     std::string sout = "";
     // a leading group to get rid of keys in comments
     std::regex r(key + SPACE_SEP + InputParser::KV_SEP + SPACE_SEP + vregex,
-                 std::regex_constants::ECMAScript |
-                 std::regex_constants::icase);
+                 std::regex_constants::ECMAScript | std::regex_constants::icase);
     std::sregex_iterator si(s.begin(), s.end(), r);
     auto ei = std::sregex_iterator();
     for (auto i = si; i != ei; i++)
@@ -40,9 +40,7 @@ static std::string get_last_matched(const std::string &s,
 void InputParser::parse_double(const std::string &vname, double &var, int &flag) const
 {
     flag = 0;
-    std::string s = get_last_matched(params, vname,
-                                     "(-?[\\d]+\\.?([\\d]+)?([ed]-?[\\d]+)?)",
-                                     1);
+    std::string s = get_last_matched(params, vname, "(-?[\\d]+\\.?([\\d]+)?([ed]-?[\\d]+)?)", 1);
     if (s != "")
     {
         try
@@ -129,7 +127,7 @@ InputParser InputFile::load(const std::string &fn, bool error_if_fail_open)
 {
     std::ifstream t(fn);
     std::string params;
-    if(t.is_open())
+    if (t.is_open())
     {
         filename = fn;
         std::stringstream buffer;
@@ -167,10 +165,11 @@ static std::string check_dirpath(const std::string &dirpath)
 
 #define _parse_int(obj, name) parser.parse_int(#name, obj.name, flag)
 #define _parse_double(obj, name) parser.parse_double(#name, obj.name, flag)
+#define _parse_bool(obj, name) parser.parse_bool(#name, obj.name, flag)
 #define _parse_switch(obj, name) parser.parse_bool(#name, btmp, flag); if (flag == 0) obj.name = get_switch(btmp);
 #define _parse_string_post(obj, name, post) parser.parse_string(#name, stmp, flag); if (flag == 0) obj.name = post(stmp);
 
-void parse_inputfile_to_params(const std::string& fn)
+void parse_inputfile_to_params(const std::string &fn)
 {
     using namespace driver;
 
@@ -192,7 +191,16 @@ void parse_inputfile_to_params(const std::string& fn)
     }
     _parse_string_post(driver_params, input_dir, check_dirpath);
     _parse_double(driver_params, cs_threshold);
-    parser.parse_bool("output_gw_spec_func", driver_params.output_gw_spec_func, false, flag);
+    _parse_bool(driver_params, output_energy_qp);
+    _parse_bool(driver_params, output_hamgnn);
+    _parse_bool(driver_params, use_pyatb);
+    _parse_bool(driver_params, output_gw_spec_func);
+    _parse_bool(driver_params, use_spinor_wfc);
+    parser.parse_bool("use_soc", driver_params.use_spinor_wfc, flag);  // backward-compatible
+    if (driver_params.use_spinor_wfc)
+    {
+        driver::n_spinor = 2;
+    }
 
     // TODO: implement a function to read multiple double values in one line
     if (driver_params.output_gw_spec_func)
@@ -213,9 +221,12 @@ void parse_inputfile_to_params(const std::string& fn)
 
     parser.parse_bool("debug", btmp, false, flag);  // backward-compatible
     if (btmp) opts.output_level = LIBRPA_VERBOSE_DEBUG;
+
     parser.parse_string("output_level", stmp, "info", flag);
     if (flag == 0) opts.output_level = get_verbose(stmp);
+
     _parse_double(opts, vq_threshold);
+
     _parse_switch(opts, use_kpara_scf_eigvec);
 
     _parse_string_post(opts, tfgrids_type, get_tfgrid_type);
@@ -227,6 +238,26 @@ void parse_inputfile_to_params(const std::string& fn)
     if (opts.tfgrids_type == LibrpaTimeFreqGrid::TFGRID_UNSET)
         opts.tfgrids_type = LibrpaTimeFreqGrid::Minimax;
     _parse_int(opts, nfreq);
+    _parse_double(opts, tfgrids_freq_min);
+    _parse_double(opts, tfgrids_freq_interval);
+    _parse_double(opts, tfgrids_freq_max);
+    _parse_double(opts, tfgrids_time_min);
+    _parse_double(opts, tfgrids_time_interval);
+
+    _parse_double(opts, minimax_emin);
+    _parse_double(opts, minimax_emax);
+    _parse_double(opts, minimax_regulation);
+
+    _parse_switch(opts, use_fullcoul_eps);
+    _parse_switch(opts, use_fullcoul_exx);
+    _parse_switch(opts, use_fullcoul_wc);
+
+    _parse_int(opts, n_bands_chi0);
+    _parse_int(opts, n_bands_sigc);
+
+    // chi0 related
+    _parse_switch(opts, use_shrink_abfs);
+    _parse_switch(opts, use_shrink_chi);
 
     // RPA specific
     parser.parse_double("gf_R_threshold", opts.gf_threshold, flag); // backward compatible
@@ -241,18 +272,22 @@ void parse_inputfile_to_params(const std::string& fn)
     _parse_double(opts, libri_exx_threshold_V);
 
     // GW specific
+    _parse_int(opts, n_params_anacon);
     _parse_double(opts, sqrt_coulomb_threshold);
     _parse_switch(opts, use_scalapack_gw_wc);
     _parse_switch(opts, use_cholesky_gw_wc);
     _parse_switch(opts, use_gpu_gw_wc);
+    _parse_switch(opts, load_sigc_from_file);
     _parse_double(opts, libri_g0w0_threshold_C);
     _parse_double(opts, libri_g0w0_threshold_G);
     _parse_double(opts, libri_g0w0_threshold_Wc);
     _parse_switch(opts, replace_w_head);
     _parse_int(opts, option_dielect_func);
+    _parse_switch(opts, use_2d_dielectric);
     _parse_switch(opts, output_gw_sigc_mat);
     _parse_switch(opts, output_gw_sigc_mat_rt);
     _parse_switch(opts, output_gw_sigc_mat_rf);
+    _parse_int(opts, option_output_Wc_Rf_mat);
 }
 
 #undef _parse_int

@@ -84,18 +84,20 @@ class TFGrids
         // NOTE:(ZMY) attempt to use a map<double, double> to store,
         //      but will lead to a segfault in chi0tauR calculation, not knowing why
         double find_freq_weight(const double &freq) const;
+        void write_cos_sin_trans_matrices(const std::string &filename) const;
 
         //! A wrapper around all grids generators
         double generate(LibrpaTimeFreqGrid gtype,
                         double emin = -1, double eintveral = -1,
-                        double emax = -1, double tmin = -1, double tinterval = -1);
+                        double emax = -1, double tmin = -1, double tinterval = -1,
+                        double regulation = 0.0);
 
         //! Generate the even-spaced frequency grid
         void generate_evenspaced(double emin, double interval);
         //! Generate the even-spaced time-frequency grid. @note Currently only for debug use
         void generate_evenspaced_tf(double emin, double eintv, double tmin, double tintv);
         //! Generate the minimax time-frequency grid
-        double generate_minimax(double emin, double emax);
+        double generate_minimax(double emin, double emax, double regulation = 0.0);
         //! Generate Gauss-Chebyshev quadrature of first kind on [0, infty)
         void generate_GaussChebyshevI();
         //! Generate Gauss-Chebyshev quadrature of second kind on [0, infty)

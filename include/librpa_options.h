@@ -47,9 +47,6 @@ typedef struct
     //! Threshold for real-space Coulomb matrices
     double vq_threshold;
 
-    //! Flag of parsing input and performing calculation in spin-orbit coupling formalism
-    LibrpaSwitch use_soc;
-
     //! Flag to specify parallel distribution of eigenvectors of SCF starting point
     LibrpaSwitch use_kpara_scf_eigvec;
 
@@ -59,12 +56,61 @@ typedef struct
     //! Number of time/frequency points
     int nfreq;
 
-    //! Parameters for time and freqeuncy grids. Different grid types will use none/part/all of the parameters.
+    /* ============================================================================= */
+    /* Parameters for time and freqeuncy grids.
+     * Different grid types will use none/part/all of the parameters. */
+    //! Minimum frequency for grid generation, in Hartree.
     double tfgrids_freq_min;
+
+    //! Frequency interval for even-spaced grids, in Hartree.
     double tfgrids_freq_interval;
+
+    //! Maximum frequency for grid generation, in Hartree.
     double tfgrids_freq_max;
+
+    //! Minimum time for grid generation, in Hartree^-1.
     double tfgrids_time_min;
+
+    //! Time interval for even-spaced grids, in Hartree^-1.
     double tfgrids_time_interval;
+
+    //! Minimal transition energy when generating minimax grids.
+    /*!
+     * When set negative (the default), the minimal energy is decided by the mean-field input
+     * and set to the energy gap.
+     * For now, it is suggested to manually set this option for gapless systems.
+     */
+    double minimax_emin;
+
+    //! Maximal transition energy when generating minimax grids.
+    /*!
+     * This option is introduced for test of supercell to fix the minimax frequency points
+     */
+    double minimax_emax;
+
+    //! Regulation for minimax grids generation
+    double minimax_regulation;
+
+    /* ============================================================================= */
+    /* Coulomb matrices usage */
+
+    //! Switch of using full Coulomb interaction in exact-exchange operator.
+    LibrpaSwitch use_fullcoul_exx;
+
+    //! Switch of using full Coulomb interaction in \f$\varepsilon = 1 - v \chi^0\f$
+    LibrpaSwitch use_fullcoul_eps;
+
+    //! Switch of using full Coulomb interaction in \f$W^c = (\varepsilon^{-1} - 1) v\f$.
+    LibrpaSwitch use_fullcoul_wc;
+
+    /* ============================================================================= */
+    /* Sum of states */
+
+    //! Maximal number of bands for computing response function
+    int n_bands_chi0;
+
+    //! Maximal number of bands for computing correlation self-energy
+    int n_bands_sigc;
 
     /* ============================================================================= */
     /* RPA specific */
@@ -74,6 +120,15 @@ typedef struct
 
     //! Flag to control whether to use ScaLAPACK to compute RPA correlation energy
     LibrpaSwitch use_scalapack_ecrpa;
+
+    /* ============================================================================= */
+    /* ABF compression */
+
+    //! Flag to use a compressed auxiliary basis
+    LibrpaSwitch use_shrink_abfs;
+
+    //! Flag to compress response function using shrinked basis.
+    LibrpaSwitch use_shrink_chi;
 
     /* ============================================================================= */
     /* GW specific */
@@ -89,7 +144,7 @@ typedef struct
 
     // ! Flag of using GPU for computing Wc from chi0
     LibrpaSwitch use_gpu_gw_wc;
-    
+
     //! Flag of replacing head of screened interaction by macroscopic dielectric function
     LibrpaSwitch replace_w_head;
 
@@ -101,6 +156,12 @@ typedef struct
      * - 2: cubic-spline interpolation from input data
      */
     int option_dielect_func;
+
+    //! Switch of using 2D dielectric function
+    LibrpaSwitch use_2d_dielectric;
+
+    //! Flag of loading correlation self-energy matrix (real-space, imaginary frequency) from file
+    LibrpaSwitch load_sigc_from_file;
 
     //! Threshold of eigenvalues to perform square root of Coulomb matrices
     double sqrt_coulomb_threshold;
@@ -141,6 +202,15 @@ typedef struct
 
     //! Output correlation self-energy matrix in NAO (real space, imaginary frequency domain)
     LibrpaSwitch output_gw_sigc_mat_rf;
+
+    //! Switch of outputting Wc matrix in Abs (real space, imaginary frequency domain)
+    /*!
+     * Available values:
+     * - 0: do not output
+     * - 1: output lowerest frequency
+     * - 2: output all frequencies
+     */
+    int option_output_Wc_Rf_mat;
 
 } LibrpaOptions;
 
