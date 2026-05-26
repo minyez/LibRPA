@@ -8,6 +8,7 @@
 
 #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
 #include <ddla/ddla.h>
+#include <ddla/ddla_stream.h>
 #endif
 
 #if defined(__CUDACC__) || defined(__HIP_DEVICE_COMPILE__)
@@ -242,6 +243,7 @@ public:
         elpa_setup(elpa_handle_);
 
         #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+        elpa_set(elpa_handle_, "use_gpu_id", ddla_desc_.ddla_handle()->local_device, &error);
         #ifdef ENABLE_HIP
         elpa_set(elpa_handle_, "amd-gpu", 1, &error);
         #endif
