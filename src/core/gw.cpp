@@ -962,8 +962,11 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                         }
                         // for certain spin and frequency
                         auto sigc_I_JR = comm_map2_first(blacs_ctxt_h.comm(), sigc_I_JR_local, s0_s1.first, s0_s1.second);
+                        // NOTE: sigc_I_JR may be empty for some process. This is a corner case 
+                        //       of very small basis and large MPI tasks. However, it must be stored
+                        //       to preserve the [spin][spinor][spinor][freq] key structure,
+                        //       otherwise it will lead to map error in the subsequent rotation.
                         sigc_I_JR_local.clear();
-                        if (sigc_I_JR.size() == 0) continue;
                         ap_p_map<map<Vector3_Order<int>, Matz>> sigc_new;
                         for (const auto &[I, JRmat]: sigc_I_JR)
                         {
@@ -979,12 +982,12 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                             }
                         }
                         if (sigc_orig == nullptr)
-                            sigc_is_f_IJ_R[isp][ispn_bra][ispn_ket][freq] = sigc_new;
+                            sigc_is_f_IJ_R[isp][ispn_bra][ispn_ket][freq] = std::move(sigc_new);
                         else
                         {
                             auto it_sp_f = sigc_orig->find(freq);
                             if (it_sp_f == sigc_orig->cend())
-                                sigc_orig->emplace(freq, sigc_new);
+                                sigc_orig->emplace(freq, std::move(sigc_new));
                             else
                                 it_sp_f->second.swap(sigc_new);
                         }
