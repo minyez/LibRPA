@@ -65,6 +65,13 @@ public:
     }
 
     template <typename T1, typename T2>
+    inline void allgather(const T1 *sendbuf, int sendcount, T2 *recvbuf, int recvcount) const
+    {
+        MPI_Allgather(sendbuf, sendcount, mpi_datatype<T1>::value,
+                      recvbuf, recvcount, mpi_datatype<T2>::value, this->comm);
+    }
+
+    template <typename T1, typename T2>
     inline void reduce(const T1 *sendbuf, T2 *recvbuf, int count, int root, MPI_Op op) const
     {
         if (sendbuf == MPI_IN_PLACE && myid != root)
