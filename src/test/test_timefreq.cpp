@@ -34,7 +34,7 @@ void check_minimax_ng16_diamond_k222()
     cout << tfg.get_time_nodes() << endl;
     cout << tfg.get_time_weights() << endl;
     cout << "Residual: " << residual << endl;
-    /* if (tfg.get_grid_type() != TFGrids::GRID_TYPES::Minimax) */
+    /* if (tfg.get_grid_type() != LIBRPA_TFGRID_MINIMAX) */
     /*     throw logic_error("internal type should be minimax grid"); */
     /* print_matrix("cos: t2f * f2t, ideally close to identity", tfg.get_costrans_t2f() * tfg.get_costrans_f2t() ); */
     /* print_matrix("sin: t2f * f2t, ideally close to identity", tfg.get_sintrans_t2f() * tfg.get_sintrans_f2t() ); */

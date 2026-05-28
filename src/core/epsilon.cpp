@@ -994,7 +994,7 @@ CorrEnergy compute_RPA_correlation(LibrpaParallelRouting routing, const Chi0 &ch
 
     // freq, q
     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> pi_freq_q_Mu_Nu;
-    if (routing == LibrpaParallelRouting::ATOMPAIR || routing == LibrpaParallelRouting::LIBRI)
+    if (routing == LIBRPA_ROUTING_ATOMPAIR || routing == LIBRPA_ROUTING_LIBRI)
         pi_freq_q_Mu_Nu = compute_Pi_q_MPI(chi0, coulmat);
     else
         pi_freq_q_Mu_Nu = compute_Pi_q(chi0, coulmat);
@@ -1068,7 +1068,7 @@ CorrEnergy compute_RPA_correlation(LibrpaParallelRouting routing, const Chi0 &ch
                     }
                 }
             }
-            if (routing == LibrpaParallelRouting::ATOMPAIR || routing == LibrpaParallelRouting::LIBRI)
+            if (routing == LIBRPA_ROUTING_ATOMPAIR || routing == LIBRPA_ROUTING_LIBRI)
             {
                 reduce_ComplexMatrix(pi_munu_tmp, pi_freq_q.at(freq).at(q), 0, comm_h.comm);
             }

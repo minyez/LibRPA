@@ -522,7 +522,7 @@ void librpa_set_lri_coeff(LibrpaHandler* h, LibrpaParallelRouting routing, int I
     assert(pds->basis_wfc[I] == as_size(nbasis_i));
     assert(pds->basis_wfc[J] == as_size(nbasis_j));
 
-    if (routing == LibrpaParallelRouting::LIBRI)
+    if (routing == LIBRPA_ROUTING_LIBRI)
     {
         const std::array<int, 3> Ra{R[0], R[1], R[2]};
         // RI tensor uses ABF as slowest index, so we need transpose the input data.

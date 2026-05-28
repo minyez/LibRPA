@@ -56,11 +56,11 @@ extern "C" {
  */
 typedef enum
 {
-    ROUTING_UNSET = LIBRPA_UNSET,  ///< Use default routing (unset)
-    AUTO = LIBRPA_AUTO,             ///< Automatically select optimal routing
-    RTAU = 0,                      ///< Real-space tau (time) decomposition
-    ATOMPAIR = 1,                  ///< Atom-pair parallelization
-    LIBRI = 2,                     ///< Use LibRI for RI basis operations
+    LIBRPA_ROUTING_UNSET = LIBRPA_UNSET,  ///< Use default routing (unset)
+    LIBRPA_ROUTING_AUTO = LIBRPA_AUTO,    ///< Automatically select optimal routing
+    LIBRPA_ROUTING_RTAU = 0,              ///< Real-space tau (time) decomposition
+    LIBRPA_ROUTING_ATOMPAIR = 1,          ///< Atom-pair parallelization
+    LIBRPA_ROUTING_LIBRI = 2,             ///< Use LibRI for RI basis operations
 } LibrpaParallelRouting;
 
 /** Number of time/frequency grid types available. */
@@ -74,13 +74,13 @@ typedef enum
  */
 typedef enum
 {
-    TFGRID_UNSET = LIBRPA_UNSET,   ///< Use default grid (unset)
-    GaussLegendre = 0,              ///< Gauss-Legendre quadrature
-    GaussChebyshevI = 1,           ///< Gauss-Chebyshev type I
-    GaussChebyshevII = 2,          ///< Gauss-Chebyshev type II
-    Minimax = 3,                   ///< Minimax grid
-    EvenSpaced = 4,                ///< Evenly spaced grid
-    EvenSpaced_TF = 5,             ///< Evenly spaced in time-frequency
+    LIBRPA_TFGRID_UNSET = LIBRPA_UNSET,   ///< Use default grid (unset)
+    LIBRPA_TFGRID_GAUSS_LEGENDRE = 0,      ///< Gauss-Legendre quadrature
+    LIBRPA_TFGRID_GAUSS_CHEBYSHEV_I = 1,   ///< Gauss-Chebyshev type I
+    LIBRPA_TFGRID_GAUSS_CHEBYSHEV_II = 2,  ///< Gauss-Chebyshev type II
+    LIBRPA_TFGRID_MINIMAX = 3,             ///< Minimax grid
+    LIBRPA_TFGRID_EVEN_SPACED = 4,         ///< Evenly spaced grid
+    LIBRPA_TFGRID_EVEN_SPACED_TF = 5,      ///< Evenly spaced in time-frequency
 } LibrpaTimeFreqGrid;
 
 /**

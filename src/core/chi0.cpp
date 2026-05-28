@@ -93,7 +93,7 @@ void Chi0::build(LibrpaParallelRouting routing,
         for ( auto R: this->pbc.Rlist )
             Rlist_gf.push_back(R);
 
-        if (routing == LibrpaParallelRouting::LIBRI)
+        if (routing == LIBRPA_ROUTING_LIBRI)
         {
             const auto atpairs_gf = generate_atom_pair_from_nat(natom, true);
             if (comm_h.is_root())
@@ -272,7 +272,7 @@ void Chi0::build_chi0_q_space_time(const LibrpaParallelRouting routing,
 {
     const bool use_soc = mf.get_n_spinor() > 1;
    // int R_tau_size = Rlist_gf.size() * tfg_.size();
-    if (routing == LibrpaParallelRouting::LIBRI)
+    if (routing == LIBRPA_ROUTING_LIBRI)
     {
         if (comm_h.is_root())
         {
@@ -285,7 +285,7 @@ void Chi0::build_chi0_q_space_time(const LibrpaParallelRouting routing,
             build_chi0_q_space_time_LibRI_routing<double>(Cs, atpairs_ABF, abf_shrink, sinvS,
                                                           blacs_ctxt_h);
     }
-    else if (routing == LibrpaParallelRouting::RTAU)
+    else if (routing == LIBRPA_ROUTING_RTAU)
     {
         // if (para_mpi.is_master())
         //     cout << "R_tau_routing" << endl;

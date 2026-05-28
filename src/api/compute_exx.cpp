@@ -25,7 +25,7 @@ void librpa_build_exx(LibrpaHandler* h, const LibrpaOptions *p_opts)
 
     // Decide actual routing
     LibrpaParallelRouting routing = opts.parallel_routing;
-    if (routing == LibrpaParallelRouting::AUTO)
+    if (routing == LIBRPA_ROUTING_AUTO)
     {
         const int n_atoms = pds->atoms.size();
         routing = decide_auto_routing(n_atoms, opts.nfreq * pds->pbc.get_n_cells_bvk());

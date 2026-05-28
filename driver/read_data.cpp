@@ -338,7 +338,7 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
     const auto tot_atpair = generate_atom_pair_from_nat(n_atoms, false);
     const auto tot_atpair_ordered = generate_atom_pair_from_nat(n_atoms, true);
 
-    if (routing == librpa::ParallelRouting::AUTO)
+    if (routing == LIBRPA_ROUTING_AUTO)
     {
         routing = decide_auto_routing(n_atoms, driver::opts.nfreq * n_kpoints);
     }
@@ -352,7 +352,7 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
     // HACK: local_atpair should be set in the same mechanism as inside the dataset object,
     //       which is implemented in initialize_ds_atpairs_local in dataset_helper.cpp.
     //       It consists of distributed atom pairs of only upper half, since repsonse function matrix is Hermitian.
-    if(routing == librpa::ParallelRouting::ATOMPAIR)
+    if(routing == LIBRPA_ROUTING_ATOMPAIR)
     {
         lib_printf_root("Triangular dispatching of atom pairs\n");
         auto tri_local_atpair = librpa_int::dispatch_upper_triangular_tasks(
@@ -367,7 +367,7 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
         read_Vq_row(dir_path, "coulomb_mat", driver::opts.vq_threshold, local_atpair, false);
         profiler.stop("driver_read_Vq");
     }
-    else if(routing == librpa::ParallelRouting::LIBRI)
+    else if(routing == LIBRPA_ROUTING_LIBRI)
     {
         lib_printf_root("Evenly distributed Cs and V for LibRI\n");
         profiler.start("driver_read_Cs");

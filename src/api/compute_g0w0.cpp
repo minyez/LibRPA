@@ -37,7 +37,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
 
     // Decide actual routing
     LibrpaParallelRouting routing = opts.parallel_routing;
-    if (routing == LibrpaParallelRouting::AUTO)
+    if (routing == LIBRPA_ROUTING_AUTO)
     {
         const int n_atoms = pds->atoms.size();
         routing = decide_auto_routing(n_atoms, opts.nfreq * pds->pbc.get_n_cells_bvk());
@@ -187,7 +187,7 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
 
     // Decide actual routing
     LibrpaParallelRouting routing = opts.parallel_routing;
-    if (routing == LibrpaParallelRouting::AUTO)
+    if (routing == LIBRPA_ROUTING_AUTO)
     {
         const int n_atoms = pds->atoms.size();
         routing = decide_auto_routing(n_atoms, opts.nfreq * pds->pbc.get_n_cells_bvk());
@@ -290,7 +290,7 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
 
     // Decide actual routing
     LibrpaParallelRouting routing = opts.parallel_routing;
-    if (routing == LibrpaParallelRouting::AUTO)
+    if (routing == LIBRPA_ROUTING_AUTO)
     {
         const int n_atoms = pds->atoms.size();
         routing = decide_auto_routing(n_atoms, opts.nfreq * pds->pbc.get_n_cells_bvk());
