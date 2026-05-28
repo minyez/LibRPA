@@ -974,8 +974,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
     assert(A_local.is_col_major() && Z_local.is_col_major());
     const bool is_int_power = fabs(power - int(power)) < 1e-4;
     const int n = ad_A.m();
-    const char jobz = 'V';
-    const char uplo = 'U';
+    
 
     // temporary array for syev with optimized block size
     const int blocksize_row_opt = std::min(ad_A.mb(), 128);
@@ -1001,6 +1000,8 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
 
     profiler.start("power_hemat_blacs_1");
 #ifndef ENABLE_ELPA
+    const char jobz = 'V';
+    const char uplo = 'U';
     int lwork = -1, lrwork = -1, info = 0;
 
     // Query optimal workspace using the provided psyev_f interface
@@ -1107,6 +1108,11 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
     // Scale eigenvectors using complex matrix operations
     // auto scaled_opt = Z_local_opt_complex.copy();
     auto scaled_opt = Z_local_opt.copy();
+#if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
+    ofs_myid << "scaled:" << Z_local_opt << std::endl; 
+#else
+    ofs_myid << "scaled:" << Z_local_opt << std::endl;
+#endif
     T* C;
 #if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
     T* d_C;
@@ -1146,6 +1152,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
 #endif
     A_local = A_local_opt.to_complex();
     auto scaled = Z_local.copy();
+
     Z_local_opt_complex = scaled_opt.to_complex();
     // Transfer back to original complex matrix
     ScalapackConnector::pgemr2d_f(n, n, Z_local_opt_complex.ptr(), 1, 1, ad_Z_opt.desc, scaled.ptr(), 1, 1,

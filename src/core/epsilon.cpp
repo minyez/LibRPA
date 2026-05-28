@@ -2062,7 +2062,10 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         {
             // choice of power_hemat_blacs_real/power_hemat_blacs_desc
             // leads to sub-meV difference
-            sqrtveig_blacs = power_hemat_blacs_real(
+            // sqrtveig_blacs = power_hemat_blacs_real(
+            //     coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt, n_singular,
+            //     eigenvalues.c, 0.5, sqrt_coulomb_threshold);
+            sqrtveig_blacs = power_hemat_blacs(
                 coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt, n_singular,
                 eigenvalues.c, 0.5, sqrt_coulomb_threshold);
             if (replace_w_head && option_dielect_func == 3)
@@ -2178,7 +2181,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 LaConnector::pgemm(
                     'C', 'N', n_nonsingular, n_nonsingular, n_abf, {-1.0, 0.0},
                     sqrtveig_blacs_ptr, 1, 1, desc_nabf_nabf_opt, coul_chi0_block.ptr(),
-                     1, 1, desc_nabf_nabf_opt, {0.0, 0.0}, chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
+                     1, 1, desc_nabf_nabf_opt, {0.0, 0.0}, chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt);
 
                 if (option_dielect_func == 3)
                 {
