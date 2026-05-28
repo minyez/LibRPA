@@ -18,7 +18,7 @@ void initialize_ds_tfgrids(Dataset &ds, const LibrpaOptions &opts)
     double tmin = opts.tfgrids_time_min;
     double tintv = opts.tfgrids_time_interval;
     double regulation = opts.minimax_regulation;
-    if (opts.tfgrids_type == LibrpaTimeFreqGrid::Minimax)
+    if (opts.tfgrids_type == LIBRPA_TFGRID_MINIMAX)
     {
         double emin_mf, emax_mf;
         ds.mf.get_E_min_max(emin_mf, emax_mf);
@@ -81,11 +81,11 @@ void initialize_ds_atpairs_local(Dataset &ds, LibrpaParallelRouting routing)
     if (n_atoms == 0)
         throw LIBRPA_RUNTIME_ERROR("Number of atoms can not be extracted, please set structure or basis first");
 
-    if (routing == LibrpaParallelRouting::AUTO)
+    if (routing == LIBRPA_ROUTING_AUTO)
     {
         throw LIBRPA_RUNTIME_ERROR("internal error: routing should be decided before initialize_ds_atpairs_local, not AUTO");
     }
-    else if(routing == LibrpaParallelRouting::ATOMPAIR || routing == LibrpaParallelRouting::LIBRI)
+    else if(routing == LIBRPA_ROUTING_ATOMPAIR || routing == LIBRPA_ROUTING_LIBRI)
     {
         auto tri_local_atpair = librpa_int::dispatch_upper_triangular_tasks(
             n_atoms, ds.blacs_h.myid, ds.blacs_h.nprows, ds.blacs_h.npcols,

@@ -225,7 +225,7 @@ void G0W0::build_spacetime(
     using global::lib_printf_root;
     using global::ofs_myid;
 
-    if (parallel_routing != LibrpaParallelRouting::LIBRI)
+    if (parallel_routing != LIBRPA_ROUTING_LIBRI)
     {
         comm_h.barrier();
         throw LIBRPA_RUNTIME_ERROR("not implemented");

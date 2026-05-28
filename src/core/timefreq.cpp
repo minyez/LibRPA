@@ -120,29 +120,29 @@ double TFGrids::generate(LibrpaTimeFreqGrid gtype, double emin, double eintveral
     double retval = -1;
     switch (gtype)
     {
-        case (LibrpaTimeFreqGrid::GaussLegendre):
+        case (LIBRPA_TFGRID_GAUSS_LEGENDRE):
         {
             this->generate_GaussLegendre();
         }
-        case (LibrpaTimeFreqGrid::GaussChebyshevI):
+        case (LIBRPA_TFGRID_GAUSS_CHEBYSHEV_I):
         {
             this->generate_GaussChebyshevI();
         }
-        case (LibrpaTimeFreqGrid::GaussChebyshevII):
+        case (LIBRPA_TFGRID_GAUSS_CHEBYSHEV_II):
         {
             this->generate_GaussChebyshevII();
         }
-        case (LibrpaTimeFreqGrid::Minimax):
+        case (LIBRPA_TFGRID_MINIMAX):
         {
             retval = this->generate_minimax(emin, emax, regulation);
             break;
         }
-        case (LibrpaTimeFreqGrid::EvenSpaced):
+        case (LIBRPA_TFGRID_EVEN_SPACED):
         {
             this->generate_evenspaced(emin, eintveral);
             break;
         }
-        case (LibrpaTimeFreqGrid::EvenSpaced_TF):
+        case (LIBRPA_TFGRID_EVEN_SPACED_TF):
         {
             this->generate_evenspaced_tf(emin, eintveral, tmin, tinterval);
             break;
@@ -165,7 +165,7 @@ void TFGrids::generate_evenspaced(double emin, double interval)
         freq_nodes[i] = emin + interval * i;
         freq_weights[i] = weight;
     }
-    grid_type = LibrpaTimeFreqGrid::EvenSpaced;
+    grid_type = LIBRPA_TFGRID_EVEN_SPACED;
 }
 
 void TFGrids::generate_evenspaced_tf(double emin, double eintv, double tmin, double tintv)
@@ -187,12 +187,12 @@ void TFGrids::generate_evenspaced_tf(double emin, double eintv, double tmin, dou
         costrans_f2t(i, i) = 1/weight;
         sintrans_f2t(i, i) = 1/weight;
     }
-    grid_type = LibrpaTimeFreqGrid::EvenSpaced_TF;
+    grid_type = LIBRPA_TFGRID_EVEN_SPACED_TF;
 }
 
 double TFGrids::generate_minimax(double emin, double emax, double regulation)
 {
-    grid_type = LibrpaTimeFreqGrid::Minimax;
+    grid_type = LIBRPA_TFGRID_MINIMAX;
     set_time();
 
     double max_errors[3];
@@ -237,7 +237,7 @@ double TFGrids::generate_minimax(double emin, double emax, double regulation)
 
 void TFGrids::generate_GaussChebyshevI()
 {
-    grid_type = LibrpaTimeFreqGrid::GaussChebyshevI;
+    grid_type = LIBRPA_TFGRID_GAUSS_CHEBYSHEV_I;
     std::vector<double> nodes(n_grids), weights(n_grids);
     GaussChebyshevI_unit(n_grids, nodes.data(), weights.data());
     // transform from [-1,1] to [0, infinity]
@@ -251,7 +251,7 @@ void TFGrids::generate_GaussChebyshevI()
 
 void TFGrids::generate_GaussChebyshevII()
 {
-    grid_type = LibrpaTimeFreqGrid::GaussChebyshevII;
+    grid_type = LIBRPA_TFGRID_GAUSS_CHEBYSHEV_II;
     std::vector<double> nodes(n_grids), weights(n_grids);
     GaussChebyshevII_unit(n_grids, nodes.data(), weights.data());
     // transform from [-1,1] to [0, infinity]
@@ -265,7 +265,7 @@ void TFGrids::generate_GaussChebyshevII()
 
 void TFGrids::generate_GaussLegendre()
 {
-    grid_type = LibrpaTimeFreqGrid::GaussLegendre;
+    grid_type = LIBRPA_TFGRID_GAUSS_LEGENDRE;
     std::vector<double> nodes(n_grids), weights(n_grids);
     GaussLegendre_unit(n_grids, nodes.data(), weights.data());
     // transform from [-1,1] to [0, infinity]

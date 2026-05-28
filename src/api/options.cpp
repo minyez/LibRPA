@@ -12,12 +12,12 @@ void librpa_init_options(LibrpaOptions *opts)
 {
     librpa_set_output_dir(opts, ".");
 
-    opts->parallel_routing = LibrpaParallelRouting::AUTO;
+    opts->parallel_routing = LIBRPA_ROUTING_AUTO;
     opts->output_level = LIBRPA_VERBOSE_INFO;
     opts->vq_threshold = 0.0e0;
     opts->use_kpara_scf_eigvec = LIBRPA_SWITCH_OFF;
 
-    opts->tfgrids_type = LibrpaTimeFreqGrid::TFGRID_UNSET;
+    opts->tfgrids_type = LIBRPA_TFGRID_UNSET;
     opts->nfreq = 6;
     opts->tfgrids_freq_min = 0.005;
     opts->tfgrids_freq_interval = 0.0;

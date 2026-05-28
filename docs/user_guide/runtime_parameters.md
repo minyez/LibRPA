@@ -62,11 +62,11 @@ The default values below are API defaults unless a driver-specific default is li
 | Parameter Name          | Description                                            | Type   | Default Value (Options)                                      | Status       |
 |-------------------------|--------------------------------------------------------|--------|--------------------------------------------------------------|--------------|
 | `output_dir`            | Output directory for results                           | string | API: `.`; driver: `librpa.d/`                                |              |
-| `parallel_routing`      | Parallel scheme of LibRPA                              | enum/string | API: `AUTO`; driver: `auto` (`auto`, `atompair`, `rtau`, `libri`) |              |
+| `parallel_routing`      | Parallel scheme of LibRPA                              | enum/string | API: `LIBRPA_ROUTING_AUTO`; driver: `auto` (`auto`, `atompair`, `rtau`, `libri`) |              |
 | `output_level`          | Verbosity level                                        | int/string | API: `LIBRPA_VERBOSE_INFO`; driver: `info` (`silent`, `critical`, `info`, `warn`, `debug`) |              |
 | `vq_threshold`          | Real-space Coulomb matrix screening threshold          | double | 0.0                                                          |              |
 | `use_kpara_scf_eigvec`  | Use k-point-parallel distribution of SCF eigenvectors  | bool   | `false`                                                      | Experimental |
-| `tfgrids_type`          | Type of time-frequency integration grid                | enum/string | API: `TFGRID_UNSET`; driver: `minimax` (`GL`, `GC-I`, `GL-II`, `minimax`, `evenspaced`, `evenspaced_tf`) |              |
+| `tfgrids_type`          | Type of time-frequency integration grid                | enum/string | API: `LIBRPA_TFGRID_UNSET`; driver: `minimax` (`GL`, `GC-I`, `GL-II`, `minimax`, `evenspaced`, `evenspaced_tf`) |              |
 | `nfreq`                 | Number of frequency integration grid points            | int    | 6                                                            |              |
 | `tfgrids_freq_min`      | Minimum frequency for grid (Hartree)                   | double | 0.005                                                        |              |
 | `tfgrids_freq_interval` | Frequency interval for even-spaced grid (Hartree)      | double | 0.0                                                          |              |

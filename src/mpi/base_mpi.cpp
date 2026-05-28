@@ -149,7 +149,7 @@ std::string MpiCommHandler::str() const
 LibrpaParallelRouting decide_auto_routing(const int n_atoms, const int Rt_num)
 {
     const auto atpairs_num = n_atoms * (n_atoms + 1) / 2;
-    return atpairs_num < Rt_num ? LibrpaParallelRouting::RTAU : LibrpaParallelRouting::ATOMPAIR;
+    return atpairs_num < Rt_num ? LIBRPA_ROUTING_RTAU : LIBRPA_ROUTING_ATOMPAIR;
 }
 
 int get_mpi_rank(const MPI_Comm &comm)

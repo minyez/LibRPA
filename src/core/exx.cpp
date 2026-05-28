@@ -218,7 +218,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     using global::profiler;
     using global::ofs_myid;
 
-    assert(routing == LibrpaParallelRouting::LIBRI);
+    assert(routing == LIBRPA_ROUTING_LIBRI);
 
     if (this->is_rspace_built_)
     {
@@ -299,7 +299,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     std::map<int, std::map<std::pair<int,std::array<int,3>>, RI::Tensor<cplxdb>>> V_libri_cplx;
 
     global::profiler.start("build_real_space_exx_2_1");
-    if (routing == LibrpaParallelRouting::RTAU)
+    if (routing == LIBRPA_ROUTING_RTAU)
     {
         // Full Coulomb case, have to re-distribute
         // TODO: remove as libri routing is enforced above

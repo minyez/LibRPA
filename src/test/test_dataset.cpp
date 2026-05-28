@@ -158,7 +158,7 @@ static void test_redistribute_blacs2ap_np4(const std::vector<size_t> &nbs)
     using namespace librpa_int;
     Dataset ds(MPI_COMM_WORLD);
     ds.basis_aux.set(nbs);
-    initialize_ds_atpairs_local(ds, LibrpaParallelRouting::LIBRI);
+    initialize_ds_atpairs_local(ds, LIBRPA_ROUTING_LIBRI);
     const int n_aux = ds.basis_aux.nb_total;
     ds.desc_abf.reset_handler(ds.blacs_h);
     ds.desc_abf.init_1b1p(n_aux, n_aux, 0, 0);
