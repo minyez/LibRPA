@@ -1069,6 +1069,8 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
                                   Z_local.ptr(), 1, 1, ad_Z.desc, ad_Z.ictxt());
     profiler.stop("power_hemat_blacs_2");
 
+    // std::cout << "Z_local_opt:" << std::endl << Z_local_opt << std::endl;
+
     // Check number of non-singular eigenvalues
     n_filtered = as_size(n);
     for (int i = 0; i < n; i++)
@@ -1108,11 +1110,6 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
     // Scale eigenvectors using complex matrix operations
     // auto scaled_opt = Z_local_opt_complex.copy();
     auto scaled_opt = Z_local_opt.copy();
-#if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
-    ofs_myid << "scaled:" << Z_local_opt << std::endl; 
-#else
-    ofs_myid << "scaled:" << Z_local_opt << std::endl;
-#endif
     T* C;
 #if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
     T* d_C;
@@ -1159,6 +1156,9 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
                                   ad_Z.desc, ad_Z.ictxt());
     profiler.stop("power_hemat_blacs_4");
     profiler.stop(__FUNCTION__);
+    // std::cout << "W_temp:" << std::endl << W_temp << std::endl;
+    // std::cout << "scaled: " << std::endl << scaled << std::endl;
+    // std::cout << "A_local: " << std::endl << A_local << std::endl;
 
     return scaled;
 }
