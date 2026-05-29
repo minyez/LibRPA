@@ -5,6 +5,7 @@
 | Option                                                      | Type              | Default    |
 |-------------------------------------------------------------|-------------------|------------|
 | [`LIBRPA_USE_LIBRI`](#librpa-use-libri)                     | bool              | `OFF`      |
+| [`LIBRPA_USE_EXTERNAL_ELPA`](#librpa-use-external-elpa)     | bool              | `OFF`      |
 | [`LIBRPA_USE_CMAKE_INC`](#librpa-use-cmake-inc)             | bool              | `OFF`      |
 | [`LIBRPA_USE_EXTERNAL_GREENX`](#librpa-use-external-greenx) | bool              | `OFF`      |
 | [`LIBRPA_ENABLE_FORTRAN_BIND`](#librpa-enable-fortran-bind) | bool              | `OFF`      |
@@ -17,6 +18,7 @@
 | [`LIBCOMM_INCLUDE_DIR`](#libcomm-include-dir)               | string            | empty      |
 | [`CEREAL_INCLUDE_DIR`](#cereal-include-dir)                 | string            | empty      |
 | [`SCALAPACK_DIR`](#scalapack-dir)                           | string            | empty      |
+| [`EXTERNAL_ELPA_DIR`](#external-elpa-dir)                   | string            | empty      |
 
 These options can be parsed on the CMake command line, for example:
 
@@ -32,6 +34,24 @@ for RI tensor contractions.
 
 The *GW* and EXX functionalities require LibRPA to be compiled with LibRI, i.e. `-DLIBRPA_USE_LIBRI=ON`.
 By contrast, the RPA correlation energy can also be computed without this option.
+
+(librpa-use-external-elpa)=
+## `LIBRPA_USE_EXTERNAL_ELPA`
+
+When enabled, LibRPA is linked against an external
+[ELPA](https://elpa.mpcdf.mpg.de/) installation.
+
+ELPA support is intended for optimized linear algebra subroutines, such as
+ELPA-provided dense eigensolver routines, in ELPA-backed implementations. This
+option provides the build interface for those code paths.
+
+Set [`EXTERNAL_ELPA_DIR`](#external-elpa-dir) to the ELPA installation prefix
+so CMake can find the ELPA headers, Fortran module directory, and library.
+
+Example:
+```sh
+cmake -DLIBRPA_USE_EXTERNAL_ELPA=ON -DEXTERNAL_ELPA_DIR=/path/to/elpa
+```
 
 (librpa-use-cmake-inc)=
 ## `LIBRPA_USE_CMAKE_INC`
@@ -174,3 +194,29 @@ This variable can be provided in two ways:
 
 This option is intended for environments where ScaLAPACK is provided as a
 standalone installation rather than through Intel MKL.
+
+(external-elpa-dir)=
+## `EXTERNAL_ELPA_DIR`
+
+`EXTERNAL_ELPA_DIR` specifies the installation prefix of an external ELPA
+library. It is used when
+[`LIBRPA_USE_EXTERNAL_ELPA`](#librpa-use-external-elpa) is enabled.
+
+CMake searches below this prefix for:
+
+- headers such as `include/elpa-*/elpa/elpa.h`
+- Fortran modules such as `include/elpa-*/modules/elpa.mod`
+- libraries such as `lib/libelpa.so` or `lib/libelpa_openmp.so`
+
+This variable can be provided as a CMake option:
+
+```bash
+cmake -DLIBRPA_USE_EXTERNAL_ELPA=ON -DEXTERNAL_ELPA_DIR=/path/to/elpa
+```
+
+or as an environment variable:
+
+```bash
+export EXTERNAL_ELPA_DIR=/path/to/elpa
+cmake -DLIBRPA_USE_EXTERNAL_ELPA=ON
+```

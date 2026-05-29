@@ -24,6 +24,10 @@ const char * cmake_build_type = "${CMAKE_BUILD_TYPE}";
 
 const char * use_libri = "${LIBRPA_USE_LIBRI}";
 
+const char * use_external_elpa = "${LIBRPA_USE_EXTERNAL_ELPA}";
+
+const char * external_elpa_dir = "${EXTERNAL_ELPA_DIR}";
+
 const char * libri_include_dir = "${LibRI_INCLUDE_DIR}";
 
 const char * libcomm_include_dir = "${LibComm_INCLUDE_DIR}";
