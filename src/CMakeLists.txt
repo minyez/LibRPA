@@ -25,6 +25,10 @@ target_include_directories(rpa_lib PRIVATE
   $<TARGET_PROPERTY:LibGXMiniMax,Fortran_MODULE_DIRECTORY>
 )
 
+if(LIBRPA_USE_EXTERNAL_ELPA)
+  target_link_libraries(rpa_lib PRIVATE ELPA::ELPA)
+endif()
+
 target_include_directories(rpa_lib
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>

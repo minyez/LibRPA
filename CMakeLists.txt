@@ -19,6 +19,7 @@ set(LIBRPA_DRIVER_NAME         "chi0_main.exe")
 
 # Public options setup
 option(LIBRPA_USE_LIBRI            "Use LibRI for tensor contraction in LibRPA" OFF)
+option(LIBRPA_USE_EXTERNAL_ELPA    "Use an external ELPA eigensolver library from an installation prefix" OFF)
 option(LIBRPA_USE_CMAKE_INC        "Use cmake.inc for configure" OFF)
 option(LIBRPA_USE_EXTERNAL_GREENX  "Use an external GreenX target provided by the parent project instead of the bundled copy" OFF)
 option(LIBRPA_ENABLE_TEST          "Flag to build LibRPA tests" ON)
@@ -33,6 +34,7 @@ option(LIBRPA_ENABLE_FORTRAN_TEST  "Flag to build tests for Fortran bindings" ON
 
 # Customizable cmake macro
 set(LIBRPA_FORTRAN_DP "c_double" CACHE STRING "Kind of double precision that the Fortran binding uses to interface the user code")
+set(EXTERNAL_ELPA_DIR "" CACHE PATH "External ELPA installation prefix")
 
 if (DEFINED USE_GREENX_MINIMAX)
   message(FATAL_ERROR "USE_GREENX_MINIMAX is deprecated: GreenX is now always used. Please remove USE_GREENX_MINIMAX")
@@ -145,6 +147,16 @@ endif()
 #       This will require a more comprehensive stub MPI library in LibRPA,
 #       and is actually low in priority because LibRPA targets large-scale computation.
 add_compile_definitions("LIBRPA_USE_MPI")
+
+if(LIBRPA_USE_EXTERNAL_ELPA)
+  if(NOT EXTERNAL_ELPA_DIR AND DEFINED ENV{EXTERNAL_ELPA_DIR})
+    set(EXTERNAL_ELPA_DIR "$ENV{EXTERNAL_ELPA_DIR}" CACHE PATH "External ELPA installation prefix" FORCE)
+  endif()
+  find_package(ELPA REQUIRED)
+  message(STATUS "Use external ELPA library       : ${ELPA_LIBRARY}")
+  message(STATUS "Use external ELPA include dirs  : ${ELPA_INCLUDE_DIRS}")
+  add_compile_definitions("LIBRPA_USE_EXTERNAL_ELPA")
+endif()
 
 # Switch on LibRI functionalities, which requires Cereal, LibComm and LibRI
 # When USE_LIBRI is switched on but the include direcotires of the required dependenccies are not specified

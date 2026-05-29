@@ -11,6 +11,12 @@ LibRPA depends on the following core software components:
 - the [GreenX](https://github.com/nomad-coe/greenX) library for minimax
   time-frequency grids
 
+Optionally, LibRPA can also be linked with an external
+[ELPA](https://elpa.mpcdf.mpg.de/) installation. This is intended for
+ELPA-backed optimized linear algebra subroutines. To enable the build
+interface, configure with
+`-DLIBRPA_USE_EXTERNAL_ELPA=ON -DEXTERNAL_ELPA_DIR=/path/to/elpa`.
+
 For *GW*, the following packages are additionally required:
 
 - [LibRI](https://github.com/abacusmodeling/LibRI) for tensor contractions
