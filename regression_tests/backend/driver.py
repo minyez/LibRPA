@@ -1,5 +1,6 @@
 import os
 import pathlib
+import shlex
 import shutil
 import tarfile
 from collections import OrderedDict
@@ -12,6 +13,30 @@ from .validate import Validate
 __all__ = ["TestDriver"]
 
 PASS_FAIL = {True: "PASS", False: "FAIL"}
+
+
+def _has_mpi_task_option(args):
+    task_options = {"-n", "-np", "--np", "--ntasks"}
+    task_option_prefixes = ("-np=", "--np=", "--ntasks=")
+    return any(arg in task_options or arg.startswith(task_option_prefixes)
+               for arg in args)
+
+
+def _build_run_command(exec: pathlib.Path, mpiexec: str, ntasks: int):
+    args = shlex.split(mpiexec)
+    if not args:
+        raise ValueError("--mpiexec cannot be empty")
+
+    launcher = pathlib.Path(args[0]).name
+    if launcher in ["mpirun", "mpiexec"] and not _has_mpi_task_option(args[1:]):
+        args.extend(["-np", str(ntasks)])
+
+    args.append(str(exec))
+    return args
+
+
+def _format_command(args):
+    return " ".join(shlex.quote(str(arg)) for arg in args)
 
 
 def _disable_message(tc: dict):
@@ -199,7 +224,7 @@ class TestDriver:
             for tc in skip_due_to_run:
                 print("- {:s}: {:s}".format(tc["directory"], tc["name"]))
 
-    def run(self, exec: str, mpiexec: str, force):
+    def run(self, exec: str, mpiexec: str, force, verbose=False):
         if self._workspace.exists() and not force:
             raise FileExistsError("Workspace directory exists, please remove")
         self._workspace.mkdir(parents=True, exist_ok=True)
@@ -211,11 +236,7 @@ class TestDriver:
         exec = pathlib.Path(exec).resolve()
 
         os.environ["OMP_NUM_THREADS"] = str(self._nthreads)
-        args = []
-        if mpiexec == "srun":
-            args = [mpiexec, exec]
-        elif mpiexec in ["mpirun", "mpiexec"]:
-            args = [mpiexec, "-np", str(self._ntasks), exec]
+        args = _build_run_command(exec, mpiexec, self._ntasks)
 
         print()
         if not self._testcases_filtered:
@@ -234,6 +255,8 @@ class TestDriver:
                 tar.extractall(path=dst)
             # prepare inputs
             print("Running {} [{}]".format(tc["name"], dname))
+            if verbose:
+                print("Command: {}".format(_format_command(args)))
             run_librpa(args, dst_librpa)
         print("Finished test calculations")
         print()

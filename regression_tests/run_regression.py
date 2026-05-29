@@ -36,7 +36,10 @@ if __name__ == '__main__':
         sys.exit(status)
 
     if args.mode in ["run", "full"]:
-        driver.run(args.librpa_exec, args.mpiexec, args.force)
+        try:
+            driver.run(args.librpa_exec, args.mpiexec, args.force, args.verbose)
+        except ValueError as exc:
+            parser.error(str(exc))
 
     if args.mode in ["analyze", "full"]:
         status = driver.analyze()

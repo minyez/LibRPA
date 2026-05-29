@@ -35,8 +35,10 @@ def _add_testsuite_options(p: ArgumentParser):
                    help="Number of MPI tasks to run the tests, default: 1")
     p.add_argument("--nthreads", type=int, default=1,
                    help="Number of OpenMP threads to run the tests, default: 1")
-    p.add_argument("--dir-input", type=str, default="testcases/", help="Directory that contain input data for testcases")
-    p.add_argument("--dir-ref", type=str, default="refs/", help="Directory that contain reference results")
+    p.add_argument("--dir-input", type=str, default="testcases/",
+                   help="Directory that contain input data for testcases")
+    p.add_argument("--dir-ref", type=str, default="refs/",
+                   help="Directory that contain reference results")
     scope = p.add_mutually_exclusive_group()
     scope.add_argument("--only", nargs="+", metavar="TESTCASE",
                        help="Only enable test cases with these directory names")
@@ -46,9 +48,14 @@ def _add_testsuite_options(p: ArgumentParser):
 
 def _add_execute_options(p: ArgumentParser):
     p.add_argument("librpa_exec", help="Path to LibRPA executable for test")
-    p.add_argument("-f", "--force", dest="force", action="store_true", help="Force running")
-    p.add_argument("--mpiexec", type=str, default="mpirun", help="MPI command")
+    p.add_argument("-f", "--force", dest="force",
+                   action="store_true", help="Force running")
+    p.add_argument("--mpiexec", type=str, default="mpirun",
+                   help="MPI command, optionally with arguments")
+    p.add_argument("--verbose", action="store_true",
+                   help="Print the command used to run each test")
 
 
 def _add_analyze_options(p: ArgumentParser):
-    p.add_argument("-o", "--output", default="regression.log", help="output file of regression test")
+    p.add_argument("-o", "--output", default="regression.log",
+                   help="output file of regression test")
