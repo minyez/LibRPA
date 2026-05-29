@@ -288,8 +288,7 @@ class TestDriver:
             return 1
         return status
 
-    # TODO: make output work
-    def print(self, output):
+    def print(self):
         for g, gtcs in self._groups.items():
             gtcs_active = [tc for tc in gtcs if _disable_message(tc) is None]
             if not gtcs_active:
