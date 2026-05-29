@@ -3,6 +3,7 @@
 #include "librpa_options.h"
 
 #include "../io/fs.h"
+#include "../utils/error.h"
 
 #include <string>
 #include <cstring>
@@ -68,6 +69,19 @@ void librpa_init_options(LibrpaOptions *opts)
 
 void librpa_set_output_dir(LibrpaOptions *opts, const char *output_dir)
 {
+    if (output_dir == nullptr)
+    {
+        throw LIBRPA_RUNTIME_ERROR("output_dir is null");
+    }
+
     std::string output_dir_s = librpa_int::path_as_directory(output_dir);
-    strcpy(opts->output_dir, output_dir_s.c_str());
+    if (output_dir_s.size() >= LIBRPA_MAX_STRLEN)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "output_dir is too long; maximum length is "
+            + std::to_string(LIBRPA_MAX_STRLEN - 1)
+            + " characters including the appended trailing slash");
+    }
+
+    std::memcpy(opts->output_dir, output_dir_s.c_str(), output_dir_s.size() + 1);
 }

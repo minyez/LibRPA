@@ -8,8 +8,6 @@
 #include <mpi.h>
 #include <omp.h>
 
-#include <filesystem>
-
 // Internal headers, used here only for printing formation and some consistency check
 // May move to public API later
 #include "../src/utils/profiler.h"
@@ -111,8 +109,8 @@ int main(int argc, char **argv)
         lib_printf("===== Begin control parameters =====\n");
         lib_printf(format_runtime_options(opts).c_str());
         lib_printf("===== End control parameters   =====\n\n");
-        std::filesystem::create_directories(driver::opts.output_dir);
     }
+    librpa_int::create_directories(driver::opts.output_dir, mpi_comm_global_h.myid);
     mpi_comm_global_h.barrier();
     profiler.stop("driver_read_params");
 
