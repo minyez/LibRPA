@@ -5,7 +5,6 @@
 | Option                                                      | Type              | Default    |
 |-------------------------------------------------------------|-------------------|------------|
 | [`LIBRPA_USE_LIBRI`](#librpa-use-libri)                     | bool              | `OFF`      |
-| [`LIBRPA_USE_EXTERNAL_ELPA`](#librpa-use-external-elpa)     | bool              | `OFF`      |
 | [`LIBRPA_USE_CMAKE_INC`](#librpa-use-cmake-inc)             | bool              | `OFF`      |
 | [`LIBRPA_USE_EXTERNAL_GREENX`](#librpa-use-external-greenx) | bool              | `OFF`      |
 | [`LIBRPA_ENABLE_FORTRAN_BIND`](#librpa-enable-fortran-bind) | bool              | `OFF`      |
@@ -18,7 +17,14 @@
 | [`LIBCOMM_INCLUDE_DIR`](#libcomm-include-dir)               | string            | empty      |
 | [`CEREAL_INCLUDE_DIR`](#cereal-include-dir)                 | string            | empty      |
 | [`SCALAPACK_DIR`](#scalapack-dir)                           | string            | empty      |
+| [`LIBRPA_USE_EXTERNAL_ELPA`](#librpa-use-external-elpa)     | bool              | `OFF`      |
 | [`EXTERNAL_ELPA_DIR`](#external-elpa-dir)                   | string            | empty      |
+| [`LIBRPA_USE_BUNDLED_ELPA`](#librpa-use-bundled-elpa)       | bool              | `OFF`      |
+| [`LIBRPA_BUNDLED_ELPA_VERSION`](#librpa-bundled-elpa-version) | string          | `2021.11.002` |
+| [`LIBRPA_BUNDLED_ELPA_KERNEL`](#librpa-bundled-elpa-kernel) | string            | empty      |
+| [`LIBRPA_BUNDLED_ELPA_OPENMP`](#librpa-bundled-elpa-openmp) | bool              | `OFF`      |
+| [`LIBRPA_BUNDLED_ELPA_CONFIGURE_ARGS`](#librpa-bundled-elpa-configure-args) | string | empty |
+| [`LIBRPA_BUNDLED_ELPA_LIBS`](#librpa-bundled-elpa-libs)     | string            | empty      |
 
 These options can be parsed on the CMake command line, for example:
 
@@ -51,6 +57,121 @@ so CMake can find the ELPA headers, Fortran module directory, and library.
 Example:
 ```sh
 cmake -DLIBRPA_USE_EXTERNAL_ELPA=ON -DEXTERNAL_ELPA_DIR=/path/to/elpa
+```
+
+(librpa-use-bundled-elpa)=
+## `LIBRPA_USE_BUNDLED_ELPA`
+
+When enabled, LibRPA builds and links against a bundled ELPA source release
+under `thirdparty/ELPA`.
+
+This option is mutually exclusive with
+[`LIBRPA_USE_EXTERNAL_ELPA`](#librpa-use-external-elpa).
+
+The bundled ELPA build is managed through CMake's `ExternalProject` mechanism.
+After ELPA has been built in an existing build directory, changing compiler
+flags or `CMAKE_BUILD_TYPE` may not automatically reconfigure and rebuild ELPA.
+Use a fresh build directory, or clean the bundled ELPA sub-build, when those
+settings need to be applied to ELPA itself.
+
+Example:
+```sh
+cmake -DLIBRPA_USE_BUNDLED_ELPA=ON
+```
+
+(librpa-bundled-elpa-version)=
+## `LIBRPA_BUNDLED_ELPA_VERSION`
+
+Selects which bundled ELPA release is built when
+[`LIBRPA_USE_BUNDLED_ELPA`](#librpa-use-bundled-elpa) is enabled.
+
+Supported values are:
+
+- `2021.11.002`
+- `2026.02.001`
+
+(librpa-bundled-elpa-kernel)=
+## `LIBRPA_BUNDLED_ELPA_KERNEL`
+
+Selects an x86 SIMD kernel family for the bundled ELPA build.
+
+By default, this option is empty. In that case, LibRPA disables ELPA's
+x86-specific SIMD kernels and lets ELPA build portable generic kernels. Set this
+option on compatible x86 systems when an optimized kernel family is desired.
+
+Supported values are:
+
+- empty
+- `SSE`
+- `SSE_ASSEMBLY`
+- `AVX`
+- `AVX2`
+- `AVX512`
+
+Example:
+```sh
+cmake -DLIBRPA_USE_BUNDLED_ELPA=ON \
+      -DLIBRPA_BUNDLED_ELPA_KERNEL=AVX512
+```
+
+(librpa-bundled-elpa-openmp)=
+## `LIBRPA_BUNDLED_ELPA_OPENMP`
+
+Controls whether the bundled ELPA library is built with ELPA's own OpenMP
+support.
+
+The default is `OFF`. In that case, ELPA is built as an MPI-only static library,
+even if LibRPA itself is compiled with OpenMP. Set this option to `ON` only when
+the runtime process and thread layout is chosen with ELPA threading in mind.
+For example, with MPI ranks, OpenMP regions in LibRPA, threaded BLAS, and
+OpenMP-enabled ELPA all active at the same time, the total number of runnable
+threads can exceed the available cores unless `OMP_NUM_THREADS`,
+BLAS-specific thread controls, and the MPI rank count are coordinated.
+
+When this option is `ON`, LibRPA also enables ELPA's runtime MPI threading
+support checks and allows ELPA to limit its OpenMP thread count when the MPI
+library does not provide the thread level ELPA needs.
+
+Example:
+```sh
+cmake -DLIBRPA_USE_BUNDLED_ELPA=ON \
+      -DLIBRPA_BUNDLED_ELPA_OPENMP=ON
+```
+
+(librpa-bundled-elpa-configure-args)=
+## `LIBRPA_BUNDLED_ELPA_CONFIGURE_ARGS`
+
+Additional arguments passed to the bundled ELPA `configure` script.
+
+Arguments passed through this option are appended after LibRPA's defaults,
+including [`LIBRPA_BUNDLED_ELPA_KERNEL`](#librpa-bundled-elpa-kernel), so they
+can override the default kernel selection when a specific ELPA setup is needed.
+
+Example:
+```sh
+cmake -DLIBRPA_USE_BUNDLED_ELPA=ON \
+      -DLIBRPA_BUNDLED_ELPA_CONFIGURE_ARGS="--enable-store-build-config"
+```
+
+(librpa-bundled-elpa-libs)=
+## `LIBRPA_BUNDLED_ELPA_LIBS`
+
+Linker flags passed to the bundled ELPA `configure` script through its `LIBS`
+environment variable.
+
+By default, LibRPA forwards the detected LAPACK and ScaLAPACK libraries to the
+bundled ELPA build. Set this option only when the autodetected flags are not
+suitable for a particular compiler or math library setup.
+
+When static math libraries are used, ELPA's libtool build may try to include
+those static archives inside `libelpa.a`. LibRPA removes such nested archive
+members after the bundled ELPA install step and links the math libraries
+separately through CMake.
+
+Example:
+```sh
+cmake -DLIBRPA_USE_BUNDLED_ELPA=ON \
+      -DLIBRPA_BUNDLED_ELPA_LIBS="-L/path/to/lib -lscalapack -llapack -lblas"
 ```
 
 (librpa-use-cmake-inc)=

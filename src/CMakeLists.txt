@@ -25,8 +25,14 @@ target_include_directories(rpa_lib PRIVATE
   $<TARGET_PROPERTY:LibGXMiniMax,Fortran_MODULE_DIRECTORY>
 )
 
-if(LIBRPA_USE_EXTERNAL_ELPA)
-  target_link_libraries(rpa_lib PRIVATE ELPA::ELPA)
+if(LIBRPA_ELPA_TARGET)
+  # Link either the external ELPA target or the bundled imported target.
+  target_link_libraries(rpa_lib PRIVATE ${LIBRPA_ELPA_TARGET})
+endif()
+if(LIBRPA_BUNDLED_ELPA_PROJECT_TARGET)
+  # Bundled ELPA is built by ExternalProject_Add, so keep its build step
+  # ordered before rpa_lib tries to use the installed library and modules.
+  add_dependencies(rpa_lib ${LIBRPA_BUNDLED_ELPA_PROJECT_TARGET})
 endif()
 
 target_include_directories(rpa_lib

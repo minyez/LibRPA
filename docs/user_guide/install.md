@@ -16,6 +16,9 @@ Optionally, LibRPA can also be linked with an external
 ELPA-backed optimized linear algebra subroutines. To enable the build
 interface, configure with
 `-DLIBRPA_USE_EXTERNAL_ELPA=ON -DEXTERNAL_ELPA_DIR=/path/to/elpa`.
+Alternatively, LibRPA can build a bundled ELPA source release with
+`-DLIBRPA_USE_BUNDLED_ELPA=ON`. ELPA is licensed under LGPL-3.0; the
+bundled source releases include their upstream license files.
 
 For *GW*, the following packages are additionally required:
 
