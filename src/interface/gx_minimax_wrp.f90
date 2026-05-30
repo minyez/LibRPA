@@ -152,14 +152,20 @@ module gx_minimax_wrp
     e_min_f = e_min
     e_max_f = e_max
     if (need_sinft_tw) then
-      call gx_minimax_grid(num_points_f, e_min_f, e_max_f, tau_points_f, tau_weights_f, omega_points_f, omega_weights_f, &
-        &                  cosft_wt_f, cosft_tw_f, sinft_wt_f, max_errors_f, cosft_duality_error_f, ierr_f, flag_bare, regularization, &
-        &                  sinft_tw_f, sinft_duality_error_f, max_errors_sin_wt_f)
+      call gx_minimax_grid( &
+        & num_points_f, e_min_f, e_max_f, tau_points_f, tau_weights_f, &
+        & omega_points_f, omega_weights_f, cosft_wt_f, cosft_tw_f, &
+        & sinft_wt_f, max_errors_f, cosft_duality_error_f, ierr_f, &
+        & flag_bare, regularization, sinft_tw_f, sinft_duality_error_f, &
+        & max_errors_sin_wt_f)
       max_error_sin_wt = max_errors_sin_wt_f
       sinft_duality_error = sinft_duality_error_f
     else
-      call gx_minimax_grid(num_points_f, e_min_f, e_max_f, tau_points_f, tau_weights_f, omega_points_f, omega_weights_f, &
-        &                  cosft_wt_f, cosft_tw_f, sinft_wt_f, max_errors_f, cosft_duality_error_f, ierr_f, flag_bare, regularization)
+      call gx_minimax_grid( &
+        & num_points_f, e_min_f, e_max_f, tau_points_f, tau_weights_f, &
+        & omega_points_f, omega_weights_f, cosft_wt_f, cosft_tw_f, &
+        & sinft_wt_f, max_errors_f, cosft_duality_error_f, ierr_f, &
+        & flag_bare, regularization)
     end if
 
     cosft_duality_error = cosft_duality_error_f
