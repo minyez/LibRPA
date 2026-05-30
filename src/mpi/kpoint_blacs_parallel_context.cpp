@@ -70,6 +70,30 @@ static const char *rank_layout_name(KPointBlacsRankLayout rank_layout)
     return "UNKNOWN";
 }
 
+static bool sequential_kpoint_distribution(KPointDistribution kpoint_distribution)
+{
+    switch (kpoint_distribution)
+    {
+        case KPointDistribution::CYCLIC:
+            return false;
+        case KPointDistribution::CONTIGUOUS:
+            return true;
+    }
+    throw LIBRPA_RUNTIME_ERROR("unknown k-point distribution");
+}
+
+static const char *kpoint_distribution_name(KPointDistribution kpoint_distribution)
+{
+    switch (kpoint_distribution)
+    {
+        case KPointDistribution::CYCLIC:
+            return "CYCLIC";
+        case KPointDistribution::CONTIGUOUS:
+            return "CONTIGUOUS";
+    }
+    return "UNKNOWN";
+}
+
 } /* end anonymous namespace */
 
 KPointBlacsProcessShape::KPointBlacsProcessShape(int nprocs_kpoint_in, int nprocs_blacs_in,
@@ -106,14 +130,11 @@ std::string KPointBlacsProcessShape::info() const
 }
 
 KPointBlacsProcessShape resolve_kpoint_blacs_process_shape(const KPointBlacsProcessShape &request,
-                                                           int nprocs_global, int n_kpoints,
-                                                           int matrix_nrows, int matrix_ncols)
+                                                           int nprocs_global, int n_kpoints)
 {
     check_requested_process_shape(request);
     check_positive("nprocs_global", nprocs_global);
     check_positive("n_kpoints", n_kpoints);
-    check_positive("matrix_nrows", matrix_nrows);
-    check_positive("matrix_ncols", matrix_ncols);
 
     if (!request.auto_kpoint() && request.nprocs_kpoint > n_kpoints)
     {
@@ -188,10 +209,19 @@ KPointBlacsProcessShape resolve_kpoint_blacs_process_shape(const KPointBlacsProc
 
 KPointBlacsProcessShape resolve_kpoint_blacs_process_shape(const KPointBlacsProcessShape &request,
                                                            int nprocs_global, int n_kpoints,
+                                                           int matrix_nrows, int matrix_ncols)
+{
+    check_positive("matrix_nrows", matrix_nrows);
+    check_positive("matrix_ncols", matrix_ncols);
+    return resolve_kpoint_blacs_process_shape(request, nprocs_global, n_kpoints);
+}
+
+KPointBlacsProcessShape resolve_kpoint_blacs_process_shape(const KPointBlacsProcessShape &request,
+                                                           int nprocs_global, int n_kpoints,
                                                            int matrix_size)
 {
-    return resolve_kpoint_blacs_process_shape(request, nprocs_global, n_kpoints, matrix_size,
-                                              matrix_size);
+    check_positive("matrix_size", matrix_size);
+    return resolve_kpoint_blacs_process_shape(request, nprocs_global, n_kpoints);
 }
 
 std::pair<int, int> choose_kpoint_blacs_grid(int nprocs_blacs, int matrix_nrows, int matrix_ncols,
@@ -270,14 +300,13 @@ KPointBlacsParallelContext::KPointBlacsParallelContext()
       requested_process_shape_(),
       process_shape_(),
       n_kpoints_(0),
-      matrix_nrows_(0),
-      matrix_ncols_(0),
       kpoint_group_id_(0),
       blacs_rank_(0),
       blacs_nprows_(0),
       blacs_npcols_(0),
       blacs_layout_(CTXT_LAYOUT::R),
       rank_layout_(KPointBlacsRankLayout::CONTIGUOUS_BLACS),
+      kpoint_distribution_(KPointDistribution::CYCLIC),
       kpoints_local_(),
       comm_global_h(),
       comm_kpoint_h(),
@@ -288,32 +317,30 @@ KPointBlacsParallelContext::KPointBlacsParallelContext()
 
 KPointBlacsParallelContext::KPointBlacsParallelContext(const KPointBlacsProcessShape &process_shape,
                                                        MPI_Comm comm_global, int n_kpoints,
-                                                       int matrix_nrows, int matrix_ncols,
                                                        CTXT_LAYOUT blacs_layout,
-                                                       KPointBlacsRankLayout rank_layout)
+                                                       KPointBlacsRankLayout rank_layout,
+                                                       KPointDistribution kpoint_distribution)
     : KPointBlacsParallelContext()
 {
-    init(process_shape, comm_global, n_kpoints, matrix_nrows, matrix_ncols, blacs_layout,
-         rank_layout);
+    init(process_shape, comm_global, n_kpoints, blacs_layout, rank_layout, kpoint_distribution);
 }
 
 void KPointBlacsParallelContext::init(const KPointBlacsProcessShape &process_shape,
-                                      MPI_Comm comm_global, int n_kpoints, int matrix_nrows,
-                                      int matrix_ncols, CTXT_LAYOUT blacs_layout,
-                                      KPointBlacsRankLayout rank_layout)
+                                      MPI_Comm comm_global, int n_kpoints, CTXT_LAYOUT blacs_layout,
+                                      KPointBlacsRankLayout rank_layout,
+                                      KPointDistribution kpoint_distribution)
 {
     if (initialized_) finalize();
 
     requested_process_shape_ = process_shape;
     n_kpoints_ = n_kpoints;
-    matrix_nrows_ = matrix_nrows;
-    matrix_ncols_ = matrix_ncols;
     blacs_layout_ = blacs_layout;
     rank_layout_ = rank_layout;
+    kpoint_distribution_ = kpoint_distribution;
 
     comm_global_h.reset_comm(comm_global, true);
-    process_shape_ = resolve_kpoint_blacs_process_shape(process_shape, comm_global_h.nprocs,
-                                                        n_kpoints_, matrix_nrows_, matrix_ncols_);
+    process_shape_ =
+        resolve_kpoint_blacs_process_shape(process_shape, comm_global_h.nprocs, n_kpoints_);
 
     const auto split_rank = split_global_rank(comm_global_h.myid, process_shape_, rank_layout_);
     kpoint_group_id_ = split_rank.first;
@@ -336,24 +363,16 @@ void KPointBlacsParallelContext::init(const KPointBlacsProcessShape &process_sha
 
     blacs_h.reset_comm(comm_blacs_h.comm, true);
     const auto blacs_grid =
-        choose_kpoint_blacs_grid(process_shape_.nprocs_blacs, matrix_nrows_, matrix_ncols_, true,
+        choose_kpoint_blacs_grid(process_shape_.nprocs_blacs, process_shape_.nprocs_blacs, true,
                                  process_shape_.favor_square_blacs_grid);
     blacs_nprows_ = blacs_grid.first;
     blacs_npcols_ = blacs_grid.second;
     blacs_h.set_grid(blacs_nprows_, blacs_npcols_, blacs_layout_);
 
-    kpoints_local_ =
-        dispatcher(0, n_kpoints_, kpoint_group_id_, process_shape_.nprocs_kpoint, true);
+    kpoints_local_ = dispatcher(0, n_kpoints_, kpoint_group_id_, process_shape_.nprocs_kpoint,
+                                sequential_kpoint_distribution(kpoint_distribution_));
 
     initialized_ = true;
-}
-
-void KPointBlacsParallelContext::init(const KPointBlacsProcessShape &process_shape,
-                                      MPI_Comm comm_global, int n_kpoints, int matrix_size,
-                                      CTXT_LAYOUT blacs_layout, KPointBlacsRankLayout rank_layout)
-{
-    init(process_shape, comm_global, n_kpoints, matrix_size, matrix_size, blacs_layout,
-         rank_layout);
 }
 
 void KPointBlacsParallelContext::finalize()
@@ -367,13 +386,12 @@ void KPointBlacsParallelContext::finalize()
 
     process_shape_ = {};
     n_kpoints_ = 0;
-    matrix_nrows_ = 0;
-    matrix_ncols_ = 0;
     kpoint_group_id_ = 0;
     blacs_rank_ = 0;
     blacs_nprows_ = 0;
     blacs_npcols_ = 0;
     rank_layout_ = KPointBlacsRankLayout::CONTIGUOUS_BLACS;
+    kpoint_distribution_ = KPointDistribution::CYCLIC;
     kpoints_local_.clear();
     initialized_ = false;
 }
@@ -389,8 +407,8 @@ int KPointBlacsParallelContext::kpoint_owner(int ik) const
 
     for (int group_id = 0; group_id < process_shape_.nprocs_kpoint; ++group_id)
     {
-        const auto kpoints =
-            dispatcher(0, n_kpoints_, group_id, process_shape_.nprocs_kpoint, true);
+        const auto kpoints = dispatcher(0, n_kpoints_, group_id, process_shape_.nprocs_kpoint,
+                                        sequential_kpoint_distribution(kpoint_distribution_));
         if (std::find(kpoints.begin(), kpoints.end(), ik) != kpoints.end()) return group_id;
     }
     throw LIBRPA_RUNTIME_ERROR("failed to find k-point owner");
@@ -427,8 +445,8 @@ std::string KPointBlacsParallelContext::info() const
         << "kpoint_group_id " << kpoint_group_id_ << " "
         << "blacs_rank " << blacs_rank_ << " "
         << "n_kpoints " << n_kpoints_ << " "
-        << "matrix_shape (" << matrix_nrows_ << "," << matrix_ncols_ << ") "
         << "rank_layout " << rank_layout_name(rank_layout_) << " "
+        << "kpoint_distribution " << kpoint_distribution_name(kpoint_distribution_) << " "
         << "blacs_grid (" << blacs_nprows_ << "," << blacs_npcols_ << ")";
     return oss.str();
 }

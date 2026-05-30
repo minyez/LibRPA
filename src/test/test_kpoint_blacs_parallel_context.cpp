@@ -28,50 +28,50 @@ void test_resolve_process_shape()
 
     {
         const auto resolved = resolve_kpoint_blacs_process_shape(
-            {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO, true}, 4, 3, 8, 3);
+            {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO, true}, 4, 3);
         assert(resolved.nprocs_kpoint == 1);
         assert(resolved.nprocs_blacs == 4);
         assert(resolved.favor_square_blacs_grid);
     }
     {
         const auto resolved = resolve_kpoint_blacs_process_shape(
-            {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO}, 4, 3, 8, 3);
+            {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO}, 4, 3);
         assert(resolved.nprocs_kpoint == 1);
         assert(resolved.nprocs_blacs == 4);
     }
     {
         const auto resolved = resolve_kpoint_blacs_process_shape(
-            {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO}, 8, 2, 1, 8);
+            {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO}, 8, 2);
         assert(resolved.nprocs_kpoint == 2);
         assert(resolved.nprocs_blacs == 4);
     }
     {
         const auto resolved = resolve_kpoint_blacs_process_shape(
-            {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO}, 4, 8, 8, 3);
+            {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO}, 4, 8);
         assert(resolved.nprocs_kpoint == 4);
         assert(resolved.nprocs_blacs == 1);
     }
     {
         const auto resolved = resolve_kpoint_blacs_process_shape(
-            {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO}, 16, 6, 8, 3);
+            {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO}, 16, 6);
         assert(resolved.nprocs_kpoint == 2);
         assert(resolved.nprocs_blacs == 8);
     }
     {
         const auto resolved = resolve_kpoint_blacs_process_shape(
-            {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO, true}, 16, 6, 8, 3);
+            {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO, true}, 16, 6);
         assert(resolved.nprocs_kpoint == 1);
         assert(resolved.nprocs_blacs == 16);
     }
     {
         const auto resolved =
-            resolve_kpoint_blacs_process_shape({2, KPointBlacsProcessShape::AUTO}, 4, 3, 8);
+            resolve_kpoint_blacs_process_shape({2, KPointBlacsProcessShape::AUTO}, 4, 3);
         assert(resolved.nprocs_kpoint == 2);
         assert(resolved.nprocs_blacs == 2);
     }
     {
         const auto resolved =
-            resolve_kpoint_blacs_process_shape({KPointBlacsProcessShape::AUTO, 2}, 4, 3, 8);
+            resolve_kpoint_blacs_process_shape({KPointBlacsProcessShape::AUTO, 2}, 4, 3);
         assert(resolved.nprocs_kpoint == 2);
         assert(resolved.nprocs_blacs == 2);
     }
@@ -79,7 +79,7 @@ void test_resolve_process_shape()
         bool caught = false;
         try
         {
-            resolve_kpoint_blacs_process_shape({3, 2}, 4, 3, 8);
+            resolve_kpoint_blacs_process_shape({3, 2}, 4, 3);
         }
         catch (const std::runtime_error &)
         {
@@ -107,7 +107,7 @@ void test_kpoint_blacs_parallel_context()
     using namespace librpa_int;
 
     const int world_rank = get_mpi_rank(MPI_COMM_WORLD);
-    KPointBlacsParallelContext context({2, 2}, MPI_COMM_WORLD, 3, 8, 3);
+    KPointBlacsParallelContext context({2, 2}, MPI_COMM_WORLD, 3);
 
     assert(context.is_initialized());
     assert(context.process_shape().nprocs_kpoint == 2);
@@ -140,24 +140,24 @@ void test_kpoint_blacs_parallel_context()
 
     if (context.kpoint_group_id() == 0)
     {
-        const std::vector<int> ref{0, 1};
+        const std::vector<int> ref{0, 2};
         assert(equal_vector(context.kpoints_local(), ref));
         assert(context.owns_kpoint(0));
-        assert(context.owns_kpoint(1));
-        assert(!context.owns_kpoint(2));
-    }
-    else
-    {
-        const std::vector<int> ref{2};
-        assert(equal_vector(context.kpoints_local(), ref));
-        assert(!context.owns_kpoint(0));
         assert(!context.owns_kpoint(1));
         assert(context.owns_kpoint(2));
     }
+    else
+    {
+        const std::vector<int> ref{1};
+        assert(equal_vector(context.kpoints_local(), ref));
+        assert(!context.owns_kpoint(0));
+        assert(context.owns_kpoint(1));
+        assert(!context.owns_kpoint(2));
+    }
 
     assert(context.kpoint_owner(0) == 0);
-    assert(context.kpoint_owner(1) == 0);
-    assert(context.kpoint_owner(2) == 1);
+    assert(context.kpoint_owner(1) == 1);
+    assert(context.kpoint_owner(2) == 0);
 
     context.finalize();
     assert(!context.is_initialized());
@@ -168,7 +168,7 @@ void test_kpoint_contiguous_rank_layout()
     using namespace librpa_int;
 
     const int world_rank = get_mpi_rank(MPI_COMM_WORLD);
-    KPointBlacsParallelContext context({2, 2}, MPI_COMM_WORLD, 4, 8, 3, CTXT_LAYOUT::R,
+    KPointBlacsParallelContext context({2, 2}, MPI_COMM_WORLD, 4, CTXT_LAYOUT::R,
                                        KPointBlacsRankLayout::CONTIGUOUS_KPOINT);
 
     assert(context.is_initialized());
@@ -185,12 +185,12 @@ void test_kpoint_contiguous_rank_layout()
 
     if (context.kpoint_group_id() == 0)
     {
-        const std::vector<int> ref{0, 1};
+        const std::vector<int> ref{0, 2};
         assert(equal_vector(context.kpoints_local(), ref));
     }
     else
     {
-        const std::vector<int> ref{2, 3};
+        const std::vector<int> ref{1, 3};
         assert(equal_vector(context.kpoints_local(), ref));
     }
 
@@ -198,13 +198,49 @@ void test_kpoint_contiguous_rank_layout()
     assert(!context.is_initialized());
 }
 
+void test_kpoint_distribution()
+{
+    using namespace librpa_int;
+
+    const int world_rank = get_mpi_rank(MPI_COMM_WORLD);
+    {
+        KPointBlacsParallelContext context({4, 1}, MPI_COMM_WORLD, 8);
+
+        assert(context.kpoint_distribution() == KPointDistribution::CYCLIC);
+        const std::vector<int> ref{world_rank, world_rank + 4};
+        assert(equal_vector(context.kpoints_local(), ref));
+        for (int ik = 0; ik != 8; ++ik)
+        {
+            assert(context.kpoint_owner(ik) == ik % 4);
+        }
+
+        context.finalize();
+        assert(!context.is_initialized());
+    }
+    {
+        KPointBlacsParallelContext context({4, 1}, MPI_COMM_WORLD, 8, CTXT_LAYOUT::R,
+                                           KPointBlacsRankLayout::CONTIGUOUS_BLACS,
+                                           KPointDistribution::CONTIGUOUS);
+
+        assert(context.kpoint_distribution() == KPointDistribution::CONTIGUOUS);
+        const std::vector<int> ref{2 * world_rank, 2 * world_rank + 1};
+        assert(equal_vector(context.kpoints_local(), ref));
+        for (int ik = 0; ik != 8; ++ik)
+        {
+            assert(context.kpoint_owner(ik) == ik / 2);
+        }
+
+        context.finalize();
+        assert(!context.is_initialized());
+    }
+}
+
 void test_two_level_communicators(librpa_int::KPointBlacsRankLayout rank_layout)
 {
     using namespace librpa_int;
 
     const int world_rank = get_mpi_rank(MPI_COMM_WORLD);
-    KPointBlacsParallelContext context({2, 2}, MPI_COMM_WORLD, 4, 8, 3, CTXT_LAYOUT::R,
-                                       rank_layout);
+    KPointBlacsParallelContext context({2, 2}, MPI_COMM_WORLD, 4, CTXT_LAYOUT::R, rank_layout);
 
     const auto &shape = context.process_shape();
     for (int i = 0; i < context.comm_global_h.nprocs; i++)
@@ -215,7 +251,7 @@ void test_two_level_communicators(librpa_int::KPointBlacsRankLayout rank_layout)
                       << context.comm_blacs_h.myid << " " << context.kpoints_local() << std::endl;
         }
         context.comm_global_h.barrier();
-        // same comm_blacs_h.myid should have the same kpoints_local.
+        // Same BLACS rank communicates across different k-point groups.
     }
 
     std::vector<int> blacs_world_ranks(context.comm_blacs_h.nprocs);
@@ -262,8 +298,7 @@ void test_square_blacs_grid_preference()
     using namespace librpa_int;
 
     KPointBlacsParallelContext context(
-        {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO, true}, MPI_COMM_WORLD, 1, 1,
-        8);
+        {KPointBlacsProcessShape::AUTO, KPointBlacsProcessShape::AUTO, true}, MPI_COMM_WORLD, 1);
 
     assert(context.is_initialized());
     assert(context.process_shape().nprocs_kpoint == 1);
@@ -291,6 +326,7 @@ int main(int argc, char *argv[])
     test_blacs_grid_choice();
     test_kpoint_blacs_parallel_context();
     test_kpoint_contiguous_rank_layout();
+    test_kpoint_distribution();
     test_two_level_communicators(librpa_int::KPointBlacsRankLayout::CONTIGUOUS_BLACS);
     test_two_level_communicators(librpa_int::KPointBlacsRankLayout::CONTIGUOUS_KPOINT);
     test_square_blacs_grid_preference();

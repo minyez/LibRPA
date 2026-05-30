@@ -73,13 +73,16 @@ void read_scf_occ_eigenvalues(const string &file_path)
         n_basis_ao = n_basis_wfc;
     }
 
+    driver::h.set_scf_dimension(n_spins, n_kpoints, n_states, n_basis_ao, n_spinor);
+    auto pds = librpa_int::api::get_dataset_instance(driver::h);
+    const auto &kbctxt = pds->scfk_blacs_ctxt;
+
     iks_eigvec_this.clear();
     if (driver::get_bool(driver::opts.use_kpara_scf_eigvec))
     {
-        for (int ik = 0; ik < driver::n_kpoints; ik++)
-        {
-            if (ik % size_global == myid_global) iks_eigvec_this.emplace_back(ik);
-        }
+        // reusing the internal distribution
+        if (kbctxt.comm_blacs_h.myid == 0)
+            iks_eigvec_this = kbctxt.kpoints_local();
     }
     else
     {
@@ -87,7 +90,6 @@ void read_scf_occ_eigenvalues(const string &file_path)
             iks_eigvec_this.emplace_back(ik);
     }
 
-    driver::h.set_scf_dimension(n_spins, n_kpoints, n_states, n_basis_ao, n_spinor);
     driver::n_ibz_kpoints = n_kpoints;
 
     // Load the file data
