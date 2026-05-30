@@ -1,0 +1,3 @@
+#!/bin/bash
+
+$NVCC `echo $@ | sed 's/-fPIC/-Xcompiler -fPIC/; s/-Wl/-Xlinker -Wl/g; '`

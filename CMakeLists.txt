@@ -20,6 +20,8 @@ set(LIBRPA_DRIVER_NAME         "chi0_main.exe")
 # Public options setup
 option(LIBRPA_USE_LIBRI            "Use LibRI for tensor contraction in LibRPA" OFF)
 option(LIBRPA_USE_EXTERNAL_ELPA    "Use an external ELPA eigensolver library from an installation prefix" OFF)
+option(LIBRPA_USE_BUNDLED_ELPA     "Build and use a bundled ELPA eigensolver library from thirdparty/ELPA" OFF)
+option(LIBRPA_BUNDLED_ELPA_OPENMP  "Build bundled ELPA with OpenMP support" OFF)
 option(LIBRPA_USE_CMAKE_INC        "Use cmake.inc for configure" OFF)
 option(LIBRPA_USE_EXTERNAL_GREENX  "Use an external GreenX target provided by the parent project instead of the bundled copy" OFF)
 option(LIBRPA_ENABLE_TEST          "Flag to build LibRPA tests" ON)
@@ -35,6 +37,12 @@ option(LIBRPA_ENABLE_FORTRAN_TEST  "Flag to build tests for Fortran bindings" ON
 # Customizable cmake macro
 set(LIBRPA_FORTRAN_DP "c_double" CACHE STRING "Kind of double precision that the Fortran binding uses to interface the user code")
 set(EXTERNAL_ELPA_DIR "" CACHE PATH "External ELPA installation prefix")
+set(LIBRPA_BUNDLED_ELPA_VERSION "2021.11.002" CACHE STRING "Bundled ELPA version")
+set_property(CACHE LIBRPA_BUNDLED_ELPA_VERSION PROPERTY STRINGS "2021.11.002" "2026.02.001")
+set(LIBRPA_BUNDLED_ELPA_KERNEL "" CACHE STRING "Bundled ELPA x86 SIMD kernel family")
+set_property(CACHE LIBRPA_BUNDLED_ELPA_KERNEL PROPERTY STRINGS "" "SSE" "SSE_ASSEMBLY" "AVX" "AVX2" "AVX512")
+set(LIBRPA_BUNDLED_ELPA_CONFIGURE_ARGS "" CACHE STRING "Extra configure arguments for bundled ELPA")
+set(LIBRPA_BUNDLED_ELPA_LIBS "" CACHE STRING "Libraries passed to bundled ELPA configure through LIBS")
 
 if (DEFINED USE_GREENX_MINIMAX)
   message(FATAL_ERROR "USE_GREENX_MINIMAX is deprecated: GreenX is now always used. Please remove USE_GREENX_MINIMAX")
@@ -54,12 +62,14 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 set(math_libs "")
 set(parallel_libs "")
+set(_librpa_elpa_configure_libs "")
 set(_loaded_cmake_inc OFF)
 
 # TODO: maybe better way to customize environments?
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake.inc" AND LIBRPA_USE_CMAKE_INC)
   include("${CMAKE_CURRENT_SOURCE_DIR}/cmake.inc")
   list(APPEND math_libs ${LAPACK_LIBRARIES})
+  list(APPEND _librpa_elpa_configure_libs ${LAPACK_LIBRARIES} ${SCALAPACK_LIBRARIES})
   set(_loaded_cmake_inc ON)
   message(STATUS "Using customize environemnt variables from ${CMAKE_CURRENT_SOURCE_DIR}/cmake.inc")
 endif()
@@ -70,7 +80,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # enable_language later than cmake.inc to take the variables therein into accout
 # require Fortran for GreenX library and Fortran binding
-enable_language(CXX Fortran)
+if(LIBRPA_USE_BUNDLED_ELPA)
+  # require C for bundled ELPA
+  enable_language(CXX C Fortran)
+else()
+  enable_language(CXX Fortran)
+endif()
 
 # bypass the deprecation warning of classic C++ of oneAPI
 if(CMAKE_CXX_COMPILER_ID MATCHES Intel)
@@ -117,10 +132,15 @@ if(NOT _loaded_cmake_inc)
     # include_directories(${MKL_INCLUDE_DIRS} ${MKL_INCLUDE_DIRS}/fftw)
     include_directories(${MKL_INCLUDE_DIRS})
     list(APPEND math_libs IntelMKL::MKL)
+    list(APPEND _librpa_elpa_configure_libs ${MKL_LIBRARIES})
   else()
     find_package(LAPACK REQUIRED)
     find_package(ScaLAPACK REQUIRED)
     list(APPEND math_libs
+            ${LAPACK_LIBRARIES}
+            ${ScaLAPACK_LIBRARIES}
+            )
+    list(APPEND _librpa_elpa_configure_libs
             ${LAPACK_LIBRARIES}
             ${ScaLAPACK_LIBRARIES}
             )
@@ -148,6 +168,11 @@ endif()
 #       and is actually low in priority because LibRPA targets large-scale computation.
 add_compile_definitions("LIBRPA_USE_MPI")
 
+if(LIBRPA_USE_EXTERNAL_ELPA AND LIBRPA_USE_BUNDLED_ELPA)
+  message(FATAL_ERROR "LIBRPA_USE_EXTERNAL_ELPA and LIBRPA_USE_BUNDLED_ELPA are mutually exclusive")
+endif()
+
+set(LIBRPA_ELPA_TARGET "")
 if(LIBRPA_USE_EXTERNAL_ELPA)
   if(NOT EXTERNAL_ELPA_DIR AND DEFINED ENV{EXTERNAL_ELPA_DIR})
     set(EXTERNAL_ELPA_DIR "$ENV{EXTERNAL_ELPA_DIR}" CACHE PATH "External ELPA installation prefix" FORCE)
@@ -156,6 +181,29 @@ if(LIBRPA_USE_EXTERNAL_ELPA)
   message(STATUS "Use external ELPA library       : ${ELPA_LIBRARY}")
   message(STATUS "Use external ELPA include dirs  : ${ELPA_INCLUDE_DIRS}")
   add_compile_definitions("LIBRPA_USE_EXTERNAL_ELPA")
+  set(LIBRPA_ELPA_TARGET ELPA::ELPA)
+elseif(LIBRPA_USE_BUNDLED_ELPA)
+  if(NOT LIBRPA_BUNDLED_ELPA_LIBS)
+    set(_librpa_elpa_configure_lib_flags "")
+    foreach(_librpa_elpa_configure_lib IN LISTS _librpa_elpa_configure_libs)
+      if(_librpa_elpa_configure_lib MATCHES "\\.framework$")
+        get_filename_component(_librpa_elpa_framework_name "${_librpa_elpa_configure_lib}" NAME_WE)
+        get_filename_component(_librpa_elpa_framework_dir "${_librpa_elpa_configure_lib}" DIRECTORY)
+        list(APPEND _librpa_elpa_configure_lib_flags
+          "-F${_librpa_elpa_framework_dir}"
+          "-framework"
+          "${_librpa_elpa_framework_name}"
+        )
+      else()
+        list(APPEND _librpa_elpa_configure_lib_flags "${_librpa_elpa_configure_lib}")
+      endif()
+    endforeach()
+    string(REPLACE ";" " " LIBRPA_BUNDLED_ELPA_LIBS "${_librpa_elpa_configure_lib_flags}")
+  endif()
+  message(STATUS "Use bundled ELPA version        : ${LIBRPA_BUNDLED_ELPA_VERSION}")
+  add_compile_definitions("LIBRPA_USE_BUNDLED_ELPA")
+  add_subdirectory(thirdparty/ELPA)
+  set(LIBRPA_ELPA_TARGET elpa)
 endif()
 
 # Switch on LibRI functionalities, which requires Cereal, LibComm and LibRI
