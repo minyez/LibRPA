@@ -40,6 +40,8 @@ extern const char * use_external_elpa;
 
 extern const char * external_elpa_dir;
 
+extern const char * use_bundled_elpa;
+
 extern const char * libri_include_dir;
 
 extern const char * libcomm_include_dir;
