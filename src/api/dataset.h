@@ -17,6 +17,7 @@
 #include "../math/matrix_m.h"
 #include "../mpi/base_blacs.h"
 #include "../mpi/base_mpi.h"
+#include "../mpi/kpoint_blacs_parallel_context.h"
 
 namespace librpa_int
 {
@@ -36,6 +37,7 @@ public:
     // Global MPI communicators and BLACS context handlers
     MpiCommHandler comm_h;
     BlacsCtxtHandler blacs_h;
+    KPointBlacsParallelContext scfk_blacs_ctxt;
     // Communicators for Coulomb matrices 2D input and re-distribution
     MpiCommHandler comm_coul_h;
     MpiCommHandler comm_coul_inter_q_h;

@@ -20,18 +20,27 @@ enum class KPointBlacsRankLayout
 };
 
 /*!
+ * @brief Assignment order for k-points across k-point process groups.
+ */
+enum class KPointDistribution
+{
+    CYCLIC,
+    CONTIGUOUS
+};
+
+/*!
  * @brief Shape of MPI processes assigned to k-point and BLACS parallelism.
  *
  * The total process count is nprocs_kpoint * nprocs_blacs.  The first level
  * creates k-point groups.  Inside each k-point group, nprocs_blacs processes
  * form the BLACS context used for NAO/ABF basis matrices.
- * favor_square_blacs_grid controls whether the BLACS process grid should
- * prioritize a square-like grid over matching the matrix aspect ratio.
+ * favor_square_blacs_grid controls whether automatic resolution may prefer a
+ * square-like BLACS process count and grid.
  *
  * Set either field to AUTO to let KPointBlacsParallelContext infer it from the
- * global communicator size, the number of k-points and matrix dimensions.  In
- * the fully automatic mode, the resolver prefers balanced k-point groups: if
- * there is only one k-point, all ranks are assigned to one BLACS context.
+ * global communicator size and the number of k-points.  In the fully automatic
+ * mode, the resolver prefers balanced k-point groups: if there is only one
+ * k-point, all ranks are assigned to one BLACS context.
  */
 struct KPointBlacsProcessShape
 {
@@ -54,6 +63,10 @@ struct KPointBlacsProcessShape
 /*!
  * @brief Resolve requested k-point/BLACS process shape against an MPI size.
  */
+KPointBlacsProcessShape resolve_kpoint_blacs_process_shape(const KPointBlacsProcessShape &request,
+                                                           int nprocs_global, int n_kpoints);
+
+//! Compatibility overload; matrix dimensions are validated but not used.
 KPointBlacsProcessShape resolve_kpoint_blacs_process_shape(const KPointBlacsProcessShape &request,
                                                            int nprocs_global, int n_kpoints,
                                                            int matrix_nrows, int matrix_ncols);
@@ -88,6 +101,10 @@ std::pair<int, int> choose_kpoint_blacs_grid(int nprocs_blacs, int matrix_size,
  * This creates two useful communicators:
  * - comm_blacs_h: processes with the same kpoint_group_id; used by BLACS.
  * - comm_kpoint_h: processes with the same blacs_rank across k-point groups.
+ *
+ * Matrix dimensions are supplied when creating ArrayDesc objects, not stored in
+ * the context.  K-points are assigned cyclically by default so ordered k-point
+ * lists are spread across k-point groups.
  */
 class KPointBlacsParallelContext
 {
@@ -96,14 +113,13 @@ private:
     KPointBlacsProcessShape requested_process_shape_;
     KPointBlacsProcessShape process_shape_;
     int n_kpoints_;
-    int matrix_nrows_;
-    int matrix_ncols_;
     int kpoint_group_id_;
     int blacs_rank_;
     int blacs_nprows_;
     int blacs_npcols_;
     CTXT_LAYOUT blacs_layout_;
     KPointBlacsRankLayout rank_layout_;
+    KPointDistribution kpoint_distribution_;
     std::vector<int> kpoints_local_;
 
 public:
@@ -119,19 +135,18 @@ public:
     KPointBlacsParallelContext();
     KPointBlacsParallelContext(
         const KPointBlacsProcessShape &process_shape, MPI_Comm comm_global, int n_kpoints,
-        int matrix_nrows, int matrix_ncols, CTXT_LAYOUT blacs_layout = CTXT_LAYOUT::R,
-        KPointBlacsRankLayout rank_layout = KPointBlacsRankLayout::CONTIGUOUS_BLACS);
+        CTXT_LAYOUT blacs_layout = CTXT_LAYOUT::R,
+        KPointBlacsRankLayout rank_layout = KPointBlacsRankLayout::CONTIGUOUS_BLACS,
+        KPointDistribution kpoint_distribution = KPointDistribution::CYCLIC);
     ~KPointBlacsParallelContext() { finalize(); }
 
     KPointBlacsParallelContext(const KPointBlacsParallelContext &) = delete;
     KPointBlacsParallelContext &operator=(const KPointBlacsParallelContext &) = delete;
 
     void init(const KPointBlacsProcessShape &process_shape, MPI_Comm comm_global, int n_kpoints,
-              int matrix_nrows, int matrix_ncols, CTXT_LAYOUT blacs_layout = CTXT_LAYOUT::R,
-              KPointBlacsRankLayout rank_layout = KPointBlacsRankLayout::CONTIGUOUS_BLACS);
-    void init(const KPointBlacsProcessShape &process_shape, MPI_Comm comm_global, int n_kpoints,
-              int matrix_size, CTXT_LAYOUT blacs_layout = CTXT_LAYOUT::R,
-              KPointBlacsRankLayout rank_layout = KPointBlacsRankLayout::CONTIGUOUS_BLACS);
+              CTXT_LAYOUT blacs_layout = CTXT_LAYOUT::R,
+              KPointBlacsRankLayout rank_layout = KPointBlacsRankLayout::CONTIGUOUS_BLACS,
+              KPointDistribution kpoint_distribution = KPointDistribution::CYCLIC);
     void finalize();
 
     bool is_initialized() const noexcept { return initialized_; }
@@ -142,13 +157,12 @@ public:
     }
     const KPointBlacsProcessShape &process_shape() const noexcept { return process_shape_; }
     int n_kpoints() const noexcept { return n_kpoints_; }
-    int matrix_nrows() const noexcept { return matrix_nrows_; }
-    int matrix_ncols() const noexcept { return matrix_ncols_; }
     int kpoint_group_id() const noexcept { return kpoint_group_id_; }
     int blacs_rank() const noexcept { return blacs_rank_; }
     int blacs_nprows() const noexcept { return blacs_nprows_; }
     int blacs_npcols() const noexcept { return blacs_npcols_; }
     KPointBlacsRankLayout rank_layout() const noexcept { return rank_layout_; }
+    KPointDistribution kpoint_distribution() const noexcept { return kpoint_distribution_; }
     const std::vector<int> &kpoints_local() const noexcept { return kpoints_local_; }
 
     bool owns_kpoint(int ik) const;
