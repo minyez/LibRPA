@@ -150,6 +150,11 @@ if(LIBRPA_ENABLE_HIP)
  # )
 endif()
 
+if(LIBRPA_ENABLE_ELPA)
+  list(APPEND lib_sources
+    elpa/elpa_connector.cpp)
+endif()
+
 # source must be PRIVATE to avoid recompilation when linking driver to this library
 target_sources(rpa_lib PRIVATE ${lib_sources})
 target_link_libraries(rpa_lib PRIVATE ${math_libs} ${parallel_libs})
