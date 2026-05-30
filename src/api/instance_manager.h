@@ -24,7 +24,7 @@ dataset_ptr_t get_dataset_instance(const LibrpaHandler *h);
 
 dataset_ptr_t get_dataset_instance(const librpa::Handler &h);
 
-LibrpaHandler* push_back_dataset(MPI_Comm comm);
+LibrpaHandler* push_back_dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major = true);
 
 //! Free the data instance that the handler binds
 void destroy_dataset(LibrpaHandler* h);

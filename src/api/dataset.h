@@ -27,6 +27,7 @@ namespace librpa_int
 class Dataset
 {
 private:
+    bool input_blacs_matloc_row_major_;
     bool comm_blacs_coul_initialized_;
     bool coul_blacs2ap_redistributed_;
 public:
@@ -113,7 +114,7 @@ public:
     std::unique_ptr<G0W0> p_g0w0;
 
     /* Constructors and destructors */
-    Dataset(MPI_Comm comm);
+    Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major = true);
     ~Dataset() { free(); }
     void free();
 

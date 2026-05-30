@@ -11,8 +11,9 @@
 namespace librpa_int
 {
 
-Dataset::Dataset(MPI_Comm comm)
-    : comm_blacs_coul_initialized_(false),
+Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
+    : input_blacs_matloc_row_major_(input_blacs_matloc_row_major),
+      comm_blacs_coul_initialized_(false),
       coul_blacs2ap_redistributed_(false),
       comm_h(comm, true),
       blacs_h(comm),
