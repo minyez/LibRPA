@@ -642,7 +642,6 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
     // printf("Z_local_opt size: %d\n", Z_local_opt.size());
 
     profiler.start("power_hemat_blacs_1");
-#ifndef ENABLE_ELPA
     int lwork = -1, lrwork = -1, info = 0;
     std::complex<T> *work;
     T *rwork;
@@ -661,13 +660,9 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
         delete [] Wquery;
         delete [] rwork;
     }
-#endif
     profiler.stop("power_hemat_blacs_1");
 
     profiler.start("power_hemat_blacs_2");
-    std::complex<T> *A, *Z;
-    T* W_uni;
-#ifndef ENABLE_ELPA
     work = new std::complex<T> [lwork];
     rwork = new T [lrwork];
     ScalapackConnector::pheev_f(jobz, uplo,
@@ -675,39 +670,6 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
             W, Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc, work, lwork, rwork, lrwork, info);
     delete [] work;
     delete [] rwork;
-#else
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
-    auto ddla_handle = ad_A.ddla_desc().ddla_handle();
-    ad_Z_opt.set_ddla_desc(ddla_handle);
-    ad_A_opt.set_ddla_desc(ddla_handle);
-    std::complex<T>* d_A, * d_Z;
-    T* d_W;
-    ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_A, A_local_opt.size() * sizeof(std::complex<T>), ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_Z, Z_local_opt.size() * sizeof(std::complex<T>), ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_W, n * sizeof(T), ddla_handle->stream));
-
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, A_local_opt.ptr(), A_local_opt.size() * sizeof(std::complex<T>), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(d_Z, Z_local_opt.ptr(), Z_local_opt.size() * sizeof(std::complex<T>), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(d_W, W, n * sizeof(T), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
-    A = d_A;
-    Z = d_Z;
-    W_uni = d_W;
-#else
-    A = A_local_opt.ptr();
-    Z = Z_local_opt.ptr();
-    W_uni = W;
-#endif
-    int error;
-    elpa_eigenvectors(ad_A.elpa_handle(), A, W_uni, Z, &error);
-    if(error != ELPA_OK){
-        throw std::runtime_error("elpa eigenvectors error\n");
-    }
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(W, W_uni, n * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(Z_local_opt.ptr(), Z, Z_local_opt.size()*sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-    ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
-#endif
-#endif
     profiler.stop("power_hemat_blacs_2");
     // Optimized A no longer used
     profiler.start("power_hemat_blacs_3");
@@ -759,43 +721,13 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
     profiler.start("power_hemat_blacs_5");
     // create scaled eigenvectors
     auto scaled_opt = Z_local_opt.copy();
-    std::complex<T> *C;
-    #if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
-    std::complex<T>* d_C;
-    ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_C, Z_local_opt.size() * sizeof(std::complex<T>), ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(d_C, Z_local_opt.ptr(), Z_local_opt.size() * sizeof(std::complex<T>), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local_opt.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
-    C = d_C;
-    #else 
-    Z = Z_local_opt.ptr();
-    A = scaled_opt.ptr();
-    C = A_local.ptr();
-    #endif
-    for (int i = 0; i != n; i++)
+    for (size_t i = 0; i != n; i++)
     {
-        // ScalapackConnector::pscal_f(n, W_temp[i], scaled_opt.ptr(), 1, 1 + i, ad_Z_opt.desc, 1);
-        int j_loc = ad_Z_opt.indx_g2l_c(i);
-        if(j_loc>=0)
-            LaConnector::scal(ad_Z_opt.m_loc(), W_temp[i], A + ad_Z_opt.lld() * j_loc, 1, ad_Z_opt);
+        ScalapackConnector::pscal_f(n, W_temp[i], scaled_opt.ptr(), 1, 1+i, ad_Z_opt.desc, 1);
     }
-    // ScalapackConnector::pgemm_f('N', 'C', n, n, n, 1.0, Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc,
-    //                             scaled_opt.ptr(), 1, 1, ad_Z_opt.desc, 0.0, A_local.ptr(), 1, 1,
-    //                             ad_A.desc);
-    // for (size_t i = 0; i != n; i++)
-    // {
-    //     ScalapackConnector::pscal_f(n, W_temp[i], scaled_opt.ptr(), 1, 1+i, ad_Z_opt.desc, 1);
-    // }
-    LaConnector::pgemm('N', 'C', n, n, n, {1.0, 0.0}, Z, 1, 1, ad_Z_opt, A, 1, 1, ad_Z_opt, {0.0, 0.0}, C, 1, 1, ad_A);
-    #if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled_opt.ptr(), A, scaled_opt.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local.ptr(), C, A_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-    ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceFreeAsync(d_C, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceFreeAsync(d_A, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceFreeAsync(d_Z, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceFreeAsync(d_W, ddla_handle->stream));
-    #endif
-
+    ScalapackConnector::pgemm_f('N', 'C', n, n, n, 1.0, Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc,
+                                scaled_opt.ptr(), 1, 1, ad_Z_opt.desc, 0.0, A_local.ptr(), 1, 1,
+                                ad_A.desc);
     auto scaled = Z_local.copy();
     // send back the scaled eigenvector matrix with descriptor using optimized block size to that
     // with input descriptor
@@ -974,7 +906,8 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
     assert(A_local.is_col_major() && Z_local.is_col_major());
     const bool is_int_power = fabs(power - int(power)) < 1e-4;
     const int n = ad_A.m();
-    
+    const char jobz = 'V';
+    const char uplo = 'U';
 
     // temporary array for syev with optimized block size
     const int blocksize_row_opt = std::min(ad_A.mb(), 128);
@@ -999,9 +932,6 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
     auto Z_local_opt = init_local_mat<T>(ad_Z_opt, MAJOR::COL);
 
     profiler.start("power_hemat_blacs_1");
-#ifndef ENABLE_ELPA
-    const char jobz = 'V';
-    const char uplo = 'U';
     int lwork = -1, lrwork = -1, info = 0;
 
     // Query optimal workspace using the provided psyev_f interface
@@ -1011,14 +941,11 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
                                 lrwork, info);
     lwork = std::max(as_int(work_query), 1);
     lrwork = std::max(as_int(rwork_query), 1);
+    profiler.stop("power_hemat_blacs_1");
+
     std::vector<T> work(lwork);
     std::vector<T> rwork(lrwork);
-#endif
-    profiler.stop("power_hemat_blacs_1");
-    
     profiler.start("power_hemat_blacs_2");
-    T *A, *Z, *W_uni;
-#ifndef ENABLE_ELPA
     // Perform real symmetric diagonalization using the provided interface
     ofs_myid << lwork << " " << lrwork << " " << n << std::endl;
     ScalapackConnector::psyev_f(jobz, uplo, n, A_local_opt.ptr(), 1, 1, ad_A_opt.desc, W,
@@ -1026,41 +953,11 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
                                 info);
     work.clear();
     rwork.clear();
-#else
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
-    auto ddla_handle = ad_A.ddla_desc().ddla_handle();
-    ad_Z_opt.set_ddla_desc(ddla_handle);
-    ad_A_opt.set_ddla_desc(ddla_handle);
-    T* d_A, *d_Z, *d_W;
-    ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_A, A_local_opt.size() * sizeof(T), ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_Z, Z_local_opt.size() * sizeof(T), ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_W, n * sizeof(T), ddla_handle->stream));
-
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, A_local_opt.ptr(), A_local_opt.size() * sizeof(T), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
-    A = d_A;
-    Z = d_Z;
-    W_uni = d_W;
-#else
-    A = A_local_opt.ptr();
-    Z = Z_local_opt.ptr();
-    W_uni = W;
-#endif
-    int error;
-    elpa_eigenvectors(ad_A.elpa_handle(), A, W_uni, Z, &error);
-    if(error != ELPA_OK){
-        throw std::runtime_error("elpa eigenvectors error\n");
-    }
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(W, W_uni, n * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(Z_local_opt.ptr(), Z, Z_local_opt.size()*sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-    ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
-#endif
-#endif
     for (int i = 0; i < n; i++)
     {
         W[i] *= -1.0;
     }
-    // A_local_opt.clear();
+    A_local_opt.clear();
 
     // Convert real eigenvectors to complex (with zero imaginary part)
     auto Z_local_opt_complex = Z_local_opt.to_complex();
@@ -1068,8 +965,6 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
     ScalapackConnector::pgemr2d_f(n, n, Z_local_opt_complex.ptr(), 1, 1, ad_Z_opt.desc,
                                   Z_local.ptr(), 1, 1, ad_Z.desc, ad_Z.ictxt());
     profiler.stop("power_hemat_blacs_2");
-
-    // std::cout << "Z_local_opt:" << std::endl << Z_local_opt << std::endl;
 
     // Check number of non-singular eigenvalues
     n_filtered = as_size(n);
@@ -1108,57 +1003,24 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
 
     profiler.start("power_hemat_blacs_4");
     // Scale eigenvectors using complex matrix operations
-    // auto scaled_opt = Z_local_opt_complex.copy();
-    auto scaled_opt = Z_local_opt.copy();
-    T* C;
-#if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
-    T* d_C;
-    ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_C, Z_local_opt.size() * sizeof(T), ddla_handle->stream));
-    // ddla::DEVICE_CHECK(deviceMemcpyAsync(d_C, Z_local_opt.ptr(), Z_local_opt.size() * sizeof(T), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local_opt.size() * sizeof(T), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
-    C = d_C;
-#else
-    Z = Z_local_opt.ptr();
-    A = scaled_opt.ptr();
-    C = A_local_opt.ptr();
-#endif
-    // printf("before scal\n");
+    auto scaled_opt = Z_local_opt_complex.copy();
     for (int i = 0; i < n; i++)
     {
         // Use ScaLAPACK scaling function with complex matrix
-        // ScalapackConnector::pscal_f(n, W_temp[i], scaled_opt.ptr(), 1, 1 + i, ad_Z_opt.desc, 1);
-        int j_loc = ad_Z_opt.indx_g2l_c(i);
-        if(j_loc>=0)
-            LaConnector::scal(ad_Z_opt.m_loc(), W_temp[i], A + ad_Z_opt.lld() * j_loc, 1, ad_Z_opt);
+        ScalapackConnector::pscal_f(n, W_temp[i], scaled_opt.ptr(), 1, 1 + i, ad_Z_opt.desc, 1);
     }
 
     // Compute Z * diag(W_temp) * Z^H
-    // ScalapackConnector::pgemm_f('N', 'C', n, n, n, 1.0, Z_local_opt_complex.ptr(), 1, 1,
-    //                             ad_Z_opt.desc, scaled_opt.ptr(), 1, 1, ad_Z_opt.desc, 0.0,
-    //                             A_local.ptr(), 1, 1, ad_A.desc);
-    // printf("before pgemm\n");
-    LaConnector::pgemm('N', 'C', n, n, n, 1.0, Z, 1, 1, ad_Z_opt, A, 1, 1, ad_Z_opt, 0.0, C, 1, 1, ad_A);
-#if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled_opt.ptr(), A, scaled_opt.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local_opt.ptr(), C, A_local.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-    ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceFreeAsync(d_C, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceFreeAsync(d_A, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceFreeAsync(d_Z, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceFreeAsync(d_W, ddla_handle->stream));
-#endif
-    A_local = A_local_opt.to_complex();
-    auto scaled = Z_local.copy();
+    ScalapackConnector::pgemm_f('N', 'C', n, n, n, 1.0, Z_local_opt_complex.ptr(), 1, 1,
+                                ad_Z_opt.desc, scaled_opt.ptr(), 1, 1, ad_Z_opt.desc, 0.0,
+                                A_local.ptr(), 1, 1, ad_A.desc);
 
-    Z_local_opt_complex = scaled_opt.to_complex();
+    auto scaled = Z_local.copy();
     // Transfer back to original complex matrix
-    ScalapackConnector::pgemr2d_f(n, n, Z_local_opt_complex.ptr(), 1, 1, ad_Z_opt.desc, scaled.ptr(), 1, 1,
+    ScalapackConnector::pgemr2d_f(n, n, scaled_opt.ptr(), 1, 1, ad_Z_opt.desc, scaled.ptr(), 1, 1,
                                   ad_Z.desc, ad_Z.ictxt());
     profiler.stop("power_hemat_blacs_4");
     profiler.stop(__FUNCTION__);
-    // std::cout << "W_temp:" << std::endl << W_temp << std::endl;
-    // std::cout << "scaled: " << std::endl << scaled << std::endl;
-    // std::cout << "A_local: " << std::endl << A_local << std::endl;
 
     return scaled;
 }

@@ -192,7 +192,7 @@ inline void pposv(
     const int & n, const int& nrhs,
     T* d_A, const int& ia, const int& ja, const ArrayDesc& array_descA,
     T* d_B, const int& ib, const int& jb, const ArrayDesc& array_descB,
-    int& info, // device pointer
+    int& info, // host
     bool is_head = false, int location = -1
 )
 {
@@ -213,7 +213,7 @@ inline void pposv(
     }else
     #endif
     {
-        assert(trans == 'N');
+        assert(trans == 'N' && size == 'L');
         ScalapackConnector::pposv_f(
             uplo, n, nrhs,
             d_A, ia, ja, array_descA.desc,
@@ -222,6 +222,7 @@ inline void pposv(
         );
         if (info != 0){
             printf("the matrix is not positive definite info:%d\n", info);
+            throw std::runtime_error("info !=0\n");
         }
     }
 }
