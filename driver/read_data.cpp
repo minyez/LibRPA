@@ -1654,7 +1654,7 @@ static int handle_Vq_row_file(const string &file_path, double threshold,
                                 int J_loc, nu_loc;
                                 basis_aux.get_local_index(i,J_loc, nu_loc);
                                 //printf("|i: %d   J: %d   J_loc: %d, nu_loc: %d\n",i,J,J_loc,nu_loc);
-                                assert(J==J_loc);
+                                assert(J == static_cast<size_t>(J_loc));
                                 (*coulomb[I_loc][J_loc][iq])(mu_loc, nu_loc) = tmp_row[i - bcol];
                             }
                         }
@@ -1935,7 +1935,7 @@ void read_bz_sampling_from_stru(const std::string &file_path)
     // Skip atom coordinates
     int n_atoms;
     infile >> n_atoms;
-    for (size_t iat = 0; iat < n_atoms; iat++)
+    for (int iat = 0; iat < n_atoms; iat++)
     {
         for (int i = 0; i < 4; i++) infile >> x;
     }
@@ -1982,7 +1982,7 @@ void read_basis(const std::string &file_path)
     infile.open(file_path);
 
     int n_atoms = driver::atom_types.size();
-    if (as_size(n_atoms) != driver::n_atoms)
+    if (static_cast<size_t>(n_atoms) != driver::n_atoms)
         throw LIBRPA_RUNTIME_ERROR("Number of atoms not consistent with the geometry file!");
     std::map<int, size_t> map_at_wfc;
     std::map<int, size_t> map_at_aux;
@@ -2127,7 +2127,7 @@ void read_basis_from_Cs(const string &dir_path)
         closedir(dir);
         // Fill the basis vectors from the mappings
         assert(map_at_wfc.size() == map_at_aux.size());
-        n_atoms = as_int(map_at_wfc.size());
+        n_atoms = static_cast<int>(map_at_wfc.size());
         nbs_wfc.resize(n_atoms);
         nbs_aux.resize(n_atoms);
         for (int ia = 0; ia < n_atoms; ia++)
@@ -2478,6 +2478,8 @@ static int handle_sinvS_file(const std::string &file_path,
 
     if (!infile.good()) return 1;
 
+    const int nk_ibz = pbc.klist_ibz.size();
+
     if (binary)
     {
         int nbasbas_s, nbasbas, brow, erow, bcol, ecol, iq;
@@ -2499,6 +2501,7 @@ static int handle_sinvS_file(const std::string &file_path,
             bcol--;
             ecol--;
             iq--;
+            if ((erow - brow < 0) || (ecol - bcol < 0) || iq < 0 || iq >= nk_ibz) return 4;
             const auto qvec = pbc.klist_ibz[iq];
 
             if (!sinvS.count(qvec))
@@ -2544,7 +2547,7 @@ static int handle_sinvS_file(const std::string &file_path,
             int iq = stoi(q_num) - 1;
 
             // skip empty coulumb_file
-            if ((erow - brow < 0) || (ecol - bcol < 0) || iq < 0 || iq > pbc.klist.size()) return 4;
+            if ((erow - brow < 0) || (ecol - bcol < 0) || iq < 0 || iq >= nk_ibz) return 4;
             const auto qvec = pbc.klist_ibz[iq];
             if (!sinvS.count(qvec))
             {

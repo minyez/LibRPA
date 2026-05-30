@@ -1193,7 +1193,7 @@ map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>>
                     const size_t Q = Qchi0.first;
                     const size_t Q_mu = chi0.atbasis_abf[Q];
                     // auto &chi0_mat = Qchi0.second;
-                    for (int I = 0; I != as_int(chi0.atbasis_abf.n_atoms); I++)
+                    for (atom_t I = 0; I != chi0.atbasis_abf.n_atoms; I++)
                     {
                         //const size_t I = I_p.first;
                         const size_t I_mu = chi0.atbasis_abf[I];
@@ -1228,7 +1228,7 @@ map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>>
                 {
                     const size_t Q = Q_p.first;
                     auto &chi0_mat = Q_p.second;
-                    for (int I = 0; I != as_int(chi0.atbasis_abf.n_atoms); I++)
+                    for (atom_t I = 0; I != chi0.atbasis_abf.n_atoms; I++)
                     {
                         //const size_t I = I_p.first;
                         //printf("cal_pi  pid: %d , IJQ:  %d  %d  %d\n", comm_h.myid, I, J, Q);
@@ -2123,7 +2123,8 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 if (option_dielect_func == 3)
                 {
                     chi0_block *= -1.0;
-                    for (int i = 0; i != n_nonsingular; i++)
+                    const int n_nonsingular_int = as_int(n_nonsingular);
+                    for (int i = 0; i != n_nonsingular_int; i++)
                     {
                         const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
                         if (ilo < 0) continue;

@@ -98,7 +98,7 @@ void collect_block_from_IJ_storage(matrix_m<Tdst> &mat_lo, const ArrayDesc &ad,
                                    const int &J, Tdst alpha, const Tsrc *pvIJ, MAJOR major_pv)
 {
     // assert(mat_lo.nr() == ad.m_loc() && mat_lo.nc() == ad.n_loc());
-    assert(ad.m() == atbasis_row.nb_total && ad.n() == atbasis_col.nb_total);
+    assert(as_size(ad.m()) == atbasis_row.nb_total && as_size(ad.n()) == atbasis_col.nb_total);
     const int row_start_id = atbasis_row.get_part_range()[I];
     const int col_start_id = atbasis_col.get_part_range()[J];
     const int row_nb = atbasis_row.get_atom_nb(I);
@@ -130,7 +130,7 @@ void collect_block_from_IJ_storage_tensor(matrix_m<Tdst> &mat_lo, const ArrayDes
                                           const std::map<TA, std::map<TAC, RI::Tensor<Tsrc>>> &TMAP)
 {
     // assert(mat_lo.nr() == ad.m_loc() && mat_lo.nc() == ad.n_loc());
-    assert(ad.m() == atbasis_row.nb_total && ad.n() == atbasis_col.nb_total);
+    assert(as_size(ad.m()) == atbasis_row.nb_total && as_size(ad.n()) == atbasis_col.nb_total);
 
     matrix_m<Tdst> tmp_loc(mat_lo.nr(), mat_lo.nc(), MAJOR::ROW);
     size_t cp_size = ad.n_loc() * sizeof(Tdst);
@@ -293,7 +293,7 @@ void collect_block_from_IJ_storage_tensor_transform_triple(
     const std::map<TA, std::map<TAC, RI::Tensor<Tsrc>>> &TMAP, const TA &Mu, const int &mu_local)
 {
     // assert(mat_lo.nr() == ad.m_loc() && mat_lo.nc() == ad.n_loc());
-    assert(ad.m() == atbasis_row.nb_total && ad.n() == atbasis_col.nb_total);
+    assert(as_size(ad.m()) == atbasis_row.nb_total && as_size(ad.n()) == atbasis_col.nb_total);
 
     matrix_m<Tdst> tmp_loc(mat_lo.nr(), mat_lo.nc(), MAJOR::ROW);
     size_t cp_size = ad.n_loc() * sizeof(Tdst);
@@ -348,7 +348,7 @@ void collect_block_from_IJ_storage_syhe(matrix_m<Tdst> &mat_lo, const ArrayDesc 
                                         MAJOR major_pv)
 {
     // assert(mat_lo.nr() == ad.m_loc() && mat_lo.nc() == ad.n_loc());
-    assert(ad.m() == atbasis.nb_total && ad.n() == atbasis.nb_total);
+    assert(as_size(ad.m()) == atbasis.nb_total && as_size(ad.n()) == atbasis.nb_total);
     // blocks on diagonal is trivial
     if (I == J)
     {
@@ -464,7 +464,7 @@ void map_block_to_IJ_storage(map<int, map<int, matrix_m<T>>> &IJmap,
                              const matrix_m<T> &mat_lo,
                              const ArrayDesc &desc, MAJOR major_map)
 {
-    assert(desc.m() == atbasis_row.nb_total && desc.n() == atbasis_col.nb_total);
+    assert(as_size(desc.m()) == atbasis_row.nb_total && as_size(desc.n()) == atbasis_col.nb_total);
     int I, J, iI, jJ;
     for (int i_lo = 0; i_lo != desc.m_loc(); i_lo++)
     {
@@ -503,13 +503,15 @@ void map_block_to_IJ_storage_new(map<int, map<int, matrix_m<T>>> &IJmap,
     {
         Js.push_back(J_js.first);
     }
-    const auto n_pairs_total = Is.size() * Js.size();
+    const int n_pairs_total = as_int(Is.size() * Js.size());
+    const int n_Is = as_int(Is.size());
+    const int n_Js = as_int(Js.size());
 
     // Create necessay atom-pair blocks
 #pragma omp parallel for collapse(2) schedule(dynamic)
-    for (int i_I = 0; i_I != Is.size(); i_I++)
+    for (int i_I = 0; i_I != n_Is; i_I++)
     {
-        for (int j_J = 0; j_J != Js.size(); j_J++)
+        for (int j_J = 0; j_J != n_Js; j_J++)
         {
             const auto &I = Is[i_I];
             const auto &J = Js[j_J];
@@ -548,8 +550,9 @@ void map_block_to_IJ_storage_new(map<int, map<int, matrix_m<T>>> &IJmap,
         }
     }
 
+    const int n_blocks = as_int(blocks.size());
 #pragma omp parallel for schedule(dynamic)
-    for (int i_block = 0; i_block != blocks.size(); i_block++)
+    for (int i_block = 0; i_block != n_blocks; i_block++)
     {
         const auto &index = blocks[i_block];
         const auto &I = index[0];
@@ -562,7 +565,7 @@ void map_block_to_IJ_storage_new(map<int, map<int, matrix_m<T>>> &IJmap,
 
         const auto &j_st = index[2];
         const auto &j_ed = index[3];
-        for (int i_idx = 0; i_idx < i_indices.size(); i_idx++)
+        for (int i_idx = 0; i_idx < as_int(i_indices.size()); i_idx++)
         {
             const int i = i_indices[i_idx];
             const auto i_loc = desc.indx_g2l_r(atbasis.get_global_index(I, i));
@@ -823,31 +826,31 @@ matrix_m<std::complex<T>> power_hemat_blacs_desc(matrix_m<std::complex<T>> &A_lo
 
     // check the number of non-singular eigenvalues,
     // using the fact that W is in descending order
-    n_filtered = n;
+    n_filtered = as_size(n);
     for (int i = 0; i != n; i++)
         if (W[n - 1 - i] >= threshold)
         {
-            n_filtered = i;
+            n_filtered = as_size(i);
             break;
         }
 
     // filter and scale the eigenvalues, store in a temp array
     profiler.start("power_hemat_blacs_3");
-    T W_temp[n];
-    for (int i = n - n_filtered; i != n; i++) W_temp[i] = 0.0;
-    for (int i = 0; i != n - n_filtered; i++)
+    std::vector<T> W_temp(as_size(n), T(0));
+    const auto n_kept = as_size(n) - n_filtered;
+    for (std::size_t i = 0; i != n_kept; i++)
     {
         if (W[i] < 0 && !is_int_power)
         {
             global::lib_printf(
-                "Warning! unfiltered negative eigenvalue with non-integer power: # %d ev = %f , "
+                "Warning! unfiltered negative eigenvalue with non-integer power: # %zu ev = %f , "
                 "pow = %f\n",
                 i, W[i], power);
         }
         if (fabs(W[i]) < 1e-10 && power < 0)
         {
             global::lib_printf(
-                "Warning! unfiltered nearly-singular eigenvalue with negative power: # %d ev = %f "
+                "Warning! unfiltered nearly-singular eigenvalue with negative power: # %zu ev = %f "
                 ", pow = %f\n",
                 i, W[i], power);
         }
@@ -960,32 +963,33 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
     profiler.stop("power_hemat_blacs_2");
 
     // Check number of non-singular eigenvalues
-    n_filtered = n;
+    n_filtered = as_size(n);
     for (int i = 0; i < n; i++)
     {
         if (W[n - 1 - i] >= threshold)
         {
-            n_filtered = i;
+            n_filtered = as_size(i);
             break;
         }
     }
 
     // Filter and scale eigenvalues
     profiler.start("power_hemat_blacs_3");
-    std::vector<T> W_temp(n, T(0));
-    for (int i = 0; i < n - n_filtered; i++)
+    std::vector<T> W_temp(as_size(n), T(0));
+    const std::size_t n_kept = as_size(n) - n_filtered;
+    for (std::size_t i = 0; i < n_kept; i++)
     {
         if (W[i] < 0 && !is_int_power)
         {
             global::lib_printf(
-                "Warning! unfiltered negative eigenvalue with non-integer power: # %d ev = %f , "
+                "Warning! unfiltered negative eigenvalue with non-integer power: # %zu ev = %f , "
                 "pow = %f\n",
                 i, W[i], power);
         }
         if (fabs(W[i]) < 1e-10 && power < 0)
         {
             global::lib_printf(
-                "Warning! unfiltered nearly-singular eigenvalue with negative power: # %d ev = %f "
+                "Warning! unfiltered nearly-singular eigenvalue with negative power: # %zu ev = %f "
                 ", pow = %f\n",
                 i, W[i], power);
         }
