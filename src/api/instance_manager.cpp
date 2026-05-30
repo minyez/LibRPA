@@ -25,11 +25,11 @@ dataset_ptr_t  get_dataset_instance(const librpa::Handler &h)
     return get_dataset_instance(h.get_c_handler());
 }
 
-LibrpaHandler* push_back_dataset(MPI_Comm comm)
+LibrpaHandler* push_back_dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
 {
     // create a new instance and append it to the manager
     int instance_id = manager.size();
-    auto p = std::make_shared<Dataset>(comm);
+    auto p = std::make_shared<Dataset>(comm, input_blacs_matloc_row_major);
     manager.emplace_back(p);
 
     // initialize a binding handler
