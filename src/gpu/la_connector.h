@@ -3,7 +3,6 @@
 
 #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
 #include "device_connector.h"
-// #include "device_stream.h"
 #include <ddla/ddla.h>
 #include <ddla/ddla_connector.h>
 #include <ddla/ddla_stream.h>
@@ -12,6 +11,9 @@
 #endif
 #include "../math/scalapack_connector.h"
 #include "../mpi/base_blacs.h"
+#ifdef ENABLE_ELPA
+#include "../elpa/elpa_connector.h"
+#endif
 
 namespace librpa_int{
 
@@ -72,26 +74,7 @@ inline void scal(
     }
 }
 
-// template <typename T1, typename T2>
-// inline void pscal(
-//     const int& N,
-//     const T1& alpha,
-//     T2* X,
-//     int ix,
-//     int jx,
-//     ArrayDesc array_desc,
-//     const int incx
-// ){
-//     #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
-//     if(DeviceConnector::check_device_ptr((void*)X)){
-//         ix--;jx--;
-//         BLAS_CHECK(ddla::deblasScal(array_desc.ddla_desc().ddla_handle()->blasH, N, alpha, X, incX));
-//     }else
-//     #endif
-//     {
-//         ScalapackConnector::scal(N, alpha, X, ix, jx,array_desc.desc, incX);
-//     }
-// }
+
 
 template <typename T1, typename T2>
 inline void pdam(const T1& num, T2* A, const ArrayDesc& array_desc)
@@ -225,6 +208,49 @@ inline void pposv(
     }
 }
 
+template <typename T>
+inline matrix_m<std::complex<T>> power_hemat_la(
+    matrix_m<std::complex<T>> &A_local, const ArrayDesc &ad_A, 
+    matrix_m<std::complex<T>> &Z_local, const ArrayDesc &ad_Z,
+    size_t &n_filtered, T *W, T power, const T &threshold = -1.e5,
+    bool use_gpu_gw_wc = false, std::complex<T>* d_A = nullptr, 
+    std::complex<T>* d_Z = nullptr, std::complex<T>* d_power = nullptr)
+{
+    #if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
+    if(use_gpu_gw_wc){
+        return ElpaConnector::power_hemat_elpa(
+            A_local, ad_A, Z_local, ad_Z,
+            n_filtered, W, power, threshold);
+    }else
+    #endif
+    {
+        return power_hemat_blacs(
+            A_local, ad_A, Z_local, ad_Z,
+            n_filtered, W, power, threshold);
+    }
+}
+
+template <typename T>
+inline matrix_m<std::complex<T>> power_hemat_la_real(
+    matrix_m<std::complex<T>> &A_local, const ArrayDesc &ad_A, 
+    matrix_m<std::complex<T>> &Z_local, const ArrayDesc &ad_Z,
+    size_t &n_filtered, T *W, T power, const T &threshold = -1.e5,
+    bool use_gpu_gw_wc = false, std::complex<T>* d_A = nullptr, 
+    std::complex<T>* d_Z = nullptr, std::complex<T>* d_power = nullptr)
+{
+    #if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
+    if(use_gpu_gw_wc){
+        return ElpaConnector::power_hemat_elpa_real(
+            A_local, ad_A, Z_local, ad_Z,
+            n_filtered, W, power, threshold);
+    }else
+    #endif
+    {
+        return power_hemat_blacs_real(
+            A_local, ad_A, Z_local, ad_Z,
+            n_filtered, W, power, threshold);
+    }
+}
 
 } // namespace LaConnector
 

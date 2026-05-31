@@ -41,7 +41,7 @@ namespace ElpaConnector
  * @retval           scale_Z       Eigenvectors scaled by the power of eigenvalues, using ad_Z
  */
 template <typename T>
-matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
+matrix_m<std::complex<T>> power_hemat_elpa(matrix_m<std::complex<T>> &A_local,
                                             const ArrayDesc &ad_A,
                                             matrix_m<std::complex<T>> &Z_local,
                                             const ArrayDesc &ad_Z,
@@ -218,7 +218,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
         if(j_loc>=0)
             LaConnector::scal(ad_Z_opt.m_loc(), W_temp[i], A + ad_Z_opt.lld() * j_loc, 1, ad_Z_opt);
     }
-    LaConnector::pgemm('N', 'C', n, n, n, {1.0, 0.0}, Z, 1, 1, ad_Z_opt, A, 1, 1, ad_Z_opt, {0.0, 0.0}, C, 1, 1, ad_A);
+    LaConnector::pgemm('N', 'C', n, n, n, {(T)1.0, (T)0.0}, Z, 1, 1, ad_Z_opt, A, 1, 1, ad_Z_opt, {(T)0.0, (T)0.0}, C, 1, 1, ad_A);
 #if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
     ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled_opt.ptr(), A, scaled_opt.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
     ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local.ptr(), C, A_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
@@ -241,7 +241,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
 
 
 template <typename T>
-matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_local,
+matrix_m<std::complex<T>> power_hemat_elpa_real(matrix_m<std::complex<T>> &A_local,
                                                  const ArrayDesc &ad_A,
                                                  matrix_m<std::complex<T>> &Z_local,
                                                  const ArrayDesc &ad_Z, size_t &n_filtered,
@@ -419,8 +419,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
     // ScalapackConnector::pgemm_f('N', 'C', n, n, n, 1.0, Z_local_opt_complex.ptr(), 1, 1,
     //                             ad_Z_opt.desc, scaled_opt.ptr(), 1, 1, ad_Z_opt.desc, 0.0,
     //                             A_local.ptr(), 1, 1, ad_A.desc);
-    // printf("before pgemm\n");
-    LaConnector::pgemm('N', 'C', n, n, n, 1.0, Z, 1, 1, ad_Z_opt, A, 1, 1, ad_Z_opt, 0.0, C, 1, 1, ad_A);
+    LaConnector::pgemm('N', 'C', n, n, n, (T)1.0, Z, 1, 1, ad_Z_opt, A, 1, 1, ad_Z_opt, (T)0.0, C, 1, 1, ad_A);
 #if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
     ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled_opt.ptr(), A, scaled_opt.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
     ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local_opt.ptr(), C, A_local.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
@@ -443,6 +442,24 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
 
     return scaled;
 }
+
+template matrix_m<std::complex<double>> power_hemat_elpa_real<double>(
+    matrix_m<std::complex<double>> &A_local, const ArrayDesc &ad_A,
+    matrix_m<std::complex<double>> &Z_local, const ArrayDesc &ad_Z,
+    size_t &n_filtered, double *W, double power, const double &threshold);
+template matrix_m<std::complex<float>> power_hemat_elpa_real<float>(
+    matrix_m<std::complex<float>> &A_local, const ArrayDesc &ad_A,
+    matrix_m<std::complex<float>> &Z_local, const ArrayDesc &ad_Z,
+    size_t &n_filtered, float *W, float power, const float &threshold);
+
+template matrix_m<std::complex<double>> power_hemat_elpa<double>(
+    matrix_m<std::complex<double>> &A_local, const ArrayDesc &ad_A,
+    matrix_m<std::complex<double>> &Z_local, const ArrayDesc &ad_Z,
+    size_t &n_filtered, double *W, double power, const double &threshold);
+template matrix_m<std::complex<float>> power_hemat_elpa<float>(
+    matrix_m<std::complex<float>> &A_local, const ArrayDesc &ad_A,
+    matrix_m<std::complex<float>> &Z_local, const ArrayDesc &ad_Z,
+    size_t &n_filtered, float *W, float power, const float &threshold);
 
 } // namespace ElpaConnector
 
