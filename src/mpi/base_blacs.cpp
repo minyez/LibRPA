@@ -421,8 +421,8 @@ void ArrayDesc::reset_handler()
     is_loc_consecutive_r_ = false;
     is_loc_consecutive_c_ = false;
     empty_local_mat_ = false;
-    initialized_ = false;
     this->clear_index_();
+    initialized_ = false;
 }
 
 void ArrayDesc::reset_handler(const BlacsCtxtHandler &blacs_h)

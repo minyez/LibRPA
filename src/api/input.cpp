@@ -26,6 +26,7 @@
 
 void librpa_set_scf_dimension(LibrpaHandler* h, int nspins, int nkpts, int nstates, int nbasis, int nspinor)
 {
+    using std::endl;
     using namespace librpa_int;
     using api::get_dataset_instance;
     using global::mpi_comm_global_h;
@@ -63,16 +64,26 @@ void librpa_set_scf_dimension(LibrpaHandler* h, int nspins, int nkpts, int nstat
     //       or add a new API function.
     KPointBlacsProcessShape scfk_blacs_shape;
     scfk_blacs_shape.favor_square_blacs_grid = true;
-    pds->scfk_blacs_ctxt.init(scfk_blacs_shape, pds->comm_h.comm, nkpts);
-    const auto &process_shape = pds->scfk_blacs_ctxt.process_shape();
+    auto &kbctxt = pds->scfk_blacs_ctxt;
+    kbctxt.init(scfk_blacs_shape, pds->comm_h.comm, nkpts);
+    const auto &process_shape = kbctxt.process_shape();
     if (pds->comm_h.is_root())
     {
         lib_printf("Internal two-level (SCF k-points/matrix block) parallelization for eigenvectors set:\n");
         lib_printf("| processes per k-point      : %d\n", process_shape.nprocs_blacs);
         lib_printf("| processes per matrix block : %d\n", process_shape.nprocs_kpoint);
     }
-    ofs_myid << "Local k-point indices: " << pds->scfk_blacs_ctxt.kpoints_local() << std::endl;
+    ofs_myid << "Local k-point indices: " << kbctxt.kpoints_local() << endl;
     pds->comm_h.barrier();
+    // As the two-level communicator handlers are settled down,
+    // the wave function array descriptors are fixed.
+    ofs_myid << "k-point communicator : " << kbctxt.comm_kpoint_h.str() << endl;
+    ofs_myid << "BLACS communicator   : " << kbctxt.comm_blacs_h.str() << endl;
+
+    pds->desc_wfc_kb = kbctxt.create_array_desc(nbasis, nstates);
+    pds->desc_wfc_kb_full = kbctxt.create_array_desc(nbasis, nstates, nbasis, nstates);
+    ofs_myid << "desc_wfc_kb      : " << pds->desc_wfc_kb.info_desc() << endl;
+    ofs_myid << "desc_wfc_kb_full : " << pds->desc_wfc_kb_full.info_desc() << endl;
 
     profiler.stop(tname);
 }
