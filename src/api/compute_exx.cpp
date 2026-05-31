@@ -40,8 +40,9 @@ void librpa_build_exx(LibrpaHandler* h, const LibrpaOptions *p_opts)
     pds->redistribute_coulomb_blacs2ap();
 
     initialize_ds_exx(*pds, opts);
+    const auto &coul = opts.use_fullcoul_exx ? pds->vq : pds->vq_cut;
     profiler.start("ft_vq_cut", "Fourier transform truncated Coulomb");
-    const auto VR = librpa_int::FT_Vq(pds->basis_aux, pds->vq_cut, pds->pbc, true);
+    const auto VR = librpa_int::FT_Vq(pds->basis_aux, coul, pds->pbc, true);
     profiler.stop("ft_vq_cut");
 
     profiler.start("exx_real_work");
