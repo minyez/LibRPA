@@ -76,6 +76,9 @@ double librpa_get_rpa_correlation_energy(LibrpaHandler *h, const LibrpaOptions *
         routing = decide_auto_routing(n_atoms, opts.nfreq * pds->pbc.get_n_cells_bvk());
     }
 
+    if (opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON)
+        pds->redistribute_eigvecs_kpara();
+
     // Determine the atom pairs that this process is responsible for
     initialize_ds_atpairs_local(*pds, routing);
 
