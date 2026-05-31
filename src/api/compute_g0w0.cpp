@@ -89,8 +89,9 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     {
         profiler.start("g0w0_exx", "Build exchange self-energy");
         initialize_ds_exx(*pds, opts);
+        const auto &coul = opts.use_fullcoul_exx ? pds->vq : pds->vq_cut;
         profiler.start("ft_vq_cut", "Fourier transform truncated Coulomb");
-        const auto VR = librpa_int::FT_Vq(pds->basis_aux, pds->vq_cut, pds->pbc, true);
+        const auto VR = librpa_int::FT_Vq(pds->basis_aux, coul, pds->pbc, true);
         profiler.stop("ft_vq_cut");
 
         profiler.start("g0w0_exx_real_work");
@@ -122,17 +123,19 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     std::vector<std::complex<double>> epsmac_LF_imagfreq(epsmac_LF_imagfreq_re.cbegin(), epsmac_LF_imagfreq_re.cend());
 
     std::map<double, std::map<Vector3_Order<double>, librpa_int::matrix_m<std::complex<double>>>> Wc_freq_q;
+    const auto &coul_eps = opts.use_fullcoul_eps ? pds->vq : pds->vq_cut;
+    auto &coul_wc = opts.use_fullcoul_wc ? pds->vq : pds->vq_cut;
     if (opts.use_scalapack_gw_wc == LIBRPA_SWITCH_ON)
     {
         bool replace_w_head = opts.replace_w_head == LIBRPA_SWITCH_ON;
-        Wc_freq_q = compute_Wc_freq_q_blacs(chi0, pds->vq, pds->vq_cut, opts.sqrt_coulomb_threshold,
+        Wc_freq_q = compute_Wc_freq_q_blacs(chi0, coul_eps, coul_wc, opts.sqrt_coulomb_threshold,
                                             replace_w_head, opts.option_dielect_func,
                                             epsmac_LF_imagfreq, *(pds->p_headwing), pds->blacs_h, pds->desc_abf,
                                             debug, opts.output_dir, opts.use_cholesky_gw_wc);
     }
     else
     {
-        Wc_freq_q = compute_Wc_freq_q(chi0, pds->vq, pds->vq_cut, opts.sqrt_coulomb_threshold,
+        Wc_freq_q = compute_Wc_freq_q(chi0, coul_eps, coul_wc, opts.sqrt_coulomb_threshold,
                                       epsmac_LF_imagfreq, debug, opts.output_dir);
     }
     profiler.stop("g0w0_wc");
