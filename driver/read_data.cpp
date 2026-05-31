@@ -4,11 +4,14 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <fstream>
 #include <iomanip>
 #include <ios>
 #include <iostream>
+#include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -413,29 +416,118 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
                     profiler.get_cpu_time_last("driver_read_Cs") / 60.0);
 }
 
+static bool get_Cs_binary_data_size(int n_i, int n_j, int n_mu, std::streamoff &data_size)
+{
+    if (n_i <= 0 || n_j <= 0 || n_mu <= 0) return false;
+
+    const auto max_count = static_cast<unsigned long long>(
+        std::numeric_limits<std::streamoff>::max() / sizeof(double));
+    auto count = static_cast<unsigned long long>(n_i);
+    const auto n_j_ull = static_cast<unsigned long long>(n_j);
+    const auto n_mu_ull = static_cast<unsigned long long>(n_mu);
+
+    if (count > max_count / n_j_ull) return false;
+    count *= n_j_ull;
+    if (count > max_count / n_mu_ull) return false;
+    count *= n_mu_ull;
+
+    data_size = static_cast<std::streamoff>(count * sizeof(double));
+    return true;
+}
+
+static bool has_Cs_binary_layout(const string &file_path)
+{
+    ifstream infile(file_path, std::ios::in | std::ios::binary);
+    if (!infile.good())
+    {
+        throw std::logic_error("Failed to open " + file_path);
+    }
+
+    infile.seekg(0, std::ios::end);
+    const auto end_pos = infile.tellg();
+    if (end_pos == std::streampos(-1)) return false;
+
+    const auto file_size = static_cast<std::streamoff>(end_pos);
+    const auto header_size = static_cast<std::streamoff>(3 * sizeof(int));
+    const auto block_header_size = static_cast<std::streamoff>(8 * sizeof(int));
+    if (file_size < header_size) return false;
+
+    infile.seekg(0, std::ios::beg);
+    int natom = 0;
+    int ncell = 0;
+    int n_apcell_file = 0;
+    infile.read((char *) &natom, sizeof(int));
+    infile.read((char *) &ncell, sizeof(int));
+    infile.read((char *) &n_apcell_file, sizeof(int));
+    if (!infile.good() || natom <= 0 || ncell < 0 || n_apcell_file < 0) return false;
+
+    std::streamoff pos = header_size;
+    if (n_apcell_file > (file_size - pos) / block_header_size) return false;
+
+    for (int i = 0; i < n_apcell_file; i++)
+    {
+        if (file_size - pos < block_header_size) return false;
+
+        int dims[8];
+        infile.seekg(pos, std::ios::beg);
+        infile.read((char *) &dims[0], 8 * sizeof(int));
+        if (!infile.good()) return false;
+        pos += block_header_size;
+
+        if (dims[0] <= 0 || dims[0] > natom || dims[1] <= 0 || dims[1] > natom)
+            return false;
+
+        std::streamoff data_size = 0;
+        if (!get_Cs_binary_data_size(dims[5], dims[6], dims[7], data_size)) return false;
+        if (file_size - pos < data_size) return false;
+
+        pos += data_size;
+    }
+
+    return pos == file_size;
+}
+
+static bool has_binary_control_bytes(const string &file_path)
+{
+    ifstream infile(file_path, std::ios::in | std::ios::binary);
+    if (!infile.good())
+    {
+        throw std::logic_error("Failed to open " + file_path);
+    }
+
+    char buf[256];
+    infile.read(buf, sizeof(buf));
+    const auto nread = infile.gcount();
+    for (std::streamsize i = 0; i < nread; i++)
+    {
+        const auto c = static_cast<unsigned char>(buf[i]);
+        if (c == '\0' || (!std::isprint(c) && !std::isspace(c))) return true;
+    }
+    return false;
+}
+
+static bool has_Cs_text_header(const string &file_path)
+{
+    ifstream infile(file_path, std::ios::in);
+    if (!infile.good())
+    {
+        throw std::logic_error("Failed to open " + file_path);
+    }
+
+    int natom = 0;
+    int ncell = 0;
+    if (!(infile >> natom >> ncell)) return false;
+    return natom > 0 && ncell >= 0;
+}
+
 //! Check if Cs data file is in ASCII text or unformatted binary format
 static bool check_Cs_file_binary(const string &file_path)
 {
-    // Current strategy:
-    //   Assume the file is ASCII, try to read to the first integer, which is the number of atoms
-    //   If it succeeds, then the file is ASCII, otherwise it is unformatted.
-    //
-    // This is the simplest way, and gives less false positives than assuming the file is binary
-    // and checking the first integer by reading the first 4 bytes with infile.read.
-    bool is_binary = true;
-    ifstream infile;
-    int natom;
-    // infile.open(file_path, std::ios::in | std::ios::binary);
-    infile.open(file_path, std::ios::in);
-    // infile.read((char *) &natom, sizeof(int));
-    infile >> natom;
-    if (infile.good())
-    {
-        is_binary = false;
-    }
-    // cout << natom << " " << is_binary << endl;
-    infile.close();
-    return is_binary;
+    // Binary Cs headers start with three native ints.  The old text-first probe could
+    // mis-detect a binary file when the first byte of natom happened to be an ASCII digit.
+    if (has_Cs_binary_layout(file_path)) return true;
+    if (has_binary_control_bytes(file_path)) return true;
+    return !has_Cs_text_header(file_path);
 }
 
 //! Check if Coulomb matrix data file is in ASCII text or unformatted binary format
@@ -2060,24 +2152,64 @@ static void get_basis_from_Cs_binary(const string &file_path, std::map<int, size
     int dims[8];
     int n_apcell_file;
     int natom, ncell;
+    const auto header_size = static_cast<std::streamoff>(3 * sizeof(int));
+    const auto block_header_size = static_cast<std::streamoff>(8 * sizeof(int));
 
     infile.open(file_path, std::ios::in | std::ios::binary);
+    if (!infile.good())
+    {
+        throw std::logic_error("Failed to open " + file_path);
+    }
+    infile.seekg(0, std::ios::end);
+    const auto end_pos = infile.tellg();
+    if (end_pos == std::streampos(-1))
+        throw std::runtime_error("Failed to determine size of binary Cs file: " + file_path);
+    const auto file_size = static_cast<std::streamoff>(end_pos);
+    if (file_size < header_size)
+        throw std::runtime_error("Binary Cs file is too small: " + file_path);
+
+    infile.seekg(0, std::ios::beg);
     infile.read((char *) &natom, sizeof(int));
     infile.read((char *) &ncell, sizeof(int));
     infile.read((char *) &n_apcell_file, sizeof(int));
+    if (!infile.good() || natom <= 0 || ncell < 0 || n_apcell_file < 0 ||
+        n_apcell_file > (file_size - header_size) / block_header_size)
+    {
+        throw std::runtime_error("Invalid binary Cs header in: " + file_path);
+    }
+
+    std::streamoff pos = header_size;
 
     for (int i = 0; i < n_apcell_file; i++)
     {
+        if (file_size - pos < block_header_size)
+            throw std::runtime_error("Truncated binary Cs block header in: " + file_path);
+
+        infile.seekg(pos, std::ios::beg);
         infile.read((char *) &dims[0], 8 * sizeof(int));
+        if (!infile.good())
+            throw std::runtime_error("Failed to read binary Cs block header in: " + file_path);
+        pos += block_header_size;
+
         int ia1 = dims[0] - 1;
         int ia2 = dims[1] - 1;
-        size_t n_i = dims[5];
-        size_t n_j = dims[6];
-        size_t n_mu = dims[7];
+        if (ia1 < 0 || ia1 >= natom || ia2 < 0 || ia2 >= natom)
+            throw std::runtime_error("Invalid atom index in binary Cs block: " + file_path);
+
+        std::streamoff data_size = 0;
+        if (!get_Cs_binary_data_size(dims[5], dims[6], dims[7], data_size) ||
+            file_size - pos < data_size)
+        {
+            throw std::runtime_error("Invalid binary Cs block dimensions in: " + file_path);
+        }
+
+        size_t n_i = static_cast<size_t>(dims[5]);
+        size_t n_j = static_cast<size_t>(dims[6]);
+        size_t n_mu = static_cast<size_t>(dims[7]);
         map_at_wfc[ia1] = n_i;
         map_at_wfc[ia2] = n_j;
         map_at_aux[ia1] = n_mu;
-        infile.seekg(n_i * n_j * n_mu * sizeof(double), std::ios::cur);
+        pos += data_size;
     }
 }
 
