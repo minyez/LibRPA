@@ -421,6 +421,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     // cout << V_libri << endl;
 
     // initialize density matrix
+    global::profiler.start("build_real_space_exx_prepare_index");
     vector<atpair_t> atpair_dmat;
     for (atom_t I = 0; I < as_atom(n_atoms); I++)
         for (atom_t J = 0; J < as_atom(n_atoms); J++)
@@ -440,6 +441,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     Rs.reserve(iRs.size());
     for (const auto &iR : iRs)
         Rs.push_back(Rlist[iR]);
+    global::profiler.stop("build_real_space_exx_prepare_index");
 
     for (auto isp = 0; isp != n_spins; isp++)
     {
@@ -468,6 +470,7 @@ void Exx::build(const LibrpaParallelRouting routing,
                 }
                 // global::ofs_myid << dmat_libri << std::endl;
                 // print_keys(global::ofs_myid, dmat_libri);
+                global::profiler.start("build_real_space_exx_libri_set_Ds");
                 if (use_complex_exx_r)
                 {
                     global::ofs_myid << "Number of Dmat keys: " << get_num_keys(dmat_libri_cplx) << "\n";
@@ -479,6 +482,7 @@ void Exx::build(const LibrpaParallelRouting routing,
                     exx_libri.set_Ds(dmat_libri, libri_threshold_D);
                 }
                 // exx_libri.set_Ds({}, libri_threshold_D);
+                global::profiler.stop("build_real_space_exx_libri_set_Ds");
                 global::profiler.stop("build_real_space_exx_3");
                 global::lib_printf("Task %4d: DM setup for EXX\n", comm_h.myid);
 
