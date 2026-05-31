@@ -254,6 +254,93 @@ static void test_dmat_cplx_Rs_kblacs_para_full_wfc()
     }
 }
 
+static void test_gf_cplx_imagtimes_Rs_kblacs_para_full_wfc()
+{
+    if (size_global < 2 || size_global % 2 != 0) return;
+
+    std::vector<Vector3_Order<double>> kfrac_list;
+    Matd eigvals, eigvecs;
+    double efermi;
+    int nk, nb, nao;
+    get_BCC_He_k222_light_min_2p_aims_ref(nk, nb, kfrac_list, efermi, eigvals, eigvecs);
+    nao = nb;
+
+    const auto set_common_mf_data = [&](MeanField &mf)
+    {
+        mf.get_efermi() = efermi;
+        mf.get_weight()[0].zero_out();
+        for (int ik = 0; ik != nk; ++ik)
+        {
+            mf.get_weight()[0](ik, 0) = mf.get_weight()[0](ik, 1) = 2.0 / nk;
+            for (int ib = 0; ib != nb; ++ib)
+            {
+                mf.get_eigenvals()[0](ik, ib) = eigvals(ik, ib);
+            }
+        }
+    };
+    const auto set_wfc = [&](MeanField &mf, int ik)
+    {
+        auto &eig = mf.get_eigenvectors()[0][0][ik];
+        eig.create(nb, nao);
+        for (int iao = 0; iao != nao; ++iao)
+        {
+            for (int ib = 0; ib != nb; ++ib)
+            {
+                eig.c[ib * nb + iao] = eigvecs(ik, iao * nb + ib);
+            }
+        }
+    };
+
+    MeanField mf_ref(1, nk, nb, nao);
+    set_common_mf_data(mf_ref);
+    for (int ik = 0; ik != nk; ++ik) set_wfc(mf_ref, ik);
+
+    KPointBlacsProcessShape shape(2, size_global / 2, false);
+    KPointBlacsParallelContext context(shape, mpi_comm_global_h.comm, nk);
+    const auto desc_wfc_full = context.create_array_desc(nao, nb, nao, nb);
+    const auto desc_gf = context.create_array_desc(nao, nao);
+
+    MeanField mf(1, nk, nb, nao);
+    set_common_mf_data(mf);
+    for (int ik = 0; ik != nk; ++ik)
+    {
+        if (context.kpoint_blacs_root_global_rank(ik) != myid_global) continue;
+        set_wfc(mf, ik);
+    }
+
+    const std::vector<Vector3_Order<int>> Rs =
+        context.comm_kpoint_h.myid == 0
+            ? std::vector<Vector3_Order<int>>{{-1, 0, 0}, {0, 0, 0}}
+            : std::vector<Vector3_Order<int>>{{1, 0, 0}};
+    std::vector<double> imagtimes{1.0, -0.5};
+    const auto gf_ref = mf_ref.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_list, imagtimes, Rs);
+    const auto gf_Rs = get_gf_cplx_imagtimes_Rs_kblacs_para(
+        0, mf, kfrac_list, imagtimes, Rs, context, desc_wfc_full, desc_gf);
+    assert(gf_Rs.size() == imagtimes.size());
+
+    for (const auto tau: imagtimes)
+    {
+        const auto &gf_tau = gf_Rs.at(tau);
+        assert(gf_tau.size() == Rs.size());
+        for (const auto &R: Rs)
+        {
+            const auto &rmat = gf_tau.at(R);
+            assert(rmat.nr() == desc_gf.m_loc());
+            assert(rmat.nc() == desc_gf.n_loc());
+            for (int jloc = 0; jloc != desc_gf.n_loc(); ++jloc)
+            {
+                const int jglob = desc_gf.indx_l2g_c(jloc);
+                for (int iloc = 0; iloc != desc_gf.m_loc(); ++iloc)
+                {
+                    const int iglob = desc_gf.indx_l2g_r(iloc);
+                    assert(fequal(rmat(iloc, jloc), gf_ref.at(tau).at(R)(iglob, jglob),
+                                  cplxdb{1e-12, 0.0}));
+                }
+            }
+        }
+    }
+}
+
 // a=3A, k222, light, minimal + 2p in tier1, FHI-aims
 static void test_dmat_cplx_Rs_kpara()
 {
@@ -325,14 +412,16 @@ int main (int argc, char *argv[])
     init_global_mpi(MPI_COMM_WORLD);
     init_global_io();
 
+    // Fictious examples
     test_dmat_cplx_Rs_kpara(3, 8, 2);
     test_dmat_cplx_Rs_kpara(15, 4, 2);
-
     test_gf_cplx_Rs_kpara(3, 7, 2, 1.0, 1.0);
     test_gf_cplx_Rs_kpara(15, 3, 2, 0.5, -1.0);
 
-    test_dmat_cplx_Rs_kblacs_para_full_wfc();
+    // Actual examples
     test_dmat_cplx_Rs_kpara();
+    test_dmat_cplx_Rs_kblacs_para_full_wfc();
+    test_gf_cplx_imagtimes_Rs_kblacs_para_full_wfc();
 
     finalize_global_io();
     finalize_global_mpi();
