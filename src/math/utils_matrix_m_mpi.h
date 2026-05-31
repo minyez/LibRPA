@@ -1,3 +1,6 @@
+#ifndef UTILS_MATRIX_M_MPI
+#define UTILS_MATRIX_M_MPI
+
 #pragma once
 #include <omp.h>
 
@@ -1805,3 +1808,6 @@ get_ap_map_from_blacs_dist_scheduler(const matrix_m<T> &m_loc,
 
 
 } /* end of namespace librpa_int */
+
+
+#endif // UTILS_MATRIX_M_MPI_H

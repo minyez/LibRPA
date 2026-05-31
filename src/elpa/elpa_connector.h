@@ -27,7 +27,7 @@ namespace ElpaConnector
  * @retval           scale_Z       Eigenvectors scaled by the power of eigenvalues, using ad_Z
  */
 template <typename T>
-matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
+matrix_m<std::complex<T>> power_hemat_elpa(matrix_m<std::complex<T>> &A_local,
                                             const ArrayDesc &ad_A,
                                             matrix_m<std::complex<T>> &Z_local,
                                             const ArrayDesc &ad_Z,
@@ -36,7 +36,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
 
 
 template <typename T>
-matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_local,
+matrix_m<std::complex<T>> power_hemat_elpa_real(matrix_m<std::complex<T>> &A_local,
                                                  const ArrayDesc &ad_A,
                                                  matrix_m<std::complex<T>> &Z_local,
                                                  const ArrayDesc &ad_Z, size_t &n_filtered,
