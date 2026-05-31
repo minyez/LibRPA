@@ -2,10 +2,13 @@
 
 #include <algorithm>
 #include <complex>
+#include <cstring>
+#include <limits>
 
 #include "../io/stl_io_helper.h"
 #include "../math/lapack_connector.h"
 #include "../math/matrix_m.h"
+#include "../math/scalapack_connector.h"
 #include "../utils/constants.h"
 #include "../utils/profiler.h"
 
@@ -226,6 +229,185 @@ std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> get_gf_cplx_imagti
     const std::vector<Vector3_Order<int>> &Rs, const MpiCommHandler &comm_h)
 {
     return get_gf_cplx_imagtimes_Rs_kpara(ispin, 0, 0, mf, kfrac_list, imagtimes, Rs, comm_h);
+}
+
+std::map<Vector3_Order<int>, Matz> get_dmat_cplx_Rs_kblacs_para(
+    int ispin, int ispinor_bra, int ispinor_ket, const MeanField &mf,
+    const std::vector<Vector3_Order<double>> &kfrac_list, const std::vector<Vector3_Order<int>> &Rs,
+    const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm)
+{
+    global::profiler.start(__FUNCTION__);
+
+    if (!kblacs_ctxt.is_initialized())
+        throw LIBRPA_RUNTIME_ERROR("KPointBlacsParallelContext is not initialized");
+
+    const int n_aos = mf.get_n_aos();
+    const int n_states = mf.get_n_states();
+    const int n_kpoints = mf.get_n_kpoints();
+    if (static_cast<int>(kfrac_list.size()) != n_kpoints)
+        throw LIBRPA_RUNTIME_ERROR("k-point fractional coordinate list has inconsistent size");
+    if (kblacs_ctxt.n_kpoints() != n_kpoints)
+        throw LIBRPA_RUNTIME_ERROR("k-point BLACS context has inconsistent number of k-points");
+    if (!desc_wfc.is_initialized() || !desc_dm.is_initialized())
+        throw LIBRPA_RUNTIME_ERROR("BLACS array descriptors are not initialized");
+    if (desc_wfc.m() != n_aos || desc_wfc.n() != n_states)
+        throw LIBRPA_RUNTIME_ERROR("wave-function descriptor must be n_aos x n_states");
+    if (desc_dm.m() != n_aos || desc_dm.n() != n_aos)
+        throw LIBRPA_RUNTIME_ERROR("density-matrix descriptor must be n_aos x n_aos");
+    if (desc_wfc.ictxt() != desc_dm.ictxt())
+        throw LIBRPA_RUNTIME_ERROR("wave-function and density-matrix descriptors must use the same BLACS context");
+
+    std::vector<int> n_Rs_all, Rs_all;
+    int nR_max;
+    collect_Rs(Rs, n_Rs_all, Rs_all, nR_max, kblacs_ctxt.comm_kpoint_h);
+
+    std::map<Vector3_Order<int>, Matz> dmat_Rs;
+    for (const auto &R: Rs)
+    {
+        dmat_Rs.emplace(R, Matz(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL));
+    }
+    if (nR_max == 0)
+    {
+        global::profiler.stop(__FUNCTION__);
+        return dmat_Rs;
+    }
+
+    const size_t wfc_size_loc = static_cast<size_t>(desc_wfc.m_loc()) * desc_wfc.n_loc();
+    const size_t dm_size_loc = static_cast<size_t>(desc_dm.m_loc()) * desc_dm.n_loc();
+    if (dm_size_loc > static_cast<size_t>(std::numeric_limits<int>::max()))
+        throw LIBRPA_RUNTIME_ERROR("local density-matrix block is too large for MPI collectives");
+    const int n_elem = static_cast<int>(dm_size_loc);
+
+    std::vector<cplxdb> dummy(1, C_ZERO);
+    Matz scaled_wfc_ket(desc_wfc.m_loc(), desc_wfc.n_loc(), MAJOR::COL);
+    Matz dmat_k(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
+    const auto &iks_local = kblacs_ctxt.kpoints_local();
+    const int nk_local = iks_local.size();
+    int nk_sum = 0;
+    MPI_Allreduce(&nk_local, &nk_sum, 1, mpi_datatype<int>::value, MPI_SUM,
+                  kblacs_ctxt.comm_kpoint_h.comm);
+    if (nk_sum != n_kpoints)
+        throw LIBRPA_RUNTIME_ERROR("k-point BLACS context has inconsistent k-point distribution");
+    Matz kmat(nk_local, n_elem, MAJOR::COL);
+
+    const double occ_thres = 1e-4 / n_kpoints;
+    const double scale_spin = 0.5 * mf.get_n_spins() * mf.get_n_spinor();
+    for (int ik_local = 0; ik_local != nk_local; ++ik_local)
+    {
+        const int ik = iks_local[ik_local];
+        const auto *wfc_bra = mf.find_wfc(ispin, ispinor_bra, ik);
+        const auto *wfc_ket = mf.find_wfc(ispin, ispinor_ket, ik);
+        if ((wfc_bra == nullptr || wfc_ket == nullptr) && wfc_size_loc > 0)
+            throw LIBRPA_RUNTIME_ERROR("missing local wave-function block for k-point " +
+                                      std::to_string(ik));
+        if (wfc_bra != nullptr && static_cast<size_t>(wfc_bra->size) != wfc_size_loc)
+            throw LIBRPA_RUNTIME_ERROR("wave-function bra block size is inconsistent with descriptor");
+        if (wfc_ket != nullptr && static_cast<size_t>(wfc_ket->size) != wfc_size_loc)
+            throw LIBRPA_RUNTIME_ERROR("wave-function ket block size is inconsistent with descriptor");
+
+        int nocc = 0;
+        std::vector<double> weights;
+        weights.reserve(n_states);
+        for (; nocc != n_states; ++nocc)
+        {
+            const double weight = mf.get_weight()[ispin](ik, nocc) * scale_spin;
+            if (weight < occ_thres) break;
+            weights.push_back(weight);
+        }
+
+        scaled_wfc_ket = C_ZERO;
+        if (wfc_ket != nullptr && wfc_size_loc > 0)
+            std::memcpy(scaled_wfc_ket.ptr(), wfc_ket->c, wfc_size_loc * sizeof(cplxdb));
+        for (int jloc = 0; jloc != desc_wfc.n_loc(); ++jloc)
+        {
+            const int jglob = desc_wfc.indx_l2g_c(jloc);
+            if (jglob < 0 || jglob >= nocc) continue;
+            for (int iloc = 0; iloc != desc_wfc.m_loc(); ++iloc)
+            {
+                scaled_wfc_ket(iloc, jloc) *= weights[jglob];
+            }
+        }
+
+        dmat_k = C_ZERO;
+        if (nocc > 0)
+        {
+            const cplxdb *wfc_bra_ptr = wfc_bra == nullptr ? dummy.data() : wfc_bra->c;
+            ScalapackConnector::pgemm_f('N', 'C', n_aos, n_aos, nocc, C_ONE,
+                                        wfc_bra_ptr, 1, 1, desc_wfc.desc,
+                                        scaled_wfc_ket.ptr(), 1, 1, desc_wfc.desc, C_ZERO,
+                                        dmat_k.ptr(), 1, 1, desc_dm.desc);
+        }
+
+        for (int i = 0; i != n_elem; ++i)
+        {
+            kmat(ik_local, i) = dmat_k.ptr()[i];
+        }
+    }
+
+    for (int pid = 0; pid != kblacs_ctxt.comm_kpoint_h.nprocs; ++pid)
+    {
+        const int nR_this = n_Rs_all[pid];
+        if (nR_this < 1) continue;
+
+        Matz transmat(nR_this, nk_local, MAJOR::COL);
+        for (int ik_local = 0; ik_local != nk_local; ++ik_local)
+        {
+            const auto &kf = kfrac_list[iks_local[ik_local]];
+            for (int iR = 0; iR != nR_this; ++iR)
+            {
+                const int index = pid * nR_max * 3 + iR * 3;
+                const auto ang = - (kf.x * Rs_all[index] +
+                                    kf.y * Rs_all[index + 1] +
+                                    kf.z * Rs_all[index + 2]) * TWO_PI;
+                transmat(iR, ik_local) = cplxdb{std::cos(ang), std::sin(ang)};
+            }
+        }
+
+        Matz rmat(nR_this, n_elem, MAJOR::COL);
+        if (nk_local > 0 && n_elem > 0)
+        {
+            LapackConnector::gemm_f('N', 'N', nR_this, n_elem, nk_local, C_ONE,
+                                    transmat.ptr(), nR_this, kmat.ptr(), nk_local, C_ZERO,
+                                    rmat.ptr(), nR_this);
+        }
+
+        const size_t count = static_cast<size_t>(nR_this) * n_elem;
+        if (count > static_cast<size_t>(std::numeric_limits<int>::max()))
+            throw LIBRPA_RUNTIME_ERROR("local density-matrix Fourier block is too large for MPI collectives");
+        const int count_int = static_cast<int>(count);
+        if (kblacs_ctxt.comm_kpoint_h.myid == pid)
+        {
+            MPI_Reduce(MPI_IN_PLACE, rmat.ptr(), count_int, mpi_datatype<cplxdb>::value,
+                       MPI_SUM, pid, kblacs_ctxt.comm_kpoint_h.comm);
+            for (int iR = 0; iR != nR_this; ++iR)
+            {
+                const int index = pid * nR_max * 3 + iR * 3;
+                Vector3_Order<int> R{Rs_all[index], Rs_all[index + 1], Rs_all[index + 2]};
+                auto &m = dmat_Rs[R];
+                m.resize(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
+                for (int i = 0; i != n_elem; ++i)
+                {
+                    m.ptr()[i] = rmat(iR, i);
+                }
+            }
+        }
+        else
+        {
+            MPI_Reduce(rmat.ptr(), rmat.ptr(), count_int, mpi_datatype<cplxdb>::value,
+                       MPI_SUM, pid, kblacs_ctxt.comm_kpoint_h.comm);
+        }
+    }
+
+    global::profiler.stop(__FUNCTION__);
+    return dmat_Rs;
+}
+
+std::map<Vector3_Order<int>, Matz> get_dmat_cplx_Rs_kblacs_para(
+    int ispin, const MeanField &mf,
+    const std::vector<Vector3_Order<double>> &kfrac_list, const std::vector<Vector3_Order<int>> &Rs,
+    const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm)
+{
+    return get_dmat_cplx_Rs_kblacs_para(ispin, 0, 0, mf, kfrac_list, Rs, kblacs_ctxt, desc_wfc, desc_dm);
 }
 
 }
