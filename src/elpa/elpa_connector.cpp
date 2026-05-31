@@ -41,12 +41,10 @@ namespace ElpaConnector
  * @retval           scale_Z       Eigenvectors scaled by the power of eigenvalues, using ad_Z
  */
 template <typename T>
-matrix_m<std::complex<T>> power_hemat_elpa(matrix_m<std::complex<T>> &A_local,
-                                            const ArrayDesc &ad_A,
-                                            matrix_m<std::complex<T>> &Z_local,
-                                            const ArrayDesc &ad_Z,
-                                            size_t &n_filtered, T *W, T power,
-                                            const T &threshold)
+matrix_m<std::complex<T>> power_hemat_elpa(
+    matrix_m<std::complex<T>> &A_local, const ArrayDesc &ad_A, matrix_m<std::complex<T>> &Z_local,
+    const ArrayDesc &ad_Z, size_t &n_filtered, T *W, T power, const T &threshold,
+    bool use_gpu_gw_wc, std::complex<T>* d_A, std::complex<T>* d_Z, std::complex<T>* d_C)
 {
     using global::ofs_myid;
     using global::profiler;
@@ -69,10 +67,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(matrix_m<std::complex<T>> &A_local,
 
 #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
     auto ddla_handle = ad_A.ddla_desc().ddla_handle();
-    std::complex<T>* d_A, * d_Z;
     T* d_W;
-    ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_A, A_local.size() * sizeof(std::complex<T>), ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_Z, Z_local.size() * sizeof(std::complex<T>), ddla_handle->stream));
     ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_W, n * sizeof(T), ddla_handle->stream));
 
     ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, A_local.ptr(), A_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
@@ -143,8 +138,6 @@ matrix_m<std::complex<T>> power_hemat_elpa(matrix_m<std::complex<T>> &A_local,
     auto scaled = Z_local.copy();
     std::complex<T> *C;
 #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
-    std::complex<T>* d_C;
-    ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_C, Z_local.size() * sizeof(std::complex<T>), ddla_handle->stream));
     ddla::DEVICE_CHECK(deviceMemcpyAsync(d_C, Z_local.ptr(), Z_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
     ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
     C = d_C;
@@ -165,9 +158,6 @@ matrix_m<std::complex<T>> power_hemat_elpa(matrix_m<std::complex<T>> &A_local,
     ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled.ptr(), A, scaled.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
     ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local.ptr(), C, A_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
     ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceFreeAsync(d_C, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceFreeAsync(d_A, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceFreeAsync(d_Z, ddla_handle->stream));
     ddla::DEVICE_CHECK(deviceFreeAsync(d_W, ddla_handle->stream));
 #endif
     scaled = Z_local.copy();
@@ -358,13 +348,13 @@ template matrix_m<std::complex<float>> power_hemat_elpa_real<float>(
     bool use_gpu_gw_wc, float* d_A, float* d_Z, float* d_C);
 
 template matrix_m<std::complex<double>> power_hemat_elpa<double>(
-    matrix_m<std::complex<double>> &A_local, const ArrayDesc &ad_A,
-    matrix_m<std::complex<double>> &Z_local, const ArrayDesc &ad_Z,
-    size_t &n_filtered, double *W, double power, const double &threshold);
+    matrix_m<std::complex<double>> &A_local, const ArrayDesc &ad_A, matrix_m<std::complex<double>> &Z_local,
+     const ArrayDesc &ad_Z, size_t &n_filtered, double *W, double power, const double &threshold,
+     bool use_gpu_gw_wc, std::complex<double>* d_A, std::complex<double>* d_Z, std::complex<double>* d_C);
 template matrix_m<std::complex<float>> power_hemat_elpa<float>(
-    matrix_m<std::complex<float>> &A_local, const ArrayDesc &ad_A,
-    matrix_m<std::complex<float>> &Z_local, const ArrayDesc &ad_Z,
-    size_t &n_filtered, float *W, float power, const float &threshold);
+    matrix_m<std::complex<float>> &A_local, const ArrayDesc &ad_A, matrix_m<std::complex<float>> &Z_local,
+    const ArrayDesc &ad_Z, size_t &n_filtered, float *W, float power, const float &threshold,
+    bool use_gpu_gw_wc, std::complex<float>* d_A, std::complex<float>* d_Z, std::complex<float>* d_C);
 
 } // namespace ElpaConnector
 
