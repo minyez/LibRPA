@@ -167,6 +167,8 @@ public:
 
     bool owns_kpoint(int ik) const;
     int kpoint_owner(int ik) const;
+    //! Global rank of the root process in the BLACS communicator that owns k-point ik.
+    int kpoint_blacs_root_global_rank(int ik) const;
     ArrayDesc create_array_desc(int matrix_nrows, int matrix_ncols,
                                 int mb = KPointBlacsProcessShape::AUTO,
                                 int nb = KPointBlacsProcessShape::AUTO, int irsrc = 0,

@@ -158,6 +158,9 @@ void test_kpoint_blacs_parallel_context()
     assert(context.kpoint_owner(0) == 0);
     assert(context.kpoint_owner(1) == 1);
     assert(context.kpoint_owner(2) == 0);
+    assert(context.kpoint_blacs_root_global_rank(0) == 0);
+    assert(context.kpoint_blacs_root_global_rank(1) == 2);
+    assert(context.kpoint_blacs_root_global_rank(2) == 0);
 
     context.finalize();
     assert(!context.is_initialized());
@@ -193,6 +196,10 @@ void test_kpoint_contiguous_rank_layout()
         const std::vector<int> ref{1, 3};
         assert(equal_vector(context.kpoints_local(), ref));
     }
+    assert(context.kpoint_blacs_root_global_rank(0) == 0);
+    assert(context.kpoint_blacs_root_global_rank(1) == 1);
+    assert(context.kpoint_blacs_root_global_rank(2) == 0);
+    assert(context.kpoint_blacs_root_global_rank(3) == 1);
 
     context.finalize();
     assert(!context.is_initialized());
