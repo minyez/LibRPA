@@ -122,6 +122,7 @@ public:
     void redistribute_coulomb_blacs2ap();
     void finalize_comm_blacs_coul();
 
+    void redistribute_eigvecs_kpara();
 
     /* Disable copy */
     Dataset(const Dataset &) = delete;
