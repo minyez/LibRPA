@@ -109,6 +109,10 @@ list(APPEND lib_sources
         utils/utils_mem.cpp
 )
 
+if(NOT LIBRPA_USE_EXTERNAL_ELPA AND NOT LIBRPA_USE_BUNDLED_ELPA)
+  list(APPEND lib_sources utils/elpa_stub.cpp)
+endif()
+
 if(LIBRPA_USE_LIBRI)
   target_include_directories(rpa_lib
     PUBLIC
