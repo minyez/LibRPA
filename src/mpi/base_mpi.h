@@ -113,6 +113,15 @@ std::vector<int> dispatcher(int ist, int ied, unsigned myid, unsigned size, bool
 std::vector<std::pair<int, int>> dispatcher(int i1st, int i1ed, int i2st, int i2ed,
                                   unsigned myid, unsigned size, bool sequential, bool favor_1st);
 
+std::vector<unsigned> dispatcher_balanced_counts(unsigned dist, const std::vector<int> &weights);
+
+//! Task dispatchers with load balance, implemented single index version. Ending indices are excluded
+//! Larger weight, smaller size of returned container
+std::vector<int> dispatcher_balanced(int ist, int ied, const std::vector<int> &weights,
+                                     unsigned myid, bool sequential);
+//! This overload gathers weights on comm before dispatching.
+std::vector<int> dispatcher_balanced(int ist, int ied, int weight, bool sequential, const MPI_Comm comm);
+
 std::vector<std::pair<int,int>> pick_upper_triangular_tasks(std::vector<int> list_row, std::vector<int> list_col);
 std::vector<std::pair<int,int>> dispatch_upper_triangular_tasks(const int &natoms, const int &myid, const int &nprows, const int &npcols, const int &myprow, const int &mypcol);
 
