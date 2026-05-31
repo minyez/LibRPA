@@ -32,12 +32,14 @@
 namespace librpa_int
 {
 
-Exx::Exx(const MeanField &mf_in,
-         const AtomicBasis &atbasis_wfc_in,
-         const PeriodicBoundaryData &pbc_in,
-         const MpiCommHandler &comm_h_in,
+Exx::Exx(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
+         const PeriodicBoundaryData &pbc_in, const KPointBlacsParallelContext &kblacs_ctxt_in,
          bool is_mf_eigvec_k_distributed)
-    : mf(mf_in), atbasis_wfc(atbasis_wfc_in), pbc(pbc_in), comm_h(comm_h_in)
+    : mf(mf_in),
+      atbasis_wfc(atbasis_wfc_in),
+      pbc(pbc_in),
+      comm_h(kblacs_ctxt_in.comm_global_h),
+      kblacs_ctxt(kblacs_ctxt_in)
 {
     is_mf_eigvec_k_distributed_ = is_mf_eigvec_k_distributed;
     is_rspace_built_ = false;
