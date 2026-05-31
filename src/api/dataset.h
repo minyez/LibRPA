@@ -31,6 +31,7 @@ private:
     bool input_blacs_matloc_row_major_;
     bool comm_blacs_coul_initialized_;
     bool coul_blacs2ap_redistributed_;
+    bool eigvecs_kpara_redistributed_;
 public:
     /* Member variables */
     // Environment control
@@ -44,14 +45,11 @@ public:
     MpiCommHandler comm_coul_intra_q_h;
     BlacsCtxtHandler blacs_coul_intra_q_h;
     ArrayDesc desc_coul_intra_q;
-    // Communicators for (unordered) atom pairs.
-    // All atom pairs are distributed among processes in the communicator.
-    MpiCommHandler comm_ap_h;
-    // Communicators among unit cell vectors.
-    // All BvK cell vectors are distributed among processes in the communicator.
-    MpiCommHandler comm_R_h;
-    //! Array descriptor for matrices of wave-function basis (using blacs_h)
+    //! Array descriptor for matrices of wave-function basis (using dataset.blacs_h)
     ArrayDesc desc_wfc;
+    //! Array descriptor for matrices of wave-function, N_ao x N_states (using scfk_blacs_ctxt.blacs_h)
+    ArrayDesc desc_wfc_kb;
+    ArrayDesc desc_wfc_kb_full; // For communication from k-distributed eigenvectors
     //! Array descriptor for matrices of auxiliary basis set size (using blacs_h)
     ArrayDesc desc_abf;
     //! Atom pairs on current process for atomic-basis matrix data
@@ -124,9 +122,6 @@ public:
     void redistribute_coulomb_blacs2ap();
     void finalize_comm_blacs_coul();
 
-    // Splitting global communicators to atom pairs and unit cell vectors
-    void initialize_comm_ap_r();
-    void finalize_comm_ap_r();
 
     /* Disable copy */
     Dataset(const Dataset &) = delete;

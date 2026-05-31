@@ -15,16 +15,18 @@ Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
     : input_blacs_matloc_row_major_(input_blacs_matloc_row_major),
       comm_blacs_coul_initialized_(false),
       coul_blacs2ap_redistributed_(false),
+      eigvecs_kpara_redistributed_(false),
       comm_h(comm, true),
       blacs_h(comm),
+      scfk_blacs_ctxt(),
       comm_coul_h(),
       comm_coul_inter_q_h(),
       comm_coul_intra_q_h(),
       blacs_coul_intra_q_h(),
       desc_coul_intra_q(),
-      comm_ap_h(),
-      comm_R_h(),
       desc_wfc(),
+      desc_wfc_kb(),
+      desc_wfc_kb_full(),
       desc_abf(),
       atpairs_local(), atpairs_unique_all(),
       Rs_local(),
@@ -51,12 +53,14 @@ Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
     blacs_h.init();
     // TODO more flexible process grid initialization
     blacs_h.set_square_grid();
-    // TODO: two-level-parallelization initialization
 }
 
 void Dataset::free()
 {
     finalize_comm_blacs_coul();
+    desc_wfc_kb.reset_handler();
+    desc_wfc_kb_full.reset_handler();
+    scfk_blacs_ctxt.finalize();
 }
 
 void Dataset::initialize_comm_blacs_coul()

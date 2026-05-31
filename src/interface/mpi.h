@@ -25,6 +25,14 @@
 #define MPI_Comm int
 #endif
 
+#ifndef MPI_COMM_NULL
+#define MPI_COMM_NULL ((MPI_Comm)0x04000000)
+#endif
+
+#ifndef MPI_COMM_WORLD
+#define MPI_COMM_WORLD ((MPI_Comm)0x44000000)
+#endif
+
 #ifndef MPI_Fint
 #define MPI_Fint int
 #endif
