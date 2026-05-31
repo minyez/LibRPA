@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <fstream>
 #include <iterator>
+#include <vector>
 
 #include "../io/global_io.h"
 #include "../io/stl_io_helper.h"
@@ -210,6 +211,45 @@ static void build_dmat_libri_kpara(
     }
     global::profiler.stop("exx_build_dmat_libri_kpara");
 }
+
+static void build_dmat_libri_kblacs_para(
+    const MeanField &mf,
+    const KPointBlacsParallelContext &kblacs_ctxt,
+    const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm,
+    const IndexScheduler &sched,
+    const AtomicBasis &atbasis_wfc,
+    int ispin, int ispinor_bra, int ispinor_ket,
+    const vector<Vector3_Order<double>> &kfrac_list,
+    const std::vector<Vector3_Order<int>> Rs,
+    const bool save_cplx,
+    std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<double>>> &dmat_libri,
+    std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<cplxdb>>> &dmat_libri_cplx)
+{
+    global::profiler.start("exx_build_dmat_libri_kblacs_para");
+
+    auto dmat_Rs_cplx = get_dmat_cplx_Rs_kblacs_para(ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, Rs, kblacs_ctxt, desc_wfc, desc_dm);
+    // global::ofs_myid << kfrac_list << std::endl;
+    for (auto &R_dmat_cplx: dmat_Rs_cplx)
+    {
+        auto &R = R_dmat_cplx.first;
+        auto &mat_blacs = R_dmat_cplx.second;
+        auto pair_mat = get_ap_map_from_blacs_dist_scheduler(mat_blacs, sched, atbasis_wfc, atbasis_wfc, desc_dm);
+        for (auto &[pair, mat_ap]: pair_mat)
+        {
+            const auto &I = as_int(pair.first);
+            const auto &J = as_int(pair.second);
+            const auto &n_I = atbasis_wfc.get_atom_nb(I);
+            const auto &n_J = atbasis_wfc.get_atom_nb(J);
+            mat_ap.swap_to_row_major();
+            if (save_cplx)
+                dmat_libri_cplx[I][{J, {R.x, R.y, R.z}}] = RI::Tensor<cplxdb>({n_I, n_J}, mat_ap.sptr());
+            else
+                dmat_libri[I][{J, {R.x, R.y, R.z}}] = RI::Tensor<double>({n_I, n_J}, mat_ap.get_real().sptr());
+        }
+        mat_blacs.clear();
+    }
+    global::profiler.stop("exx_build_dmat_libri_kblacs_para");
+}
 #endif
 
 void Exx::build(const LibrpaParallelRouting routing,
@@ -386,6 +426,25 @@ void Exx::build(const LibrpaParallelRouting routing,
             atpair_dmat.push_back({I, J});
     const auto dmat_IJRs_local = dispatch_vector_prod(atpair_dmat, Rlist, comm_h.myid, comm_h.nprocs, true, true);
 
+    // For k-BLACS two-level parallelization
+    const int n_basis_ao = mf.get_n_aos();
+    const int n_states = mf.get_n_states();
+    const auto desc_dm = kblacs_ctxt.create_array_desc(n_basis_ao, n_basis_ao);
+    // TODO: desc_wfc_kb_full has been determined at the dataset level.
+    //       It would be better to parse it here somehow, rather than compute it again.
+    const auto desc_wfc_kb_full =
+        kblacs_ctxt.create_array_desc(n_basis_ao, n_states, n_basis_ao, n_states);
+    IndexScheduler sched;
+    const auto map_atpairs_balanced =
+        get_balanced_ap_distribution_for_consec_descriptor(atbasis_wfc, atbasis_wfc, desc_dm);
+    sched.init(map_atpairs_balanced, atbasis_wfc, atbasis_wfc, desc_dm, false);
+    const auto iRs = dispatcher_balanced(0, Rlist.size(), kblacs_ctxt.kpoints_local().size(), true,
+                                         kblacs_ctxt.comm_kpoint_h.comm);
+    std::vector<Vector3_Order<int>> Rs;
+    Rs.reserve(iRs.size());
+    for (const auto &iR : iRs)
+        Rs.push_back(Rlist[iR]);
+
     for (auto isp = 0; isp != n_spins; isp++)
     {
         for (auto ispn_bra = 0; ispn_bra != n_spinor; ispn_bra++)
@@ -397,9 +456,13 @@ void Exx::build(const LibrpaParallelRouting routing,
                 std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<cplxdb>>> dmat_libri_cplx;
                 if (is_mf_eigvec_k_distributed_)
                 {
-                    build_dmat_libri_kpara(mf, comm_h, atbasis_wfc, isp, ispn_bra, ispn_ket,
-                                           this->pbc.kfrac_list, dmat_IJRs_local, use_complex_exx_r,
-                                           dmat_libri, dmat_libri_cplx);
+                    // build_dmat_libri_kpara(mf, comm_h, atbasis_wfc, isp, ispn_bra, ispn_ket,
+                    //                        this->pbc.kfrac_list, dmat_IJRs_local, use_complex_exx_r,
+                    //                        dmat_libri, dmat_libri_cplx);
+                    build_dmat_libri_kblacs_para(mf, kblacs_ctxt, desc_wfc_kb_full, desc_dm, sched,
+                                                 atbasis_wfc, isp, ispn_bra, ispn_ket,
+                                                 this->pbc.kfrac_list, Rs, use_complex_exx_r,
+                                                 dmat_libri, dmat_libri_cplx);
                 }
                 else
                 {
