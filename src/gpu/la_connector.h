@@ -220,7 +220,8 @@ inline matrix_m<std::complex<T>> power_hemat_la(
     if(use_gpu_gw_wc){
         return ElpaConnector::power_hemat_elpa(
             A_local, ad_A, Z_local, ad_Z,
-            n_filtered, W, power, threshold);
+            n_filtered, W, power, threshold,
+            use_gpu_gw_wc, d_A, d_Z, d_power);
     }else
     #endif
     {
