@@ -39,15 +39,18 @@ namespace librpa_int {
 
 Chi0::Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const AtomicBasis &atbasis_abf_in, const PeriodicBoundaryData &pbc_in,
-           const TFGrids &tfg_in, const MpiCommHandler &comm_h_in, bool is_mf_eigvec_k_distributed)
+           const TFGrids &tfg_in, const KPointBlacsParallelContext &kblacs_ctxt_in,
+           const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed)
     : mf(mf_in),
+      desc_wfc(desc_wfc_in),
       atbasis_wfc(atbasis_wfc_in),
       atbasis_abf(atbasis_abf_in),
       pbc(pbc_in),
       tfg(tfg_in),
-      comm_h(comm_h_in)
+      comm_h(kblacs_ctxt_in.comm_global_h),
+      kblacs_ctxt(kblacs_ctxt_in)
 {
-    comm_h_in.check_initialized();
+    comm_h.check_initialized();
     is_mf_eigvec_k_distributed_ = is_mf_eigvec_k_distributed;
     // Runtime options
     gf_threshold = 1e-9;
@@ -502,6 +505,53 @@ static void build_gf_Rt_libri_kpara(
     profiler.stop("build_gf_Rt_libri_kpara");
 }
 
+template <typename Tdata>
+static void build_gf_Rt_libri_kblacs_para(
+    const MeanField &mf,
+    const KPointBlacsParallelContext &kblacs_ctxt,
+    const ArrayDesc &desc_wfc, const ArrayDesc &desc_gf,
+    const IndexScheduler &sched,
+    const AtomicBasis &atbasis_wfc,
+    int ispin, int ispinor_bra, int ispinor_ket,
+    const vector<Vector3_Order<double>> &kfrac_list,
+    const std::vector<Vector3_Order<int>> &Rs,
+    double tau,
+    std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> &gf_libri)
+{
+    global::profiler.start("build_gf_Rt_libri_kblacs_para");
+
+    auto gf_imagtimes_Rs_cplx =
+        get_gf_cplx_imagtimes_Rs_kblacs_para(ispin, ispinor_bra, ispinor_ket, mf,
+                                             kfrac_list, {tau}, Rs, kblacs_ctxt,
+                                             desc_wfc, desc_gf);
+    auto &gf_Rs_cplx = gf_imagtimes_Rs_cplx.at(tau);
+
+    for (auto &R_gf_cplx: gf_Rs_cplx)
+    {
+        const auto &R = R_gf_cplx.first;
+        auto &mat_blacs = R_gf_cplx.second;
+        auto pair_mat =
+            get_ap_map_from_blacs_dist_scheduler(mat_blacs, sched, atbasis_wfc,
+                                                 atbasis_wfc, desc_gf);
+        for (auto &[pair, mat_ap]: pair_mat)
+        {
+            const auto &I = as_int(pair.first);
+            const auto &J = as_int(pair.second);
+            const auto &n_I = atbasis_wfc.get_atom_nb(I);
+            const auto &n_J = atbasis_wfc.get_atom_nb(J);
+            mat_ap.swap_to_row_major();
+            if constexpr (std::is_same<Tdata, std::complex<double>>::value)
+                gf_libri[I][{J, {R.x, R.y, R.z}}] =
+                    RI::Tensor<Tdata>({n_I, n_J}, mat_ap.sptr());
+            else
+                gf_libri[I][{J, {R.x, R.y, R.z}}] =
+                    RI::Tensor<Tdata>({n_I, n_J}, mat_ap.get_real().sptr());
+        }
+        mat_blacs.clear();
+    }
+
+    global::profiler.stop("build_gf_Rt_libri_kblacs_para");
+}
 
 // Perform both R-k Fourier transform and time-freq cosine transform of chi0
 // Only for LibRI routing
@@ -1015,6 +1065,25 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     // cout << "Cs of rpa object set" << endl;
     global::profiler.stop("chi0_libri_routing_set_cs");
 
+    ArrayDesc desc_gf;
+    IndexScheduler sched_gf;
+    std::vector<Vector3_Order<int>> Rs_gf;
+    if (this->is_mf_eigvec_k_distributed_)
+    {
+        profiler.start("chi0_libri_routing_prepare_gf_index");
+        const int n_basis_ao = mf.get_n_aos();
+        desc_gf = kblacs_ctxt.create_array_desc(n_basis_ao, n_basis_ao);
+        const auto map_atpairs_balanced =
+            get_balanced_ap_distribution_for_consec_descriptor(atbasis_wfc, atbasis_wfc, desc_gf);
+        sched_gf.init(map_atpairs_balanced, atbasis_wfc, atbasis_wfc, desc_gf, false);
+        const auto iRs = dispatcher_balanced(0, Rlist_gf.size(), kblacs_ctxt.kpoints_local().size(),
+                                             true, kblacs_ctxt.comm_kpoint_h.comm);
+        Rs_gf.reserve(iRs.size());
+        for (const auto &iR: iRs)
+            Rs_gf.push_back(Rlist_gf[iR]);
+        profiler.stop("chi0_libri_routing_prepare_gf_index");
+    }
+
     const int n_soc = mf.get_n_spinor();
 
     // omp_lock_t lock_chi0_fourier_cosine;
@@ -1050,12 +1119,12 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                     }
                     if (this->is_mf_eigvec_k_distributed_)
                     {
-                        build_gf_Rt_libri_kpara(this->mf, this->nbands_G, this->comm_h, this->atbasis_wfc, isp, is1,
-                                                is2, this->pbc.kfrac_list, this->IJRs_gf_local, tau,
-                                                gf_po_libri);
-                        build_gf_Rt_libri_kpara(this->mf, this->nbands_G, this->comm_h, this->atbasis_wfc, isp, is1,
-                                                is2, this->pbc.kfrac_list, this->IJRs_gf_local,
-                                                -tau, gf_ne_libri);
+                        build_gf_Rt_libri_kblacs_para(
+                            this->mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, this->atbasis_wfc,
+                            isp, is1, is2, this->pbc.kfrac_list, Rs_gf, tau, gf_po_libri);
+                        build_gf_Rt_libri_kblacs_para(
+                            this->mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, this->atbasis_wfc,
+                            isp, is1, is2, this->pbc.kfrac_list, Rs_gf, -tau, gf_ne_libri);
                     }
                     else
                     {
