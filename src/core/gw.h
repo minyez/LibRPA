@@ -5,6 +5,7 @@
 #pragma once
 #include "../math/matrix_m.h"
 #include "../mpi/base_blacs.h"
+#include "../mpi/kpoint_blacs_parallel_context.h"
 #include "atom.h"
 #include "atomic_basis.h"
 #include "meanfield.h"
@@ -39,10 +40,13 @@ private:
 
 public:
     const MeanField &mf;
+    //! Array descriptor of wave functions saved in the MeanField object
+    const ArrayDesc &desc_wfc;
     const AtomicBasis& atbasis_wfc;
     const PeriodicBoundaryData &pbc;
     const TFGrids &tfg;
     const MpiCommHandler &comm_h;
+    const KPointBlacsParallelContext &kblacs_ctxt;
 
     std::string output_dir;
 
@@ -65,7 +69,8 @@ public:
     G0W0(const MeanField &mf_in,
          const AtomicBasis& atbasis_wfc_in,
          const PeriodicBoundaryData &pbc_in,
-         const TFGrids &tfg_in, const MpiCommHandler &comm_h_in,
+         const TFGrids &tfg_in, const KPointBlacsParallelContext &kblacs_ctxt_in,
+         const ArrayDesc &desc_wfc_in,
          bool is_mf_eigvec_k_distributed);
     // // delete copy/move constructors
     // G0W0(const G0W0 &s_g0w0) = delete;
