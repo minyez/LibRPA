@@ -343,14 +343,22 @@ std::map<Vector3_Order<int>, Matz> get_dmat_cplx_Rs_kblacs_para(
         scaled_wfc_ket = C_ZERO;
         if (wfc_ket != nullptr && wfc_size_loc > 0)
             std::memcpy(scaled_wfc_ket.ptr(), wfc_ket->c, wfc_size_loc * sizeof(cplxdb));
+        const int wfc_m_loc = desc_wfc.m_loc();
+        std::vector<char> scale_wfc_col(desc_wfc.n_loc(), false);
+        std::vector<double> wfc_col_scale(desc_wfc.n_loc(), 1.0);
         for (int jloc = 0; jloc != desc_wfc.n_loc(); ++jloc)
         {
             const int jglob = desc_wfc.indx_l2g_c(jloc);
             if (jglob < 0 || jglob >= nocc) continue;
-            for (int iloc = 0; iloc != desc_wfc.m_loc(); ++iloc)
-            {
-                scaled_wfc_ket(iloc, jloc) *= weights[jglob];
-            }
+            scale_wfc_col[jloc] = true;
+            wfc_col_scale[jloc] = weights[jglob];
+        }
+#pragma omp parallel for schedule(static) if (wfc_size_loc > 4096)
+        for (size_t i = 0; i < wfc_size_loc; ++i)
+        {
+            const int jloc = static_cast<int>(i / wfc_m_loc);
+            if (scale_wfc_col[jloc])
+                scaled_wfc_ket.ptr()[i] *= wfc_col_scale[jloc];
         }
 
         dmat_k = C_ZERO;
@@ -363,9 +371,10 @@ std::map<Vector3_Order<int>, Matz> get_dmat_cplx_Rs_kblacs_para(
                                         dmat_k.ptr(), 1, 1, desc_dm.desc);
         }
 
+#pragma omp parallel for schedule(static) if (n_elem > 4096)
         for (int i = 0; i != n_elem; ++i)
         {
-            kmat(ik_local, i) = dmat_k.ptr()[i];
+            kmat.ptr()[ik_local + static_cast<size_t>(i) * nk_local] = dmat_k.ptr()[i];
         }
     }
 
@@ -375,17 +384,19 @@ std::map<Vector3_Order<int>, Matz> get_dmat_cplx_Rs_kblacs_para(
         if (nR_this < 1) continue;
 
         Matz transmat(nR_this, nk_local, MAJOR::COL);
-        for (int ik_local = 0; ik_local != nk_local; ++ik_local)
+        const size_t n_trans = static_cast<size_t>(nR_this) * nk_local;
+#pragma omp parallel for schedule(static) if (n_trans > 4096)
+        for (size_t i = 0; i < n_trans; ++i)
         {
+            const int ik_local = static_cast<int>(i / nR_this);
+            const int iR = static_cast<int>(i % nR_this);
             const auto &kf = kfrac_list[iks_local[ik_local]];
-            for (int iR = 0; iR != nR_this; ++iR)
-            {
-                const int index = pid * nR_max * 3 + iR * 3;
-                const auto ang = - (kf.x * Rs_all[index] +
-                                    kf.y * Rs_all[index + 1] +
-                                    kf.z * Rs_all[index + 2]) * TWO_PI;
-                transmat(iR, ik_local) = cplxdb{std::cos(ang), std::sin(ang)};
-            }
+            const int index = pid * nR_max * 3 + iR * 3;
+            const auto ang = - (kf.x * Rs_all[index] +
+                                kf.y * Rs_all[index + 1] +
+                                kf.z * Rs_all[index + 2]) * TWO_PI;
+            transmat.ptr()[iR + static_cast<size_t>(ik_local) * nR_this] =
+                cplxdb{std::cos(ang), std::sin(ang)};
         }
 
         Matz rmat(nR_this, n_elem, MAJOR::COL);
@@ -402,24 +413,24 @@ std::map<Vector3_Order<int>, Matz> get_dmat_cplx_Rs_kblacs_para(
         const int count_int = static_cast<int>(count);
         if (kblacs_ctxt.comm_kpoint_h.myid == pid)
         {
-            MPI_Reduce(MPI_IN_PLACE, rmat.ptr(), count_int, mpi_datatype<cplxdb>::value,
-                       MPI_SUM, pid, kblacs_ctxt.comm_kpoint_h.comm);
+            kblacs_ctxt.comm_kpoint_h.reduce(MPI_IN_PLACE, rmat.ptr(), count_int, pid, MPI_SUM);
             for (int iR = 0; iR != nR_this; ++iR)
             {
                 const int index = pid * nR_max * 3 + iR * 3;
                 Vector3_Order<int> R{Rs_all[index], Rs_all[index + 1], Rs_all[index + 2]};
                 auto &m = dmat_Rs[R];
                 m.resize(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
+                const auto *rmat_iR = rmat.ptr() + iR;
+#pragma omp parallel for schedule(static) if (n_elem > 4096)
                 for (int i = 0; i != n_elem; ++i)
                 {
-                    m.ptr()[i] = rmat(iR, i);
+                    m.ptr()[i] = rmat_iR[static_cast<size_t>(i) * nR_this];
                 }
             }
         }
         else
         {
-            MPI_Reduce(rmat.ptr(), rmat.ptr(), count_int, mpi_datatype<cplxdb>::value,
-                       MPI_SUM, pid, kblacs_ctxt.comm_kpoint_h.comm);
+            kblacs_ctxt.comm_kpoint_h.reduce(MPI_IN_PLACE, rmat.ptr(), count_int, pid, MPI_SUM);
         }
     }
 
@@ -523,6 +534,7 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
                 throw LIBRPA_RUNTIME_ERROR("wave-function ket block size is inconsistent with descriptor");
 
             std::vector<double> scales(n_states);
+#pragma omp parallel for schedule(static) if (n_states > 64)
             for (int ib = 0; ib != n_states; ++ib)
             {
                 const double wg_occ = mf.get_weight()[ispin](ik, ib) * scale_spin;
@@ -537,13 +549,19 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
             scaled_wfc_ket = C_ZERO;
             if (wfc_ket != nullptr && wfc_size_loc > 0)
                 std::memcpy(scaled_wfc_ket.ptr(), wfc_ket->c, wfc_size_loc * sizeof(cplxdb));
+            const int wfc_m_loc = desc_wfc.m_loc();
+            std::vector<double> wfc_col_scale(desc_wfc.n_loc(), 0.0);
             for (int jloc = 0; jloc != desc_wfc.n_loc(); ++jloc)
             {
                 const int jglob = desc_wfc.indx_l2g_c(jloc);
-                for (int iloc = 0; iloc != desc_wfc.m_loc(); ++iloc)
-                {
-                    scaled_wfc_ket(iloc, jloc) *= scales[jglob];
-                }
+                if (jglob < 0 || jglob >= n_states) continue;
+                wfc_col_scale[jloc] = scales[jglob];
+            }
+#pragma omp parallel for schedule(static) if (wfc_size_loc > 4096)
+            for (size_t i = 0; i < wfc_size_loc; ++i)
+            {
+                const int jloc = static_cast<int>(i / wfc_m_loc);
+                scaled_wfc_ket.ptr()[i] *= wfc_col_scale[jloc];
             }
 
             gf_k = C_ZERO;
@@ -552,9 +570,10 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
                                         wfc_bra_ptr, 1, 1, desc_wfc.desc,
                                         scaled_wfc_ket.ptr(), 1, 1, desc_wfc.desc, C_ZERO,
                                         gf_k.ptr(), 1, 1, desc_dm.desc);
+#pragma omp parallel for schedule(static) if (n_elem > 4096)
             for (int i = 0; i != n_elem; ++i)
             {
-                kmat(ik_local, i) = gf_k.ptr()[i];
+                kmat.ptr()[ik_local + static_cast<size_t>(i) * nk_local] = gf_k.ptr()[i];
             }
         }
 
@@ -565,17 +584,19 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
 
             Matz transmat(nR_this, nk_local, MAJOR::COL);
             const double tau_sign = tau > 0 ? 1.0 : -1.0;
-            for (int ik_local = 0; ik_local != nk_local; ++ik_local)
+            const size_t n_trans = static_cast<size_t>(nR_this) * nk_local;
+#pragma omp parallel for schedule(static) if (n_trans > 4096)
+            for (size_t i = 0; i < n_trans; ++i)
             {
+                const int ik_local = static_cast<int>(i / nR_this);
+                const int iR = static_cast<int>(i % nR_this);
                 const auto &kf = kfrac_list[iks_local[ik_local]];
-                for (int iR = 0; iR != nR_this; ++iR)
-                {
-                    const int index = pid * nR_max * 3 + iR * 3;
-                    const auto ang = - (kf.x * Rs_all[index] +
-                                        kf.y * Rs_all[index + 1] +
-                                        kf.z * Rs_all[index + 2]) * TWO_PI;
-                    transmat(iR, ik_local) = tau_sign * cplxdb{std::cos(ang), std::sin(ang)};
-                }
+                const int index = pid * nR_max * 3 + iR * 3;
+                const auto ang = - (kf.x * Rs_all[index] +
+                                    kf.y * Rs_all[index + 1] +
+                                    kf.z * Rs_all[index + 2]) * TWO_PI;
+                transmat.ptr()[iR + static_cast<size_t>(ik_local) * nR_this] =
+                    tau_sign * cplxdb{std::cos(ang), std::sin(ang)};
             }
 
             Matz rmat(nR_this, n_elem, MAJOR::COL);
@@ -592,24 +613,24 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
             const int count_int = static_cast<int>(count);
             if (kblacs_ctxt.comm_kpoint_h.myid == pid)
             {
-                MPI_Reduce(MPI_IN_PLACE, rmat.ptr(), count_int, mpi_datatype<cplxdb>::value,
-                           MPI_SUM, pid, kblacs_ctxt.comm_kpoint_h.comm);
+                kblacs_ctxt.comm_kpoint_h.reduce(MPI_IN_PLACE, rmat.ptr(), count_int, pid, MPI_SUM);
                 for (int iR = 0; iR != nR_this; ++iR)
                 {
                     const int index = pid * nR_max * 3 + iR * 3;
                     Vector3_Order<int> R{Rs_all[index], Rs_all[index + 1], Rs_all[index + 2]};
                     auto &m = gf_tau[R];
                     m.resize(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
+                    const auto *rmat_iR = rmat.ptr() + iR;
+#pragma omp parallel for schedule(static) if (n_elem > 4096)
                     for (int i = 0; i != n_elem; ++i)
                     {
-                        m.ptr()[i] = rmat(iR, i);
+                        m.ptr()[i] = rmat_iR[static_cast<size_t>(i) * nR_this];
                     }
                 }
             }
             else
             {
-                MPI_Reduce(rmat.ptr(), rmat.ptr(), count_int, mpi_datatype<cplxdb>::value,
-                           MPI_SUM, pid, kblacs_ctxt.comm_kpoint_h.comm);
+                kblacs_ctxt.comm_kpoint_h.reduce(MPI_IN_PLACE, rmat.ptr(), count_int, pid, MPI_SUM);
             }
         }
         gf.emplace(tau, std::move(gf_tau));
