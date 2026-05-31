@@ -341,6 +341,7 @@ void KPointBlacsParallelContext::init(const KPointBlacsProcessShape &process_sha
     comm_global_h.reset_comm(comm_global, true);
     process_shape_ =
         resolve_kpoint_blacs_process_shape(process_shape, comm_global_h.nprocs, n_kpoints_);
+    // global::ofs_myid << "process_shape_: " << process_shape_.nprocs_kpoint << " " << process_shape_.nprocs_blacs << std::endl;
 
     const auto split_rank = split_global_rank(comm_global_h.myid, process_shape_, rank_layout_);
     kpoint_group_id_ = split_rank.first;
@@ -412,6 +413,21 @@ int KPointBlacsParallelContext::kpoint_owner(int ik) const
         if (std::find(kpoints.begin(), kpoints.end(), ik) != kpoints.end()) return group_id;
     }
     throw LIBRPA_RUNTIME_ERROR("failed to find k-point owner");
+}
+
+int KPointBlacsParallelContext::kpoint_blacs_root_global_rank(int ik) const
+{
+    if (!initialized_) throw LIBRPA_RUNTIME_ERROR("KPointBlacsParallelContext not initialized");
+
+    const int kpoint_group_id = kpoint_owner(ik);
+    switch (rank_layout_)
+    {
+        case KPointBlacsRankLayout::CONTIGUOUS_BLACS:
+            return kpoint_group_id * process_shape_.nprocs_blacs;
+        case KPointBlacsRankLayout::CONTIGUOUS_KPOINT:
+            return kpoint_group_id;
+    }
+    throw LIBRPA_RUNTIME_ERROR("unknown k-point/BLACS rank layout");
 }
 
 ArrayDesc KPointBlacsParallelContext::create_array_desc(int matrix_nrows, int matrix_ncols, int mb,
