@@ -44,11 +44,15 @@ namespace librpa_int
 
 G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const PeriodicBoundaryData &pbc_in, const TFGrids &tfg_in,
-           const MpiCommHandler &comm_h_in, bool is_mf_eigvec_k_distributed)
+           const KPointBlacsParallelContext &kblacs_ctxt_in,
+           const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed)
     : mf(mf_in),
+      desc_wfc(desc_wfc_in),
       atbasis_wfc(atbasis_wfc_in),
       pbc(pbc_in),
-      tfg(tfg_in), comm_h(comm_h_in)
+      tfg(tfg_in),
+      comm_h(kblacs_ctxt_in.comm_global_h),
+      kblacs_ctxt(kblacs_ctxt_in)
 {
     comm_h.check_initialized();
 
@@ -211,6 +215,66 @@ static void build_gf_libri_kserial(
     }
     gf.clear();
     global::profiler.stop("g0w0_build_gf_libri_kserial");
+}
+
+template <typename Tdata>
+static void build_gf_libri_kblacs_para(
+    const MeanField &mf,
+    const KPointBlacsParallelContext &kblacs_ctxt,
+    const ArrayDesc &desc_wfc, const ArrayDesc &desc_gf,
+    const IndexScheduler &sched,
+    const AtomicBasis &atbasis_wfc,
+    int ispin, int ispinor_bra, int ispinor_ket,
+    const vector<Vector3_Order<double>> &kfrac_list,
+    const std::vector<double> &taus,
+    const std::vector<Vector3_Order<int>> &Rs,
+    std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri)
+{
+    global::profiler.start("g0w0_build_gf_libri_kblacs_para");
+
+    tau_gf_libri.clear();
+    for (auto tau: taus)
+        tau_gf_libri[tau] = {};
+
+    auto gf_taus_Rs_cplx =
+        get_gf_cplx_imagtimes_Rs_kblacs_para(ispin, ispinor_bra, ispinor_ket, mf,
+                                             kfrac_list, taus, Rs, kblacs_ctxt,
+                                             desc_wfc, desc_gf);
+
+    for (auto &tau_gf_R_cplx: gf_taus_Rs_cplx)
+    {
+        const auto &tau = tau_gf_R_cplx.first;
+        auto &gf_R_cplx = tau_gf_R_cplx.second;
+        for (auto &R_gf_cplx: gf_R_cplx)
+        {
+            const auto &R = R_gf_cplx.first;
+            auto &mat_blacs = R_gf_cplx.second;
+            auto pair_mat =
+                get_ap_map_from_blacs_dist_scheduler(mat_blacs, sched, atbasis_wfc,
+                                                     atbasis_wfc, desc_gf);
+            for (auto &[pair, mat_ap]: pair_mat)
+            {
+                const auto &I = as_int(pair.first);
+                const auto &J = as_int(pair.second);
+                const auto &n_I = atbasis_wfc.get_atom_nb(I);
+                const auto &n_J = atbasis_wfc.get_atom_nb(J);
+                mat_ap.swap_to_row_major();
+                if constexpr (is_complex<Tdata>())
+                {
+                    tau_gf_libri[tau][I][{J, {R.x, R.y, R.z}}] =
+                        RI::Tensor<Tdata>({n_I, n_J}, mat_ap.sptr());
+                }
+                else
+                {
+                    tau_gf_libri[tau][I][{J, {R.x, R.y, R.z}}] =
+                        RI::Tensor<Tdata>({n_I, n_J}, mat_ap.get_real().sptr());
+                }
+            }
+            mat_blacs.clear();
+        }
+    }
+
+    global::profiler.stop("g0w0_build_gf_libri_kblacs_para");
 }
 #endif
 
@@ -439,6 +503,25 @@ void G0W0::build_spacetime(
     auto IJR_local_gf = dispatch_vector_prod(tot_atpair_ordered, Rlist, ad_Wc.myid(), ad_Wc.nprocs(), true, false);
     ofs_myid << "IJR_local_gf: " << IJR_local_gf << std::endl;
 
+    ArrayDesc desc_gf;
+    IndexScheduler sched_gf;
+    std::vector<Vector3_Order<int>> Rs_gf;
+    if (this->is_mf_eigvec_k_distributed_)
+    {
+        profiler.start("g0w0_build_spacetime_prepare_gf_index");
+        const int n_basis_ao = mf.get_n_aos();
+        desc_gf = kblacs_ctxt.create_array_desc(n_basis_ao, n_basis_ao);
+        const auto map_gf_atpairs_balanced =
+            get_balanced_ap_distribution_for_consec_descriptor(atbasis_wfc, atbasis_wfc, desc_gf);
+        sched_gf.init(map_gf_atpairs_balanced, atbasis_wfc, atbasis_wfc, desc_gf, false);
+        const auto iRs = dispatcher_balanced(0, Rlist.size(), kblacs_ctxt.kpoints_local().size(),
+                                             true, kblacs_ctxt.comm_kpoint_h.comm);
+        Rs_gf.reserve(iRs.size());
+        for (const auto &iR: iRs)
+            Rs_gf.push_back(Rlist[iR]);
+        profiler.stop("g0w0_build_spacetime_prepare_gf_index");
+    }
+
     const int nfreq = tfg.get_n_grids();
 
     for (auto itau = 0; itau != nfreq; itau++)
@@ -493,8 +576,10 @@ void G0W0::build_spacetime(
                     {
                         if (this->is_mf_eigvec_k_distributed_)
                         {
-                            build_gf_libri_kpara(mf, comm_h, atbasis_wfc, ispin, ispinor_bra, ispinor_ket, this->pbc.kfrac_list,
-                                                taus, IJR_local_gf, tau_gf_libri_cplx);
+                            build_gf_libri_kblacs_para(
+                                mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, atbasis_wfc,
+                                ispin, ispinor_bra, ispinor_ket, this->pbc.kfrac_list,
+                                taus, Rs_gf, tau_gf_libri_cplx);
                         }
                         else
                         {
@@ -505,8 +590,10 @@ void G0W0::build_spacetime(
                     else
                     {
                         if (this->is_mf_eigvec_k_distributed_)
-                            build_gf_libri_kpara(mf, comm_h, atbasis_wfc, ispin, ispinor_bra, ispinor_ket, this->pbc.kfrac_list,
-                                                taus, IJR_local_gf, tau_gf_libri);
+                            build_gf_libri_kblacs_para(
+                                mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, atbasis_wfc,
+                                ispin, ispinor_bra, ispinor_ket, this->pbc.kfrac_list,
+                                taus, Rs_gf, tau_gf_libri);
                         else
                             build_gf_libri_kserial(mf, atbasis_wfc, ispin, ispinor_bra, ispinor_ket, this->pbc.kfrac_list,
                                                 taus, IJR_local_gf, tau_gf_libri);

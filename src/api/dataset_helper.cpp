@@ -137,7 +137,8 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts) noexcept
     global::profiler.start("initialize_ds_g0w0");
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     // global::ofs_myid << "is_eigvec_k_distributed " << is_eigvec_k_distributed << std::endl;
-    ds.p_g0w0 = std::make_unique<librpa_int::G0W0>(ds.mf, ds.basis_wfc, ds.pbc, ds.tfg, ds.comm_h,
+    ds.p_g0w0 = std::make_unique<librpa_int::G0W0>(ds.mf, ds.basis_wfc, ds.pbc, ds.tfg,
+                                                   ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
                                                    is_eigvec_k_distributed);
     ds.p_g0w0->libri_threshold_C = opts.libri_g0w0_threshold_C;
     ds.p_g0w0->libri_threshold_G = opts.libri_g0w0_threshold_G;
