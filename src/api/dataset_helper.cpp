@@ -119,10 +119,12 @@ void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts) noexcept
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     if (opts.use_shrink_abfs && opts.use_shrink_chi)
         ds.p_chi0 = std::make_unique<librpa_int::Chi0>(ds.mf, ds.basis_wfc, ds.basis_aux_shrink, ds.pbc,
-                                                       ds.tfg, ds.comm_h, is_eigvec_k_distributed);
+                                                       ds.tfg, ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
+                                                       is_eigvec_k_distributed);
     else
         ds.p_chi0 = std::make_unique<librpa_int::Chi0>(ds.mf, ds.basis_wfc, ds.basis_aux, ds.pbc,
-                                                       ds.tfg, ds.comm_h, is_eigvec_k_distributed);
+                                                       ds.tfg, ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
+                                                       is_eigvec_k_distributed);
     ds.p_chi0->gf_threshold = opts.gf_threshold;
     ds.p_chi0->nbands_G = opts.n_bands_chi0;
     ds.p_chi0->libri_threshold_C = opts.libri_chi0_threshold_C;
