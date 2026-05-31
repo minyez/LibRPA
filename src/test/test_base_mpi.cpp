@@ -244,6 +244,51 @@ void test_dispatcher_2d()
     }
 }
 
+void test_dispatcher_1d_balanced()
+{
+    const int myid = get_mpi_rank(MPI_COMM_WORLD);
+
+    const std::vector<int> weights({1, 2, 3, 6});
+    const std::vector<int> counts_ref({6, 3, 2, 1});
+    const std::vector<int> starts_ref({0, 6, 9, 11});
+
+    auto ilist = dispatcher_balanced(0, 12, weights[myid], true, MPI_COMM_WORLD);
+    int n = ilist.size();
+    assert(n == counts_ref[myid]);
+    for (int i = 0; i != n; i++)
+        assert(ilist[i] == starts_ref[myid] + i);
+
+    const std::vector<std::vector<int>> ilist_cyclic_ref({
+        {0, 4, 7, 9, 10, 11},
+        {1, 5, 8},
+        {2, 6},
+        {3}
+    });
+    ilist = dispatcher_balanced(0, 12, weights[myid], false, MPI_COMM_WORLD);
+    assert(equal_vector(ilist, ilist_cyclic_ref[myid]));
+
+    const std::vector<int> weights_2proc({2, 3});
+    auto ilist0 = dispatcher_balanced(0, 5, weights_2proc, 0, true);
+    auto ilist1 = dispatcher_balanced(0, 5, weights_2proc, 1, true);
+    assert(equal_vector(ilist0, std::vector<int>({0, 1, 2})));
+    assert(equal_vector(ilist1, std::vector<int>({3, 4})));
+
+    ilist0 = dispatcher_balanced(0, 5, weights_2proc, 0, false);
+    ilist1 = dispatcher_balanced(0, 5, weights_2proc, 1, false);
+    assert(equal_vector(ilist0, std::vector<int>({0, 2, 4})));
+    assert(equal_vector(ilist1, std::vector<int>({1, 3})));
+
+    MPI_Comm comm_pair;
+    MPI_Comm_split(MPI_COMM_WORLD, myid / 2, myid, &comm_pair);
+    const int pair_myid = get_mpi_rank(comm_pair);
+    auto ilist_pair = dispatcher_balanced(0, 5, weights_2proc[pair_myid], true, comm_pair);
+    if (pair_myid == 0)
+        assert(equal_vector(ilist_pair, std::vector<int>({0, 1, 2})));
+    else
+        assert(equal_vector(ilist_pair, std::vector<int>({3, 4})));
+    MPI_Comm_free(&comm_pair);
+}
+
 void test_handler_allreduce()
 {
     MpiCommHandler comm_h(MPI_COMM_WORLD, true);
@@ -277,6 +322,7 @@ int main (int argc, char *argv[])
 
     test_dispatcher_1d();
     test_dispatcher_2d();
+    test_dispatcher_1d_balanced();
     test_handler_allreduce();
     test_handler_bcast();
 
