@@ -25,7 +25,7 @@ void release_free_mem();
  * @retval integer, 0 for successful get
  *
  * @note
- *   Currently only works with Linux and BSD operating systems.
+ *   Currently only works with Linux, BSD and macOS operating systems.
  */
 int get_node_total_mem(double &total_mem_gb);
 
@@ -38,7 +38,7 @@ int get_node_total_mem(double &total_mem_gb);
  * @retval integer, 0 for successful get
  *
  * @note
- *   Currently only works with Linux operating system.
+ *   Currently only works with Linux, BSD and macOS operating systems.
  */
 int get_node_free_mem(double &free_mem_gb);
 
@@ -55,4 +55,3 @@ int get_node_free_mem(double &free_mem_gb);
 void report_virtual_pages(std::ostream &os);
 
 } /* end of namespace librpa_int */
-
