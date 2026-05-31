@@ -56,8 +56,6 @@ matrix_m<std::complex<T>> power_hemat_elpa(matrix_m<std::complex<T>> &A_local,
     assert (A_local.is_col_major() && Z_local.is_col_major());
     const bool is_int_power = fabs(power - int(power)) < 1e-4;
     const size_t n = ad_A.m();
-    const char jobz = 'V';
-    const char uplo = 'U';
 
     // temporary array for heev with optmized block size
     const int blocksize_row_opt = std::min(ad_A.mb(), 128);
@@ -79,43 +77,14 @@ matrix_m<std::complex<T>> power_hemat_elpa(matrix_m<std::complex<T>> &A_local,
     ArrayDesc ad_Z_opt(ad_Z.ictxt());
     ad_Z_opt.init(n, n, blocksize_row_opt, blocksize_col_opt, 0, 0);
     auto Z_local_opt = init_local_mat<std::complex<T>>(ad_Z_opt, MAJOR::COL);
-    // printf("Z_local_opt size: %d\n", Z_local_opt.size());
 
     global::profiler.start("power_hemat_blacs_1");
-#ifndef ENABLE_ELPA
-    int lwork = -1, lrwork = -1, info = 0;
-    std::complex<T> *work;
-    T *rwork;
-    {
-        work  = new std::complex<T>[1];
-        rwork = new T[1];
-        // query the optimal lwork and lrwork
-        T *Wquery = new T[1];
-        // librpa_int::global::lib_printf("power_hemat_blacs descA %s\n", ad_A.info_desc().c_str());
-        ScalapackConnector::pheev_f(jobz, uplo,
-                n, A_local_opt.ptr(), 1, 1, ad_A_opt.desc,
-                Wquery, Z_local_opt.ptr(), 1, 1, ad_A_opt.desc, work, lwork, rwork, lrwork, info);
-        lwork = std::max(int(work[0].real()), 1);
-        lrwork = std::max(int(rwork[0]), 1);
-        delete [] work;
-        delete [] Wquery;
-        delete [] rwork;
-    }
-#endif
     global::profiler.stop("power_hemat_blacs_1");
 
     global::profiler.start("power_hemat_blacs_2");
     std::complex<T> *A, *Z;
     T* W_uni;
-#ifndef ENABLE_ELPA
-    work = new std::complex<T> [lwork];
-    rwork = new T [lrwork];
-    ScalapackConnector::pheev_f(jobz, uplo,
-            n, A_local_opt.ptr(), 1, 1, ad_A_opt.desc,
-            W, Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc, work, lwork, rwork, lrwork, info);
-    delete [] work;
-    delete [] rwork;
-#else
+
 #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
     auto ddla_handle = ad_A.ddla_desc().ddla_handle();
     ad_Z_opt.set_ddla_desc(ddla_handle);
@@ -147,7 +116,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(matrix_m<std::complex<T>> &A_local,
     ddla::DEVICE_CHECK(deviceMemcpyAsync(Z_local_opt.ptr(), Z, Z_local_opt.size()*sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
     ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
 #endif
-#endif
+
     global::profiler.stop("power_hemat_blacs_2");
     // Optimized A no longer used
     profiler.start("power_hemat_blacs_3");
@@ -200,17 +169,17 @@ matrix_m<std::complex<T>> power_hemat_elpa(matrix_m<std::complex<T>> &A_local,
     // create scaled eigenvectors
     auto scaled_opt = Z_local_opt.copy();
     std::complex<T> *C;
-    #if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
     std::complex<T>* d_C;
     ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_C, Z_local_opt.size() * sizeof(std::complex<T>), ddla_handle->stream));
     ddla::DEVICE_CHECK(deviceMemcpyAsync(d_C, Z_local_opt.ptr(), Z_local_opt.size() * sizeof(std::complex<T>), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
     ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local_opt.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
     C = d_C;
-    #else 
+#else 
     Z = Z_local_opt.ptr();
     A = scaled_opt.ptr();
     C = A_local.ptr();
-    #endif
+#endif
     for (int i = 0; i != n; i++)
     {
         // ScalapackConnector::pscal_f(n, W_temp[i], scaled_opt.ptr(), 1, 1 + i, ad_Z_opt.desc, 1);
@@ -219,7 +188,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(matrix_m<std::complex<T>> &A_local,
             LaConnector::scal(ad_Z_opt.m_loc(), W_temp[i], A + ad_Z_opt.lld() * j_loc, 1, ad_Z_opt);
     }
     LaConnector::pgemm('N', 'C', n, n, n, {(T)1.0, (T)0.0}, Z, 1, 1, ad_Z_opt, A, 1, 1, ad_Z_opt, {(T)0.0, (T)0.0}, C, 1, 1, ad_A);
-#if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
     ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled_opt.ptr(), A, scaled_opt.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
     ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local.ptr(), C, A_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
     ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
@@ -259,7 +228,6 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(matrix_m<std::complex<T>> &A_loc
     const bool is_int_power = fabs(power - int(power)) < 1e-4;
     const int n = ad_A.m();
     
-
     // temporary array for syev with optimized block size
     const int blocksize_row_opt = std::min(ad_A.mb(), 128);
     const int blocksize_col_opt = std::min(ad_A.nb(), 128);
@@ -283,34 +251,10 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(matrix_m<std::complex<T>> &A_loc
     auto Z_local_opt = init_local_mat<T>(ad_Z_opt, MAJOR::COL);
 
     profiler.start("power_hemat_blacs_1");
-#ifndef ENABLE_ELPA
-    const char jobz = 'V';
-    const char uplo = 'U';
-    int lwork = -1, lrwork = -1, info = 0;
-
-    // Query optimal workspace using the provided psyev_f interface
-    T work_query, rwork_query, Wquery;
-    ScalapackConnector::psyev_f(jobz, uplo, n, A_local_opt.ptr(), 1, 1, ad_A_opt.desc, &Wquery,
-                                Z_local_opt.ptr(), 1, 1, ad_A_opt.desc, &work_query, lwork, &rwork_query,
-                                lrwork, info);
-    lwork = std::max(as_int(work_query), 1);
-    lrwork = std::max(as_int(rwork_query), 1);
-    std::vector<T> work(lwork);
-    std::vector<T> rwork(lrwork);
-#endif
     profiler.stop("power_hemat_blacs_1");
     
     profiler.start("power_hemat_blacs_2");
     T *A, *Z, *W_uni;
-#ifndef ENABLE_ELPA
-    // Perform real symmetric diagonalization using the provided interface
-    ofs_myid << lwork << " " << lrwork << " " << n << std::endl;
-    ScalapackConnector::psyev_f(jobz, uplo, n, A_local_opt.ptr(), 1, 1, ad_A_opt.desc, W,
-                                Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc, work.data(), lwork, rwork.data(), lrwork,
-                                info);
-    work.clear();
-    rwork.clear();
-#else
 #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
     auto ddla_handle = ad_A.ddla_desc().ddla_handle();
     ad_Z_opt.set_ddla_desc(ddla_handle);
@@ -338,7 +282,6 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(matrix_m<std::complex<T>> &A_loc
     ddla::DEVICE_CHECK(deviceMemcpyAsync(W, W_uni, n * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
     ddla::DEVICE_CHECK(deviceMemcpyAsync(Z_local_opt.ptr(), Z, Z_local_opt.size()*sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
     ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
-#endif
 #endif
     for (int i = 0; i < n; i++)
     {
@@ -394,7 +337,7 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(matrix_m<std::complex<T>> &A_loc
     // auto scaled_opt = Z_local_opt_complex.copy();
     auto scaled_opt = Z_local_opt.copy();
     T* C;
-#if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
     T* d_C;
     ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_C, Z_local_opt.size() * sizeof(T), ddla_handle->stream));
     // ddla::DEVICE_CHECK(deviceMemcpyAsync(d_C, Z_local_opt.ptr(), Z_local_opt.size() * sizeof(T), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
@@ -420,7 +363,7 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(matrix_m<std::complex<T>> &A_loc
     //                             ad_Z_opt.desc, scaled_opt.ptr(), 1, 1, ad_Z_opt.desc, 0.0,
     //                             A_local.ptr(), 1, 1, ad_A.desc);
     LaConnector::pgemm('N', 'C', n, n, n, (T)1.0, Z, 1, 1, ad_Z_opt, A, 1, 1, ad_Z_opt, (T)0.0, C, 1, 1, ad_A);
-#if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
     ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled_opt.ptr(), A, scaled_opt.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
     ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local_opt.ptr(), C, A_local.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
     ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
