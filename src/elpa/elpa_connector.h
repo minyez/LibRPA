@@ -36,11 +36,10 @@ matrix_m<std::complex<T>> power_hemat_elpa(matrix_m<std::complex<T>> &A_local,
 
 
 template <typename T>
-matrix_m<std::complex<T>> power_hemat_elpa_real(matrix_m<std::complex<T>> &A_local,
-                                                 const ArrayDesc &ad_A,
-                                                 matrix_m<std::complex<T>> &Z_local,
-                                                 const ArrayDesc &ad_Z, size_t &n_filtered,
-                                                 T *W, T power, const T &threshold = -1.e5);
+matrix_m<std::complex<T>> power_hemat_elpa_real(
+    matrix_m<std::complex<T>> &A_local, const ArrayDesc &ad_A, matrix_m<std::complex<T>> &Z_local,
+    const ArrayDesc &ad_Z, size_t &n_filtered, T *W, T power, const T &threshold = -1.e5,
+    bool use_gpu_gw_wc = false, T* d_A = nullptr, T* d_Z = nullptr, T* d_C = nullptr);
 
 
 
