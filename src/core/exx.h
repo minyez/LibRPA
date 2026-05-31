@@ -33,7 +33,9 @@ class Exx
 
     public:
         //! refenrence to the MeanField object to compute density matrix
-        const MeanField& mf;
+        const MeanField &mf;
+        //! Array descriptor of wave functions saved in the MeanField object
+        const ArrayDesc &desc_wfc;
         const AtomicBasis &atbasis_wfc;
         const PeriodicBoundaryData &pbc;
         const MpiCommHandler &comm_h;
@@ -55,6 +57,7 @@ class Exx
             const AtomicBasis &atbasis_wfc_in,
             const PeriodicBoundaryData &pbc_in,
             const KPointBlacsParallelContext &kblacs_ctxt_in,
+            const ArrayDesc &desc_wfc_in,
             bool is_mf_eigvec_k_distributed);
 
         //! Build and store the real-space exchange matrix

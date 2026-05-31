@@ -35,8 +35,9 @@ namespace librpa_int
 
 Exx::Exx(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
          const PeriodicBoundaryData &pbc_in, const KPointBlacsParallelContext &kblacs_ctxt_in,
-         bool is_mf_eigvec_k_distributed)
+         const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed)
     : mf(mf_in),
+      desc_wfc(desc_wfc_in),
       atbasis_wfc(atbasis_wfc_in),
       pbc(pbc_in),
       comm_h(kblacs_ctxt_in.comm_global_h),
@@ -428,12 +429,7 @@ void Exx::build(const LibrpaParallelRouting routing,
 
     // For k-BLACS two-level parallelization
     const int n_basis_ao = mf.get_n_aos();
-    const int n_states = mf.get_n_states();
     const auto desc_dm = kblacs_ctxt.create_array_desc(n_basis_ao, n_basis_ao);
-    // TODO: desc_wfc_kb_full has been determined at the dataset level.
-    //       It would be better to parse it here somehow, rather than compute it again.
-    const auto desc_wfc_kb_full =
-        kblacs_ctxt.create_array_desc(n_basis_ao, n_states, n_basis_ao, n_states);
     IndexScheduler sched;
     const auto map_atpairs_balanced =
         get_balanced_ap_distribution_for_consec_descriptor(atbasis_wfc, atbasis_wfc, desc_dm);
@@ -459,7 +455,7 @@ void Exx::build(const LibrpaParallelRouting routing,
                     // build_dmat_libri_kpara(mf, comm_h, atbasis_wfc, isp, ispn_bra, ispn_ket,
                     //                        this->pbc.kfrac_list, dmat_IJRs_local, use_complex_exx_r,
                     //                        dmat_libri, dmat_libri_cplx);
-                    build_dmat_libri_kblacs_para(mf, kblacs_ctxt, desc_wfc_kb_full, desc_dm, sched,
+                    build_dmat_libri_kblacs_para(mf, kblacs_ctxt, desc_wfc, desc_dm, sched,
                                                  atbasis_wfc, isp, ispn_bra, ispn_ket,
                                                  this->pbc.kfrac_list, Rs, use_complex_exx_r,
                                                  dmat_libri, dmat_libri_cplx);
