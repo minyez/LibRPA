@@ -225,7 +225,7 @@ public:
     }
     #endif
     #ifdef ENABLE_ELPA
-    void set_elpa_handle(){
+    void set_elpa_handle(bool use_gpu_gw_wc = true){
         int error;
         elpa_handle_ = elpa_allocate(&error);
         if(error != ELPA_OK){
@@ -243,6 +243,7 @@ public:
         elpa_setup(elpa_handle_);
 
         #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+        if(use_gpu_gw_wc){
         elpa_set(elpa_handle_, "use_gpu_id", ddla_desc_.ddla_handle()->local_device, &error);
         #ifdef ENABLE_HIP
         elpa_set(elpa_handle_, "amd-gpu", 1, &error);
@@ -250,6 +251,7 @@ public:
         #ifdef ENABLE_CUDA
         elpa_set(elpa_handle_, "nvidia-gpu", 1, &error);
         #endif
+
         // printf("after set amd-gpu\n");
         // elpa_set(handle, "solver", ELPA_SOLVER_2STAGE, &error);
         // 选择 AMD GPU 内核
@@ -259,7 +261,19 @@ public:
         // printf("before set\n");
         // 初始化 GPU
         elpa_setup_gpu(elpa_handle_);
+        }else{
+            elpa_set(elpa_handle_, "gpu_tridiag",                   0, &error);
+            elpa_set(elpa_handle_, "gpu_solve_tridi",               0, &error);
+            elpa_set(elpa_handle_, "gpu_trans_ev",                  0, &error);
+            elpa_set(elpa_handle_, "gpu_bandred",                   0, &error);
+            elpa_set(elpa_handle_, "gpu_trans_ev_tridi_to_band",    0, &error);
+            elpa_set(elpa_handle_, "gpu_trans_ev_band_to_full",     0, &error);
+            elpa_set(elpa_handle_, "gpu_hermitian_multiply",        0, &error);
+            elpa_set(elpa_handle_, "gpu_pxgemm_multiply",           0, &error);
+            elpa_set(elpa_handle_, "gpu_invert_trm",                0, &error);
+        }
         #endif
+        
     }
     const elpa_t& elpa_handle() const noexcept { return elpa_handle_; }
     ~ArrayDesc(){

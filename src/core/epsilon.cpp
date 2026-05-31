@@ -2069,7 +2069,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             sqrtveig_blacs = LaConnector::power_hemat_la_real(
                 coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
                 n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold,
-                use_gpu_gw_wc, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
+                use_gpu_gw_wc, (double*)coul_block_ptr, (double*)chi0_block_ptr, (double*)coul_chi0_block_ptr);
             
             std::cout<<coul_block<<std::endl;
             if (replace_w_head && option_dielect_func == 3)
@@ -2207,13 +2207,14 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     // Inversion is performed here
                     // TODO: check location of "head" term
                     df_headwing.rewrite_eps(chi0_block, ifreq, desc_nabf_nabf_opt);
-                    if (debug)
-                    {
-                        const int ilo = desc_nabf_nabf_opt.indx_g2l_r(0);
-                        const int jlo = desc_nabf_nabf_opt.indx_g2l_c(0);
-                        if (ilo >= 0 && jlo >= 0)
-                            std::cout << "inv_eps(0,0)=" << chi0_block(ilo, jlo) << endl;
-                    }
+
+                    // if (debug)
+                    // {
+                    //     const int ilo = desc_nabf_nabf_opt.indx_g2l_r(0);
+                    //     const int jlo = desc_nabf_nabf_opt.indx_g2l_c(0);
+                    //     if (ilo >= 0 && jlo >= 0)
+                    //         std::cout << "inv_eps(0,0)=" << chi0_block(ilo, jlo) << endl;
+                    // }
                 }
                 else
                 {
