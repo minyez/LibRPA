@@ -58,8 +58,8 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->use_cholesky_gw_wc = LIBRPA_SWITCH_OFF;
 #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
     int deviceCount = 0;
-    ddla::DEVICE_CHECK(ddla::deviceGetDeviceCount(&deviceCount));
-    if(deviceCount > 0)
+    auto info = ddla::deviceGetDeviceCount(&deviceCount);
+    if(info == ddla::deviceSuccess && deviceCount > 0)
         opts->use_gpu_gw_wc = LIBRPA_SWITCH_ON;
     else
         opts->use_gpu_gw_wc = LIBRPA_SWITCH_OFF;

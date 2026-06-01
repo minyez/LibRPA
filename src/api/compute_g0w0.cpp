@@ -319,6 +319,12 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     if (opts.use_scalapack_gw_wc == LIBRPA_SWITCH_ON)
     {
         bool replace_w_head = opts.replace_w_head == LIBRPA_SWITCH_ON;
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+        if (opts.use_gpu_gw_wc)
+        {
+            pds->blacs_h.init_ddla_handle();
+        }
+#endif
         Wc_freq_q = compute_Wc_freq_q_blacs(chi0, coul_eps, coul_wc, opts.sqrt_coulomb_threshold,
                                             replace_w_head, opts.option_dielect_func,
                                             epsmac_LF_imagfreq, *(pds->p_headwing), pds->blacs_h, pds->desc_abf,
