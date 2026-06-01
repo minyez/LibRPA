@@ -1770,7 +1770,8 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps, atpair_k_cplx_mat_t &coulmat_wc,
     const double sqrt_coulomb_threshold, const bool replace_w_head, int option_dielect_func,
     const vector<std::complex<double>> &epsmac_LF_imagfreq, diele_func &df_headwing,
-    const BlacsCtxtHandler &blacs_h, const ArrayDesc &ad, const bool debug, const char *output_dir, bool use_cholesky_gw_wc, bool use_gpu_gw_wc)
+    const BlacsCtxtHandler &blacs_h, const ArrayDesc &ad, const bool debug, 
+    const char *output_dir, bool use_cholesky_gw_wc, bool use_gpu_gw_wc, bool use_elpa_sqrt_coulomb)
 {
     using std::cout;
     using std::endl;
@@ -1839,7 +1840,8 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         coulwc_block_ptr = coulwc_block.ptr();
     }
 #if defined(ENABLE_ELPA)
-    desc_nabf_nabf_opt.set_elpa_handle();
+    if(use_elpa_sqrt_coulomb)
+        desc_nabf_nabf_opt.set_elpa_handle(use_gpu_gw_wc);
 #endif
 
     const double mem_blocks = (chi0_block.size() + coul_block.size() + coul_eigen_block.size() +

@@ -7,6 +7,10 @@
 #include <string>
 #include <cstring>
 
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#include <ddla/ddla_connector.h>
+#endif
+
 // C APIs
 void librpa_init_options(LibrpaOptions *opts)
 {
@@ -45,7 +49,21 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->n_params_anacon = -1;
     opts->use_scalapack_gw_wc = LIBRPA_SWITCH_ON;
     opts->use_cholesky_gw_wc = LIBRPA_SWITCH_OFF;
-    opts->use_gpu_gw_wc = LIBRPA_SWITCH_ON;
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    int deviceCount = 0;
+    ddla::DEVICE_CHECK(ddla::deviceGetDeviceCount(&deviceCount));
+    if(deviceCount > 0)
+        opts->use_gpu_gw_wc = LIBRPA_SWITCH_ON;
+    else
+        opts->use_gpu_gw_wc = LIBRPA_SWITCH_OFF;
+#else
+    opts->use_gpu_gw_wc = LIBRPA_SWITCH_OFF;
+#endif
+#ifdef ENABLE_ELPA
+    opts->use_elpa_sqrt_coulomb = LIBRPA_SWITCH_ON;
+#else
+    opts->use_elpa_sqrt_coulomb = LIBRPA_SWITCH_OFF;
+#endif
     opts->replace_w_head = LIBRPA_SWITCH_OFF;
     opts->option_dielect_func = 0;
     opts->use_2d_dielectric = LIBRPA_SWITCH_OFF;
