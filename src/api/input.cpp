@@ -26,10 +26,13 @@
 
 void librpa_set_scf_dimension(LibrpaHandler* h, int nspins, int nkpts, int nstates, int nbasis, int nspinor)
 {
-    using librpa_int::api::get_dataset_instance;
-    using librpa_int::global::mpi_comm_global_h;
-    using librpa_int::global::lib_printf;
-    using librpa_int::global::profiler;
+    using std::endl;
+    using namespace librpa_int;
+    using api::get_dataset_instance;
+    using global::mpi_comm_global_h;
+    using global::lib_printf;
+    using global::profiler;
+    using global::ofs_myid;
 
     const std::string tname = "api_set_scf_dimension";
     profiler.start(tname);
@@ -54,7 +57,33 @@ void librpa_set_scf_dimension(LibrpaHandler* h, int nspins, int nkpts, int nstat
         lib_printf("| number of NAOs            : %d\n", meanfield.get_n_aos());
         lib_printf("| number of spin components : %d\n", meanfield.get_n_spinor());
     }
+
+    // Initialize global BLACS shape for eigenvectors
+    // TODO: it would be more flexible to allow the user to force a shape.
+    //       Currently the API does not support it, so we may have to adapt librpa_set_scf_dimension,
+    //       or add a new API function.
+    KPointBlacsProcessShape scfk_blacs_shape;
+    scfk_blacs_shape.favor_square_blacs_grid = true;
+    auto &kbctxt = pds->scfk_blacs_ctxt;
+    kbctxt.init(scfk_blacs_shape, pds->comm_h.comm, nkpts);
+    const auto &process_shape = kbctxt.process_shape();
+    if (pds->comm_h.is_root())
+    {
+        lib_printf("Internal two-level (SCF k-points/matrix block) parallelization for eigenvectors set:\n");
+        lib_printf("| processes per k-point      : %d\n", process_shape.nprocs_blacs);
+        lib_printf("| processes per matrix block : %d\n", process_shape.nprocs_kpoint);
+    }
+    ofs_myid << "Local k-point indices: " << kbctxt.kpoints_local() << endl;
     pds->comm_h.barrier();
+    // As the two-level communicator handlers are settled down,
+    // the wave function array descriptors are fixed.
+    ofs_myid << "k-point communicator : " << kbctxt.comm_kpoint_h.str() << endl;
+    ofs_myid << "BLACS communicator   : " << kbctxt.comm_blacs_h.str() << endl;
+
+    pds->desc_wfc_kb = kbctxt.create_array_desc(nbasis, nstates);
+    pds->desc_wfc_kb_full = kbctxt.create_array_desc(nbasis, nstates, nbasis, nstates);
+    ofs_myid << "desc_wfc_kb      : " << pds->desc_wfc_kb.info_desc() << endl;
+    ofs_myid << "desc_wfc_kb_full : " << pds->desc_wfc_kb_full.info_desc() << endl;
 
     profiler.stop(tname);
 }
@@ -251,18 +280,19 @@ void librpa_set_ao_basis_aux(LibrpaHandler* h, int natoms, const size_t *nbs_aux
 {
     using librpa_int::global::lib_printf;
     using librpa_int::global::profiler;
+    using librpa_int::global::ofs_myid;
 
     const std::string tname = "api_set_ao_basis_aux";
     profiler.start(tname);
 
     std::vector<size_t> nbs(natoms);
-    librpa_int::global::ofs_myid << "Parsing basis: ";
+    // ofs_myid << "Parsing auxiliary basis: ";
     for (int i = 0; i < natoms; i++)
     {
         nbs[i] = librpa_int::as_size(nbs_aux[i]);
-        librpa_int::global::ofs_myid << nbs[i] << " ";
+        // librpa_int::global::ofs_myid << nbs[i] << " ";
     }
-    librpa_int::global::ofs_myid << std::endl;
+    // ofs_myid << std::endl;
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     pds->basis_aux.set(nbs);
@@ -522,7 +552,7 @@ void librpa_set_lri_coeff(LibrpaHandler* h, LibrpaParallelRouting routing, int I
     assert(pds->basis_wfc[I] == as_size(nbasis_i));
     assert(pds->basis_wfc[J] == as_size(nbasis_j));
 
-    if (routing == LibrpaParallelRouting::LIBRI)
+    if (routing == LIBRPA_ROUTING_LIBRI)
     {
         const std::array<int, 3> Ra{R[0], R[1], R[2]};
         // RI tensor uses ABF as slowest index, so we need transpose the input data.

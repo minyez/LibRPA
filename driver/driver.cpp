@@ -161,54 +161,54 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
 LibrpaTimeFreqGrid get_tfgrid_type(const std::string& grid_str)
 {
     if (grid_str == "unset")
-        return LibrpaTimeFreqGrid::TFGRID_UNSET;
+        return LIBRPA_TFGRID_UNSET;
     if (grid_str == "GL")
-        return LibrpaTimeFreqGrid::GaussLegendre;
+        return LIBRPA_TFGRID_GAUSS_LEGENDRE;
     if (grid_str == "GC-I")
-        return LibrpaTimeFreqGrid::GaussChebyshevI;
+        return LIBRPA_TFGRID_GAUSS_CHEBYSHEV_I;
     if (grid_str == "GL-II")
-        return LibrpaTimeFreqGrid::GaussChebyshevII;
+        return LIBRPA_TFGRID_GAUSS_CHEBYSHEV_II;
     if (grid_str == "minimax")
-        return LibrpaTimeFreqGrid::Minimax;
+        return LIBRPA_TFGRID_MINIMAX;
     if (grid_str == "evenspaced")
-        return LibrpaTimeFreqGrid::EvenSpaced;
+        return LIBRPA_TFGRID_EVEN_SPACED;
     if (grid_str == "evenspaced_tf")
-        return LibrpaTimeFreqGrid::EvenSpaced_TF;
+        return LIBRPA_TFGRID_EVEN_SPACED_TF;
     throw std::runtime_error("Unknown time-frequency grid string: " + grid_str);
 }
 
 std::string get_tfgrid_string(const LibrpaTimeFreqGrid& grid_type) noexcept
 {
-    if (grid_type == LibrpaTimeFreqGrid::GaussLegendre)
+    if (grid_type == LIBRPA_TFGRID_GAUSS_LEGENDRE)
         return "GL";
-    if (grid_type == LibrpaTimeFreqGrid::GaussChebyshevI)
+    if (grid_type == LIBRPA_TFGRID_GAUSS_CHEBYSHEV_I)
         return "GC-I";
-    if (grid_type == LibrpaTimeFreqGrid::GaussChebyshevII)
+    if (grid_type == LIBRPA_TFGRID_GAUSS_CHEBYSHEV_II)
         return "GL-II";
-    if (grid_type == LibrpaTimeFreqGrid::Minimax)
+    if (grid_type == LIBRPA_TFGRID_MINIMAX)
         return "minimax";
-    if (grid_type == LibrpaTimeFreqGrid::EvenSpaced)
+    if (grid_type == LIBRPA_TFGRID_EVEN_SPACED)
         return "evenspaced";
-    if (grid_type == LibrpaTimeFreqGrid::EvenSpaced_TF)
+    if (grid_type == LIBRPA_TFGRID_EVEN_SPACED_TF)
         return "evenspaced_tf";
     return "unset";
 }
 
 LibrpaParallelRouting get_parallel_routing(const std::string& routing_str_low)
 {
-    if (routing_str_low == "auto") return LibrpaParallelRouting::AUTO;
-    if (routing_str_low == "rtau") return LibrpaParallelRouting::RTAU;
-    if (routing_str_low == "atompair") return LibrpaParallelRouting::ATOMPAIR;
-    if (routing_str_low == "libri") return LibrpaParallelRouting::LIBRI;
+    if (routing_str_low == "auto") return LIBRPA_ROUTING_AUTO;
+    if (routing_str_low == "rtau") return LIBRPA_ROUTING_RTAU;
+    if (routing_str_low == "atompair") return LIBRPA_ROUTING_ATOMPAIR;
+    if (routing_str_low == "libri") return LIBRPA_ROUTING_LIBRI;
     throw std::runtime_error("Unknown parallel routing string: " + routing_str_low);
 }
 
 std::string get_routing_string(LibrpaParallelRouting routing)
 {
-    if (routing == LibrpaParallelRouting::AUTO) return "auto";
-    if (routing == LibrpaParallelRouting::ATOMPAIR) return "atompair";
-    if (routing == LibrpaParallelRouting::RTAU) return "rtau";
-    if (routing == LibrpaParallelRouting::LIBRI) return "libri";
+    if (routing == LIBRPA_ROUTING_AUTO) return "auto";
+    if (routing == LIBRPA_ROUTING_ATOMPAIR) return "atompair";
+    if (routing == LIBRPA_ROUTING_RTAU) return "rtau";
+    if (routing == LIBRPA_ROUTING_LIBRI) return "libri";
     return "unset";
 }
 

@@ -137,7 +137,7 @@ void librpa_finalize_global(void)
 //                             0.5, 0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.5, 0.0, 0.5, 0.5, 0.5,
 //                         });
 //     librpa_int::Exx exx(mf, wfc, pbc, global::mpi_comm_global_h, false);
-//     exx.build(LibrpaParallelRouting::LIBRI, aux, {}, {});
+//     exx.build(LIBRPA_ROUTING_LIBRI, aux, {}, {});
 // }
 
 void librpa_test(void)

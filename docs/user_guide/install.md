@@ -11,6 +11,14 @@ LibRPA depends on the following core software components:
 - the [GreenX](https://github.com/nomad-coe/greenX) library for minimax
   time-frequency grids
 
+Optionally, LibRPA can also be linked with an external
+[ELPA](https://elpa.mpcdf.mpg.de/) installation. This is intended for
+ELPA-backed optimized linear algebra subroutines. To enable the build
+interface, configure with
+`-DLIBRPA_USE_EXTERNAL_ELPA=ON -DEXTERNAL_ELPA_DIR=/path/to/elpa`.
+Alternatively, LibRPA can build a bundled ELPA source release with
+`-DLIBRPA_USE_BUNDLED_ELPA=ON`.
+
 For *GW*, the following packages are additionally required:
 
 - [LibRI](https://github.com/abacusmodeling/LibRI) for tensor contractions
@@ -94,9 +102,33 @@ In this case, LibRPA does not build the bundled GreenX copy. Instead, the
 parent or higher-level CMake project must provide the external GreenX target
 `LibGXMiniMax`.
 
-Several build scripts are provided on the [`Build Examples`](../examples/build/index)
+Several build scripts are provided on the [build examples](../examples/build/index)
 page to help users build LibRPA on different platforms and with different toolchains.
 You may use them as starting points and adapt them to your local environment.
 
 For a complete list of compile options, please refer to the
 [Compile Options](compile_options) page.
+
+## Troubleshooting
+
+### `std::filesystem` link errors with Intel compilers
+
+When building LibRPA with Intel compilers, the final link step may fail with errors similar to
+
+```text
+undefined reference to `std::filesystem::create_directories(...)'
+undefined reference to `std::filesystem::status(...)'
+undefined reference to `std::filesystem::__cxx11::path::_M_split_cmpts()'
+```
+
+This is usually not a LibRPA source-code issue. On Linux, Intel compilers use GCC’s C++ standard library, libstdc++.
+If the compiler wrapper picks up an old system GCC/libstdc++, C++17 `std::filesystem` symbols may be unavailable or may require extra linking.
+
+A recommended solution is to use a recent GCC version before configuring and building LibRPA.
+On HPC, it usually amounts to loading a recent GCC module, for example
+
+```bash
+module load gcc/13.4.0
+```
+
+Then rerun CMake from a clean build directory.

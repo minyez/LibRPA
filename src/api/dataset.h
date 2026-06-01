@@ -17,6 +17,7 @@
 #include "../math/matrix_m.h"
 #include "../mpi/base_blacs.h"
 #include "../mpi/base_mpi.h"
+#include "../mpi/kpoint_blacs_parallel_context.h"
 
 namespace librpa_int
 {
@@ -27,28 +28,28 @@ namespace librpa_int
 class Dataset
 {
 private:
+    bool input_blacs_matloc_row_major_;
     bool comm_blacs_coul_initialized_;
     bool coul_blacs2ap_redistributed_;
+    bool eigvecs_kpara_redistributed_;
 public:
     /* Member variables */
     // Environment control
     // Global MPI communicators and BLACS context handlers
     MpiCommHandler comm_h;
     BlacsCtxtHandler blacs_h;
+    KPointBlacsParallelContext scfk_blacs_ctxt;
     // Communicators for Coulomb matrices 2D input and re-distribution
     MpiCommHandler comm_coul_h;
     MpiCommHandler comm_coul_inter_q_h;
     MpiCommHandler comm_coul_intra_q_h;
     BlacsCtxtHandler blacs_coul_intra_q_h;
     ArrayDesc desc_coul_intra_q;
-    // Communicators for (unordered) atom pairs.
-    // All atom pairs are distributed among processes in the communicator.
-    MpiCommHandler comm_ap_h;
-    // Communicators among unit cell vectors.
-    // All BvK cell vectors are distributed among processes in the communicator.
-    MpiCommHandler comm_R_h;
-    //! Array descriptor for matrices of wave-function basis (using blacs_h)
+    //! Array descriptor for matrices of wave-function basis (using dataset.blacs_h)
     ArrayDesc desc_wfc;
+    //! Array descriptor for matrices of wave-function, N_ao x N_states (using scfk_blacs_ctxt.blacs_h)
+    ArrayDesc desc_wfc_kb;
+    ArrayDesc desc_wfc_kb_full; // For communication from k-distributed eigenvectors
     //! Array descriptor for matrices of auxiliary basis set size (using blacs_h)
     ArrayDesc desc_abf;
     //! Atom pairs on current process for atomic-basis matrix data
@@ -113,7 +114,7 @@ public:
     std::unique_ptr<G0W0> p_g0w0;
 
     /* Constructors and destructors */
-    Dataset(MPI_Comm comm);
+    Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major = true);
     ~Dataset() { free(); }
     void free();
 
@@ -121,9 +122,7 @@ public:
     void redistribute_coulomb_blacs2ap();
     void finalize_comm_blacs_coul();
 
-    // Splitting global communicators to atom pairs and unit cell vectors
-    void initialize_comm_ap_r();
-    void finalize_comm_ap_r();
+    void redistribute_eigvecs_kpara();
 
     /* Disable copy */
     Dataset(const Dataset &) = delete;

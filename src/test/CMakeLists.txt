@@ -64,6 +64,7 @@ foreach(target
   test_dataset
   test_matrix_m_mpi
   test_meanfield_mpi
+  test_kpoint_blacs_parallel_context
   )
   config_test(${target} 4)
 endforeach()

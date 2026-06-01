@@ -1000,7 +1000,7 @@ CorrEnergy compute_RPA_correlation(LibrpaParallelRouting routing, const Chi0 &ch
 
     // freq, q
     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> pi_freq_q_Mu_Nu;
-    if (routing == LibrpaParallelRouting::ATOMPAIR || routing == LibrpaParallelRouting::LIBRI)
+    if (routing == LIBRPA_ROUTING_ATOMPAIR || routing == LIBRPA_ROUTING_LIBRI)
         pi_freq_q_Mu_Nu = compute_Pi_q_MPI(chi0, coulmat);
     else
         pi_freq_q_Mu_Nu = compute_Pi_q(chi0, coulmat);
@@ -1074,7 +1074,7 @@ CorrEnergy compute_RPA_correlation(LibrpaParallelRouting routing, const Chi0 &ch
                     }
                 }
             }
-            if (routing == LibrpaParallelRouting::ATOMPAIR || routing == LibrpaParallelRouting::LIBRI)
+            if (routing == LIBRPA_ROUTING_ATOMPAIR || routing == LIBRPA_ROUTING_LIBRI)
             {
                 reduce_ComplexMatrix(pi_munu_tmp, pi_freq_q.at(freq).at(q), 0, comm_h.comm);
             }
@@ -1199,7 +1199,7 @@ map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>>
                     const size_t Q = Qchi0.first;
                     const size_t Q_mu = chi0.atbasis_abf[Q];
                     // auto &chi0_mat = Qchi0.second;
-                    for (int I = 0; I != as_int(chi0.atbasis_abf.n_atoms); I++)
+                    for (atom_t I = 0; I != chi0.atbasis_abf.n_atoms; I++)
                     {
                         //const size_t I = I_p.first;
                         const size_t I_mu = chi0.atbasis_abf[I];
@@ -1234,7 +1234,7 @@ map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>>
                 {
                     const size_t Q = Q_p.first;
                     auto &chi0_mat = Q_p.second;
-                    for (int I = 0; I != as_int(chi0.atbasis_abf.n_atoms); I++)
+                    for (atom_t I = 0; I != chi0.atbasis_abf.n_atoms; I++)
                     {
                         //const size_t I = I_p.first;
                         //printf("cal_pi  pid: %d , IJQ:  %d  %d  %d\n", comm_h.myid, I, J, Q);
@@ -1977,13 +1977,21 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                                           blacs_h.ictxt);
             global::profiler.stop("epsilon_prepare_coulwc_sqrt_3");
             global::profiler.start("epsilon_prepare_coulwc_sqrt_4", "Perform square root");
-            // power_hemat_blacs(coulwc_block, desc_nabf_nabf_opt, coul_eigen_block,
-            //                   desc_nabf_nabf_opt, n_singular_coulwc, eigenvalues.c, 0.5,
-            //                   sqrt_coulomb_threshold);
-            LaConnector::power_hemat_la(
-                coulwc_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
-                n_singular_coulwc, eigenvalues.c, 0.5, sqrt_coulomb_threshold,
-                use_gpu_gw_wc, use_elpa_sqrt_coulomb, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
+            if (is_gamma_point(q))
+            {
+                LaConnector::power_hemat_la_real(
+                    coulwc_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
+                    n_singular_coulwc, eigenvalues.c, 0.5, sqrt_coulomb_threshold,
+                    use_gpu_gw_wc, use_elpa_sqrt_coulomb, (double*)coul_block_ptr, 
+                    (double*)chi0_block_ptr, (double*)coul_chi0_block_ptr);
+            }
+            else
+            {
+                LaConnector::power_hemat_la(
+                    coulwc_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
+                    n_singular_coulwc, eigenvalues.c, 0.5, sqrt_coulomb_threshold,
+                    use_gpu_gw_wc, use_elpa_sqrt_coulomb, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
+            }
             global::profiler.stop("epsilon_prepare_coulwc_sqrt_4");
         }
         global::profiler.stop("epsilon_prepare_coulwc_sqrt");
@@ -2176,7 +2184,8 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 if (option_dielect_func == 3)
                 {
                     chi0_block *= -1.0;
-                    for (int i = 0; i != n_nonsingular; i++)
+                    const int n_nonsingular_int = as_int(n_nonsingular);
+                    for (int i = 0; i != n_nonsingular_int; i++)
                     {
                         const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
                         if (ilo < 0) continue;

@@ -18,7 +18,7 @@ void initialize_ds_tfgrids(Dataset &ds, const LibrpaOptions &opts)
     double tmin = opts.tfgrids_time_min;
     double tintv = opts.tfgrids_time_interval;
     double regulation = opts.minimax_regulation;
-    if (opts.tfgrids_type == LibrpaTimeFreqGrid::Minimax)
+    if (opts.tfgrids_type == LIBRPA_TFGRID_MINIMAX)
     {
         double emin_mf, emax_mf;
         ds.mf.get_E_min_max(emin_mf, emax_mf);
@@ -81,11 +81,11 @@ void initialize_ds_atpairs_local(Dataset &ds, LibrpaParallelRouting routing)
     if (n_atoms == 0)
         throw LIBRPA_RUNTIME_ERROR("Number of atoms can not be extracted, please set structure or basis first");
 
-    if (routing == LibrpaParallelRouting::AUTO)
+    if (routing == LIBRPA_ROUTING_AUTO)
     {
         throw LIBRPA_RUNTIME_ERROR("internal error: routing should be decided before initialize_ds_atpairs_local, not AUTO");
     }
-    else if(routing == LibrpaParallelRouting::ATOMPAIR || routing == LibrpaParallelRouting::LIBRI)
+    else if(routing == LIBRPA_ROUTING_ATOMPAIR || routing == LIBRPA_ROUTING_LIBRI)
     {
         auto tri_local_atpair = librpa_int::dispatch_upper_triangular_tasks(
             n_atoms, ds.blacs_h.myid, ds.blacs_h.nprows, ds.blacs_h.npcols,
@@ -105,7 +105,7 @@ void initialize_ds_exx(Dataset &ds, const LibrpaOptions &opts) noexcept
 {
     global::profiler.start("initialize_ds_exx");
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
-    ds.p_exx = std::make_unique<librpa_int::Exx>(ds.mf, ds.basis_wfc, ds.pbc, ds.comm_h,
+    ds.p_exx = std::make_unique<librpa_int::Exx>(ds.mf, ds.basis_wfc, ds.pbc, ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
                                                  is_eigvec_k_distributed);
     ds.p_exx->libri_threshold_C = opts.libri_exx_threshold_C;
     ds.p_exx->libri_threshold_D = opts.libri_exx_threshold_D;
@@ -119,10 +119,12 @@ void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts) noexcept
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     if (opts.use_shrink_abfs && opts.use_shrink_chi)
         ds.p_chi0 = std::make_unique<librpa_int::Chi0>(ds.mf, ds.basis_wfc, ds.basis_aux_shrink, ds.pbc,
-                                                       ds.tfg, ds.comm_h, is_eigvec_k_distributed);
+                                                       ds.tfg, ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
+                                                       is_eigvec_k_distributed);
     else
         ds.p_chi0 = std::make_unique<librpa_int::Chi0>(ds.mf, ds.basis_wfc, ds.basis_aux, ds.pbc,
-                                                       ds.tfg, ds.comm_h, is_eigvec_k_distributed);
+                                                       ds.tfg, ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
+                                                       is_eigvec_k_distributed);
     ds.p_chi0->gf_threshold = opts.gf_threshold;
     ds.p_chi0->nbands_G = opts.n_bands_chi0;
     ds.p_chi0->libri_threshold_C = opts.libri_chi0_threshold_C;
@@ -135,7 +137,8 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts) noexcept
     global::profiler.start("initialize_ds_g0w0");
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     // global::ofs_myid << "is_eigvec_k_distributed " << is_eigvec_k_distributed << std::endl;
-    ds.p_g0w0 = std::make_unique<librpa_int::G0W0>(ds.mf, ds.basis_wfc, ds.pbc, ds.tfg, ds.comm_h,
+    ds.p_g0w0 = std::make_unique<librpa_int::G0W0>(ds.mf, ds.basis_wfc, ds.pbc, ds.tfg,
+                                                   ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
                                                    is_eigvec_k_distributed);
     ds.p_g0w0->libri_threshold_C = opts.libri_g0w0_threshold_C;
     ds.p_g0w0->libri_threshold_G = opts.libri_g0w0_threshold_G;

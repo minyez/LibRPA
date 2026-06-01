@@ -75,7 +75,7 @@ For example, to configure a minimax grid, the number of frequency points, and Gr
 // C API
 LibrpaOptions opts;
 librpa_init_options(&opts);
-opts.tfgrids_type = Minimax;
+opts.tfgrids_type = LIBRPA_TFGRID_MINIMAX;
 opts.nfreq = 16;
 opts.gf_threshold = 1.e-3;
 opts.output_level = LIBRPA_VERBOSE_INFO;
@@ -84,7 +84,7 @@ opts.output_level = LIBRPA_VERBOSE_INFO;
 ```cpp
 // C++ API
 librpa::Options opts;
-opts.tfgrids_type = LibrpaTimeFreqGrid::Minimax;
+opts.tfgrids_type = LIBRPA_TFGRID_MINIMAX;
 opts.nfreq = 16;
 opts.gf_threshold = 1.e-3;
 opts.output_level = LIBRPA_VERBOSE_INFO;
@@ -192,7 +192,7 @@ int main()
 
     // *** Set up runtime parameters ***
     librpa::Options opts;
-    opts.tfgrids_type = LibrpaTimeFreqGrid::Minimax;
+    opts.tfgrids_type = LIBRPA_TFGRID_MINIMAX;
     opts.nfreq = 16;
     opts.gf_threshold = 1e-3;
     opts.output_level = LIBRPA_VERBOSE_INFO;
@@ -213,7 +213,7 @@ int main()
     for (int i = 0; i < natoms; ++i) {
         for (int j = 0; j < natoms; ++j) {
             for (auto& R : r_cells) {
-                h.set_lri_coeff(LibrpaParallelRouting::AUTO, i, j, nbasis_i, nbasis_j, naux_mu, R.data(), Cs.data());
+                h.set_lri_coeff(LIBRPA_ROUTING_AUTO, i, j, nbasis_i, nbasis_j, naux_mu, R.data(), Cs.data());
             }
         }
     }

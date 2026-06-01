@@ -193,7 +193,7 @@
       <!-- /> -->
     </testcase>
 
-    <testcase name="Bulk silicon (aims input)" directory="g0w0_aims_Si_libri">
+    <testcase name="Bulk silicon, with eigenvector parllelized over k (aims input)" directory="g0w0_aims_Si_libri">
       <build require_libri="true"
       />
       <run ntasks_disable="none"

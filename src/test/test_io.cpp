@@ -9,6 +9,8 @@ int main (int argc, char *argv[])
 
     int myid = 0;
     create_directories("librpa.d", myid);
+    create_directories("librpa.d/nested/path", myid);
+    assert(path_exists("librpa.d/nested/path"));
 
     std::map<int, std::map<int, std::map<int, double>>> nested_map
     {

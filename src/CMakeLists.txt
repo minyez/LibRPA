@@ -25,6 +25,16 @@ target_include_directories(rpa_lib PRIVATE
   $<TARGET_PROPERTY:LibGXMiniMax,Fortran_MODULE_DIRECTORY>
 )
 
+if(LIBRPA_ELPA_TARGET)
+  # Link either the external ELPA target or the bundled imported target.
+  target_link_libraries(rpa_lib PRIVATE ${LIBRPA_ELPA_TARGET})
+endif()
+if(LIBRPA_BUNDLED_ELPA_PROJECT_TARGET)
+  # Bundled ELPA is built by ExternalProject_Add, so keep its build step
+  # ordered before rpa_lib tries to use the installed library and modules.
+  add_dependencies(rpa_lib ${LIBRPA_BUNDLED_ELPA_PROJECT_TARGET})
+endif()
+
 target_include_directories(rpa_lib
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
@@ -37,6 +47,7 @@ list(APPEND lib_sources
         ${CMAKE_CURRENT_BINARY_DIR}/envs_cmake.cpp
 
         api/compute_exx.cpp
+        api/compute_helper.cpp
         api/compute_g0w0.cpp
         api/compute_rpa.cpp
         api/dataset.cpp
@@ -88,6 +99,7 @@ list(APPEND lib_sources
         mpi/base_mpi.cpp
         mpi/utils_blacs.cpp
         mpi/global_mpi.cpp
+        mpi/kpoint_blacs_parallel_context.cpp
 
         # qsgw/fermi_energy_occupation.cpp
         # qsgw/Hamiltonian.cpp
@@ -97,6 +109,10 @@ list(APPEND lib_sources
         utils/utils_cmake.cpp
         utils/utils_mem.cpp
 )
+
+if(NOT LIBRPA_USE_EXTERNAL_ELPA AND NOT LIBRPA_USE_BUNDLED_ELPA)
+  list(APPEND lib_sources utils/elpa_stub.cpp)
+endif()
 
 if(LIBRPA_USE_LIBRI)
   target_include_directories(rpa_lib

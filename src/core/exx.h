@@ -4,6 +4,7 @@
  */
 #include "../math/matrix_m.h"
 #include "../mpi/base_blacs.h"
+#include "../mpi/kpoint_blacs_parallel_context.h"
 #include "atomic_basis.h"
 #include "meanfield.h"
 #include "pbc.h"
@@ -32,10 +33,13 @@ class Exx
 
     public:
         //! refenrence to the MeanField object to compute density matrix
-        const MeanField& mf;
+        const MeanField &mf;
+        //! Array descriptor of wave functions saved in the MeanField object
+        const ArrayDesc &desc_wfc;
         const AtomicBasis &atbasis_wfc;
         const PeriodicBoundaryData &pbc;
         const MpiCommHandler &comm_h;
+        const KPointBlacsParallelContext &kblacs_ctxt;
 
         double libri_threshold_C;
         double libri_threshold_V;
@@ -52,7 +56,8 @@ class Exx
         Exx(const MeanField& mf_in,
             const AtomicBasis &atbasis_wfc_in,
             const PeriodicBoundaryData &pbc_in,
-            const MpiCommHandler &comm_h_in,
+            const KPointBlacsParallelContext &kblacs_ctxt_in,
+            const ArrayDesc &desc_wfc_in,
             bool is_mf_eigvec_k_distributed);
 
         //! Build and store the real-space exchange matrix

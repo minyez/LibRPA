@@ -5,6 +5,7 @@
 #include "../mpi/global_mpi.h"
 #include "../io/global_io.h"
 #include "librpa_enums.h"
+#include "testutils.h"
 
 static void test_set_comm_blacs_coul_np4()
 {
@@ -158,7 +159,7 @@ static void test_redistribute_blacs2ap_np4(const std::vector<size_t> &nbs)
     using namespace librpa_int;
     Dataset ds(MPI_COMM_WORLD);
     ds.basis_aux.set(nbs);
-    initialize_ds_atpairs_local(ds, LibrpaParallelRouting::LIBRI);
+    initialize_ds_atpairs_local(ds, LIBRPA_ROUTING_LIBRI);
     const int n_aux = ds.basis_aux.nb_total;
     ds.desc_abf.reset_handler(ds.blacs_h);
     ds.desc_abf.init_1b1p(n_aux, n_aux, 0, 0);
@@ -208,6 +209,80 @@ static void test_redistribute_blacs2ap_np4(const std::vector<size_t> &nbs)
     ds.free();
 }
 
+static void test_redistribute_eigvecs_kpara_np4()
+{
+    using namespace librpa_int;
+
+    constexpr int n_spins = 2;
+    constexpr int n_spinor = 2;
+    constexpr int n_kpoints = 4;
+    constexpr int n_states = 3;
+    constexpr int n_aos = 3;
+    const std::vector<int> initial_owner{1, 0, 3, 1};
+    const std::vector<int> expected_owner{0, 2, 0, 2};
+
+    Dataset ds(MPI_COMM_WORLD);
+    ds.mf.set(n_spins, n_kpoints, n_states, n_aos, n_spinor);
+    ds.scfk_blacs_ctxt.init({2, 2}, MPI_COMM_WORLD, n_kpoints);
+
+    for (int ispin = 0; ispin != n_spins; ++ispin)
+    {
+        for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+        {
+            for (int ik = 0; ik != n_kpoints; ++ik)
+            {
+                if (ds.comm_h.myid != initial_owner[ik]) continue;
+                ComplexMatrix wfc(n_states, n_aos);
+                for (int i = 0; i != n_states; ++i)
+                {
+                    for (int j = 0; j != n_aos; ++j)
+                    {
+                        const double value = 1000.0 * ispin + 100.0 * ispinor +
+                                             10.0 * ik + i + 0.1 * j;
+                        wfc(i, j) = {value, -value};
+                    }
+                }
+                ds.mf.get_eigenvectors()[ispin][ispinor][ik] = std::move(wfc);
+            }
+        }
+    }
+
+    ds.redistribute_eigvecs_kpara();
+    ds.redistribute_eigvecs_kpara();
+
+    for (int ispin = 0; ispin != n_spins; ++ispin)
+    {
+        for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+        {
+            for (int ik = 0; ik != n_kpoints; ++ik)
+            {
+                const auto *wfc = ds.mf.find_wfc(ispin, ispinor, ik);
+                if (ds.comm_h.myid == expected_owner[ik])
+                {
+                    assert(wfc != nullptr);
+                    assert(wfc->nr == n_states);
+                    assert(wfc->nc == n_aos);
+                    for (int i = 0; i != n_states; ++i)
+                    {
+                        for (int j = 0; j != n_aos; ++j)
+                        {
+                            const double value = 1000.0 * ispin + 100.0 * ispinor +
+                                                 10.0 * ik + i + 0.1 * j;
+                            assert(fequal((*wfc)(i, j), std::complex<double>(value, -value)));
+                        }
+                    }
+                }
+                else
+                {
+                    assert(wfc == nullptr);
+                }
+            }
+        }
+    }
+
+    ds.free();
+}
+
 int main (int argc, char *argv[])
 {
     using namespace librpa_int;
@@ -225,6 +300,7 @@ int main (int argc, char *argv[])
 
     test_redistribute_blacs2ap_np4({2, 3});
     test_redistribute_blacs2ap_np4({10, 4, 5});
+    test_redistribute_eigvecs_kpara_np4();
 
     finalize_global_io();
     finalize_global_mpi();

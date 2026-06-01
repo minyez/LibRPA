@@ -85,4 +85,4 @@ utilities/*
 !utilities/*.py
 
 # regression test workspace
-regression_tests/workspace
+regression_tests/workspace*/

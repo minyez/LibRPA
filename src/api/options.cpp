@@ -3,6 +3,7 @@
 #include "librpa_options.h"
 
 #include "../io/fs.h"
+#include "../utils/error.h"
 
 #include <string>
 #include <cstring>
@@ -16,12 +17,12 @@ void librpa_init_options(LibrpaOptions *opts)
 {
     librpa_set_output_dir(opts, ".");
 
-    opts->parallel_routing = LibrpaParallelRouting::AUTO;
+    opts->parallel_routing = LIBRPA_ROUTING_AUTO;
     opts->output_level = LIBRPA_VERBOSE_INFO;
     opts->vq_threshold = 0.0e0;
     opts->use_kpara_scf_eigvec = LIBRPA_SWITCH_OFF;
 
-    opts->tfgrids_type = LibrpaTimeFreqGrid::TFGRID_UNSET;
+    opts->tfgrids_type = LIBRPA_TFGRID_UNSET;
     opts->nfreq = 6;
     opts->tfgrids_freq_min = 0.005;
     opts->tfgrids_freq_interval = 0.0;
@@ -87,6 +88,19 @@ void librpa_init_options(LibrpaOptions *opts)
 
 void librpa_set_output_dir(LibrpaOptions *opts, const char *output_dir)
 {
+    if (output_dir == nullptr)
+    {
+        throw LIBRPA_RUNTIME_ERROR("output_dir is null");
+    }
+
     std::string output_dir_s = librpa_int::path_as_directory(output_dir);
-    strcpy(opts->output_dir, output_dir_s.c_str());
+    if (output_dir_s.size() >= LIBRPA_MAX_STRLEN)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "output_dir is too long; maximum length is "
+            + std::to_string(LIBRPA_MAX_STRLEN - 1)
+            + " characters including the appended trailing slash");
+    }
+
+    std::memcpy(opts->output_dir, output_dir_s.c_str(), output_dir_s.size() + 1);
 }

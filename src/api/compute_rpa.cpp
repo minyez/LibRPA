@@ -70,11 +70,14 @@ double librpa_get_rpa_correlation_energy(LibrpaHandler *h, const LibrpaOptions *
 
     // Decide actual routing
     LibrpaParallelRouting routing = opts.parallel_routing;
-    if (routing == LibrpaParallelRouting::AUTO)
+    if (routing == LIBRPA_ROUTING_AUTO)
     {
         const int n_atoms = pds->atoms.size();
         routing = decide_auto_routing(n_atoms, opts.nfreq * pds->pbc.get_n_cells_bvk());
     }
+
+    if (opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON)
+        pds->redistribute_eigvecs_kpara();
 
     // Determine the atom pairs that this process is responsible for
     initialize_ds_atpairs_local(*pds, routing);
@@ -127,7 +130,7 @@ double librpa_get_rpa_correlation_energy(LibrpaHandler *h, const LibrpaOptions *
     profiler.start("EcRPA", "Compute RPA correlation Energy");
     CorrEnergy corr;
 
-    const bool use_blacs = opts.use_scalapack_ecrpa && (routing == LibrpaParallelRouting::ATOMPAIR || routing == LibrpaParallelRouting::LIBRI);
+    const bool use_blacs = opts.use_scalapack_ecrpa && (routing == LIBRPA_ROUTING_ATOMPAIR || routing == LIBRPA_ROUTING_LIBRI);
 
     if (use_blacs)
     {

@@ -26,10 +26,10 @@
 #include "../utils/libri_stub.h"
 #endif
 
+namespace librpa_int {
+
 using RI::Tensor;
 using RI::Communicate_Tensors_Map_Judge::comm_map2_first;
-
-namespace librpa_int {
 
 const int DoubleHavriliakNegami::d_npar = 8;
 
@@ -202,7 +202,7 @@ void diele_func::cal_head()
                             {
                                 for (int beta = 0; beta != 3; beta++)
                                 {
-                                    for (int iomega = 0; iomega != this->omega.size(); iomega++)
+                                    for (size_t iomega = 0; iomega != this->omega.size(); iomega++)
                                     {
                                         double omega_ev = this->omega[iomega];  // * HA2EV;
                                         tmp = 2.0 * factor * velocity[ik][alpha](iunocc, iocc) *
@@ -222,7 +222,7 @@ void diele_func::cal_head()
     {
         for (int beta = 0; beta != 3; beta++)
         {
-            for (int iomega = 0; iomega != this->omega.size(); iomega++)
+            for (size_t iomega = 0; iomega != this->omega.size(); iomega++)
             {
                 if (use_soc)
                     this->head.at(iomega)(alpha, beta) *= dielectric_unit;
@@ -284,7 +284,7 @@ void diele_func::set_0_wing()
     int n_lambda = this->n_nonsingular - 1;
     for (int alpha = 0; alpha != 3; alpha++)
     {
-        for (int iomega = 0; iomega != this->omega.size(); iomega++)
+        for (std::size_t iomega = 0; iomega != this->omega.size(); iomega++)
         {
             for (int mu = 0; mu != n_abf; mu++)
             {
@@ -336,7 +336,7 @@ void diele_func::cal_wing(const Cs_LRI &Cs_data, double vq_threshold, const atpa
             //               << std::endl;
             // }
             // profiler.start("compute_wing");
-            for (int iomega = 0; iomega != this->omega.size(); iomega++)
+            for (std::size_t iomega = 0; iomega != this->omega.size(); iomega++)
             {
                 for (int alpha = 0; alpha != 3; alpha++)
                 {
@@ -344,7 +344,7 @@ void diele_func::cal_wing(const Cs_LRI &Cs_data, double vq_threshold, const atpa
                     {
                         std::complex<double> tmp =
                             compute_wing(alpha, iomega, mu, ik, isp, desc_nband_nband, C_mnk);
-                        const int index = mu * this->omega.size() * 3 + iomega * 3 + alpha;
+                        const std::size_t index = as_size(mu) * this->omega.size() * 3 + iomega * 3 + as_size(alpha);
                         local_wing_mu[index] += tmp;
                     }
                 }
@@ -362,9 +362,9 @@ void diele_func::cal_wing(const Cs_LRI &Cs_data, double vq_threshold, const atpa
     {
         for (int mu = 0; mu != n_abf; mu++)
         {
-            for (int iomega = 0; iomega != this->omega.size(); iomega++)
+            for (std::size_t iomega = 0; iomega != this->omega.size(); iomega++)
             {
-                const int index = mu * this->omega.size() * 3 + iomega * 3 + alpha;
+                const std::size_t index = as_size(mu) * this->omega.size() * 3 + iomega * 3 + as_size(alpha);
                 this->wing_mu.at(iomega)(mu, alpha) = local_wing_mu[index];
                 if (use_soc)
                     this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit;
@@ -504,7 +504,6 @@ std::complex<double> diele_func::compute_wing(const int alpha, const int iomega,
     bool use_soc = meanfield_df.get_n_spinor() > 1;
 
     auto &wg = this->meanfield_df.get_weight()[ispin];
-    std::complex<double> test_tot = 0.0;
     for (int iocc = 0; iocc != n_states; iocc++)
     {
         for (int iunocc = 0; iunocc != n_states; iunocc++)
@@ -584,8 +583,9 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
     // opt descriptor for wing
     ArrayDesc desc_wing_opt(blacs_h);
     desc_wing_opt.init(n_nonsingular - 1, 3, desc_body.mb(), desc_wing.nb(), 0, 0);
+    const int n_omegas = this->omega.size();
 
-    for (int iomega = 0; iomega != this->omega.size(); iomega++)
+    for (int iomega = 0; iomega != n_omegas; iomega++)
     {
         auto &wing_tmp = this->wing.at(iomega);
         wing_tmp = init_local_mat<complex<double>>(desc_wing_opt, MAJOR::COL);
@@ -808,8 +808,9 @@ void diele_func::get_Xv_cpl(double vq_threshold, const librpa_int::atpair_k_cplx
 
 std::vector<double> diele_func::get_head_vec()
 {
-    std::vector<double> head_vec(this->omega.size(), 0.0);
-    for (int iomega = 0; iomega != this->omega.size(); iomega++)
+    const int n_omegas = this->omega.size();
+    std::vector<double> head_vec(n_omegas, 0.0);
+    for (int iomega = 0; iomega != n_omegas; iomega++)
     {
         std::complex<double> df = 0;
         for (int alpha = 0; alpha != 3; alpha++)
@@ -824,10 +825,12 @@ std::vector<double> diele_func::get_head_vec()
 void diele_func::test_head()
 {
     using global::lib_printf;
+
+    const int n_omegas = this->omega.size();
     if (comm_h.is_root())
     {
         std::cout << "Freqency node & Head of dielectric function(Re, Im): " << std::endl;
-        for (int iomega = 0; iomega != this->omega.size(); iomega++)
+        for (int iomega = 0; iomega != n_omegas; iomega++)
         {
             std::complex<double> df = 0;
             for (int alpha = 0; alpha != 3; alpha++)
@@ -929,21 +932,22 @@ void diele_func::construct_L(const int ifreq, ArrayDesc &desc_body)
 {
     using global::profiler;
 
+    const int n_lambda = as_int(n_nonsingular) - 1;
     profiler.start("cal_L");
     this->Lind.resize(3, 3, MAJOR::COL);
-    this->bw.resize(n_nonsingular - 1, 3, MAJOR::COL);
-    this->wb.resize(3, n_nonsingular - 1, MAJOR::COL);
+    this->bw.resize(n_lambda, 3, MAJOR::COL);
+    this->wb.resize(3, n_lambda, MAJOR::COL);
     ArrayDesc desc_wing(blacs_h);
-    desc_wing.init_square_blk(n_nonsingular - 1, 3, 0, 0);
+    desc_wing.init_square_blk(n_lambda, 3, 0, 0);
     // opt descriptor for wing
     ArrayDesc desc_wing_opt(blacs_h);
-    desc_wing_opt.init(n_nonsingular - 1, 3, desc_body.mb(), desc_wing.nb(), 0, 0);
+    desc_wing_opt.init(n_lambda, 3, desc_body.mb(), desc_wing.nb(), 0, 0);
 
     ArrayDesc desc_lam_3(blacs_h);
-    desc_lam_3.init_square_blk(n_nonsingular - 1, 3, 0, 0);
+    desc_lam_3.init_square_blk(n_lambda, 3, 0, 0);
 
     ArrayDesc desc_3_lam(blacs_h);
-    desc_3_lam.init_square_blk(3, n_nonsingular - 1, 0, 0);
+    desc_3_lam.init_square_blk(3, n_lambda, 0, 0);
 
     ArrayDesc desc_3_3(blacs_h);
     desc_3_3.init_square_blk(3, 3, 0, 0);
@@ -952,20 +956,20 @@ void diele_func::construct_L(const int ifreq, ArrayDesc &desc_body)
     auto _3_lam = init_local_mat<complex<double>>(desc_3_lam, MAJOR::COL);
     auto Lind_loc = init_local_mat<complex<double>>(desc_3_3, MAJOR::COL);
     // tmp = head.at(ifreq) - transpose(wing.at(ifreq), true) * body_inv * wing.at(ifreq);
-    ScalapackConnector::pgemm_f('N', 'N', n_nonsingular - 1, 3, n_nonsingular - 1, 1.0,
+    ScalapackConnector::pgemm_f('N', 'N', n_lambda, 3, n_lambda, 1.0,
                                 body_inv.ptr(), 1, 1, desc_body.desc, wing.at(ifreq).ptr(), 1, 1,
                                 desc_wing_opt.desc, 0.0, lam_3.ptr(), 1, 1, desc_lam_3.desc);
-    ScalapackConnector::pgemm_f('C', 'N', 3, 3, n_nonsingular - 1, 1.0, wing.at(ifreq).ptr(), 1, 1,
+    ScalapackConnector::pgemm_f('C', 'N', 3, 3, n_lambda, 1.0, wing.at(ifreq).ptr(), 1, 1,
                                 desc_wing_opt.desc, lam_3.ptr(), 1, 1, desc_lam_3.desc, 0.0,
                                 Lind_loc.ptr(), 1, 1, desc_3_3.desc);
-    ScalapackConnector::pgemm_f('C', 'N', 3, n_nonsingular - 1, n_nonsingular - 1, 1.0,
+    ScalapackConnector::pgemm_f('C', 'N', 3, n_lambda, n_lambda, 1.0,
                                 wing.at(ifreq).ptr(), 1, 1, desc_wing_opt.desc, body_inv.ptr(), 1,
                                 1, desc_body.desc, 0.0, _3_lam.ptr(), 1, 1, desc_3_lam.desc);
 
     for (int i = 0; i != 3; i++)
     {
         auto loc_i = desc_3_3.indx_g2l_r(i);
-        for (int ilambda = 0; ilambda < n_nonsingular - 1; ilambda++)
+        for (int ilambda = 0; ilambda < n_lambda; ilambda++)
         {
             auto loc_ilambda = desc_lam_3.indx_g2l_r(ilambda);
             auto loc_ibw = desc_lam_3.indx_g2l_c(i);
@@ -1027,7 +1031,8 @@ void diele_func::get_Leb_points()
         qy_leb = std::move(quad_points.y);
         qz_leb = std::move(quad_points.z);
         qw_leb = std::move(quad_points.weights);
-        for (int ileb = 0; ileb != qw_leb.size(); ileb++)
+        const int n = qw_leb.size();
+        for (int ileb = 0; ileb != n; ileb++)
         {
             qw_leb[ileb] *= 2 * TWO_PI;
         }
@@ -1081,8 +1086,9 @@ void diele_func::calculate_q_gamma()
 {
     q_gamma.clear();
     q_gamma.resize(qw_leb.size());
+    const int n = qw_leb.size();
 #pragma omp parallel for schedule(dynamic)
-    for (int ileb = 0; ileb != qw_leb.size(); ileb++)
+    for (int ileb = 0; ileb != n; ileb++)
     {
         double qmax = 1.0e10;
         Vector3_Order<double> q_quta = {qx_leb[ileb], qy_leb[ileb], qz_leb[ileb]};
@@ -1105,8 +1111,9 @@ void diele_func::calculate_q_gamma_2d()
 {
     q_gamma.clear();
     q_gamma.resize(qw_leb.size());
+    const int n = qw_leb.size();
 #pragma omp parallel for schedule(dynamic)
-    for (int ileb = 0; ileb != qw_leb.size(); ileb++)
+    for (int ileb = 0; ileb != n; ileb++)
     {
         double qmax = 1.0e10;
         Vector3_Order<double> q_quta = {qx_leb[ileb], qy_leb[ileb], qz_leb[ileb]};
@@ -1244,20 +1251,22 @@ void diele_func::cal_eps(const int ifreq, ArrayDesc &desc_nabf_nabf_opt, ArrayDe
 
     this->vol_gamma = k_volume / nk;
     double vol_gamma_numeric = 0.0;
+    const int nleb = qw_leb.size();
+
     if (ifreq == 0 && mpi_comm_global_h.is_root())
     {
         if (use_2d_dielectric)
         {
             std::cout << "Using 2D average inverse dielectric matrix." << std::endl;
             std::cout << "Height is " << std::abs(pbc_.latvec.e33) << " Bohr." << std::endl;
-            for (int ileb = 0; ileb != qw_leb.size(); ileb++)
+            for (int ileb = 0; ileb != nleb; ileb++)
             {
                 vol_gamma_numeric += qw_leb[ileb] * std::pow(q_gamma[ileb], 2) / 2.0;
             }
         }
         else
         {
-            for (int ileb = 0; ileb != qw_leb.size(); ileb++)
+            for (int ileb = 0; ileb != nleb; ileb++)
             {
                 vol_gamma_numeric += qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / 3.0;
             }
@@ -1276,7 +1285,6 @@ void diele_func::cal_eps(const int ifreq, ArrayDesc &desc_nabf_nabf_opt, ArrayDe
 
     profiler.start("precompute_q_data");
 
-    const size_t nleb = qw_leb.size();
     std::vector<std::complex<double>> weights;
     // std::vector<std::complex<double>> weights_head;
     // std::vector<std::complex<double>> weights_wing;

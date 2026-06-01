@@ -1,11 +1,15 @@
 #include "meanfield_mpi.h"
 
 #include <algorithm>
+#include <cmath>
 #include <complex>
+#include <cstring>
+#include <limits>
 
 #include "../io/stl_io_helper.h"
 #include "../math/lapack_connector.h"
 #include "../math/matrix_m.h"
+#include "../math/scalapack_connector.h"
 #include "../utils/constants.h"
 #include "../utils/profiler.h"
 
@@ -31,6 +35,30 @@ static void collect_Rs(const std::vector<Vector3_Order<int>> &Rs, std::vector<in
         Rs_all[comm_h.myid * nR_max * 3 + iR * 3 + 2] = Rs[iR].z;
     }
     MPI_Allreduce(MPI_IN_PLACE, Rs_all.data(), comm_h.nprocs * nR_max * 3, mpi_datatype<int>::value, MPI_SUM, comm_h.comm);
+}
+
+static void check_same_imagtimes(const std::vector<double> &imagtimes,
+                                 const MpiCommHandler &comm_h)
+{
+    const int n_tau = imagtimes.size();
+    int n_tau_min = 0, n_tau_max = 0;
+    MPI_Allreduce(&n_tau, &n_tau_min, 1, mpi_datatype<int>::value, MPI_MIN, comm_h.comm);
+    MPI_Allreduce(&n_tau, &n_tau_max, 1, mpi_datatype<int>::value, MPI_MAX, comm_h.comm);
+    if (n_tau_min != n_tau_max)
+        throw LIBRPA_RUNTIME_ERROR("imaginary-time lists differ in k-point BLACS context");
+    if (n_tau == 0) return;
+
+    std::vector<double> imagtimes_all(n_tau * comm_h.nprocs);
+    MPI_Allgather(imagtimes.data(), n_tau, mpi_datatype<double>::value,
+                  imagtimes_all.data(), n_tau, mpi_datatype<double>::value, comm_h.comm);
+    for (int pid = 0; pid != comm_h.nprocs; ++pid)
+    {
+        for (int it = 0; it != n_tau; ++it)
+        {
+            if (imagtimes_all[pid * n_tau + it] != imagtimes[it])
+                throw LIBRPA_RUNTIME_ERROR("imaginary-time lists differ in k-point BLACS context");
+        }
+    }
 }
 
 std::map<Vector3_Order<int>, ComplexMatrix> get_dmat_cplx_Rs_kpara(
@@ -226,6 +254,399 @@ std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> get_gf_cplx_imagti
     const std::vector<Vector3_Order<int>> &Rs, const MpiCommHandler &comm_h)
 {
     return get_gf_cplx_imagtimes_Rs_kpara(ispin, 0, 0, mf, kfrac_list, imagtimes, Rs, comm_h);
+}
+
+std::map<Vector3_Order<int>, Matz> get_dmat_cplx_Rs_kblacs_para(
+    int ispin, int ispinor_bra, int ispinor_ket, const MeanField &mf,
+    const std::vector<Vector3_Order<double>> &kfrac_list, const std::vector<Vector3_Order<int>> &Rs,
+    const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm)
+{
+    global::profiler.start(__FUNCTION__);
+
+    if (!kblacs_ctxt.is_initialized())
+        throw LIBRPA_RUNTIME_ERROR("KPointBlacsParallelContext is not initialized");
+
+    const int n_aos = mf.get_n_aos();
+    const int n_states = mf.get_n_states();
+    const int n_kpoints = mf.get_n_kpoints();
+    if (static_cast<int>(kfrac_list.size()) != n_kpoints)
+        throw LIBRPA_RUNTIME_ERROR("k-point fractional coordinate list has inconsistent size");
+    if (kblacs_ctxt.n_kpoints() != n_kpoints)
+        throw LIBRPA_RUNTIME_ERROR("k-point BLACS context has inconsistent number of k-points");
+    if (!desc_wfc.is_initialized() || !desc_dm.is_initialized())
+        throw LIBRPA_RUNTIME_ERROR("BLACS array descriptors are not initialized");
+    if (desc_wfc.m() != n_aos || desc_wfc.n() != n_states)
+        throw LIBRPA_RUNTIME_ERROR("wave-function descriptor must be n_aos x n_states");
+    if (desc_dm.m() != n_aos || desc_dm.n() != n_aos)
+        throw LIBRPA_RUNTIME_ERROR("density-matrix descriptor must be n_aos x n_aos");
+    if (desc_wfc.ictxt() != desc_dm.ictxt())
+        throw LIBRPA_RUNTIME_ERROR("wave-function and density-matrix descriptors must use the same BLACS context");
+
+    std::vector<int> n_Rs_all, Rs_all;
+    int nR_max;
+    collect_Rs(Rs, n_Rs_all, Rs_all, nR_max, kblacs_ctxt.comm_kpoint_h);
+
+    std::map<Vector3_Order<int>, Matz> dmat_Rs;
+    for (const auto &R: Rs)
+    {
+        dmat_Rs.emplace(R, Matz(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL));
+    }
+    if (nR_max == 0)
+    {
+        global::profiler.stop(__FUNCTION__);
+        return dmat_Rs;
+    }
+
+    const size_t wfc_size_loc = static_cast<size_t>(desc_wfc.m_loc()) * desc_wfc.n_loc();
+    const size_t dm_size_loc = static_cast<size_t>(desc_dm.m_loc()) * desc_dm.n_loc();
+    if (dm_size_loc > static_cast<size_t>(std::numeric_limits<int>::max()))
+        throw LIBRPA_RUNTIME_ERROR("local density-matrix block is too large for MPI collectives");
+    const int n_elem = static_cast<int>(dm_size_loc);
+
+    std::vector<cplxdb> dummy(1, C_ZERO);
+    Matz scaled_wfc_ket(desc_wfc.m_loc(), desc_wfc.n_loc(), MAJOR::COL);
+    Matz dmat_k(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
+    const auto &iks_local = kblacs_ctxt.kpoints_local();
+    const int nk_local = iks_local.size();
+    int nk_sum = 0;
+    MPI_Allreduce(&nk_local, &nk_sum, 1, mpi_datatype<int>::value, MPI_SUM,
+                  kblacs_ctxt.comm_kpoint_h.comm);
+    if (nk_sum != n_kpoints)
+        throw LIBRPA_RUNTIME_ERROR("k-point BLACS context has inconsistent k-point distribution");
+    Matz kmat(nk_local, n_elem, MAJOR::COL);
+
+    const double occ_thres = 1e-4 / n_kpoints;
+    const double scale_spin = 0.5 * mf.get_n_spins() * mf.get_n_spinor();
+    for (int ik_local = 0; ik_local != nk_local; ++ik_local)
+    {
+        const int ik = iks_local[ik_local];
+        const auto *wfc_bra = mf.find_wfc(ispin, ispinor_bra, ik);
+        const auto *wfc_ket = mf.find_wfc(ispin, ispinor_ket, ik);
+        if ((wfc_bra == nullptr || wfc_ket == nullptr) && wfc_size_loc > 0)
+            throw LIBRPA_RUNTIME_ERROR("missing local wave-function block for k-point " +
+                                      std::to_string(ik));
+        if (wfc_bra != nullptr && static_cast<size_t>(wfc_bra->size) != wfc_size_loc)
+            throw LIBRPA_RUNTIME_ERROR("wave-function bra block size is inconsistent with descriptor");
+        if (wfc_ket != nullptr && static_cast<size_t>(wfc_ket->size) != wfc_size_loc)
+            throw LIBRPA_RUNTIME_ERROR("wave-function ket block size is inconsistent with descriptor");
+
+        int nocc = 0;
+        std::vector<double> weights;
+        weights.reserve(n_states);
+        for (; nocc != n_states; ++nocc)
+        {
+            const double weight = mf.get_weight()[ispin](ik, nocc) * scale_spin;
+            if (weight < occ_thres) break;
+            weights.push_back(weight);
+        }
+
+        scaled_wfc_ket = C_ZERO;
+        if (wfc_ket != nullptr && wfc_size_loc > 0)
+            std::memcpy(scaled_wfc_ket.ptr(), wfc_ket->c, wfc_size_loc * sizeof(cplxdb));
+        const int wfc_m_loc = desc_wfc.m_loc();
+        std::vector<char> scale_wfc_col(desc_wfc.n_loc(), false);
+        std::vector<double> wfc_col_scale(desc_wfc.n_loc(), 1.0);
+        for (int jloc = 0; jloc != desc_wfc.n_loc(); ++jloc)
+        {
+            const int jglob = desc_wfc.indx_l2g_c(jloc);
+            if (jglob < 0 || jglob >= nocc) continue;
+            scale_wfc_col[jloc] = true;
+            wfc_col_scale[jloc] = weights[jglob];
+        }
+#pragma omp parallel for schedule(static) if (wfc_size_loc > 4096)
+        for (size_t i = 0; i < wfc_size_loc; ++i)
+        {
+            const int jloc = static_cast<int>(i / wfc_m_loc);
+            if (scale_wfc_col[jloc])
+                scaled_wfc_ket.ptr()[i] *= wfc_col_scale[jloc];
+        }
+
+        dmat_k = C_ZERO;
+        if (nocc > 0)
+        {
+            const cplxdb *wfc_bra_ptr = wfc_bra == nullptr ? dummy.data() : wfc_bra->c;
+            ScalapackConnector::pgemm_f('N', 'C', n_aos, n_aos, nocc, C_ONE,
+                                        wfc_bra_ptr, 1, 1, desc_wfc.desc,
+                                        scaled_wfc_ket.ptr(), 1, 1, desc_wfc.desc, C_ZERO,
+                                        dmat_k.ptr(), 1, 1, desc_dm.desc);
+        }
+
+#pragma omp parallel for schedule(static) if (n_elem > 4096)
+        for (int i = 0; i != n_elem; ++i)
+        {
+            kmat.ptr()[ik_local + static_cast<size_t>(i) * nk_local] = dmat_k.ptr()[i];
+        }
+    }
+
+    for (int pid = 0; pid != kblacs_ctxt.comm_kpoint_h.nprocs; ++pid)
+    {
+        const int nR_this = n_Rs_all[pid];
+        if (nR_this < 1) continue;
+
+        Matz transmat(nR_this, nk_local, MAJOR::COL);
+        const size_t n_trans = static_cast<size_t>(nR_this) * nk_local;
+#pragma omp parallel for schedule(static) if (n_trans > 4096)
+        for (size_t i = 0; i < n_trans; ++i)
+        {
+            const int ik_local = static_cast<int>(i / nR_this);
+            const int iR = static_cast<int>(i % nR_this);
+            const auto &kf = kfrac_list[iks_local[ik_local]];
+            const int index = pid * nR_max * 3 + iR * 3;
+            const auto ang = - (kf.x * Rs_all[index] +
+                                kf.y * Rs_all[index + 1] +
+                                kf.z * Rs_all[index + 2]) * TWO_PI;
+            transmat.ptr()[iR + static_cast<size_t>(ik_local) * nR_this] =
+                cplxdb{std::cos(ang), std::sin(ang)};
+        }
+
+        Matz rmat(nR_this, n_elem, MAJOR::COL);
+        if (nk_local > 0 && n_elem > 0)
+        {
+            LapackConnector::gemm_f('N', 'N', nR_this, n_elem, nk_local, C_ONE,
+                                    transmat.ptr(), nR_this, kmat.ptr(), nk_local, C_ZERO,
+                                    rmat.ptr(), nR_this);
+        }
+
+        const size_t count = static_cast<size_t>(nR_this) * n_elem;
+        if (count > static_cast<size_t>(std::numeric_limits<int>::max()))
+            throw LIBRPA_RUNTIME_ERROR("local density-matrix Fourier block is too large for MPI collectives");
+        const int count_int = static_cast<int>(count);
+        if (kblacs_ctxt.comm_kpoint_h.myid == pid)
+        {
+            kblacs_ctxt.comm_kpoint_h.reduce(MPI_IN_PLACE, rmat.ptr(), count_int, pid, MPI_SUM);
+            for (int iR = 0; iR != nR_this; ++iR)
+            {
+                const int index = pid * nR_max * 3 + iR * 3;
+                Vector3_Order<int> R{Rs_all[index], Rs_all[index + 1], Rs_all[index + 2]};
+                auto &m = dmat_Rs[R];
+                m.resize(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
+                const auto *rmat_iR = rmat.ptr() + iR;
+#pragma omp parallel for schedule(static) if (n_elem > 4096)
+                for (int i = 0; i != n_elem; ++i)
+                {
+                    m.ptr()[i] = rmat_iR[static_cast<size_t>(i) * nR_this];
+                }
+            }
+        }
+        else
+        {
+            kblacs_ctxt.comm_kpoint_h.reduce(MPI_IN_PLACE, rmat.ptr(), count_int, pid, MPI_SUM);
+        }
+    }
+
+    global::profiler.stop(__FUNCTION__);
+    return dmat_Rs;
+}
+
+std::map<Vector3_Order<int>, Matz> get_dmat_cplx_Rs_kblacs_para(
+    int ispin, const MeanField &mf,
+    const std::vector<Vector3_Order<double>> &kfrac_list, const std::vector<Vector3_Order<int>> &Rs,
+    const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm)
+{
+    return get_dmat_cplx_Rs_kblacs_para(ispin, 0, 0, mf, kfrac_list, Rs, kblacs_ctxt, desc_wfc, desc_dm);
+}
+
+std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kblacs_para(
+    int ispin, int ispinor_bra, int ispinor_ket, const MeanField &mf,
+    const std::vector<Vector3_Order<double>> &kfrac_list, std::vector<double> imagtimes,
+    const std::vector<Vector3_Order<int>> &Rs,
+    const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm)
+{
+    global::profiler.start(__FUNCTION__);
+
+    if (!kblacs_ctxt.is_initialized())
+        throw LIBRPA_RUNTIME_ERROR("KPointBlacsParallelContext is not initialized");
+
+    const int n_aos = mf.get_n_aos();
+    const int n_states = mf.get_n_states();
+    const int n_kpoints = mf.get_n_kpoints();
+    if (static_cast<int>(kfrac_list.size()) != n_kpoints)
+        throw LIBRPA_RUNTIME_ERROR("k-point fractional coordinate list has inconsistent size");
+    if (kblacs_ctxt.n_kpoints() != n_kpoints)
+        throw LIBRPA_RUNTIME_ERROR("k-point BLACS context has inconsistent number of k-points");
+    if (!desc_wfc.is_initialized() || !desc_dm.is_initialized())
+        throw LIBRPA_RUNTIME_ERROR("BLACS array descriptors are not initialized");
+    if (desc_wfc.m() != n_aos || desc_wfc.n() != n_states)
+        throw LIBRPA_RUNTIME_ERROR("wave-function descriptor must be n_aos x n_states");
+    if (desc_dm.m() != n_aos || desc_dm.n() != n_aos)
+        throw LIBRPA_RUNTIME_ERROR("Green's-function descriptor must be n_aos x n_aos");
+    if (desc_wfc.ictxt() != desc_dm.ictxt())
+        throw LIBRPA_RUNTIME_ERROR("wave-function and Green's-function descriptors must use the same BLACS context");
+
+    check_same_imagtimes(imagtimes, kblacs_ctxt.comm_global_h);
+
+    std::vector<int> n_Rs_all, Rs_all;
+    int nR_max;
+    collect_Rs(Rs, n_Rs_all, Rs_all, nR_max, kblacs_ctxt.comm_kpoint_h);
+
+    std::map<double, std::map<Vector3_Order<int>, Matz>> gf;
+    if (imagtimes.empty())
+    {
+        global::profiler.stop(__FUNCTION__);
+        return gf;
+    }
+    if (nR_max == 0)
+    {
+        for (const auto tau: imagtimes) gf.emplace(tau, std::map<Vector3_Order<int>, Matz>{});
+        global::profiler.stop(__FUNCTION__);
+        return gf;
+    }
+
+    const size_t wfc_size_loc = static_cast<size_t>(desc_wfc.m_loc()) * desc_wfc.n_loc();
+    const size_t gf_size_loc = static_cast<size_t>(desc_dm.m_loc()) * desc_dm.n_loc();
+    if (gf_size_loc > static_cast<size_t>(std::numeric_limits<int>::max()))
+        throw LIBRPA_RUNTIME_ERROR("local Green's-function block is too large for MPI collectives");
+    const int n_elem = static_cast<int>(gf_size_loc);
+
+    const auto &iks_local = kblacs_ctxt.kpoints_local();
+    const int nk_local = iks_local.size();
+    int nk_sum = 0;
+    MPI_Allreduce(&nk_local, &nk_sum, 1, mpi_datatype<int>::value, MPI_SUM,
+                  kblacs_ctxt.comm_kpoint_h.comm);
+    if (nk_sum != n_kpoints)
+        throw LIBRPA_RUNTIME_ERROR("k-point BLACS context has inconsistent k-point distribution");
+
+    std::vector<cplxdb> dummy(1, C_ZERO);
+    Matz scaled_wfc_ket(desc_wfc.m_loc(), desc_wfc.n_loc(), MAJOR::COL);
+    Matz gf_k(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
+    Matz kmat(nk_local, n_elem, MAJOR::COL);
+
+    const double scale_spin = 0.5 * mf.get_n_spins() * mf.get_n_spinor();
+    for (const auto tau: imagtimes)
+    {
+        std::map<Vector3_Order<int>, Matz> gf_tau;
+        for (const auto &R: Rs)
+        {
+            gf_tau.emplace(R, Matz(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL));
+        }
+
+        for (int ik_local = 0; ik_local != nk_local; ++ik_local)
+        {
+            const int ik = iks_local[ik_local];
+            const auto *wfc_bra = mf.find_wfc(ispin, ispinor_bra, ik);
+            const auto *wfc_ket = mf.find_wfc(ispin, ispinor_ket, ik);
+            if ((wfc_bra == nullptr || wfc_ket == nullptr) && wfc_size_loc > 0)
+                throw LIBRPA_RUNTIME_ERROR("missing local wave-function block for k-point " +
+                                          std::to_string(ik));
+            if (wfc_bra != nullptr && static_cast<size_t>(wfc_bra->size) != wfc_size_loc)
+                throw LIBRPA_RUNTIME_ERROR("wave-function bra block size is inconsistent with descriptor");
+            if (wfc_ket != nullptr && static_cast<size_t>(wfc_ket->size) != wfc_size_loc)
+                throw LIBRPA_RUNTIME_ERROR("wave-function ket block size is inconsistent with descriptor");
+
+            std::vector<double> scales(n_states);
+#pragma omp parallel for schedule(static) if (n_states > 64)
+            for (int ib = 0; ib != n_states; ++ib)
+            {
+                const double wg_occ = mf.get_weight()[ispin](ik, ib) * scale_spin;
+                double wg_empty = 1.0 / n_kpoints - wg_occ;
+                if (wg_empty < 0.0) wg_empty = 0.0;
+                const double prefac = tau > 0 ? wg_empty : wg_occ;
+                double scale = -tau * (mf.get_eigenvals()[ispin](ik, ib) - mf.get_efermi());
+                if (scale > 0.0) scale = 0.0;
+                scales[ib] = std::exp(scale) * prefac;
+            }
+
+            scaled_wfc_ket = C_ZERO;
+            if (wfc_ket != nullptr && wfc_size_loc > 0)
+                std::memcpy(scaled_wfc_ket.ptr(), wfc_ket->c, wfc_size_loc * sizeof(cplxdb));
+            const int wfc_m_loc = desc_wfc.m_loc();
+            std::vector<double> wfc_col_scale(desc_wfc.n_loc(), 0.0);
+            for (int jloc = 0; jloc != desc_wfc.n_loc(); ++jloc)
+            {
+                const int jglob = desc_wfc.indx_l2g_c(jloc);
+                if (jglob < 0 || jglob >= n_states) continue;
+                wfc_col_scale[jloc] = scales[jglob];
+            }
+#pragma omp parallel for schedule(static) if (wfc_size_loc > 4096)
+            for (size_t i = 0; i < wfc_size_loc; ++i)
+            {
+                const int jloc = static_cast<int>(i / wfc_m_loc);
+                scaled_wfc_ket.ptr()[i] *= wfc_col_scale[jloc];
+            }
+
+            gf_k = C_ZERO;
+            const cplxdb *wfc_bra_ptr = wfc_bra == nullptr ? dummy.data() : wfc_bra->c;
+            ScalapackConnector::pgemm_f('N', 'C', n_aos, n_aos, n_states, C_ONE,
+                                        wfc_bra_ptr, 1, 1, desc_wfc.desc,
+                                        scaled_wfc_ket.ptr(), 1, 1, desc_wfc.desc, C_ZERO,
+                                        gf_k.ptr(), 1, 1, desc_dm.desc);
+#pragma omp parallel for schedule(static) if (n_elem > 4096)
+            for (int i = 0; i != n_elem; ++i)
+            {
+                kmat.ptr()[ik_local + static_cast<size_t>(i) * nk_local] = gf_k.ptr()[i];
+            }
+        }
+
+        for (int pid = 0; pid != kblacs_ctxt.comm_kpoint_h.nprocs; ++pid)
+        {
+            const int nR_this = n_Rs_all[pid];
+            if (nR_this < 1) continue;
+
+            Matz transmat(nR_this, nk_local, MAJOR::COL);
+            const double tau_sign = tau > 0 ? 1.0 : -1.0;
+            const size_t n_trans = static_cast<size_t>(nR_this) * nk_local;
+#pragma omp parallel for schedule(static) if (n_trans > 4096)
+            for (size_t i = 0; i < n_trans; ++i)
+            {
+                const int ik_local = static_cast<int>(i / nR_this);
+                const int iR = static_cast<int>(i % nR_this);
+                const auto &kf = kfrac_list[iks_local[ik_local]];
+                const int index = pid * nR_max * 3 + iR * 3;
+                const auto ang = - (kf.x * Rs_all[index] +
+                                    kf.y * Rs_all[index + 1] +
+                                    kf.z * Rs_all[index + 2]) * TWO_PI;
+                transmat.ptr()[iR + static_cast<size_t>(ik_local) * nR_this] =
+                    tau_sign * cplxdb{std::cos(ang), std::sin(ang)};
+            }
+
+            Matz rmat(nR_this, n_elem, MAJOR::COL);
+            if (nk_local > 0 && n_elem > 0)
+            {
+                LapackConnector::gemm_f('N', 'N', nR_this, n_elem, nk_local, C_ONE,
+                                        transmat.ptr(), nR_this, kmat.ptr(), nk_local, C_ZERO,
+                                        rmat.ptr(), nR_this);
+            }
+
+            const size_t count = static_cast<size_t>(nR_this) * n_elem;
+            if (count > static_cast<size_t>(std::numeric_limits<int>::max()))
+                throw LIBRPA_RUNTIME_ERROR("local Green's-function Fourier block is too large for MPI collectives");
+            const int count_int = static_cast<int>(count);
+            if (kblacs_ctxt.comm_kpoint_h.myid == pid)
+            {
+                kblacs_ctxt.comm_kpoint_h.reduce(MPI_IN_PLACE, rmat.ptr(), count_int, pid, MPI_SUM);
+                for (int iR = 0; iR != nR_this; ++iR)
+                {
+                    const int index = pid * nR_max * 3 + iR * 3;
+                    Vector3_Order<int> R{Rs_all[index], Rs_all[index + 1], Rs_all[index + 2]};
+                    auto &m = gf_tau[R];
+                    m.resize(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
+                    const auto *rmat_iR = rmat.ptr() + iR;
+#pragma omp parallel for schedule(static) if (n_elem > 4096)
+                    for (int i = 0; i != n_elem; ++i)
+                    {
+                        m.ptr()[i] = rmat_iR[static_cast<size_t>(i) * nR_this];
+                    }
+                }
+            }
+            else
+            {
+                kblacs_ctxt.comm_kpoint_h.reduce(MPI_IN_PLACE, rmat.ptr(), count_int, pid, MPI_SUM);
+            }
+        }
+        gf.emplace(tau, std::move(gf_tau));
+    }
+
+    global::profiler.stop(__FUNCTION__);
+    return gf;
+}
+
+std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kblacs_para(
+    int ispin, const MeanField &mf,
+    const std::vector<Vector3_Order<double>> &kfrac_list, std::vector<double> imagtimes,
+    const std::vector<Vector3_Order<int>> &Rs,
+    const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm)
+{
+    return get_gf_cplx_imagtimes_Rs_kblacs_para(ispin, 0, 0, mf, kfrac_list, imagtimes, Rs, kblacs_ctxt, desc_wfc, desc_dm);
 }
 
 }

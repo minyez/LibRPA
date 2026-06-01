@@ -30,9 +30,9 @@ void driver::task_g0w0()
 
     // Prepare input specific to G0W0
     auto routing = opts.parallel_routing;
-    if (routing == LibrpaParallelRouting::AUTO) routing = librpa_int::decide_auto_routing(n_atoms, n_kpoints * opts.nfreq);
+    if (routing == LIBRPA_ROUTING_AUTO) routing = librpa_int::decide_auto_routing(n_atoms, n_kpoints * opts.nfreq);
 
-    if (routing == LibrpaParallelRouting::RTAU)
+    if (routing == LIBRPA_ROUTING_RTAU)
     {
         read_Vq_full(driver_params.input_dir, "coulomb_cut_", true);
     }

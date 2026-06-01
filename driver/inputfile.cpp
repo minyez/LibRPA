@@ -235,8 +235,8 @@ void parse_inputfile_to_params(const std::string &fn)
         parser.parse_string("tfgrid_type", stmp, flag);
         if (flag == 0) opts.tfgrids_type = get_tfgrid_type(stmp);
     }
-    if (opts.tfgrids_type == LibrpaTimeFreqGrid::TFGRID_UNSET)
-        opts.tfgrids_type = LibrpaTimeFreqGrid::Minimax;
+    if (opts.tfgrids_type == LIBRPA_TFGRID_UNSET)
+        opts.tfgrids_type = LIBRPA_TFGRID_MINIMAX;
     _parse_int(opts, nfreq);
     _parse_double(opts, tfgrids_freq_min);
     _parse_double(opts, tfgrids_freq_interval);

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <fstream>
 #include <iterator>
+#include <vector>
 
 #include "../io/global_io.h"
 #include "../io/stl_io_helper.h"
@@ -32,12 +33,15 @@
 namespace librpa_int
 {
 
-Exx::Exx(const MeanField &mf_in,
-         const AtomicBasis &atbasis_wfc_in,
-         const PeriodicBoundaryData &pbc_in,
-         const MpiCommHandler &comm_h_in,
-         bool is_mf_eigvec_k_distributed)
-    : mf(mf_in), atbasis_wfc(atbasis_wfc_in), pbc(pbc_in), comm_h(comm_h_in)
+Exx::Exx(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
+         const PeriodicBoundaryData &pbc_in, const KPointBlacsParallelContext &kblacs_ctxt_in,
+         const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed)
+    : mf(mf_in),
+      desc_wfc(desc_wfc_in),
+      atbasis_wfc(atbasis_wfc_in),
+      pbc(pbc_in),
+      comm_h(kblacs_ctxt_in.comm_global_h),
+      kblacs_ctxt(kblacs_ctxt_in)
 {
     is_mf_eigvec_k_distributed_ = is_mf_eigvec_k_distributed;
     is_rspace_built_ = false;
@@ -208,6 +212,45 @@ static void build_dmat_libri_kpara(
     }
     global::profiler.stop("exx_build_dmat_libri_kpara");
 }
+
+static void build_dmat_libri_kblacs_para(
+    const MeanField &mf,
+    const KPointBlacsParallelContext &kblacs_ctxt,
+    const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm,
+    const IndexScheduler &sched,
+    const AtomicBasis &atbasis_wfc,
+    int ispin, int ispinor_bra, int ispinor_ket,
+    const vector<Vector3_Order<double>> &kfrac_list,
+    const std::vector<Vector3_Order<int>> Rs,
+    const bool save_cplx,
+    std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<double>>> &dmat_libri,
+    std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<cplxdb>>> &dmat_libri_cplx)
+{
+    global::profiler.start("exx_build_dmat_libri_kblacs_para");
+
+    auto dmat_Rs_cplx = get_dmat_cplx_Rs_kblacs_para(ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, Rs, kblacs_ctxt, desc_wfc, desc_dm);
+    // global::ofs_myid << kfrac_list << std::endl;
+    for (auto &R_dmat_cplx: dmat_Rs_cplx)
+    {
+        auto &R = R_dmat_cplx.first;
+        auto &mat_blacs = R_dmat_cplx.second;
+        auto pair_mat = get_ap_map_from_blacs_dist_scheduler(mat_blacs, sched, atbasis_wfc, atbasis_wfc, desc_dm);
+        for (auto &[pair, mat_ap]: pair_mat)
+        {
+            const auto &I = as_int(pair.first);
+            const auto &J = as_int(pair.second);
+            const auto &n_I = atbasis_wfc.get_atom_nb(I);
+            const auto &n_J = atbasis_wfc.get_atom_nb(J);
+            mat_ap.swap_to_row_major();
+            if (save_cplx)
+                dmat_libri_cplx[I][{J, {R.x, R.y, R.z}}] = RI::Tensor<cplxdb>({n_I, n_J}, mat_ap.sptr());
+            else
+                dmat_libri[I][{J, {R.x, R.y, R.z}}] = RI::Tensor<double>({n_I, n_J}, mat_ap.get_real().sptr());
+        }
+        mat_blacs.clear();
+    }
+    global::profiler.stop("exx_build_dmat_libri_kblacs_para");
+}
 #endif
 
 void Exx::build(const LibrpaParallelRouting routing,
@@ -218,7 +261,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     using global::profiler;
     using global::ofs_myid;
 
-    assert(routing == LibrpaParallelRouting::LIBRI);
+    assert(routing == LIBRPA_ROUTING_LIBRI);
 
     if (this->is_rspace_built_)
     {
@@ -299,7 +342,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     std::map<int, std::map<std::pair<int,std::array<int,3>>, RI::Tensor<cplxdb>>> V_libri_cplx;
 
     global::profiler.start("build_real_space_exx_2_1");
-    if (routing == LibrpaParallelRouting::RTAU)
+    if (routing == LIBRPA_ROUTING_RTAU)
     {
         // Full Coulomb case, have to re-distribute
         // TODO: remove as libri routing is enforced above
@@ -378,11 +421,27 @@ void Exx::build(const LibrpaParallelRouting routing,
     // cout << V_libri << endl;
 
     // initialize density matrix
+    global::profiler.start("build_real_space_exx_prepare_index");
     vector<atpair_t> atpair_dmat;
     for (atom_t I = 0; I < as_atom(n_atoms); I++)
         for (atom_t J = 0; J < as_atom(n_atoms); J++)
             atpair_dmat.push_back({I, J});
     const auto dmat_IJRs_local = dispatch_vector_prod(atpair_dmat, Rlist, comm_h.myid, comm_h.nprocs, true, true);
+
+    // For k-BLACS two-level parallelization
+    const int n_basis_ao = mf.get_n_aos();
+    const auto desc_dm = kblacs_ctxt.create_array_desc(n_basis_ao, n_basis_ao);
+    IndexScheduler sched;
+    const auto map_atpairs_balanced =
+        get_balanced_ap_distribution_for_consec_descriptor(atbasis_wfc, atbasis_wfc, desc_dm);
+    sched.init(map_atpairs_balanced, atbasis_wfc, atbasis_wfc, desc_dm, false);
+    const auto iRs = dispatcher_balanced(0, Rlist.size(), kblacs_ctxt.kpoints_local().size(), true,
+                                         kblacs_ctxt.comm_kpoint_h.comm);
+    std::vector<Vector3_Order<int>> Rs;
+    Rs.reserve(iRs.size());
+    for (const auto &iR : iRs)
+        Rs.push_back(Rlist[iR]);
+    global::profiler.stop("build_real_space_exx_prepare_index");
 
     for (auto isp = 0; isp != n_spins; isp++)
     {
@@ -395,9 +454,13 @@ void Exx::build(const LibrpaParallelRouting routing,
                 std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<cplxdb>>> dmat_libri_cplx;
                 if (is_mf_eigvec_k_distributed_)
                 {
-                    build_dmat_libri_kpara(mf, comm_h, atbasis_wfc, isp, ispn_bra, ispn_ket,
-                                           this->pbc.kfrac_list, dmat_IJRs_local, use_complex_exx_r,
-                                           dmat_libri, dmat_libri_cplx);
+                    // build_dmat_libri_kpara(mf, comm_h, atbasis_wfc, isp, ispn_bra, ispn_ket,
+                    //                        this->pbc.kfrac_list, dmat_IJRs_local, use_complex_exx_r,
+                    //                        dmat_libri, dmat_libri_cplx);
+                    build_dmat_libri_kblacs_para(mf, kblacs_ctxt, desc_wfc, desc_dm, sched,
+                                                 atbasis_wfc, isp, ispn_bra, ispn_ket,
+                                                 this->pbc.kfrac_list, Rs, use_complex_exx_r,
+                                                 dmat_libri, dmat_libri_cplx);
                 }
                 else
                 {
@@ -407,6 +470,7 @@ void Exx::build(const LibrpaParallelRouting routing,
                 }
                 // global::ofs_myid << dmat_libri << std::endl;
                 // print_keys(global::ofs_myid, dmat_libri);
+                global::profiler.start("build_real_space_exx_libri_set_Ds");
                 if (use_complex_exx_r)
                 {
                     global::ofs_myid << "Number of Dmat keys: " << get_num_keys(dmat_libri_cplx) << "\n";
@@ -418,6 +482,7 @@ void Exx::build(const LibrpaParallelRouting routing,
                     exx_libri.set_Ds(dmat_libri, libri_threshold_D);
                 }
                 // exx_libri.set_Ds({}, libri_threshold_D);
+                global::profiler.stop("build_real_space_exx_libri_set_Ds");
                 global::profiler.stop("build_real_space_exx_3");
                 global::lib_printf("Task %4d: DM setup for EXX\n", comm_h.myid);
 

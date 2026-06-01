@@ -4,6 +4,7 @@
 #include <set>
 #include <map>
 #include <algorithm>
+#include <cmath>
 
 #include "../utils/error.h"
 
@@ -149,7 +150,7 @@ std::string MpiCommHandler::str() const
 LibrpaParallelRouting decide_auto_routing(const int n_atoms, const int Rt_num)
 {
     const auto atpairs_num = n_atoms * (n_atoms + 1) / 2;
-    return atpairs_num < Rt_num ? LibrpaParallelRouting::RTAU : LibrpaParallelRouting::ATOMPAIR;
+    return atpairs_num < Rt_num ? LIBRPA_ROUTING_RTAU : LIBRPA_ROUTING_ATOMPAIR;
 }
 
 int get_mpi_rank(const MPI_Comm &comm)
@@ -226,6 +227,103 @@ std::vector<std::pair<int, int>> dispatcher(int i1st, int i1ed, int i2st, int i2
         ilist.push_back({i1st+id1, i2st+id2});
     }
     return ilist;
+}
+
+std::vector<unsigned> dispatcher_balanced_counts(unsigned dist, const std::vector<int> &weights)
+{
+    if (weights.empty())
+        throw LIBRPA_RUNTIME_ERROR("balanced dispatcher requires at least one weight");
+
+    long double inv_weight_sum = 0.0L;
+    for (const auto &weight: weights)
+    {
+        if (weight <= 0)
+            throw LIBRPA_RUNTIME_ERROR("balanced dispatcher requires positive weights");
+        inv_weight_sum += 1.0L / static_cast<long double>(weight);
+    }
+
+    std::vector<unsigned> counts(weights.size(), 0);
+    std::vector<std::pair<long double, unsigned>> remainders;
+    remainders.reserve(weights.size());
+
+    // Counts are apportioned by inverse weight; leftovers go to largest remainders.
+    unsigned assigned = 0;
+    for (unsigned iproc = 0; iproc != weights.size(); iproc++)
+    {
+        const long double target =
+            static_cast<long double>(dist) /
+            (static_cast<long double>(weights[iproc]) * inv_weight_sum);
+        const auto count = static_cast<unsigned>(std::floor(target));
+        counts[iproc] = count;
+        assigned += count;
+        remainders.push_back({target - static_cast<long double>(count), iproc});
+    }
+
+    std::sort(remainders.begin(), remainders.end(),
+              [](const auto &a, const auto &b)
+              {
+                  if (a.first == b.first) return a.second < b.second;
+                  return a.first > b.first;
+              });
+
+    for (unsigned i = 0; i != dist - assigned; i++)
+        counts[remainders[i].second]++;
+
+    return counts;
+}
+
+std::vector<int> dispatcher_balanced(int ist, int ied, const std::vector<int> &weights,
+                                     unsigned myid, bool sequential)
+{
+    std::vector<int> ilist;
+    if (ist >= ied) return ilist;
+    if (myid >= weights.size())
+        throw LIBRPA_RUNTIME_ERROR("balanced dispatcher rank exceeds weight list size");
+
+    unsigned dist = ied - ist;
+    const auto counts = dispatcher_balanced_counts(dist, weights);
+
+    if (sequential)
+    {
+        unsigned start = 0;
+        for (unsigned iproc = 0; iproc != myid; iproc++)
+            start += counts[iproc];
+
+        ilist.reserve(counts[myid]);
+        for (unsigned i = 0; i != counts[myid]; i++)
+            ilist.push_back(ist + start + i);
+    }
+    else
+    {
+        const auto max_count = *std::max_element(counts.begin(), counts.end());
+        ilist.reserve(counts[myid]);
+
+        unsigned id = 0;
+        for (unsigned round = 0; round != max_count; round++)
+        {
+            for (unsigned iproc = 0; iproc != counts.size(); iproc++)
+            {
+                if (round >= counts[iproc]) continue;
+                if (iproc == myid) ilist.push_back(ist + id);
+                id++;
+            }
+        }
+        assert(id == dist);
+    }
+
+    return ilist;
+}
+
+std::vector<int> dispatcher_balanced(int ist, int ied, int weight_myid,
+                                     bool sequential, const MPI_Comm comm)
+{
+    const auto myid = static_cast<unsigned>(get_mpi_rank(comm));
+    const auto size = static_cast<unsigned>(get_mpi_size(comm));
+
+    std::vector<int> weights(size);
+    MPI_Allgather(&weight_myid, 1, mpi_datatype<int>::value,
+                  weights.data(), 1, mpi_datatype<int>::value, comm);
+    return dispatcher_balanced(ist, ied, weights, myid, sequential);
 }
 
 std::vector<std::pair<int,int>> dispatch_upper_triangular_tasks(const int &natoms, const int &myid, const int &nprows, const int &npcols, const int &myprow, const int &mypcol)
