@@ -243,7 +243,8 @@ public:
         elpa_setup(elpa_handle_);
 
 #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
-        if(use_gpu_gw_wc){
+        if(use_gpu_gw_wc)
+        {
             elpa_set(elpa_handle_, "use_gpu_id", ddla_desc_.ddla_handle()->local_device, &error);
 #ifdef ENABLE_HIP
             elpa_set(elpa_handle_, "amd-gpu", 1, &error);
@@ -251,16 +252,9 @@ public:
 #ifdef ENABLE_CUDA
             elpa_set(elpa_handle_, "nvidia-gpu", 1, &error);
 #endif
-
-        // printf("after set amd-gpu\n");
-        // elpa_set(handle, "solver", ELPA_SOLVER_2STAGE, &error);
-        // 选择 AMD GPU 内核
-        // elpa_set(handle, "real_kernel", ELPA_2STAGE_REAL_AMD_GPU, &error);
-        // elpa_set(handle, "complex_kernel", ELPA_2STAGE_COMPLEX_AMD_GPU, &error);
-        elpa_set(elpa_handle_, "use_ccl", 0, &error);
-        // printf("before set\n");
-        // 初始化 GPU
-        elpa_setup_gpu(elpa_handle_);
+            elpa_set(elpa_handle_, "use_ccl", 0, &error);
+            // 初始化 GPU
+            elpa_setup_gpu(elpa_handle_);
         }else{
             elpa_set(elpa_handle_, "gpu_tridiag",                   0, &error);
             elpa_set(elpa_handle_, "gpu_solve_tridi",               0, &error);
