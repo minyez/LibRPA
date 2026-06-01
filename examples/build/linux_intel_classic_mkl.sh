@@ -1,11 +1,11 @@
-#!/bin/sh
+#!/bin/bash
 
 # This script uses Intel classic compilers, Intel MPI and MKL to build LibRPA
 # on Linux platform for develop and production use. Tested on Ubuntu, CentOS and SUSE.
 
 # Intel compilers icpc (C++) and ifort (Fortran) needs to be found under directories
 # in environment variable PATH, as well as the C++ MPI wrapper mpiicpc.
-# Note that Fortran is used only when USE_GREENX_API or ENABLE_FORTRAN_BIND is on.
+# Note that Fortran MPI wrapper (mpiifort) is required if LIBRPA_ENABLE_FORTRAN_BIND is on.
 # Intel MKL will be used as the working math library.
 
 BUILDDIR="${BUILDDIR:=build_intel_classic_mkl}"
@@ -27,11 +27,33 @@ BUILDDIR="${BUILDDIR:=build_intel_classic_mkl}"
 
 # # Or you might set it manually, which is not recommended.
 
+# Switch for LibRI
+export USE_LIBRI="${USE_LIBRI:=OFF}"
+# Switch for Fortran binding
+export ENABLE_FORTRAN_BIND="${ENABLE_FORTRAN_BIND:=OFF}"
+
+# Optionally, one can specify the path of their own LibRI and LibComm libraries.
+# If not set or set to empty string, those bundled under thirdparty/ will be used.
+export LIBRI_INCLUDE="${LIBRI_INCLUDE:=}"
+export LIBCOMM_INCLUDE="${LIBCOMM_INCLUDE:=}"
+
 export CXX=mpiicpc
-export FC=ifort
 
-cmake -B $BUILDDIR \
+if [[ $ENABLE_FORTRAN_BIND == "ON" ]]; then
+  export FC=mpiifort
+else
+  export FC=ifort
+fi
+
+if [[ $USE_LIBRI == "ON" ]]; then
+  BUILDDIR="${BUILDDIR}_libri"
+fi
+
+cmake -B "$BUILDDIR" \
   -DLIBRPA_ENABLE_TEST=ON \
-  -DLIBRPA_USE_LIBRI=OFF
+  -DLIBRPA_ENABLE_FORTRAN_BIND=$ENABLE_FORTRAN_BIND \
+  -DLIBRPA_USE_LIBRI=$USE_LIBRI \
+  -DLIBRI_INCLUDE_DIR="$LIBRI_INCLUDE" \
+  -DLIBCOMM_INCLUDE_DIR="$LIBCOMM_INCLUDE"
 
-cd $BUILDDIR && make -j 4
+cd "$BUILDDIR" && make -j 4
