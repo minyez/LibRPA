@@ -8,8 +8,107 @@
 #include "../utils/error.h"
 #include "../utils/profiler.h"
 #include "../utils/utils_mem.h"
+#include "compute_helper.h"
 #include "dataset_helper.h"
 #include "instance_manager.h"
+
+#include <algorithm>
+#include <map>
+#include <string>
+#include <vector>
+
+namespace
+{
+
+// Map a compact collected k-list back to its buffer position.
+std::map<int, int> make_ik_pos_map(const std::vector<int> &iks)
+{
+    std::map<int, int> ik_pos;
+    for (int i = 0; i != static_cast<int>(iks.size()); ++i)
+    {
+        ik_pos.emplace(iks[i], i);
+    }
+    return ik_pos;
+}
+
+// Publish EXX diagonal values from the rank that owns each rotated k-block and
+// fill the caller's output buffer in its original requested k-point order.
+void collect_exx_diag_to_callers(const std::map<int, std::map<int, std::map<int, double>>> &Eexx,
+                                 const librpa_int::MpiCommHandler &comm_h,
+                                 const bool publish_local_values,
+                                 const int n_spins,
+                                 const int n_kpoints,
+                                 const int n_kpts_this,
+                                 const int *iks_this,
+                                 const int i_state_low,
+                                 const int n_states_calc,
+                                 double *vexx)
+{
+    const auto iks_collect =
+        librpa_int::api::collect_requested_iks(comm_h, n_kpts_this, iks_this, n_kpoints);
+    if (iks_collect.empty()) return;
+
+    const auto ik_pos = make_ik_pos_map(iks_collect);
+    const int nk_collect = static_cast<int>(iks_collect.size());
+    const int n_owner = n_spins * nk_collect;
+    const int n_value = n_owner * n_states_calc;
+
+    std::vector<int> owners(n_owner, 0);
+    std::vector<int> owners_sum(n_owner, 0);
+    std::vector<double> values(n_value, 0.0);
+    std::vector<double> values_sum(n_value, 0.0);
+
+    if (publish_local_values)
+    {
+        for (int isp = 0; isp != n_spins; ++isp)
+        {
+            const auto it_sp = Eexx.find(isp);
+            if (it_sp == Eexx.cend()) continue;
+            for (int ik_collect = 0; ik_collect != nk_collect; ++ik_collect)
+            {
+                const int ik = iks_collect[ik_collect];
+                const auto it_k = it_sp->second.find(ik);
+                if (it_k == it_sp->second.cend()) continue;
+
+                owners[isp * nk_collect + ik_collect] = 1;
+                for (int i = 0; i != n_states_calc; ++i)
+                {
+                    const int idx = (isp * nk_collect + ik_collect) * n_states_calc + i;
+                    values[idx] = it_k->second.at(i_state_low + i);
+                }
+            }
+        }
+    }
+
+    comm_h.allreduce(values.data(), values_sum.data(), n_value, MPI_SUM);
+    comm_h.allreduce(owners.data(), owners_sum.data(), n_owner, MPI_SUM);
+
+    for (int isp = 0; isp != n_spins; ++isp)
+    {
+        const int start_isp = isp * n_kpts_this * n_states_calc;
+        for (int ik_this = 0; ik_this != n_kpts_this; ++ik_this)
+        {
+            const int ik = iks_this[ik_this];
+            const int ik_collect = ik_pos.at(ik);
+            const int owner_count = owners_sum[isp * nk_collect + ik_collect];
+            if (owner_count != 1)
+            {
+                throw LIBRPA_RUNTIME_ERROR(
+                    "failed to locate a unique EXX value owner for spin = " +
+                    std::to_string(isp) + " ik = " + std::to_string(ik) +
+                    ", owner count = " + std::to_string(owner_count));
+            }
+            const int start_k = start_isp + ik_this * n_states_calc;
+            for (int i = 0; i != n_states_calc; ++i)
+            {
+                const int idx = (isp * nk_collect + ik_collect) * n_states_calc + i;
+                vexx[start_k + i] = values_sum[idx];
+            }
+        }
+    }
+}
+
+} // namespace
 
 void librpa_build_exx(LibrpaHandler* h, const LibrpaOptions *p_opts)
 {
@@ -83,7 +182,7 @@ void librpa_get_exx_pot_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, con
         librpa_build_exx(h, p_opts);
     }
 
-    // const auto &opts = *p_opts; // TODO: add a flag to control whether to use blacs or lapack
+    const auto &opts = *p_opts; // TODO: add a flag to control whether to use blacs or lapack
     // const bool debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
 
     profiler.start("api_get_exx_pot_kgrid");
@@ -92,27 +191,11 @@ void librpa_get_exx_pot_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, con
     // TODO: make choosing blacs/non-blacs method a run time option
     pexx->build_KS_kgrid_blacs(pds->blacs_h);
     const int n_states_calc = i_state_high - i_state_low;
-    for (int isp = 0; isp < n_spins; isp++)
-    {
-        const auto it = pexx->Eexx.find(isp);
-        // NOTE: Without use_kpara_scf_eigvec, exx data is only collected to master.
-        // This policy might need to be adjusted later.
-        if (it == pexx->Eexx.cend()) continue;
-        const int start_isp = isp * n_kpts_this * n_states_calc;
-        // ofs_myid << exx_isp << endl;
-        for (int ik_this = 0; ik_this < n_kpts_this; ik_this++)
-        {
-            const int start_k = start_isp + ik_this * n_states_calc;
-            const int ik = iks_this[ik_this];
-            const auto it_k = it->second.find(ik);
-            if (it_k == it->second.cend()) continue;
-            const auto &exx_k = it_k->second;
-            for (int i = 0; i < n_states_calc; i++)
-            {
-                vexx[start_k+i] = exx_k.at(i_state_low+i);
-            }
-        }
-    }
+    const bool publish_local_values =
+        opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;
+    collect_exx_diag_to_callers(pexx->Eexx, pds->comm_h, publish_local_values,
+                                n_spins, pds->mf.get_n_kpoints(), n_kpts_this, iks_this,
+                                i_state_low, n_states_calc, vexx);
     profiler.stop("api_get_exx_pot_kgrid");
 }
 
@@ -148,7 +231,7 @@ void librpa_get_exx_pot_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, co
         librpa_build_exx(h, p_opts);
     }
 
-    // const auto &opts = *p_opts; // TODO: add a flag to control whether to use blacs or lapack
+    const auto &opts = *p_opts; // TODO: add a flag to control whether to use blacs or lapack
     // const bool debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
 
     profiler.start("api_get_exx_pot_band_k");
@@ -159,26 +242,10 @@ void librpa_get_exx_pot_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, co
     pexx->build_KS_band_blacs(pds->mf_band.get_eigenvectors(), pds->kfrac_band_list,
                               pds->atoms, pds->blacs_h);
     const int n_states_calc = i_state_high - i_state_low;
-    for (int isp = 0; isp < n_spins; isp++)
-    {
-        const auto it = pexx->Eexx.find(isp);
-        // NOTE: Without use_kpara_scf_eigvec, exx data is only collected to master.
-        // This policy might need to be adjusted later.
-        if (it == pexx->Eexx.cend()) continue;
-        const int start_isp = isp * n_kpts_band_this * n_states_calc;
-        // ofs_myid << exx_isp << endl;
-        for (int ik_this = 0; ik_this < n_kpts_band_this; ik_this++)
-        {
-            const int start_k = start_isp + ik_this * n_states_calc;
-            const int ik = iks_band_this[ik_this];
-            const auto it_k = it->second.find(ik);
-            if (it_k == it->second.cend()) continue;
-            const auto &exx_k = it_k->second;
-            for (int i = 0; i < n_states_calc; i++)
-            {
-                vexx_band[start_k+i] = exx_k.at(i_state_low+i);
-            }
-        }
-    }
+    const bool publish_local_values =
+        opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;
+    collect_exx_diag_to_callers(pexx->Eexx, pds->comm_h, publish_local_values,
+                                n_spins, pds->mf_band.get_n_kpoints(), n_kpts_band_this,
+                                iks_band_this, i_state_low, n_states_calc, vexx_band);
     profiler.stop("api_get_exx_pot_band_k");
 }

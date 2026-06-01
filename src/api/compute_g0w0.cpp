@@ -2,9 +2,14 @@
 #include "librpa_compute.h"
 
 // Standard C++ headers
+#include <algorithm>
+#include <limits>
+#include <map>
 #include <string>
+#include <vector>
 
 // Headers for API
+#include "compute_helper.h"
 #include "dataset_helper.h"
 #include "instance_manager.h"
 
@@ -17,8 +22,119 @@
 #include "../io/fs.h"
 #include "../math/complexmatrix.h"
 #include "../math/utils_matrix_m_mpi.h"
+#include "../utils/error.h"
 #include "../utils/profiler.h"
 // #include "../utils/utils_mem.h"
+
+namespace
+{
+
+// Map a compact collected k-list back to its buffer position.
+std::map<int, int> make_ik_pos_map(const std::vector<int> &iks)
+{
+    std::map<int, int> ik_pos;
+    for (int i = 0; i != static_cast<int>(iks.size()); ++i)
+    {
+        ik_pos.emplace(iks[i], i);
+    }
+    return ik_pos;
+}
+
+// Linearized index for the collected SigC diagonal buffer:
+// [spin][collected k][frequency][requested state].
+int sigc_diag_index(const int isp, const int ik_collect, const int ifreq, const int i_state,
+                    const int nk_collect, const int nfreq, const int n_states_calc)
+{
+    return (((isp * nk_collect + ik_collect) * nfreq + ifreq) * n_states_calc + i_state);
+}
+
+// Publish SigC diagonal values from the rank that owns each rotated k-block.
+// The caller later uses these values locally with its matching vxc/vexx input.
+std::vector<librpa_int::cplxdb> collect_sigc_diag_to_callers(
+    const std::map<int, std::map<int, std::map<double, librpa_int::Matz>>> &sigc_is_ik_f_KS,
+    const std::vector<double> &freqs,
+    const librpa_int::MpiCommHandler &comm_h,
+    const bool publish_local_values,
+    const int n_spins,
+    const int n_kpoints,
+    const int n_kpts_this,
+    const int *iks_this,
+    const int i_state_low,
+    const int n_states_calc,
+    std::vector<int> &iks_collect)
+{
+    iks_collect =
+        librpa_int::api::collect_requested_iks(comm_h, n_kpts_this, iks_this, n_kpoints);
+    if (iks_collect.empty()) return {};
+
+    const int nk_collect = static_cast<int>(iks_collect.size());
+    const int nfreq = static_cast<int>(freqs.size());
+    const int n_owner = n_spins * nk_collect;
+    const int n_value = n_owner * nfreq * n_states_calc;
+
+    std::vector<int> owners(n_owner, 0);
+    std::vector<int> owners_sum(n_owner, 0);
+    std::vector<librpa_int::cplxdb> values(n_value, librpa_int::cplxdb{0.0, 0.0});
+    std::vector<librpa_int::cplxdb> values_sum(n_value, librpa_int::cplxdb{0.0, 0.0});
+
+    if (publish_local_values)
+    {
+        for (int isp = 0; isp != n_spins; ++isp)
+        {
+            const auto it_sp = sigc_is_ik_f_KS.find(isp);
+            if (it_sp == sigc_is_ik_f_KS.cend()) continue;
+            for (int ik_collect = 0; ik_collect != nk_collect; ++ik_collect)
+            {
+                const int ik = iks_collect[ik_collect];
+                const auto it_k = it_sp->second.find(ik);
+                if (it_k == it_sp->second.cend()) continue;
+
+                owners[isp * nk_collect + ik_collect] = 1;
+                for (int ifreq = 0; ifreq != nfreq; ++ifreq)
+                {
+                    const double freq = freqs[ifreq];
+                    const auto it_freq = it_k->second.find(freq);
+                    if (it_freq == it_k->second.cend())
+                    {
+                        throw LIBRPA_RUNTIME_ERROR(
+                            "fail to locate sigc at ik = " + std::to_string(ik) +
+                            " freq = " + std::to_string(freq));
+                    }
+                    const auto &mat = it_freq->second;
+                    for (int i = 0; i != n_states_calc; ++i)
+                    {
+                        const int idx = sigc_diag_index(isp, ik_collect, ifreq, i,
+                                                        nk_collect, nfreq, n_states_calc);
+                        const int i_state = i_state_low + i;
+                        values[idx] = mat(i_state, i_state);
+                    }
+                }
+            }
+        }
+    }
+
+    comm_h.allreduce(values.data(), values_sum.data(), n_value, MPI_SUM);
+    comm_h.allreduce(owners.data(), owners_sum.data(), n_owner, MPI_SUM);
+
+    for (int isp = 0; isp != n_spins; ++isp)
+    {
+        for (int ik_collect = 0; ik_collect != nk_collect; ++ik_collect)
+        {
+            const int owner_count = owners_sum[isp * nk_collect + ik_collect];
+            if (owner_count != 1)
+            {
+                throw LIBRPA_RUNTIME_ERROR(
+                    "failed to locate a unique SigC value owner for spin = " +
+                    std::to_string(isp) + " ik = " + std::to_string(iks_collect[ik_collect]) +
+                    ", owner count = " + std::to_string(owner_count));
+            }
+        }
+    }
+
+    return values_sum;
+}
+
+} // namespace
 
 void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
 {
@@ -203,10 +319,22 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
     pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
     profiler.stop("g0w0_sigc_rotate_KS");
 
+    std::vector<int> iks_collect;
+    const auto freq_nodes = pds->tfg.get_freq_nodes();
+    const bool publish_local_values =
+        opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;
+    const auto sigc_diag = collect_sigc_diag_to_callers(
+        pds->p_g0w0->sigc_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
+        n_spins, pds->mf.get_n_kpoints(), n_kpts_this, iks_this, i_state_low,
+        n_states_calc, iks_collect);
+    const auto ik_pos = make_ik_pos_map(iks_collect);
+    const int nk_collect = static_cast<int>(iks_collect.size());
+    const int nfreq = static_cast<int>(freq_nodes.size());
+
     profiler.start("g0w0_solve_qpe", "Solve quasi-particle equation");
     const auto efermi = pds->mf.get_efermi();
     std::vector<cplxdb> imagfreqs;
-    for (const auto &freq: pds->tfg.get_freq_nodes())
+    for (const auto &freq: freq_nodes)
     {
         imagfreqs.push_back(cplxdb{0.0, freq});
     }
@@ -217,12 +345,9 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
         // ofs_myid << exx_isp << endl;
         for (int ik_this = 0; ik_this < n_kpts_this; ik_this++)
         {
-            // When eigenvectors are not parallelized over k, the resulted k-matrices sigc_is_ik_f_KS are collected to master.
-	    // Other processes only have dummy data, so we skip AC for them.
-            if (!opts.use_kpara_scf_eigvec && pds->blacs_h.myid != 0) continue;
-
             const int start_k = start_isp + ik_this * n_states_calc;
             const int ik = *(iks_this + ik_this);
+            const int ik_collect = ik_pos.at(ik);
             global::ofs_myid << "Start QPE solver for spin " << isp + 1
                              << " kpoint " << ik + 1 << std::endl;
             for (int i = 0; i < n_states_calc; i++)
@@ -232,13 +357,11 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                 const auto &exx_state = vexx[start_k+i];
                 const auto &vxc_state = vxc[start_k+i];
                 std::vector<cplxdb> sigc_state;
-                const auto &sigc_isp = pds->p_g0w0->sigc_is_ik_f_KS[isp];
-                auto it = sigc_isp.find(ik);
-                if (it == sigc_isp.cend())
-                    throw LIBRPA_RUNTIME_ERROR("fail to locate sigc at ik = " + std::to_string(ik));
-                for (const auto &[freq, mat]: it->second)
+                for (int ifreq = 0; ifreq != nfreq; ++ifreq)
                 {
-                    sigc_state.emplace_back(mat(i_state, i_state));
+                    const int idx = sigc_diag_index(isp, ik_collect, ifreq, i,
+                                                    nk_collect, nfreq, n_states_calc);
+                    sigc_state.emplace_back(sigc_diag[idx]);
                 }
                 double e_qp;
                 cplxdb sigc;
@@ -308,10 +431,22 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
                                                  pds->kfrac_band_list, pds->atoms, pds->blacs_h);
     profiler.stop("g0w0_sigc_rotate_KS");
 
+    std::vector<int> iks_collect;
+    const auto freq_nodes = pds->tfg.get_freq_nodes();
+    const bool publish_local_values =
+        opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;
+    const auto sigc_diag = collect_sigc_diag_to_callers(
+        pds->p_g0w0->sigc_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
+        n_spins, pds->mf_band.get_n_kpoints(), n_kpts_band_this, iks_band_this,
+        i_state_low, n_states_calc, iks_collect);
+    const auto ik_pos = make_ik_pos_map(iks_collect);
+    const int nk_collect = static_cast<int>(iks_collect.size());
+    const int nfreq = static_cast<int>(freq_nodes.size());
+
     profiler.start("g0w0_solve_qpe", "Solve quasi-particle equation");
     const auto efermi = pds->mf_band.get_efermi();
     std::vector<cplxdb> imagfreqs;
-    for (const auto &freq: pds->tfg.get_freq_nodes())
+    for (const auto &freq: freq_nodes)
     {
         imagfreqs.push_back(cplxdb{0.0, freq});
     }
@@ -322,12 +457,9 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
         // ofs_myid << exx_isp << endl;
         for (int ik_this = 0; ik_this < n_kpts_band_this; ik_this++)
         {
-            // When eigenvectors are not parallelized over k, the resulted k-matrices sigc_is_ik_f_KS are collected to master.
-	    // Other processes only have dummy data, so we skip AC for them.
-            if (!opts.use_kpara_scf_eigvec && pds->blacs_h.myid != 0) continue;
-
             const int start_k = start_isp + ik_this * n_states_calc;
             const int ik = *(iks_band_this + ik_this);
+            const int ik_collect = ik_pos.at(ik);
             global::ofs_myid << "Start QPE solver for spin " << isp + 1
                              << " kpoint " << ik + 1 << std::endl;
             for (int i = 0; i < n_states_calc; i++)
@@ -337,13 +469,11 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
                 const auto &exx_state = vexx_band[start_k+i];
                 const auto &vxc_state = vxc_band[start_k+i];
                 std::vector<cplxdb> sigc_state;
-                const auto &sigc_isp = pds->p_g0w0->sigc_is_ik_f_KS[isp];
-                auto it = sigc_isp.find(ik);
-                if (it == sigc_isp.cend())
-                    throw LIBRPA_RUNTIME_ERROR("fail to locate sigc at ik = " + std::to_string(ik));
-                for (const auto &[freq, mat]: it->second)
+                for (int ifreq = 0; ifreq != nfreq; ++ifreq)
                 {
-                    sigc_state.emplace_back(mat(i_state, i_state));
+                    const int idx = sigc_diag_index(isp, ik_collect, ifreq, i,
+                                                    nk_collect, nfreq, n_states_calc);
+                    sigc_state.emplace_back(sigc_diag[idx]);
                 }
                 double e_qp;
                 cplxdb sigc;
