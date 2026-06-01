@@ -52,6 +52,7 @@ public:
     int mypcol;
     #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
     ddla::DdlaHandle_t ddla_handle;
+    void init_ddla_handle();
     #endif
     BlacsCtxtHandler();
     BlacsCtxtHandler(MPI_Comm comm_in);
