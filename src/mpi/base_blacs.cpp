@@ -70,10 +70,16 @@ void BlacsCtxtHandler::init()
     this->myid = mpi_comm_h.myid;
     this->nprocs = mpi_comm_h.nprocs;
     this->initialized_ = true;
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
-        ddla::ddla_init(ddla_handle);
-#endif
 }
+
+#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+void BlacsCtxtHandler::init_ddla_handle(){
+    assert(this->initialized_);
+    assert(this->pgrid_set_);
+    ddla::ddla_init(this->ddla_handle);
+    ddla::ddla_set(this->ddla_handle, this->mpi_comm_h.comm, this->nprows, this->npcols, this->layout_ch);
+}
+#endif
 
 void BlacsCtxtHandler::reset_comm()
 {
@@ -85,7 +91,7 @@ void BlacsCtxtHandler::reset_comm()
     this->initialized_ = false;
     this->pgrid_set_ = false;
 #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
-    if(ddla_handle!=nullptr){
+    if(ddla_handle != nullptr){
         ddla::ddla_destroy(ddla_handle);
         ddla_handle = nullptr;
     }
@@ -129,9 +135,6 @@ void BlacsCtxtHandler::set_grid(const int &nprows_in, const int &npcols_in,
     Cblacs_gridinit(&ictxt, &layout_ch, nprows_in, npcols_in);
     Cblacs_gridinfo(ictxt, &nprows, &npcols, &myprow, &mypcol);
     pgrid_set_ = true;
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
-    ddla::ddla_set(ddla_handle, mpi_comm_h.comm, nprows, npcols, layout_ch);
-#endif
 }
 
 void BlacsCtxtHandler::set_square_grid(bool more_rows, CTXT_LAYOUT layout_in)

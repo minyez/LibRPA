@@ -1825,8 +1825,8 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     std::complex<double>* coulwc_block_ptr;
 
 #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
-    desc_nabf_nabf_opt.set_ddla_desc(blacs_h.ddla_handle); // set the descriptor for the device
     if(use_gpu_gw_wc){
+        desc_nabf_nabf_opt.set_ddla_desc(blacs_h.ddla_handle); // set the descriptor for the device
         DEVICE_CHECK(deviceMallocAsync((void**)&chi0_block_ptr, chi0_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
         DEVICE_CHECK(deviceMallocAsync((void**)&coul_block_ptr, coul_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
         DEVICE_CHECK(deviceMallocAsync((void**)&coul_chi0_block_ptr, coul_chi0_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
@@ -1983,7 +1983,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             LaConnector::power_hemat_la(
                 coulwc_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
                 n_singular_coulwc, eigenvalues.c, 0.5, sqrt_coulomb_threshold,
-                use_gpu_gw_wc, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
+                use_gpu_gw_wc, use_elpa_sqrt_coulomb, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
             global::profiler.stop("epsilon_prepare_coulwc_sqrt_4");
         }
         global::profiler.stop("epsilon_prepare_coulwc_sqrt");
@@ -2062,9 +2062,9 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             sqrtveig_blacs = LaConnector::power_hemat_la_real(
                 coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
                 n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold,
-                use_gpu_gw_wc, (double*)coul_block_ptr, (double*)chi0_block_ptr, (double*)coul_chi0_block_ptr);
+                use_gpu_gw_wc, use_elpa_sqrt_coulomb, (double*)coul_block_ptr, 
+                (double*)chi0_block_ptr, (double*)coul_chi0_block_ptr);
             
-            std::cout<<coul_block<<std::endl;
             if (replace_w_head && option_dielect_func == 3)
             {
                 df_headwing.wing_mu_to_lambda(sqrtveig_blacs, desc_nabf_nabf_opt);
@@ -2077,8 +2077,8 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             //                                    sqrt_coulomb_threshold);
             sqrtveig_blacs = LaConnector::power_hemat_la(
                 coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
-                n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold,
-                use_gpu_gw_wc, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
+                n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold, use_gpu_gw_wc,
+                use_elpa_sqrt_coulomb, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
         }
         ofs_myid << get_timestamp() << " Done power hemat couleps\n";
         // lib_printf("nabf %d nsingu %lu\n", n_abf, n_singular);

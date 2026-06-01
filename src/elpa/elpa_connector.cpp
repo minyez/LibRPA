@@ -211,25 +211,31 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
 #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
     auto ddla_handle = ad_A.ddla_desc().ddla_handle();
     T *d_W;
-    ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_W, n * sizeof(T), ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, A_local_real.ptr(), A_local_real.size() * sizeof(T), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
-    A = d_A;
-    Z = d_Z;
-    W_uni = d_W;
-#else
-    A = A_local_real.ptr();
-    Z = Z_local_real.ptr();
-    W_uni = W;
+    if(use_gpu_gw_wc)
+    {
+        ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_W, n * sizeof(T), ddla_handle->stream));
+        ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, A_local_real.ptr(), A_local_real.size() * sizeof(T), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
+        A = d_A;
+        Z = d_Z;
+        W_uni = d_W;
+    }else
 #endif
+    {
+        A = A_local_real.ptr();
+        Z = Z_local_real.ptr();
+        W_uni = W;
+    }
     int error;
     elpa_eigenvectors(ad_A.elpa_handle(), A, W_uni, Z, &error);
     if(error != ELPA_OK){
         throw std::runtime_error("elpa eigenvectors error\n");
     }
 #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(W, W_uni, n * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(Z_local_real.ptr(), Z, Z_local_real.size()*sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-    ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
+    if(use_gpu_gw_wc){
+        ddla::DEVICE_CHECK(deviceMemcpyAsync(W, W_uni, n * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
+        ddla::DEVICE_CHECK(deviceMemcpyAsync(Z_local_real.ptr(), Z, Z_local_real.size()*sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
+        ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
+    }
 #endif
     for (int i = 0; i < n; i++)
     {
@@ -280,14 +286,17 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
     auto scaled_real = Z_local_real.copy();
     T* C;
 #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
-    C = d_C;
-#else
-    Z = Z_local_real.ptr();
-    A = scaled_real.ptr();
-    C = A_local_real.ptr();
+    if(use_gpu_gw_wc)
+    {
+        ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
+        C = d_C;
+    }else
 #endif
-    // printf("before scal\n");
+    {
+        Z = Z_local_real.ptr();
+        A = scaled_real.ptr();
+        C = A_local_real.ptr();
+    }
     for (int i = 0; i < n; i++)
     {
         // Use ScaLAPACK scaling function with complex matrix
@@ -299,10 +308,12 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
     // Compute Z * diag(W_temp) * Z^H
     LaConnector::pgemm('N', 'C', n, n, n, (T)1.0, Z, 1, 1, ad_Z, A, 1, 1, ad_Z, (T)0.0, C, 1, 1, ad_A);
 #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled_real.ptr(), A, scaled_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local_real.ptr(), C, A_local_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-    ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
-    ddla::DEVICE_CHECK(deviceFreeAsync(d_W, ddla_handle->stream));
+    if(use_gpu_gw_wc){
+        ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled_real.ptr(), A, scaled_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
+        ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local_real.ptr(), C, A_local_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
+        ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
+        ddla::DEVICE_CHECK(deviceFreeAsync(d_W, ddla_handle->stream));
+    }
 #endif
     A_local = A_local_real.to_complex();
     auto scaled = scaled_real.to_complex();

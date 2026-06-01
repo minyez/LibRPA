@@ -213,11 +213,11 @@ inline matrix_m<std::complex<T>> power_hemat_la(
     matrix_m<std::complex<T>> &A_local, const ArrayDesc &ad_A, 
     matrix_m<std::complex<T>> &Z_local, const ArrayDesc &ad_Z,
     size_t &n_filtered, T *W, T power, const T &threshold = -1.e5,
-    bool use_gpu_gw_wc = false, std::complex<T>* d_A = nullptr, 
+    bool use_gpu_gw_wc = false, bool use_elpa_sqrt_coulomb = false, std::complex<T>* d_A = nullptr, 
     std::complex<T>* d_Z = nullptr, std::complex<T>* d_power = nullptr)
 {
-    #if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
-    if(use_gpu_gw_wc){
+    #if defined(ENABLE_ELPA)
+    if(use_elpa_sqrt_coulomb){
         return ElpaConnector::power_hemat_elpa(
             A_local, ad_A, Z_local, ad_Z,
             n_filtered, W, power, threshold,
@@ -236,11 +236,11 @@ inline matrix_m<std::complex<T>> power_hemat_la_real(
     matrix_m<std::complex<T>> &A_local, const ArrayDesc &ad_A, 
     matrix_m<std::complex<T>> &Z_local, const ArrayDesc &ad_Z,
     size_t &n_filtered, T *W, T power, const T &threshold = -1.e5,
-    bool use_gpu_gw_wc = false, T* d_A = nullptr, 
-    T* d_Z = nullptr, T* d_power = nullptr)
+    bool use_gpu_gw_wc = false, bool use_elpa_sqrt_coulomb = false,
+    T* d_A = nullptr, T* d_Z = nullptr, T* d_power = nullptr)
 {
     #if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
-    if(use_gpu_gw_wc){
+    if(use_elpa_sqrt_coulomb){
         return ElpaConnector::power_hemat_elpa_real(
             A_local, ad_A, Z_local, ad_Z,
             n_filtered, W, power, threshold,
