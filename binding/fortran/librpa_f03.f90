@@ -162,6 +162,9 @@ module librpa_f03
 
       ! GW specific
       integer(c_int) :: n_params_anacon
+      real(c_double) :: qpe_solver_thres
+      integer(c_int) :: qpe_solver_n_iter_max
+      real(c_double) :: qpe_solver_damp_factor
       integer(c_int) :: use_scalapack_gw_wc
       integer(c_int) :: use_cholesky_gw_wc
       integer(c_int) :: replace_w_head
@@ -245,6 +248,12 @@ module librpa_f03
       logical :: use_shrink_chi
       !> Number of parameters for analytic continuation.
       integer :: n_params_anacon
+      !> Convergence threshold for the quasi-particle equation solver, in Hartree.
+      real(dp) :: qpe_solver_thres
+      !> Maximum number of iterations for the quasi-particle equation solver; must be positive.
+      integer :: qpe_solver_n_iter_max
+      !> Damping factor applied to each quasi-particle equation solver update.
+      real(dp) :: qpe_solver_damp_factor
       !> Use ScaLAPACK for computing \f$W^c\f$ from \f$\chi^0\f$.
       logical :: use_scalapack_gw_wc
       !> Experimental: use Cholesky factorization for computing \f$W^c\f$ from \f$\chi^0\f$.
@@ -903,6 +912,9 @@ contains
       call sync_opt(opts%use_shrink_abfs,         opts%opts_c%use_shrink_abfs,         direction)
       call sync_opt(opts%use_shrink_chi,          opts%opts_c%use_shrink_chi,          direction)
       call sync_opt(opts%n_params_anacon,         opts%opts_c%n_params_anacon,         direction)
+      call sync_opt(opts%qpe_solver_thres,        opts%opts_c%qpe_solver_thres,        direction)
+      call sync_opt(opts%qpe_solver_n_iter_max,   opts%opts_c%qpe_solver_n_iter_max,   direction)
+      call sync_opt(opts%qpe_solver_damp_factor,  opts%opts_c%qpe_solver_damp_factor,  direction)
       call sync_opt(opts%option_dielect_func,     opts%opts_c%option_dielect_func,     direction)
       call sync_opt(opts%use_2d_dielectric,       opts%opts_c%use_2d_dielectric,       direction)
       call sync_opt(opts%load_sigc_from_file,     opts%opts_c%load_sigc_from_file,     direction)

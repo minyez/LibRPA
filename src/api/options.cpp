@@ -44,6 +44,9 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->use_shrink_chi = LIBRPA_SWITCH_OFF;
 
     opts->n_params_anacon = -1;
+    opts->qpe_solver_thres = 1.0e-5;
+    opts->qpe_solver_n_iter_max = 200;
+    opts->qpe_solver_damp_factor = 0.1;
     opts->use_scalapack_gw_wc = LIBRPA_SWITCH_ON;
     opts->use_cholesky_gw_wc = LIBRPA_SWITCH_OFF;
     opts->replace_w_head = LIBRPA_SWITCH_OFF;
