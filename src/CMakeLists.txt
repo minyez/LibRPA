@@ -47,6 +47,7 @@ list(APPEND lib_sources
         ${CMAKE_CURRENT_BINARY_DIR}/envs_cmake.cpp
 
         api/compute_exx.cpp
+        api/compute_helper.cpp
         api/compute_g0w0.cpp
         api/compute_rpa.cpp
         api/dataset.cpp
