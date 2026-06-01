@@ -14,8 +14,7 @@ The following examples are currently available:
 .. toctree::
    :maxdepth: 1
 
-   linux_gcc_openmpi_openblas_libri
+   linux_gcc_openmpi_openblas
    linux_intel_classic_mkl
    linux_intel_llvm_mkl
-   linux_intel_llvm_mkl_libri
-   macos_gcc_mpich_openblas_libri
+   macos_gcc_mpich_openblas
