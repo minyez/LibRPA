@@ -339,6 +339,11 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
         imagfreqs.push_back(cplxdb{0.0, freq});
     }
 
+    const double diff_init = 1.0e-3;
+    const auto thres_qpe = opts.qpe_solver_thres;
+    const auto n_iter_max = opts.qpe_solver_n_iter_max;
+    const auto damp_fac = opts.qpe_solver_damp_factor;
+
     for (int isp = 0; isp < n_spins; isp++)
     {
         const int start_isp = isp * n_kpts_this * n_states_calc;
@@ -369,7 +374,8 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                 sigc_im[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
                 int flag_qpe_solver = librpa_int::qpe_solver_pade_self_consistent(
-                    pade, eks_state, efermi, vxc_state, exx_state, e_qp, sigc);
+                    pade, eks_state, efermi, vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
+                    n_iter_max, damp_fac);
                 if (flag_qpe_solver == 0)
                 {
                     sigc_re[start_k+i] = sigc.real();
@@ -451,6 +457,11 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
         imagfreqs.push_back(cplxdb{0.0, freq});
     }
 
+    const double diff_init = 1.0e-3;
+    const auto thres_qpe = opts.qpe_solver_thres;
+    const auto n_iter_max = opts.qpe_solver_n_iter_max;
+    const auto damp_fac = opts.qpe_solver_damp_factor;
+
     for (int isp = 0; isp < n_spins; isp++)
     {
         const int start_isp = isp * n_kpts_band_this * n_states_calc;
@@ -481,7 +492,8 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
                 sigc_band_im[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
                 int flag_qpe_solver = librpa_int::qpe_solver_pade_self_consistent(
-                    pade, eks_state, efermi, vxc_state, exx_state, e_qp, sigc);
+                    pade, eks_state, efermi, vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
+                    n_iter_max, damp_fac);
                 if (flag_qpe_solver == 0)
                 {
                     sigc_band_re[start_k+i] = sigc.real();

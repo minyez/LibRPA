@@ -159,6 +159,12 @@ module librpa_f03
       logical :: use_shrink_chi
       !> Number of parameters for analytic continuation.
       integer :: n_params_anacon
+      !> Convergence threshold for the quasi-particle equation solver, in Hartree.
+      real(dp) :: qpe_solver_thres
+      !> Maximum number of iterations for the quasi-particle equation solver; must be positive.
+      integer :: qpe_solver_n_iter_max
+      !> Damping factor applied to each quasi-particle equation solver update.
+      real(dp) :: qpe_solver_damp_factor
       !> Use ScaLAPACK for computing \f$W^c\f$ from \f$\chi^0\f$.
       logical :: use_scalapack_gw_wc
       !> Experimental: use Cholesky factorization for computing \f$W^c\f$ from \f$\chi^0\f$.

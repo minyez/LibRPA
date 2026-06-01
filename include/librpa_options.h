@@ -136,6 +136,15 @@ typedef struct
     //! Number of parameters for analytic continuation
     int n_params_anacon;
 
+    //! Convergence threshold for the quasi-particle equation solver, in Hartree.
+    double qpe_solver_thres;
+
+    //! Maximum number of iterations for the quasi-particle equation solver; must be positive.
+    int qpe_solver_n_iter_max;
+
+    //! Damping factor applied to each quasi-particle equation solver update.
+    double qpe_solver_damp_factor;
+
     //! Flag of using ScaLAPACK for computing Wc from chi0
     LibrpaSwitch use_scalapack_gw_wc;
 
