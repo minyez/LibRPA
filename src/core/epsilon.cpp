@@ -1944,9 +1944,18 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                                           blacs_h.ictxt);
             global::profiler.stop("epsilon_prepare_coulwc_sqrt_3");
             global::profiler.start("epsilon_prepare_coulwc_sqrt_4", "Perform square root");
-            power_hemat_blacs(coulwc_block, desc_nabf_nabf_opt, coul_eigen_block,
-                              desc_nabf_nabf_opt, n_singular_coulwc, eigenvalues.c, 0.5,
-                              sqrt_coulomb_threshold);
+            if (is_gamma_point(q))
+            {
+                power_hemat_blacs_real(coulwc_block, desc_nabf_nabf_opt, coul_eigen_block,
+                                       desc_nabf_nabf_opt, n_singular_coulwc, eigenvalues.c,
+                                       0.5, sqrt_coulomb_threshold);
+            }
+            else
+            {
+                power_hemat_blacs(coulwc_block, desc_nabf_nabf_opt, coul_eigen_block,
+                                  desc_nabf_nabf_opt, n_singular_coulwc, eigenvalues.c, 0.5,
+                                  sqrt_coulomb_threshold);
+            }
             global::profiler.stop("epsilon_prepare_coulwc_sqrt_4");
         }
         global::profiler.stop("epsilon_prepare_coulwc_sqrt");
