@@ -291,6 +291,7 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_switch(opts, load_sigc_from_file);
     _parse_switch(opts, use_cholesky_gw_wc);
     _parse_switch(opts, use_gpu_gw_wc);
+    _parse_switch(opts, use_elpa_sqrt_coulomb);
     _parse_double(opts, libri_g0w0_threshold_C);
     _parse_double(opts, libri_g0w0_threshold_G);
     _parse_double(opts, libri_g0w0_threshold_Wc);
