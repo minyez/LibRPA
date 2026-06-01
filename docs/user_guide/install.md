@@ -102,7 +102,7 @@ In this case, LibRPA does not build the bundled GreenX copy. Instead, the
 parent or higher-level CMake project must provide the external GreenX target
 `LibGXMiniMax`.
 
-Several build scripts are provided on the [`Build Examples`](../examples/build/index)
+Several build scripts are provided on the [build examples](../examples/build/index)
 page to help users build LibRPA on different platforms and with different toolchains.
 You may use them as starting points and adapt them to your local environment.
 
