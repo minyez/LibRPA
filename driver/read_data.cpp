@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <complex>
 #include <fstream>
 #include <iomanip>
 #include <ios>
@@ -23,6 +24,7 @@
 #include "../src/math/matrix.h"
 #include "../src/utils/constants.h"
 #include "../src/api/instance_manager.h"
+#include "../src/io/fs.h"
 #include "../src/io/global_io.h"
 #include "../src/io/stl_io_helper.h"
 #include "../src/utils/error.h"
@@ -371,7 +373,9 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
         read_Cs(dir_path, driver::driver_params.cs_threshold, local_atpair);
         profiler.stop("driver_read_Cs");
         profiler.start("driver_read_Vq");
-        read_Vq_row(dir_path, driver::driver_params.prefix_coul_full, driver::opts.vq_threshold, local_atpair, false);
+        read_Vq_row(dir_path, driver::driver_params.prefix_coul_full,
+                    driver::opts.vq_threshold, local_atpair, false,
+                    driver::driver_params.version_coul_reader);
         profiler.stop("driver_read_Vq");
     }
     else if(routing == LIBRPA_ROUTING_LIBRI)
@@ -389,7 +393,9 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
             blacs_h.myprow, blacs_h.mypcol);
         for(auto &iap:trangular_loc_atpair)
             local_atpair.push_back(iap);
-        read_Vq_row(dir_path, driver::driver_params.prefix_coul_full, driver::opts.vq_threshold, local_atpair, false);
+        read_Vq_row(dir_path, driver::driver_params.prefix_coul_full,
+                    driver::opts.vq_threshold, local_atpair, false,
+                    driver::driver_params.version_coul_reader);
         mpi_comm_global_h.barrier();
         profiler.stop("driver_read_Vq");
         lib_printf_coll("| Process %5d: coulomb_mat read. Wall/CPU time [min]: %12.4f %12.4f\n",
@@ -406,7 +412,8 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
         profiler.stop("driver_read_Cs");
 
         profiler.start("driver_read_Vq");
-        read_Vq_full(dir_path, driver::driver_params.prefix_coul_full, false);
+        read_Vq_full(dir_path, driver::driver_params.prefix_coul_full, false,
+                     driver::driver_params.version_coul_reader);
         profiler.stop("driver_read_Vq");
     }
 
@@ -1434,12 +1441,328 @@ static int handle_Vq_full_file(const string &file_path, std::map<int, librpa_int
     return 0;
 }
 
-size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cut_coulomb)
+namespace
+{
+
+constexpr int COULOMB_V1_REAL_FLAG = 0;
+constexpr int COULOMB_V1_COMPLEX_FLAG = 1;
+constexpr MPI_Offset COULOMB_V1_HEADER_SIZE = 4 * static_cast<MPI_Offset>(sizeof(int));
+
+MPI_Offset coulomb_v1_upper_index(const std::size_t row, const std::size_t col,
+                                  const std::size_t naux)
+{
+    assert(row <= col);
+    return static_cast<MPI_Offset>(
+        row * naux - row * (row - 1) / 2 + (col - row));
+}
+
+class CoulombV1File
+{
+public:
+    explicit CoulombV1File(const std::string &path_in): path(path_in)
+    {
+        const int ierr = MPI_File_open(librpa_int::global::mpi_comm_global,
+                                       path.c_str(), MPI_MODE_RDONLY,
+                                       MPI_INFO_NULL, &file);
+        if (ierr != MPI_SUCCESS)
+        {
+            throw std::logic_error("Failed to open Coulomb v1 file " + path);
+        }
+
+        int header[4];
+        read_bytes(0, header, sizeof(header));
+        const int marker = header[0];
+        iq = header[1];
+        naux = header[2];
+        value_flag = header[3];
+
+        if (marker != READER_COULOMB_V1_MARKER)
+        {
+            std::ostringstream ss;
+            ss << path << ": invalid Coulomb reader v1 marker " << marker
+               << ", expected " << READER_COULOMB_V1_MARKER;
+            throw std::logic_error(ss.str());
+        }
+        if (iq <= 0)
+        {
+            throw std::logic_error(path + ": invalid 1-based q-point index");
+        }
+        if (naux <= 0)
+        {
+            throw std::logic_error(path + ": invalid Coulomb v1 Naux");
+        }
+        if (value_flag != COULOMB_V1_REAL_FLAG &&
+            value_flag != COULOMB_V1_COMPLEX_FLAG)
+        {
+            throw std::logic_error(path + ": invalid Coulomb v1 value-type flag");
+        }
+
+        value_bytes = value_flag == COULOMB_V1_COMPLEX_FLAG ?
+            2 * sizeof(double) : sizeof(double);
+
+        MPI_Offset file_size = 0;
+        MPI_File_get_size(file, &file_size);
+        const auto naux_offset = static_cast<MPI_Offset>(naux);
+        const MPI_Offset expected_size = COULOMB_V1_HEADER_SIZE +
+            naux_offset * (naux_offset + 1) / 2 * value_bytes;
+        if (file_size != expected_size)
+        {
+            std::ostringstream ss;
+            ss << path << ": invalid Coulomb v1 file size " << file_size
+               << ", expected " << expected_size;
+            throw std::logic_error(ss.str());
+        }
+    }
+
+    ~CoulombV1File()
+    {
+        if (file != MPI_FILE_NULL)
+        {
+            MPI_File_close(&file);
+        }
+    }
+
+    CoulombV1File(const CoulombV1File &) = delete;
+    CoulombV1File &operator=(const CoulombV1File &) = delete;
+
+    void read_bytes(MPI_Offset offset, void *buffer, std::size_t nbytes) const
+    {
+        char *ptr = static_cast<char *>(buffer);
+        std::size_t bytes_left = nbytes;
+        while (bytes_left > 0)
+        {
+            const int chunk = static_cast<int>(std::min<std::size_t>(
+                bytes_left, static_cast<std::size_t>(std::numeric_limits<int>::max())));
+            MPI_Status status;
+            const int ierr = MPI_File_read_at(file, offset, ptr, chunk, MPI_BYTE, &status);
+            if (ierr != MPI_SUCCESS)
+            {
+                throw std::logic_error("Failed to read Coulomb v1 file " + path);
+            }
+            int bytes_read = 0;
+            MPI_Get_count(&status, MPI_BYTE, &bytes_read);
+            if (bytes_read != chunk)
+            {
+                throw std::logic_error("Truncated Coulomb v1 file " + path);
+            }
+            offset += chunk;
+            ptr += chunk;
+            bytes_left -= chunk;
+        }
+    }
+
+    MPI_Offset payload_offset(const std::size_t row, const std::size_t col) const
+    {
+        return COULOMB_V1_HEADER_SIZE +
+            coulomb_v1_upper_index(row, col, static_cast<std::size_t>(naux)) *
+            value_bytes;
+    }
+
+    std::string path;
+    MPI_File file = MPI_FILE_NULL;
+    int iq = 0;
+    int naux = 0;
+    int value_flag = COULOMB_V1_COMPLEX_FLAG;
+    MPI_Offset value_bytes = 2 * static_cast<MPI_Offset>(sizeof(double));
+};
+
+void read_coulomb_v1_upper_segment(const CoulombV1File &file,
+                                   const std::size_t row,
+                                   const std::size_t col_begin,
+                                   const std::size_t ncol,
+                                   std::complex<double> *out)
+{
+    if (ncol == 0)
+    {
+        return;
+    }
+
+    if (file.value_flag == COULOMB_V1_COMPLEX_FLAG)
+    {
+        std::vector<double> buffer(2 * ncol);
+        file.read_bytes(file.payload_offset(row, col_begin),
+                        buffer.data(), buffer.size() * sizeof(double));
+        for (std::size_t i = 0; i < ncol; ++i)
+        {
+            out[i] = std::complex<double>(buffer[2 * i], buffer[2 * i + 1]);
+        }
+    }
+    else
+    {
+        std::vector<double> buffer(ncol);
+        file.read_bytes(file.payload_offset(row, col_begin),
+                        buffer.data(), buffer.size() * sizeof(double));
+        for (std::size_t i = 0; i < ncol; ++i)
+        {
+            out[i] = std::complex<double>(buffer[i], 0.0);
+        }
+    }
+}
+
+std::vector<std::complex<double>> read_coulomb_v1_atom_pair(
+    const CoulombV1File &file,
+    const librpa_int::AtomicBasis &basis_aux,
+    const std::size_t I,
+    const std::size_t J)
+{
+    if (I > J)
+    {
+        throw std::logic_error("Coulomb reader v1 expects upper-triangular atom pairs");
+    }
+
+    const std::size_t nrow = basis_aux[I];
+    const std::size_t ncol = basis_aux[J];
+    const std::size_t row_begin = basis_aux.get_global_index(I, 0);
+    const std::size_t col_begin = basis_aux.get_global_index(J, 0);
+    std::vector<std::complex<double>> block(nrow * ncol);
+
+    if (I < J)
+    {
+        for (std::size_t i = 0; i < nrow; ++i)
+        {
+            const std::size_t row = row_begin + i;
+            read_coulomb_v1_upper_segment(
+                file, row, col_begin, ncol, block.data() + i * ncol);
+        }
+        return block;
+    }
+
+    for (std::size_t i = 0; i < nrow; ++i)
+    {
+        const std::size_t row = row_begin + i;
+        const std::size_t n_upper = ncol - i;
+        read_coulomb_v1_upper_segment(
+            file, row, row, n_upper, block.data() + i * ncol + i);
+    }
+    for (std::size_t i = 1; i < nrow; ++i)
+    {
+        for (std::size_t j = 0; j < i; ++j)
+        {
+            block[i * ncol + j] = std::conj(block[j * ncol + i]);
+        }
+    }
+    return block;
+}
+
+void validate_coulomb_v1_naux(const CoulombV1File &file, const std::size_t expected_naux)
+{
+    if (static_cast<std::size_t>(file.naux) != expected_naux)
+    {
+        std::ostringstream ss;
+        ss << file.path << ": Coulomb v1 Naux=" << file.naux
+           << " does not match basis_aux.nb_total=" << expected_naux;
+        throw std::logic_error(ss.str());
+    }
+}
+
+size_t read_Vq_full_v1(const string &dir_path, const string &vq_fprefix,
+                       bool is_cut_coulomb)
+{
+    using namespace librpa_int::global;
+
+    profiler.start(__FUNCTION__);
+    auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
+    const auto &basis_aux = ds->basis_aux;
+    const auto files = librpa_int::discover_files_with_prefix(dir_path, vq_fprefix);
+    if (files.empty())
+    {
+        throw std::logic_error(
+            "No Coulomb reader v1 files found with prefix " + vq_fprefix);
+    }
+
+    for (const auto &path: files)
+    {
+        CoulombV1File file(path);
+        validate_coulomb_v1_naux(file, basis_aux.nb_total);
+        const int iq0 = file.iq - 1;
+
+        for (std::size_t I = 0; I != basis_aux.n_atoms; ++I)
+        {
+            for (std::size_t J = I; J != basis_aux.n_atoms; ++J)
+            {
+                auto block = read_coulomb_v1_atom_pair(file, basis_aux, I, J);
+                if (is_cut_coulomb)
+                {
+                    driver::h.set_aux_cut_coulomb_k_atom_pair_packed(
+                        iq0, I, J, basis_aux[I], basis_aux[J],
+                        block.data(), driver::opts.vq_threshold);
+                }
+                else
+                {
+                    driver::h.set_aux_bare_coulomb_k_atom_pair_packed(
+                        iq0, I, J, basis_aux[I], basis_aux[J],
+                        block.data(), driver::opts.vq_threshold);
+                }
+            }
+        }
+    }
+    profiler.stop(__FUNCTION__);
+    return 0;
+}
+
+size_t read_Vq_row_v1(const string &dir_path, const string &vq_fprefix, double threshold,
+                      const std::vector<atpair_t> &local_atpair,
+                      bool is_cut_coulomb)
+{
+    using namespace librpa_int::global;
+
+    profiler.start(__FUNCTION__);
+    auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
+    const auto &basis_aux = ds->basis_aux;
+    const auto files = librpa_int::discover_files_with_prefix(dir_path, vq_fprefix);
+    if (files.empty())
+    {
+        throw std::logic_error(
+            "No Coulomb reader v1 files found with prefix " + vq_fprefix);
+    }
+
+    for (const auto &path: files)
+    {
+        CoulombV1File file(path);
+        validate_coulomb_v1_naux(file, basis_aux.nb_total);
+        const int iq0 = file.iq - 1;
+
+        for (const auto &ap: local_atpair)
+        {
+            const auto I = static_cast<std::size_t>(ap.first);
+            const auto J = static_cast<std::size_t>(ap.second);
+            auto block = read_coulomb_v1_atom_pair(file, basis_aux, I, J);
+            if (is_cut_coulomb)
+            {
+                driver::h.set_aux_cut_coulomb_k_atom_pair_packed(
+                    iq0, I, J, basis_aux[I], basis_aux[J], block.data(), threshold);
+            }
+            else
+            {
+                driver::h.set_aux_bare_coulomb_k_atom_pair_packed(
+                    iq0, I, J, basis_aux[I], basis_aux[J], block.data(), threshold);
+            }
+        }
+    }
+
+    profiler.stop(__FUNCTION__);
+    return 0;
+}
+
+} // namespace
+
+size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cut_coulomb,
+                    int reader_version)
 {
     using std::cout;
     using std::endl;
     using librpa_int::ComplexMatrix;
     using namespace librpa_int::global;
+
+    if (reader_version == 1)
+    {
+        return read_Vq_full_v1(dir_path, vq_fprefix, is_cut_coulomb);
+    }
+    if (reader_version != 0)
+    {
+        throw std::logic_error("Unknown Coulomb reader version " +
+                               std::to_string(reader_version));
+    }
 
     auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
     const auto &basis_aux = ds->basis_aux;
@@ -1763,13 +2086,25 @@ static int handle_Vq_row_file(const string &file_path, double threshold,
 }
 
 size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double threshold,
-                   const std::vector<atpair_t> &local_atpair, bool is_cut_coulomb)
+                   const std::vector<atpair_t> &local_atpair, bool is_cut_coulomb,
+                   int reader_version)
 {
     using std::cout;
     using std::endl;
     using librpa_int::ComplexMatrix;
     using librpa_int::atom_mapping;
     using namespace librpa_int::global;
+
+    if (reader_version == 1)
+    {
+        return read_Vq_row_v1(
+            dir_path, vq_fprefix, threshold, local_atpair, is_cut_coulomb);
+    }
+    if (reader_version != 0)
+    {
+        throw std::logic_error("Unknown Coulomb reader version " +
+                               std::to_string(reader_version));
+    }
 
     cout << "Begin READ_Vq_Row" << endl;
     std::set<int> local_I_set;

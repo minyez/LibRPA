@@ -40,7 +40,8 @@ void task_screened_coulomb_real_freq(std::map<Vector3_Order<double>, ComplexMatr
     Profiler::stop("chi0_build");
 
     Profiler::start("read_vq_cut", "Load truncated Coulomb");
-    read_Vq_full(driver_params.input_dir, "coulomb_cut_", true);
+    read_Vq_full(driver_params.input_dir, "coulomb_cut_", true,
+                 driver_params.version_coul_reader);
     Profiler::stop("read_vq_cut");
 
     std::vector<double> epsmac_LF_imagfreq_re;

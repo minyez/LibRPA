@@ -650,7 +650,8 @@ void task_hf_band()
 
         // 读取库伦相互作用
         Profiler::start("read_vq_cut", "Load truncated Coulomb");
-        read_Vq_full(driver_params.input_dir, "coulomb_cut_", true);
+        read_Vq_full(driver_params.input_dir, "coulomb_cut_", true,
+                     driver_params.version_coul_reader);
         Profiler::stop("read_vq_cut");
 
         // // 读取和处理介电函数
@@ -1310,5 +1311,4 @@ void task_hf_band()
 
     Profiler::stop("hf_band");
 }
-
 

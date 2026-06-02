@@ -1,10 +1,23 @@
 #pragma once
 #include <string>
+#include <vector>
 
 namespace librpa_int
 {
 
 std::string path_as_directory(const std::string &path);
+
+std::string join_dir_file(const std::string &dir_path, const std::string &filename);
+
+std::vector<std::string> discover_files(const std::string &dir_path,
+                                        const std::string &prefix,
+                                        const std::string &suffix);
+
+std::vector<std::string> discover_files_with_prefix(const std::string &dir_path,
+                                                    const std::string &prefix);
+
+std::vector<std::string> discover_files_with_suffix(const std::string &dir_path,
+                                                    const std::string &suffix);
 
 bool path_exists(const char *path_cstr);
 

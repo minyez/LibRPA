@@ -28,12 +28,14 @@ void driver::task_exx_band()
 
     if (routing == LIBRPA_ROUTING_RTAU)
     {
-        read_Vq_full(driver_params.input_dir, "coulomb_cut_", true);
+        read_Vq_full(driver_params.input_dir, "coulomb_cut_", true,
+                     driver_params.version_coul_reader);
     }
     else
     {
         // NOTE: local_atpair set during read_data::read_ri.
-        read_Vq_row(driver_params.input_dir, "coulomb_cut_", opts.vq_threshold, local_atpair, true);
+        read_Vq_row(driver_params.input_dir, "coulomb_cut_", opts.vq_threshold,
+                    local_atpair, true, driver_params.version_coul_reader);
     }
     profiler.stop("read_vq_cut");
 
