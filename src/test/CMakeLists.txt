@@ -51,7 +51,8 @@ foreach(target
     test_matrix_m
     test_meanfield
     test_pbc
-    test_timefreq 
+    test_qpe_solver
+    test_timefreq
     )
   config_test(${target} 1)
 endforeach()
