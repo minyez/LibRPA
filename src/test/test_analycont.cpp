@@ -39,10 +39,15 @@ void test_analycont_pade()
     // std::cout << data << endl;
     const cplxdb test_x = {1.0, 1.0};
     const cplxdb ref = -1.0 / (test_x - x0);
+    const cplxdb ref_deriv = 1.0 / ((test_x - x0) * (test_x - x0));
     cplxdb test_y = pade.get(test_x);
+    cplxdb test_deriv = pade.get_derivative(test_x);
     cout << "Reference: "<< ref << endl;
     cout << "     Test: "<< test_y << endl;
+    cout << "Reference derivative: "<< ref_deriv << endl;
+    cout << "     Test derivative: "<< test_deriv << endl;
     assert(fequal(ref, test_y));
+    assert(fequal(ref_deriv, test_deriv));
 }
 
 void test_get_spectfunc_acpade()

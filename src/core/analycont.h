@@ -38,6 +38,15 @@ public:
      * @return    a complex double, the value of function at x
      */
     cplxdb get(const cplxdb &x) const;
+
+    /*!
+     * @brief get the analytic derivative of continued function at complex number
+     *
+     * @param [in]    x    complex argument of function
+     *
+     * @return    a complex double, the derivative of function at x
+     */
+    cplxdb get_derivative(const cplxdb &x) const;
 };
 
 /*!

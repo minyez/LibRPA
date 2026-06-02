@@ -80,6 +80,29 @@ AnalyContPade::get(const cplxdb &x) const
     return par_y[0] / tmp;
 }
 
+cplxdb
+AnalyContPade::get_derivative(const cplxdb &x) const
+{
+    if (n_pars <= 1)
+    {
+        return {0.0, 0.0};
+    }
+
+    std::vector<cplxdb> g(n_pars);
+    std::vector<cplxdb> dg(n_pars, {0.0, 0.0});
+
+    g[n_pars-1] = par_y[n_pars-1];
+    for (int i_par = n_pars - 2; i_par >= 0; i_par--)
+    {
+        const cplxdb denominator = 1.0 + (x - par_x[i_par]) * g[i_par+1];
+        g[i_par] = par_y[i_par] / denominator;
+        dg[i_par] = -par_y[i_par]
+                    * (g[i_par+1] + (x - par_x[i_par]) * dg[i_par+1])
+                    / (denominator * denominator);
+    }
+    return dg[0];
+}
+
 const std::vector<double> get_specfunc(const AnalyCont &ac, const std::vector<cplxdb> omegas,
                                        const double &ref, const double &e_ks, const double &v_xc,
                                        const double &v_exx,
