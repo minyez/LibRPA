@@ -137,6 +137,8 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             normal_pair(libri_g0w0_threshold_C),
             normal_pair(libri_g0w0_threshold_G),
             normal_pair(libri_g0w0_threshold_Wc),
+            normal_pair(qpe_solver_thres),
+            normal_pair(qpe_solver_damp_factor),
         };
 
     const std::vector<std::pair<std::string, int>> int_params
@@ -146,6 +148,7 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             normal_pair(n_bands_sigc),
             normal_pair(n_params_anacon),
             normal_pair(option_dielect_func),
+            normal_pair(qpe_solver_n_iter_max),
         };
 
     const std::vector<std::pair<std::string, std::string>> str_params
