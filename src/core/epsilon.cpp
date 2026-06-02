@@ -2259,14 +2259,15 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 if (option_dielect_func != 3)
                 {
                     // now chi0_block is actually -v1/2 chi v1/2
-                    for (int i = 0; i != n_abf; i++)
-                    {
-                        const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
-                        if (ilo < 0) continue;
-                        const int jlo = desc_nabf_nabf_opt.indx_g2l_c(i);
-                        if (jlo < 0) continue;
-                        chi0_block(ilo, jlo) += 1.0;
-                    }
+                    // for (int i = 0; i != n_abf; i++)
+                    // {
+                    //     const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
+                    //     if (ilo < 0) continue;
+                    //     const int jlo = desc_nabf_nabf_opt.indx_g2l_c(i);
+                    //     if (jlo < 0) continue;
+                    //     chi0_block(ilo, jlo) += 1.0;
+                    // }
+                    LaConnector::pdam(1.0, chi0_block_ptr, desc_nabf_nabf_opt);
                     // now chi0_block is actually the dielectric matrix
                 }
                 profiler.stop("epsilon_compute_eps");
@@ -2331,23 +2332,22 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             if (epsmac_LF_imagfreq.size() > 0 && is_gamma_point(q) && option_dielect_func == 3)
             {
                 // Dielectric matrix is already inverted, only multiply by square root coulwc from both sides
-                for (int i = 0; i != n_abf; i++)
-                {
-                    const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
-                    if (ilo < 0) continue;
-                    const int jlo = desc_nabf_nabf_opt.indx_g2l_c(i);
-                    if (jlo < 0) continue;
-                    chi0_block(ilo, jlo) -= 1.0;
-                }
+#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+                if(use_gpu_gw_wc){
+                    coulwc_block_ptr = coul_block_ptr;
+                    DEVICE_CHECK(deviceMemcpyAsync(coulwc_block_ptr, coulwc_block.ptr(), coulwc_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+                }else
+#endif
+                LaConnector::pdam(-1.0, chi0_block_ptr, desc_nabf_nabf_opt);
                 global::profiler.start("epsilon_multiply_coulwc", "Multiply truncated Coulomb");
-                ScalapackConnector::pgemm_f('N', 'N', n_abf, n_abf, n_abf, 1.0,
-                        coulwc_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                        chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
-                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
-                ScalapackConnector::pgemm_f('N', 'N', n_abf, n_abf, n_abf, 1.0,
-                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                        coulwc_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, 0.0,
-                        chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+                LaConnector::pgemm('N', 'N', n_abf, n_abf, n_abf, {1.0, 0.0},
+                        coulwc_block_ptr, 1, 1, desc_nabf_nabf_opt,
+                        chi0_block_ptr, 1, 1, desc_nabf_nabf_opt, {0.0, 0.0},
+                        coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
+                LaConnector::pgemm('N', 'N', n_abf, n_abf, n_abf, {1.0, 0.0},
+                        coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt,
+                        coulwc_block_ptr, 1, 1, desc_nabf_nabf_opt, {0.0, 0.0},
+                        chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
                 global::profiler.stop("epsilon_multiply_coulwc");
             }
             else

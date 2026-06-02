@@ -87,3 +87,4 @@ utilities/*
 
 # regression test workspace
 regression_tests/workspace*/
+regression_tests/regression.log
