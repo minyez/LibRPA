@@ -181,6 +181,23 @@ void librpa_set_aux_bare_coulomb_k_atom_pair(LibrpaHandler* h, int ik, int I, in
                                              const double* Vq_imag_in, double vq_threshold);
 
 /**
+ * @brief Set bare Coulomb matrix elements (atom-pair format, packed complex).
+ *
+ * @param[in] h               Handler.
+ * @param[in] ik              K-point index.
+ * @param[in] I               Atom I index.
+ * @param[in] J               Atom J index.
+ * @param[in] naux_mu         Number of auxiliary functions for mu.
+ * @param[in] naux_nu         Number of auxiliary functions for nu.
+ * @param[in] Vq_ri_in        Coulomb matrix with interleaved real/imaginary parts.
+ * @param[in] vq_threshold    Threshold for screening.
+ */
+void librpa_set_aux_bare_coulomb_k_atom_pair_packed(LibrpaHandler* h, int ik, int I, int J,
+                                                    int naux_mu, int naux_nu,
+                                                    const double* Vq_ri_in,
+                                                    double vq_threshold);
+
+/**
  * @brief Set truncated Coulomb matrix elements (atom-pair format).
  *
  * @param[in] h               Handler.
@@ -196,6 +213,23 @@ void librpa_set_aux_bare_coulomb_k_atom_pair(LibrpaHandler* h, int ik, int I, in
 void librpa_set_aux_cut_coulomb_k_atom_pair(LibrpaHandler* h, int ik, int I, int J, int naux_mu,
                                             int naux_nu, const double* Vq_real_in,
                                             const double* Vq_imag_in, double vq_threshold);
+
+/**
+ * @brief Set truncated Coulomb matrix elements (atom-pair format, packed complex).
+ *
+ * @param[in] h               Handler.
+ * @param[in] ik              K-point index.
+ * @param[in] I               Atom I index.
+ * @param[in] J               Atom J index.
+ * @param[in] naux_mu         Number of auxiliary functions for mu.
+ * @param[in] naux_nu         Number of auxiliary functions for nu.
+ * @param[in] Vq_ri_in        Coulomb matrix with interleaved real/imaginary parts.
+ * @param[in] vq_threshold    Threshold for screening.
+ */
+void librpa_set_aux_cut_coulomb_k_atom_pair_packed(LibrpaHandler* h, int ik, int I, int J,
+                                                   int naux_mu, int naux_nu,
+                                                   const double* Vq_ri_in,
+                                                   double vq_threshold);
 
 /**
  * @brief Set bare Coulomb matrix elements (2D block format).
@@ -214,6 +248,21 @@ void librpa_set_aux_bare_coulomb_k_2d_block(LibrpaHandler* h, int ik, int mu_beg
                                             const double* Vq_imag_in);
 
 /**
+ * @brief Set bare Coulomb matrix elements (2D block format, packed complex).
+ *
+ * @param[in] h            Handler.
+ * @param[in] ik           K-point index.
+ * @param[in] mu_begin     Starting index for mu.
+ * @param[in] mu_end       Ending index for mu.
+ * @param[in] nu_begin     Starting index for nu.
+ * @param[in] nu_end       Ending index for nu.
+ * @param[in] Vq_ri_in     Coulomb matrix with interleaved real/imaginary parts.
+ */
+void librpa_set_aux_bare_coulomb_k_2d_block_packed(LibrpaHandler* h, int ik, int mu_begin,
+                                                   int mu_end, int nu_begin, int nu_end,
+                                                   const double* Vq_ri_in);
+
+/**
  * @brief Set truncated Coulomb matrix elements (2D block format).
  *
  * @param[in] h            Handler.
@@ -228,6 +277,21 @@ void librpa_set_aux_bare_coulomb_k_2d_block(LibrpaHandler* h, int ik, int mu_beg
 void librpa_set_aux_cut_coulomb_k_2d_block(LibrpaHandler* h, int ik, int mu_begin, int mu_end,
                                            int nu_begin, int nu_end, const double* Vq_real_in,
                                            const double* Vq_imag_in);
+
+/**
+ * @brief Set truncated Coulomb matrix elements (2D block format, packed complex).
+ *
+ * @param[in] h            Handler.
+ * @param[in] ik           K-point index.
+ * @param[in] mu_begin     Starting index for mu.
+ * @param[in] mu_end       Ending index for mu.
+ * @param[in] nu_begin     Starting index for nu.
+ * @param[in] nu_end       Ending index for nu.
+ * @param[in] Vq_ri_in     Coulomb matrix with interleaved real/imaginary parts.
+ */
+void librpa_set_aux_cut_coulomb_k_2d_block_packed(LibrpaHandler* h, int ik, int mu_begin,
+                                                  int mu_end, int nu_begin, int nu_end,
+                                                  const double* Vq_ri_in);
 
 /**
  * @brief Set dielectric function on imaginary frequency axis.

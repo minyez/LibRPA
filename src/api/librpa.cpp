@@ -179,9 +179,21 @@ LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
 )
 
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
+    set_aux_bare_coulomb_k_atom_pair_packed,
+    (int ik, int I, int J, int naux_mu, int naux_nu, const std::complex<double> *Vq, double vq_threshold),
+    (ik, I, J, naux_mu, naux_nu, reinterpret_cast<const double*>(Vq), vq_threshold)
+)
+
+LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
     set_aux_cut_coulomb_k_atom_pair,
     (int ik, int I, int J, int naux_mu, int naux_nu, const double* Vq_real_in, const double* Vq_imag_in, double vq_threshold),
     (ik, I, J, naux_mu, naux_nu, Vq_real_in, Vq_imag_in, vq_threshold)
+)
+
+LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
+    set_aux_cut_coulomb_k_atom_pair_packed,
+    (int ik, int I, int J, int naux_mu, int naux_nu, const std::complex<double> *Vq, double vq_threshold),
+    (ik, I, J, naux_mu, naux_nu, reinterpret_cast<const double*>(Vq), vq_threshold)
 )
 
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
@@ -191,9 +203,21 @@ LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
 )
 
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
+    set_aux_bare_coulomb_k_2d_block_packed,
+    (int ik, int mu_begin, int mu_end, int nu_begin, int nu_end, const std::complex<double> *Vq),
+    (ik, mu_begin, mu_end, nu_begin, nu_end, reinterpret_cast<const double*>(Vq))
+)
+
+LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
     set_aux_cut_coulomb_k_2d_block,
     (int ik, int mu_begin, int mu_end, int nu_begin, int nu_end, const double* Vq_real_in, const double* Vq_imag_in),
     (ik, mu_begin, mu_end, nu_begin, nu_end, Vq_real_in, Vq_imag_in)
+)
+
+LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
+    set_aux_cut_coulomb_k_2d_block_packed,
+    (int ik, int mu_begin, int mu_end, int nu_begin, int nu_end, const std::complex<double> *Vq),
+    (ik, mu_begin, mu_end, nu_begin, nu_end, reinterpret_cast<const double*>(Vq))
 )
 
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(

@@ -244,18 +244,38 @@ public:
                                           const double *Vq_real_in, const double *Vq_imag_in,
                                           double vq_threshold);
 
+    /** @brief Set bare Coulomb matrix elements (atom-pair format, packed complex array). */
+    void set_aux_bare_coulomb_k_atom_pair_packed(int ik, int I, int J, int naux_mu, int naux_nu,
+                                                 const std::complex<double> *Vq,
+                                                 double vq_threshold);
+
     /** @brief Set truncated Coulomb matrix elements (atom-pair format). */
     void set_aux_cut_coulomb_k_atom_pair(int ik, int I, int J, int naux_mu, int naux_nu,
                                          const double *Vq_real_in, const double *Vq_imag_in,
                                          double vq_threshold);
 
+    /** @brief Set truncated Coulomb matrix elements (atom-pair format, packed complex array). */
+    void set_aux_cut_coulomb_k_atom_pair_packed(int ik, int I, int J, int naux_mu, int naux_nu,
+                                                const std::complex<double> *Vq,
+                                                double vq_threshold);
+
     /** @brief Set bare Coulomb matrix elements (2D block format). */
     void set_aux_bare_coulomb_k_2d_block(int ik, int mu_begin, int mu_end, int nu_begin, int nu_end,
                                          const double *Vq_real_in, const double *Vq_imag_in);
 
+    /** @brief Set bare Coulomb matrix elements (2D block format, packed complex array). */
+    void set_aux_bare_coulomb_k_2d_block_packed(int ik, int mu_begin, int mu_end,
+                                                int nu_begin, int nu_end,
+                                                const std::complex<double> *Vq);
+
     /** @brief Set truncated Coulomb matrix elements (2D block format). */
     void set_aux_cut_coulomb_k_2d_block(int ik, int mu_begin, int mu_end, int nu_begin, int nu_end,
                                         const double *Vq_real_in, const double *Vq_imag_in);
+
+    /** @brief Set truncated Coulomb matrix elements (2D block format, packed complex array). */
+    void set_aux_cut_coulomb_k_2d_block_packed(int ik, int mu_begin, int mu_end,
+                                               int nu_begin, int nu_end,
+                                               const std::complex<double> *Vq);
 
     /** @brief Set dielectric function on imaginary frequency axis. */
     void set_dielect_func_imagfreq(const std::vector<double> &omegas_imag,

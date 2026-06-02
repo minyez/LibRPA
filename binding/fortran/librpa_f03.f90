@@ -548,6 +548,16 @@ module librpa_f03
          real(c_double), value :: vq_threshold
       end subroutine librpa_set_aux_bare_coulomb_k_atom_pair_c
 
+      subroutine librpa_set_aux_bare_coulomb_k_atom_pair_packed_c &
+            (h, ik, i_atom, j_atom, naux_i, naux_j, vq, vq_threshold) &
+            bind(c, name="librpa_set_aux_bare_coulomb_k_atom_pair_packed")
+         import :: c_ptr, c_int, c_double
+         type(c_ptr), value :: h
+         integer(c_int), value :: ik, i_atom, j_atom, naux_i, naux_j
+         type(c_ptr), value :: vq
+         real(c_double), value :: vq_threshold
+      end subroutine librpa_set_aux_bare_coulomb_k_atom_pair_packed_c
+
       subroutine librpa_set_aux_cut_coulomb_k_atom_pair_c &
             (h, ik, i_atom, j_atom, naux_i, naux_j, vq_real, vq_imag, vq_threshold) &
             bind(c, name="librpa_set_aux_cut_coulomb_k_atom_pair")
@@ -558,6 +568,16 @@ module librpa_f03
          real(c_double), value :: vq_threshold
       end subroutine librpa_set_aux_cut_coulomb_k_atom_pair_c
 
+      subroutine librpa_set_aux_cut_coulomb_k_atom_pair_packed_c &
+            (h, ik, i_atom, j_atom, naux_i, naux_j, vq, vq_threshold) &
+            bind(c, name="librpa_set_aux_cut_coulomb_k_atom_pair_packed")
+         import :: c_ptr, c_int, c_double
+         type(c_ptr), value :: h
+         integer(c_int), value :: ik, i_atom, j_atom, naux_i, naux_j
+         type(c_ptr), value :: vq
+         real(c_double), value :: vq_threshold
+      end subroutine librpa_set_aux_cut_coulomb_k_atom_pair_packed_c
+
       subroutine librpa_set_aux_bare_coulomb_k_2d_block_c &
             (h, ik, mu_begin, mu_end, nu_begin, nu_end, vq_real, vq_imag) &
             bind(c, name="librpa_set_aux_bare_coulomb_k_2d_block")
@@ -567,6 +587,15 @@ module librpa_f03
          real(c_double), dimension(*), intent(in) :: vq_real, vq_imag
       end subroutine librpa_set_aux_bare_coulomb_k_2d_block_c
 
+      subroutine librpa_set_aux_bare_coulomb_k_2d_block_packed_c &
+            (h, ik, mu_begin, mu_end, nu_begin, nu_end, vq) &
+            bind(c, name="librpa_set_aux_bare_coulomb_k_2d_block_packed")
+         import :: c_ptr, c_int
+         type(c_ptr), value :: h
+         integer(c_int), value :: ik, mu_begin, mu_end, nu_begin, nu_end
+         type(c_ptr), value :: vq
+      end subroutine librpa_set_aux_bare_coulomb_k_2d_block_packed_c
+
       subroutine librpa_set_aux_cut_coulomb_k_2d_block_c &
             (h, ik, mu_begin, mu_end, nu_begin, nu_end, vq_real, vq_imag) &
             bind(c, name="librpa_set_aux_cut_coulomb_k_2d_block")
@@ -575,6 +604,15 @@ module librpa_f03
          integer(c_int), value :: ik, mu_begin, mu_end, nu_begin, nu_end
          real(c_double), dimension(*), intent(in) :: vq_real, vq_imag
       end subroutine librpa_set_aux_cut_coulomb_k_2d_block_c
+
+      subroutine librpa_set_aux_cut_coulomb_k_2d_block_packed_c &
+            (h, ik, mu_begin, mu_end, nu_begin, nu_end, vq) &
+            bind(c, name="librpa_set_aux_cut_coulomb_k_2d_block_packed")
+         import :: c_ptr, c_int
+         type(c_ptr), value :: h
+         integer(c_int), value :: ik, mu_begin, mu_end, nu_begin, nu_end
+         type(c_ptr), value :: vq
+      end subroutine librpa_set_aux_cut_coulomb_k_2d_block_packed_c
 
       subroutine librpa_set_dielect_func_imagfreq_c(h, nfreq, omegas_imag, dielect_func) &
             bind(c, name="librpa_set_dielect_func_imagfreq")
@@ -1487,6 +1525,7 @@ contains
    !> @param[in]     vq_threshold Threshold.
    !> @param[in]     is_cut   True for truncated Coulomb.
    subroutine set_aux_coulomb_k_atom_pair(h, ik, i_atom, j_atom, naux_i, naux_j, vq, vq_threshold, is_cut)
+      use iso_c_binding, only: c_int, c_double, c_double_complex, c_loc
       type(LibrpaHandler), intent(inout) :: h
       integer, intent(in) :: ik, i_atom, j_atom, naux_i, naux_j
       complex(dp), intent(in) :: vq(naux_i, naux_j)
@@ -1494,28 +1533,26 @@ contains
       logical, intent(in) :: is_cut
 
       integer(c_int) :: ik_c, i_atom_c, j_atom_c, naux_i_c, naux_j_c
-      real(c_double), allocatable :: vq_real(:,:), vq_imag(:,:)
+      complex(c_double_complex), allocatable, target :: vq_c(:,:)
       real(c_double) :: thres_c
-
-      allocate(vq_real(naux_j, naux_i), vq_imag(naux_j, naux_i))
 
       ik_c = int(ik-1, kind=c_int)
       i_atom_c = int(i_atom-1, kind=c_int)
       j_atom_c = int(j_atom-1, kind=c_int)
       naux_i_c = int(naux_i, kind=c_int)
       naux_j_c = int(naux_j, kind=c_int)
-      vq_real = transpose(real(vq, kind=c_double))
-      vq_imag = transpose(real(aimag(vq), kind=c_double))
+      allocate(vq_c(naux_j, naux_i))
+      vq_c = transpose(cmplx(vq, kind=c_double_complex))
       thres_c = real(vq_threshold, kind=c_double)
       if (is_cut) then
-         call librpa_set_aux_cut_coulomb_k_atom_pair_c(h%ptr_c_handle, &
-            ik_c, i_atom_c, j_atom_c, naux_i_c, naux_j_c, vq_real, vq_imag, thres_c)
+         call librpa_set_aux_cut_coulomb_k_atom_pair_packed_c(h%ptr_c_handle, &
+            ik_c, i_atom_c, j_atom_c, naux_i_c, naux_j_c, c_loc(vq_c), thres_c)
       else
-         call librpa_set_aux_bare_coulomb_k_atom_pair_c(h%ptr_c_handle, &
-            ik_c, i_atom_c, j_atom_c, naux_i_c, naux_j_c, vq_real, vq_imag, thres_c)
+         call librpa_set_aux_bare_coulomb_k_atom_pair_packed_c(h%ptr_c_handle, &
+            ik_c, i_atom_c, j_atom_c, naux_i_c, naux_j_c, c_loc(vq_c), thres_c)
       end if
 
-      deallocate(vq_real, vq_imag)
+      deallocate(vq_c)
    end subroutine set_aux_coulomb_k_atom_pair
 
    !> @brief Set bare Coulomb matrix elements (atom-pair format).
@@ -1562,6 +1599,7 @@ contains
 
    !> @brief Internal: set Coulomb matrix (2D block format).
    subroutine set_aux_coulomb_k_2d_block(h, ik, mu_begin, mu_end, nu_begin, nu_end, vq, is_cut)
+      use iso_c_binding, only: c_int, c_double_complex, c_loc
       implicit none
       type(LibrpaHandler), intent(inout) :: h
       integer, intent(in) :: ik, mu_begin, mu_end, nu_begin, nu_end
@@ -1569,7 +1607,7 @@ contains
       logical, intent(in) :: is_cut
 
       integer(c_int) :: ik_c, mb, me, nb, ne
-      real(c_double), allocatable :: vq_real(:,:), vq_imag(:,:)
+      complex(c_double_complex), allocatable, target :: vq_c(:,:)
 
       ik_c = int(ik-1, kind=c_int)
       ! The C interface uses included beginning and excluded ending.
@@ -1579,17 +1617,14 @@ contains
       nb = int(nu_begin-1, kind=c_int)
       ne = int(nu_end, kind=c_int)
 
-      allocate(vq_real(ne-nb, me-mb))
-      allocate(vq_imag(ne-nb, me-mb))
-      vq_real = transpose(real(vq, kind=c_double))
-      vq_imag = transpose(real(aimag(vq), kind=c_double))
+      allocate(vq_c(ne-nb, me-mb))
+      vq_c = transpose(cmplx(vq, kind=c_double_complex))
       if (is_cut) then
-         call librpa_set_aux_cut_coulomb_k_2d_block_c(h%ptr_c_handle, ik_c, mb, me, nb, ne, vq_real, vq_imag)
+         call librpa_set_aux_cut_coulomb_k_2d_block_packed_c(h%ptr_c_handle, ik_c, mb, me, nb, ne, c_loc(vq_c))
       else
-         call librpa_set_aux_bare_coulomb_k_2d_block_c(h%ptr_c_handle, ik_c, mb, me, nb, ne, vq_real, vq_imag)
+         call librpa_set_aux_bare_coulomb_k_2d_block_packed_c(h%ptr_c_handle, ik_c, mb, me, nb, ne, c_loc(vq_c))
       end if
-      deallocate(vq_real)
-      deallocate(vq_imag)
+      deallocate(vq_c)
    end subroutine set_aux_coulomb_k_2d_block
 
    !> @brief Set bare Coulomb matrix elements (2D block format).

@@ -610,6 +610,32 @@ static void _set_aux_coulomb_k_atom_pair(const librpa_int::Vector3_Order<double>
     }
 }
 
+static void _set_aux_coulomb_k_atom_pair_packed(
+    const librpa_int::Vector3_Order<double> &qvec, librpa_int::atom_t I, librpa_int::atom_t J,
+    size_t naux_mu, size_t naux_nu, const double* Vq_ri_in,
+    librpa_int::atpair_k_cplx_mat_t &coulomb_mat, double vq_threshold)
+{
+    using librpa_int::ComplexMatrix;
+
+    std::shared_ptr<ComplexMatrix> vq_ptr = std::make_shared<ComplexMatrix>();
+    vq_ptr->create(naux_mu, naux_nu);
+
+    for (size_t i_mu = 0; i_mu < naux_mu; i_mu++)
+    {
+        for (size_t i_nu = 0; i_nu < naux_nu; i_nu++)
+        {
+            const auto id = i_nu + i_mu * naux_nu;
+            (*vq_ptr)(i_mu, i_nu) =
+                librpa_int::cplxdb(Vq_ri_in[2 * id], Vq_ri_in[2 * id + 1]);
+        }
+    }
+
+    if ((*vq_ptr).real().absmax() >= vq_threshold)
+    {
+        coulomb_mat[I][J][qvec] = vq_ptr;
+    }
+}
+
 void librpa_set_aux_bare_coulomb_k_atom_pair(LibrpaHandler* h, int ik, int I, int J, int naux_mu,
                                              int naux_nu, const double* Vq_real_in,
                                              const double* Vq_imag_in, double vq_threshold)
@@ -626,6 +652,24 @@ void librpa_set_aux_bare_coulomb_k_atom_pair(LibrpaHandler* h, int ik, int I, in
     profiler.stop(tname);
 }
 
+void librpa_set_aux_bare_coulomb_k_atom_pair_packed(LibrpaHandler* h, int ik, int I, int J,
+                                                    int naux_mu, int naux_nu,
+                                                    const double* Vq_ri_in,
+                                                    double vq_threshold)
+{
+    using librpa_int::global::profiler;
+
+    const std::string tname = "api_set_aux_bare_coulomb_k_atom_pair_packed";
+    profiler.start(tname);
+
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    const auto &qvec = pds->pbc.klist[ik];
+    _set_aux_coulomb_k_atom_pair_packed(qvec, I, J, naux_mu, naux_nu, Vq_ri_in,
+                                        pds->vq, vq_threshold);
+
+    profiler.stop(tname);
+}
+
 void librpa_set_aux_cut_coulomb_k_atom_pair(LibrpaHandler* h, int ik, int I, int J, int naux_mu,
                                             int naux_nu, const double* Vq_real_in,
                                             const double* Vq_imag_in, double vq_threshold)
@@ -638,6 +682,24 @@ void librpa_set_aux_cut_coulomb_k_atom_pair(LibrpaHandler* h, int ik, int I, int
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &qvec = pds->pbc.klist[ik];
     _set_aux_coulomb_k_atom_pair(qvec, I, J, naux_mu, naux_nu, Vq_real_in, Vq_imag_in, pds->vq_cut, vq_threshold);
+
+    profiler.stop(tname);
+}
+
+void librpa_set_aux_cut_coulomb_k_atom_pair_packed(LibrpaHandler* h, int ik, int I, int J,
+                                                   int naux_mu, int naux_nu,
+                                                   const double* Vq_ri_in,
+                                                   double vq_threshold)
+{
+    using librpa_int::global::profiler;
+
+    const std::string tname = "api_set_aux_cut_coulomb_k_atom_pair_packed";
+    profiler.start(tname);
+
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    const auto &qvec = pds->pbc.klist[ik];
+    _set_aux_coulomb_k_atom_pair_packed(qvec, I, J, naux_mu, naux_nu, Vq_ri_in,
+                                        pds->vq_cut, vq_threshold);
 
     profiler.stop(tname);
 }
@@ -663,6 +725,34 @@ static void _set_aux_coulomb_k_2D_block(
         for (int i_nu = 0; i_nu < n_nu_loc; i_nu++)
         {
             mat(i_mu, i_nu) = complex<double>(Vq_real_in[ii], Vq_imag_in[ii]);
+            ii += 1;
+        }
+    }
+    mat.swap_to_col_major();
+    vq_block[qvec] = std::move(mat);
+}
+
+static void _set_aux_coulomb_k_2D_block_packed(
+    const librpa_int::Vector3_Order<double>& qvec, int mu_begin, int mu_end,
+    int nu_begin, int nu_end, const double* Vq_ri_in,
+    std::map<librpa_int::Vector3_Order<double>, librpa_int::Matz>& vq_block)
+{
+    using namespace librpa_int;
+    using std::shared_ptr;
+    using std::make_shared;
+
+    int n_mu_loc = mu_end - mu_begin;
+    int n_nu_loc = nu_end - nu_begin;
+    if (n_mu_loc < 1 || n_nu_loc < 1) return;
+
+    Matz mat(n_mu_loc, n_nu_loc, MAJOR::ROW);
+
+    size_t ii = 0;
+    for (int i_mu = 0; i_mu < n_mu_loc; i_mu++)
+    {
+        for (int i_nu = 0; i_nu < n_nu_loc; i_nu++)
+        {
+            mat(i_mu, i_nu) = complex<double>(Vq_ri_in[2 * ii], Vq_ri_in[2 * ii + 1]);
             ii += 1;
         }
     }
@@ -707,6 +797,25 @@ void librpa_set_aux_bare_coulomb_k_2d_block(LibrpaHandler* h, int ik, int mu_beg
     profiler.stop(tname);
 }
 
+void librpa_set_aux_bare_coulomb_k_2d_block_packed(LibrpaHandler* h, int ik, int mu_begin,
+                                                   int mu_end, int nu_begin, int nu_end,
+                                                   const double* Vq_ri_in)
+{
+    using librpa_int::global::profiler;
+
+    const std::string tname = "api_set_aux_bare_coulomb_k_2d_block_packed";
+    profiler.start(tname);
+
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    const auto &qvec = pds->pbc.klist[ik];
+    _parse_vq_dims(pds->vq_lbrow, pds->vq_ubrow, pds->vq_lbcol, pds->vq_ubcol,
+                   mu_begin, mu_end, nu_begin, nu_end);
+    _set_aux_coulomb_k_2D_block_packed(qvec, mu_begin, mu_end, nu_begin, nu_end,
+                                       Vq_ri_in, pds->vq_block_loc);
+
+    profiler.stop(tname);
+}
+
 void librpa_set_aux_cut_coulomb_k_2d_block(LibrpaHandler* h, int ik, int mu_begin, int mu_end,
                                            int nu_begin, int nu_end, const double* Vq_real_in,
                                            const double* Vq_imag_in)
@@ -722,6 +831,25 @@ void librpa_set_aux_cut_coulomb_k_2d_block(LibrpaHandler* h, int ik, int mu_begi
                    mu_begin, mu_end, nu_begin, nu_end);
     _set_aux_coulomb_k_2D_block(qvec, mu_begin, mu_end, nu_begin, nu_end, Vq_real_in,
                                 Vq_imag_in, pds->vq_cut_block_loc);
+
+    profiler.stop(tname);
+}
+
+void librpa_set_aux_cut_coulomb_k_2d_block_packed(LibrpaHandler* h, int ik, int mu_begin,
+                                                  int mu_end, int nu_begin, int nu_end,
+                                                  const double* Vq_ri_in)
+{
+    using librpa_int::global::profiler;
+
+    const std::string tname = "api_set_aux_cut_coulomb_k_2d_block_packed";
+    profiler.start(tname);
+
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    const auto &qvec = pds->pbc.klist[ik];
+    _parse_vq_dims(pds->vq_lbrow, pds->vq_ubrow, pds->vq_lbcol, pds->vq_ubcol,
+                   mu_begin, mu_end, nu_begin, nu_end);
+    _set_aux_coulomb_k_2D_block_packed(qvec, mu_begin, mu_end, nu_begin, nu_end,
+                                       Vq_ri_in, pds->vq_cut_block_loc);
 
     profiler.stop(tname);
 }
