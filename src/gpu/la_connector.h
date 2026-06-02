@@ -241,7 +241,7 @@ inline matrix_m<std::complex<T>> power_hemat_la_real(
     bool use_gpu_gw_wc = false, bool use_elpa_sqrt_coulomb = false,
     T* d_A = nullptr, T* d_Z = nullptr, T* d_power = nullptr)
 {
-    #if defined(ENABLE_ELPA) && (defined(ENABLE_HIP) || defined(ENABLE_CUDA))
+    #if defined(ENABLE_ELPA)
     if(use_elpa_sqrt_coulomb){
         return ElpaConnector::power_hemat_elpa_real(
             A_local, ad_A, Z_local, ad_Z,
