@@ -142,8 +142,12 @@ typedef struct
     //! Maximum number of iterations for the quasi-particle equation solver; must be positive.
     int qpe_solver_n_iter_max;
 
-    //! Damping factor applied to each quasi-particle equation solver update.
+    //! Damping factor for quasi-particle equation solver updates.
+    //! Used as the initial and maximum factor when adaptive damping is enabled.
     double qpe_solver_damp_factor;
+
+    //! If enabled, adapt the QPE damping factor during the solve.
+    LibrpaSwitch use_qpe_adaptive_damp;
 
     //! If enabled, keep the final unconverged QPE iterate instead of outputting NaN.
     LibrpaSwitch override_qpe_solver_nan;

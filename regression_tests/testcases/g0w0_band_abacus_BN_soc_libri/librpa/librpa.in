@@ -2,6 +2,7 @@ task = g0w0_band
 input_dir = ../dataset/
 nfreq = 6
 n_params_anacon = 6
+use_qpe_adaptive_damp = t
 gf_R_threshold = 0.000100
 cs_R_threshold = 0.000001
 parallel_routing = libri

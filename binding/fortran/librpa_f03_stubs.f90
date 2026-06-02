@@ -163,8 +163,11 @@ module librpa_f03
       real(dp) :: qpe_solver_thres
       !> Maximum number of iterations for the quasi-particle equation solver; must be positive.
       integer :: qpe_solver_n_iter_max
-      !> Damping factor applied to each quasi-particle equation solver update.
+      !> Damping factor for quasi-particle equation solver updates.
+      !> Used as the initial and maximum factor when adaptive damping is enabled.
       real(dp) :: qpe_solver_damp_factor
+      !> Adapt the quasi-particle equation damping factor during the solve.
+      logical :: use_qpe_adaptive_damp
       !> Keep the final unconverged QPE iterate instead of outputting NaN.
       logical :: override_qpe_solver_nan
       !> Use ScaLAPACK for computing \f$W^c\f$ from \f$\chi^0\f$.

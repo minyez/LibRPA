@@ -165,6 +165,7 @@ module librpa_f03
       real(c_double) :: qpe_solver_thres
       integer(c_int) :: qpe_solver_n_iter_max
       real(c_double) :: qpe_solver_damp_factor
+      integer(c_int) :: use_qpe_adaptive_damp
       integer(c_int) :: override_qpe_solver_nan
       integer(c_int) :: use_scalapack_gw_wc
       integer(c_int) :: use_cholesky_gw_wc
@@ -253,8 +254,11 @@ module librpa_f03
       real(dp) :: qpe_solver_thres
       !> Maximum number of iterations for the quasi-particle equation solver; must be positive.
       integer :: qpe_solver_n_iter_max
-      !> Damping factor applied to each quasi-particle equation solver update.
+      !> Damping factor for quasi-particle equation solver updates.
+      !> Used as the initial and maximum factor when adaptive damping is enabled.
       real(dp) :: qpe_solver_damp_factor
+      !> Adapt the quasi-particle equation damping factor during the solve.
+      logical :: use_qpe_adaptive_damp
       !> Keep the final unconverged QPE iterate instead of outputting NaN.
       logical :: override_qpe_solver_nan
       !> Use ScaLAPACK for computing \f$W^c\f$ from \f$\chi^0\f$.
@@ -956,6 +960,7 @@ contains
       call sync_opt(opts%qpe_solver_thres,        opts%opts_c%qpe_solver_thres,        direction)
       call sync_opt(opts%qpe_solver_n_iter_max,   opts%opts_c%qpe_solver_n_iter_max,   direction)
       call sync_opt(opts%qpe_solver_damp_factor,  opts%opts_c%qpe_solver_damp_factor,  direction)
+      call sync_opt(opts%use_qpe_adaptive_damp,   opts%opts_c%use_qpe_adaptive_damp,   direction)
       call sync_opt(opts%override_qpe_solver_nan, opts%opts_c%override_qpe_solver_nan, direction)
       call sync_opt(opts%option_dielect_func,     opts%opts_c%option_dielect_func,     direction)
       call sync_opt(opts%use_2d_dielectric,       opts%opts_c%use_2d_dielectric,       direction)

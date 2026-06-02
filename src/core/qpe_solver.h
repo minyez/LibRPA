@@ -18,7 +18,9 @@ namespace librpa_int
  * \param [in]     diff_init   Initial residual used for the first damped QPE update
  * \param [in]     thres       Convergence threshold for the QPE residual, in Hartree
  * \param [in]     n_iter_max  Maximum number of self-consistent QPE iterations; must be positive
- * \param [in]     damp_fac    Damping factor applied to each QPE update
+ * \param [in]     damp_fac    Damping factor for QPE updates; used as the initial and maximum factor when adaptive damping is enabled
+ * \param [in]     use_adaptive_damp
+ *                             Adapt the damping factor during the solve
  * \retval         info        0 if QPE is solved successfully, non-zero otherwise
  */
 int qpe_solver_pade_self_consistent(
@@ -32,7 +34,8 @@ int qpe_solver_pade_self_consistent(
         const double diff_init = 1.0e-3,
         const double thres = 1.0e-5,
         const int n_iter_max = 200,
-        const double damp_fac = 0.1
+        const double damp_fac = 0.1,
+        const bool use_adaptive_damp = false
         );
 
 }

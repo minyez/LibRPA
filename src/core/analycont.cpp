@@ -41,6 +41,7 @@ AnalyContPade::AnalyContPade(int n_pars_in, const std::vector<cplxdb> &xs, const
             par_x[ipar] = xs[ipar * step];
             data_npar[ipar] = data[ipar * step];
         }
+        par_x[n_pars-1] = xs[n_data-1];
         data_npar[n_pars-1] = data[n_data-1];
     }
 
