@@ -1,3 +1,6 @@
+import math
+
+
 __all__ = ["abs_diff"]
 
 
@@ -14,14 +17,52 @@ def abs_diff(tolerance, precision=3):
         """inner function of closure"""
         msg = r"max abs diff = {:.%iE} (tol = {:.%iE})" % (prec, prec)
         diff = 0.0
+        diff_loc = None
         fns = set([*fnobj1.keys(), *fnobj2.keys()])
         for fn in fns:
             try:
-                objs1 = fnobj1[fn]
-                objs2 = fnobj2[fn]
-                for o1, o2 in zip(objs1, objs2):
-                    diff = max(abs(float(o1) - float(o2)), diff)
+                objs1 = _as_objects(fnobj1[fn])
+                objs2 = _as_objects(fnobj2[fn])
             except KeyError:
                 return False, "missing file {}".format(fn)
-        return diff <= tolerance, msg.format(diff, tolerance)
+
+            if len(objs1) == 0 and len(objs2) == 0:
+                return False, "no scalar values found in {}".format(fn)
+            if len(objs1) != len(objs2):
+                return False, "value count mismatch in {}: {} != {}".format(
+                    fn, len(objs1), len(objs2)
+                )
+
+            for iobj, (o1, o2) in enumerate(zip(objs1, objs2), 1):
+                value1 = _parse_float(o1)
+                value2 = _parse_float(o2)
+                if math.isnan(value1) or math.isnan(value2):
+                    if math.isnan(value1) and math.isnan(value2):
+                        continue
+                    return False, (
+                        "nan mismatch in {} value {}: {} != {}"
+                        .format(fn, iobj, o1, o2)
+                    )
+                d = abs(value1 - value2)
+                if d > diff:
+                    diff = d
+                    diff_loc = (fn, iobj)
+
+        msg = msg.format(diff, tolerance)
+        if diff_loc is not None:
+            fn, iobj = diff_loc
+            msg += ", max at {} value {}".format(fn, iobj)
+        return diff <= tolerance, msg
     return inner_float_absdiff
+
+
+def _as_objects(raw):
+    if isinstance(raw, str):
+        return [raw]
+    return list(raw)
+
+
+def _parse_float(value):
+    if isinstance(value, str):
+        value = value.replace("D", "E").replace("d", "E")
+    return float(value)

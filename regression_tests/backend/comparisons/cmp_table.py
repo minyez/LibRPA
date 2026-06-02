@@ -1,3 +1,4 @@
+import math
 import re
 
 
@@ -10,6 +11,7 @@ def abs_diff(tolerance, precision=3, columns="all"):
 
     Tables are expected to be extracted by Validate, typically with regex,
     headers, and rows selecting the table body after a matched header.
+    Matching NaN pairs are accepted, but one-sided NaNs fail.
     """
     tolerance = float(tolerance)
     precision = int(precision)
@@ -50,7 +52,16 @@ def abs_diff(tolerance, precision=3, columns="all"):
                         )
                     cols = _columns_for_row(columns, len(row1))
                     for icol in cols:
-                        d = abs(_parse_float(row1[icol]) - _parse_float(row2[icol]))
+                        value1 = _parse_float(row1[icol])
+                        value2 = _parse_float(row2[icol])
+                        if math.isnan(value1) or math.isnan(value2):
+                            if math.isnan(value1) and math.isnan(value2):
+                                continue
+                            return False, (
+                                "nan mismatch in {} table {} row {} column {}: {} != {}"
+                                .format(fn, itable, irow, icol + 1, row1[icol], row2[icol])
+                            )
+                        d = abs(value1 - value2)
                         if d > diff:
                             diff = d
                             diff_loc = (fn, itable, irow, icol + 1)
