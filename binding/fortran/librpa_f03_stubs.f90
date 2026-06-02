@@ -171,6 +171,8 @@ module librpa_f03
       logical :: use_cholesky_gw_wc
       !> Experimental: use GPU for computing Wc from chi0
       logical :: use_gpu_gw_wc
+      !> Experimental: use elpa for sqrt coulomb matrix
+      logical :: use_elpa_sqrt_coulomb
       !> Experimental: replace dielectric matrix head by the macroscopic dielectric function.
       logical :: replace_w_head
       !> Experimental: dielectric-function handling on the imaginary axis.

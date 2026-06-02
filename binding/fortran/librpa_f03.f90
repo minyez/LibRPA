@@ -146,8 +146,8 @@ module librpa_f03
       real(c_double) :: minimax_emax
       real(c_double) :: minimax_regulation
 
-      integer(c_int) :: use_fullcoul_eps
       integer(c_int) :: use_fullcoul_exx
+      integer(c_int) :: use_fullcoul_eps
       integer(c_int) :: use_fullcoul_wc
 
       integer(c_int) :: n_bands_chi0
@@ -168,6 +168,7 @@ module librpa_f03
       integer(c_int) :: use_scalapack_gw_wc
       integer(c_int) :: use_cholesky_gw_wc
       integer(c_int) :: use_gpu_gw_wc
+      integer(c_int) :: use_elpa_sqrt_coulomb
       integer(c_int) :: replace_w_head
       integer(c_int) :: option_dielect_func
       integer(c_int) :: use_2d_dielectric
@@ -261,6 +262,8 @@ module librpa_f03
       logical :: use_cholesky_gw_wc
       !> Experimental: use GPU for computing Wc from chi0
       logical :: use_gpu_gw_wc
+      !> Experimental: use elpa for sqrt coulomb matrix
+      logical :: use_elpa_sqrt_coulomb
       !> Experimental: replace dielectric matrix head by the macroscopic dielectric function.
       logical :: replace_w_head
       !> Experimental: dielectric-function handling on the imaginary axis.
@@ -924,6 +927,7 @@ contains
       call sync_opt(opts%use_scalapack_gw_wc,     opts%opts_c%use_scalapack_gw_wc,     direction)
       call sync_opt(opts%use_cholesky_gw_wc,      opts%opts_c%use_cholesky_gw_wc,      direction)
       call sync_opt(opts%use_gpu_gw_wc,           opts%opts_c%use_gpu_gw_wc,           direction)
+      call sync_opt(opts%use_elpa_sqrt_coulomb,   opts%opts_c%use_elpa_sqrt_coulomb,   direction)
       call sync_opt(opts%sqrt_coulomb_threshold,  opts%opts_c%sqrt_coulomb_threshold,  direction)
       call sync_opt(opts%replace_w_head,          opts%opts_c%replace_w_head,          direction)
       call sync_opt(opts%libri_chi0_threshold_C,  opts%opts_c%libri_chi0_threshold_C,  direction)
