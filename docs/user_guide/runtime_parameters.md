@@ -73,7 +73,7 @@ The default values below are API defaults unless a driver-specific default is li
 
 | Parameter Name          | Description                                            | Type   | Default Value (Options)                                      | Status       |
 |-------------------------|--------------------------------------------------------|--------|--------------------------------------------------------------|--------------|
-| `output_dir`            | Output directory for results                           | string | API: `.`; driver: `librpa.d/`                                |              |
+| `output_dir`            | Output directory for results                           | string | `librpa.d/`                                                  |              |
 | `parallel_routing`      | Parallel scheme of LibRPA                              | enum/string | API: `LIBRPA_ROUTING_AUTO`; driver: `auto` (`auto`, `atompair`, `rtau`, `libri`) |              |
 | `output_level`          | Verbosity level                                        | int/string | API: `LIBRPA_VERBOSE_INFO`; driver: `info` (`silent`, `critical`, `info`, `warn`, `debug`) |              |
 | `vq_threshold`          | Real-space Coulomb matrix screening threshold          | double | 0.0                                                          |              |

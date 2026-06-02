@@ -225,7 +225,7 @@ void parse_inputfile_to_params(const std::string &fn)
     }
 
     // general runtime parameters
-    parser.parse_string("output_dir", stmp, "librpa.d/", flag);
+    parser.parse_string("output_dir", stmp, flag);
     if (flag == 0)
         opts.set_output_dir(stmp.c_str());
     _parse_string_post(opts, parallel_routing, get_parallel_routing);

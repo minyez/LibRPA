@@ -11,7 +11,7 @@
 // C APIs
 void librpa_init_options(LibrpaOptions *opts)
 {
-    librpa_set_output_dir(opts, ".");
+    librpa_set_output_dir(opts, "librpa.d");
 
     opts->parallel_routing = LIBRPA_ROUTING_AUTO;
     opts->output_level = LIBRPA_VERBOSE_INFO;
