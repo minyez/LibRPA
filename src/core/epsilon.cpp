@@ -1841,7 +1841,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         coul_eigen_block_ptr = coul_eigen_block.ptr();
         coulwc_block_ptr = coulwc_block.ptr();
     }
-#if defined(ENABLE_ELPA)
+#if defined(LIBRPA_USE_ELPA)
     if(use_elpa_sqrt_coulomb)
         desc_nabf_nabf_opt.set_elpa_handle(use_gpu_gw_wc);
 #endif
@@ -2254,14 +2254,6 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 if (option_dielect_func != 3)
                 {
                     // now chi0_block is actually -v1/2 chi v1/2
-                    // for (int i = 0; i != n_abf; i++)
-                    // {
-                    //     const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
-                    //     if (ilo < 0) continue;
-                    //     const int jlo = desc_nabf_nabf_opt.indx_g2l_c(i);
-                    //     if (jlo < 0) continue;
-                    //     chi0_block(ilo, jlo) += 1.0;
-                    // }
                     LaConnector::pdam(1.0, chi0_block_ptr, desc_nabf_nabf_opt);
                     // now chi0_block is actually the dielectric matrix
                 }

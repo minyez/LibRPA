@@ -66,7 +66,7 @@ void librpa_init_options(LibrpaOptions *opts)
 #else
     opts->use_gpu_gw_wc = LIBRPA_SWITCH_OFF;
 #endif
-#ifdef ENABLE_ELPA
+#ifdef LIBRPA_USE_ELPA
     opts->use_elpa_sqrt_coulomb = LIBRPA_SWITCH_ON;
 #else
     opts->use_elpa_sqrt_coulomb = LIBRPA_SWITCH_OFF;

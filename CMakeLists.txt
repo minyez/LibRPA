@@ -30,7 +30,6 @@ option(LIBRPA_ENABLE_FORTRAN_BIND  "Flag to build LibRPA Fotran binding" OFF)
 option(LIBRPA_VERBOSE_OUTPUT       "Flag to print verbose information in stdout and process output of LibRPA" OFF)
 # NOTE: static library not tested
 # option(BUILD_LIBRPA_SHARED  "Flag to build shared libraries" ON)
-option(LIBRPA_ENABLE_ELPA "Use elpa for calculation" OFF )
 option(LIBRPA_ENABLE_CUDA "Enable CUDA language support" OFF)
 option(LIBRPA_ENABlE_HIP "Enable HIP language support" OFF)
 
@@ -195,6 +194,7 @@ if(LIBRPA_USE_EXTERNAL_ELPA)
   message(STATUS "Use external ELPA include dirs  : ${ELPA_INCLUDE_DIRS}")
   add_compile_definitions("LIBRPA_USE_ELPA")
   set(LIBRPA_ELPA_TARGET ELPA::ELPA)
+  list(APPEND math_libs ${LIBRPA_ELPA_TARGET})
 elseif(LIBRPA_USE_BUNDLED_ELPA)
   if(NOT LIBRPA_BUNDLED_ELPA_LIBS)
     set(_librpa_elpa_configure_lib_flags "")
@@ -310,12 +310,6 @@ if(LIBRPA_ENABLE_HIP)
   list(APPEND math_libs
       ${HIP_LIBRARIES}
   )
-endif()
-
-if(LIBRPA_ENABLE_ELPA)
-  add_compile_definitions("ENABLE_ELPA")
-  list(APPEND math_libs
-    -lelpa)
 endif()
 
 if(CMAKE_BUILD_TYPE MATCHES "Debug")

@@ -19,7 +19,7 @@
 // #pragma message("not define hip")
 #endif
 
-#ifdef ENABLE_ELPA
+#ifdef LIBRPA_USE_ELPA
 #include <elpa/elpa.h>
 #endif
 
@@ -154,7 +154,7 @@ private:
     ddla::DdlaDesc ddla_desc_;
 #endif
 
-#ifdef ENABLE_ELPA
+#ifdef LIBRPA_USE_ELPA
     elpa_t elpa_handle_;
 #endif
 
@@ -225,7 +225,7 @@ public:
         ddla_desc_.init(this->m_, this->n_, this->mb_, this->nb_, this->irsrc_, this->icsrc_);
     }
     #endif
-#ifdef ENABLE_ELPA
+#ifdef LIBRPA_USE_ELPA
     void set_elpa_handle(bool use_gpu_gw_wc = true){
         int error;
         elpa_handle_ = elpa_allocate(&error);

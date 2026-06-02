@@ -11,11 +11,6 @@
 
 #include <cassert>
 
-// #ifdef ENABLE_ELPA
-// #include "elpa_connector.h"
-// #include "scalapack_connector.h"
-// #include "matrix_m_parallel_utils.h"
-// #endif
 namespace librpa_int{
 namespace DeviceConnector{
 bool check_device_ptr(void* ptr){

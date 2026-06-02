@@ -150,7 +150,7 @@ if(LIBRPA_ENABLE_HIP)
  # )
 endif()
 
-if(LIBRPA_ENABLE_ELPA)
+if(LIBRPA_USE_EXTERNAL_ELPA OR LIBRPA_USE_BUNDLED_ELPA)
   list(APPEND lib_sources
     elpa/elpa_connector.cpp)
 endif()

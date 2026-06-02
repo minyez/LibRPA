@@ -12,7 +12,7 @@
 #include "../math/scalapack_connector.h"
 #include "../math/matrix_m.h"
 #include "../mpi/base_blacs.h"
-#ifdef ENABLE_ELPA
+#ifdef LIBRPA_USE_ELPA
 #include "../elpa/elpa_connector.h"
 #endif
 
@@ -218,7 +218,7 @@ inline matrix_m<std::complex<T>> power_hemat_la(
     bool use_gpu_gw_wc = false, bool use_elpa_sqrt_coulomb = false, std::complex<T>* d_A = nullptr, 
     std::complex<T>* d_Z = nullptr, std::complex<T>* d_power = nullptr)
 {
-    #if defined(ENABLE_ELPA)
+    #if defined(LIBRPA_USE_ELPA)
     if(use_elpa_sqrt_coulomb){
         return ElpaConnector::power_hemat_elpa(
             A_local, ad_A, Z_local, ad_Z,
@@ -241,7 +241,7 @@ inline matrix_m<std::complex<T>> power_hemat_la_real(
     bool use_gpu_gw_wc = false, bool use_elpa_sqrt_coulomb = false,
     T* d_A = nullptr, T* d_Z = nullptr, T* d_power = nullptr)
 {
-    #if defined(ENABLE_ELPA)
+    #if defined(LIBRPA_USE_ELPA)
     if(use_elpa_sqrt_coulomb){
         return ElpaConnector::power_hemat_elpa_real(
             A_local, ad_A, Z_local, ad_Z,

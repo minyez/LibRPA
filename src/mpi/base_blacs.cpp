@@ -396,7 +396,7 @@ ArrayDesc::ArrayDesc()
     , ddla_desc_()
 #endif
 
-#ifdef ENABLE_ELPA
+#ifdef LIBRPA_USE_ELPA
     , elpa_handle_(nullptr)
 #endif
 
@@ -415,7 +415,7 @@ ArrayDesc::ArrayDesc(const BlacsCtxtHandler &blacs_h)
     , ddla_desc_()
 #endif
 
-#ifdef ENABLE_ELPA
+#ifdef LIBRPA_USE_ELPA
     , elpa_handle_(nullptr)
 #endif
 {
@@ -435,7 +435,7 @@ ArrayDesc::ArrayDesc(const int &ictxt)
     , ddla_desc_()
 #endif
 
-#ifdef ENABLE_ELPA
+#ifdef LIBRPA_USE_ELPA
     , elpa_handle_(nullptr)
 #endif
 {

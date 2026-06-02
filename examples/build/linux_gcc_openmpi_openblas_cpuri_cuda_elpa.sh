@@ -40,6 +40,7 @@ SCALAPACK=$INSTALL_DIR/scalapack-2.2.2/lib
 CEREAL=$INSTALL_DIR/cereal-master/include
 LIBRI=~/app/libri/260415/LibRI-master
 LIBCOMM=~/app/libcomm/260521/LibComm-fix_status
+ELPA_DIR=~/app/toolchain/260328/toolchain/install/elpa-2025.01.001/nvidia
 
 echo "========================="
 echo 'LD_LIBRARY_PATH:' $LD_LIBRARY_PATH
@@ -61,6 +62,7 @@ BUILD_DIR=../build_cuda
 INSTALL_DIR=../librpa_cuda
 echo Start Time: `date`
 # rm -rf $BUILD_DIR
+rm -rf $INSTALL_DIR
 cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
         -DCMAKE_CXX_COMPILER=g++ \
         -DMPI_CXX_COMPILER=mpicxx \
@@ -75,7 +77,8 @@ cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
         -DBUILD_SHARED_LIBS=ON \
         -DLIBRPA_VERBOSE_OUTPUT=ON \
         -DLIBRPA_ENABLE_CUDA=ON \
-        -DLIBRPA_ENABLE_ELPA=ON \
+        -DLIBRPA_USE_EXTERNAL_ELPA=ON \
+        -DEXTERNAL_ELPA_DIR=${ELPA_DIR} \
         -DCMAKE_CUDA_SEPARABLE_COMPILATION=ON \
         -DCMAKE_Fortran_FLAGS="$FCFLAGS"
 
