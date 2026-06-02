@@ -1981,16 +1981,18 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             global::profiler.start("epsilon_prepare_coulwc_sqrt_4", "Perform square root");
             if (is_gamma_point(q))
             {
-                power_hemat_blacs_real(coulwc_block, desc_nabf_nabf_opt, coul_eigen_block,
-                                       desc_nabf_nabf_opt, n_singular_coulwc, eigenvalues.c,
-                                       0.5, sqrt_coulomb_threshold);
+                LaConnector::power_hemat_la_real(
+                    coulwc_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
+                    n_singular_coulwc, eigenvalues.c, 0.5, sqrt_coulomb_threshold,
+                    use_gpu_gw_wc, use_elpa_sqrt_coulomb, (double*)coul_block_ptr, 
+                (double*)chi0_block_ptr, (double*)coul_chi0_block_ptr);
             }
             else
             {
-                LaConnector::power_hemat_la(coulwc_block, desc_nabf_nabf_opt, coul_eigen_block,
-                                            desc_nabf_nabf_opt, n_singular_coulwc, eigenvalues.c,
-                                            0.5, sqrt_coulomb_threshold, use_gpu_gw_wc,
-                                            use_elpa_sqrt_coulomb, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
+                LaConnector::power_hemat_la(
+                    coulwc_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
+                    n_singular_coulwc, eigenvalues.c, 0.5, sqrt_coulomb_threshold, use_gpu_gw_wc,
+                    use_elpa_sqrt_coulomb, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
             }
             global::profiler.stop("epsilon_prepare_coulwc_sqrt_4");
         }
@@ -2064,9 +2066,6 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         {
             // choice of power_hemat_blacs_real/power_hemat_blacs_desc
             // leads to sub-meV difference
-            // sqrtveig_blacs = power_hemat_blacs_real(
-            //     coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt, n_singular,
-            //     eigenvalues.c, 0.5, sqrt_coulomb_threshold);
             sqrtveig_blacs = LaConnector::power_hemat_la_real(
                 coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
                 n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold,
@@ -2080,16 +2079,12 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         }
         else
         {
-            // sqrtveig_blacs = power_hemat_blacs(coul_block, desc_nabf_nabf_opt, coul_eigen_block,
-            //                                    desc_nabf_nabf_opt, n_singular, eigenvalues.c, 0.5,
-            //                                    sqrt_coulomb_threshold);
             sqrtveig_blacs = LaConnector::power_hemat_la(
                 coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
                 n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold, use_gpu_gw_wc,
                 use_elpa_sqrt_coulomb, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
         }
         ofs_myid << get_timestamp() << " Done power hemat couleps\n";
-        // lib_printf("nabf %d nsingu %lu\n", n_abf, n_singular);
         // release sqrtv when the q-point is not Gamma, or macroscopic dielectric constant at
         // imaginary frequency is not prepared
         if (epsmac_LF_imagfreq.empty() || !is_gamma_point(q)) sqrtveig_blacs.clear();
