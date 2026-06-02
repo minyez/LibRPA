@@ -41,6 +41,11 @@ double qpe_damp_upper_bound(const double damp_fac)
     return std::clamp(damp_fac, qpe_damp_min, qpe_damp_max);
 }
 
+bool qpe_complex_is_finite(const cplxdb &x)
+{
+    return std::isfinite(x.real()) && std::isfinite(x.imag());
+}
+
 } /* end of anonymous namespace */
 
 int qpe_solver_pade_self_consistent(
@@ -167,6 +172,45 @@ int qpe_solver_pade_self_consistent(
     }
 
     return info;
+}
+
+int qpe_solver_pade_perturbative(
+        const AnalyContPade &pade,
+        const double &e_mf,
+        const double &e_fermi,
+        const double &vxc,
+        const double &sigma_x,
+        double &e_qp,
+        cplxdb &sigc,
+        cplxdb &sigc_deriv,
+        double &qp_weight)
+{
+    constexpr double nan = std::numeric_limits<double>::quiet_NaN();
+
+    const cplxdb omega = e_mf - e_fermi;
+    sigc = pade.get(omega);
+    sigc_deriv = pade.get_derivative(omega);
+
+    const double denom = 1.0 - sigc_deriv.real();
+    if (!qpe_complex_is_finite(sigc) ||
+        !qpe_complex_is_finite(sigc_deriv) ||
+        !std::isfinite(denom) ||
+        denom == 0.0)
+    {
+        e_qp = nan;
+        qp_weight = nan;
+        return 1;
+    }
+
+    qp_weight = 1.0 / denom;
+    e_qp = e_mf + qp_weight * (sigma_x + sigc.real() - vxc);
+    if (!std::isfinite(qp_weight) || !std::isfinite(e_qp))
+    {
+        e_qp = nan;
+        qp_weight = nan;
+        return 1;
+    }
+    return 0;
 }
 
 } /* end of namespace librpa_int */

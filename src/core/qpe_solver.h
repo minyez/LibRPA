@@ -38,4 +38,21 @@ int qpe_solver_pade_self_consistent(
         const bool use_adaptive_damp = false
         );
 
+/*!
+ * \brief Solve quasi-particle equation perturbatively by linearizing self-energy at the mean-field energy.
+ *
+ * \param [in]     pade        AnalyContPade object, constructed from correlation self-energy at imaginary frequency
+ * \param [in]     e_mf        Energy of the state of mean-field calculation
+ * \param [in]     e_fermi     Fermi energy
+ * \param [in]     vxc         Exchange-correlation potential in the mean-field calculation
+ * \param [in]     sigma_x     Exchange self-energy
+ * \param [out]    e_qp        Perturbative quasi-particle energy
+ * \param [out]    sigc        Correlation self-energy at e_mf - e_fermi
+ * \param [out]    sigc_deriv  Derivative of correlation self-energy at e_mf - e_fermi
+ * \param [out]    qp_weight   Quasi-particle weight, 1 / (1 - Re sigc_deriv)
+ * \retval         info        0 if QPE is solved successfully, non-zero otherwise
+ */
+int qpe_solver_pade_perturbative(const AnalyContPade &pade, const double &e_mf,
+                                 const double &e_fermi, const double &vxc, const double &sigma_x,
+                                 double &e_qp, cplxdb &sigc, cplxdb &sigc_deriv, double &qp_weight);
 }
