@@ -1655,6 +1655,14 @@ void validate_coulomb_v1_naux(const CoulombV1File &file, const std::size_t expec
     }
 }
 
+bool is_legacy_coulomb_filename(const string &filename, const string &prefix)
+{
+    const string suffix = ".txt";
+    return filename.find(prefix) == 0 &&
+           filename.size() >= suffix.size() &&
+           filename.compare(filename.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
 size_t read_Vq_full_v1(const string &dir_path, const string &vq_fprefix,
                        bool is_cut_coulomb)
 {
@@ -1783,7 +1791,7 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
     while ((ptr = readdir(dir)) != NULL)
     {
         string fm(ptr->d_name);
-        if (fm.find(vq_fprefix) == 0)
+        if (is_legacy_coulomb_filename(fm, vq_fprefix))
         {
             string file_path = dir_path + fm;
             if (!binary_checked)
@@ -2129,7 +2137,7 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
     while ((ptr = readdir(dir)) != NULL)
     {
         string fm(ptr->d_name);
-        if (fm.find(vq_fprefix) == 0)
+        if (is_legacy_coulomb_filename(fm, vq_fprefix))
         {
             string file_path = dir_path + fm;
             if (!binary_checked)
