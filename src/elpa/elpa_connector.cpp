@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "../gpu/la_connector.h"
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
 #include <ddla/ddla_connector.h>
 #endif
 #include "elpa_connector.h"
@@ -65,7 +65,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(
     std::complex<T> *A, *Z;
     T* W_uni;
 
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     auto ddla_handle = ad_A.ddla_desc().ddla_handle();
     T* d_W;
     if(use_gpu_gw_wc){
@@ -89,7 +89,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(
     if(error != ELPA_OK){
         throw std::runtime_error("elpa eigenvectors error\n");
     }
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if(use_gpu_gw_wc){
         ddla::DEVICE_CHECK(deviceMemcpyAsync(W, W_uni, n * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(Z_local.ptr(), Z, Z_local.size()*sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
@@ -142,7 +142,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(
     // create scaled eigenvectors
     auto scaled = Z_local.copy();
     std::complex<T> *C;
-#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
     if(use_gpu_gw_wc){
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_C, Z_local.ptr(), Z_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
@@ -161,7 +161,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(
             LaConnector::scal(ad_Z.m_loc(), W_temp[i], A + ad_Z.lld() * j_loc, 1, ad_Z);
     }
     LaConnector::pgemm('N', 'C', n, n, n, {(T)1.0, (T)0.0}, Z, 1, 1, ad_Z, A, 1, 1, ad_Z, {(T)0.0, (T)0.0}, C, 1, 1, ad_A);
-#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
     if(use_gpu_gw_wc){
         ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled.ptr(), A, scaled.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local.ptr(), C, A_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
@@ -207,7 +207,7 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
     
     profiler.start("power_hemat_blacs_2");
     T *A, *Z, *W_uni;
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     auto ddla_handle = ad_A.ddla_desc().ddla_handle();
     T *d_W;
     if(use_gpu_gw_wc)
@@ -229,7 +229,7 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
     if(error != ELPA_OK){
         throw std::runtime_error("elpa eigenvectors error\n");
     }
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if(use_gpu_gw_wc){
         ddla::DEVICE_CHECK(deviceMemcpyAsync(W, W_uni, n * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(Z_local_real.ptr(), Z, Z_local_real.size()*sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
@@ -284,7 +284,7 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
     // Scale eigenvectors using complex matrix operations
     auto scaled_real = Z_local_real.copy();
     T* C;
-#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
     if(use_gpu_gw_wc)
     {
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
@@ -306,7 +306,7 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
 
     // Compute Z * diag(W_temp) * Z^H
     LaConnector::pgemm('N', 'C', n, n, n, (T)1.0, Z, 1, 1, ad_Z, A, 1, 1, ad_Z, (T)0.0, C, 1, 1, ad_A);
-#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
     if(use_gpu_gw_wc){
         ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled_real.ptr(), A, scaled_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local_real.ptr(), C, A_local_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));

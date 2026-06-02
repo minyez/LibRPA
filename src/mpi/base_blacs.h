@@ -6,7 +6,7 @@
 #include "base_mpi.h"
 #include "../math/scalapack_connector.h"
 
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
 #include <ddla/ddla.h>
 #include <ddla/ddla_stream.h>
 #endif
@@ -50,10 +50,10 @@ public:
     int npcols;
     int myprow;
     int mypcol;
-    #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     ddla::DdlaHandle_t ddla_handle;
     void init_ddla_handle();
-    #endif
+#endif
     BlacsCtxtHandler();
     BlacsCtxtHandler(MPI_Comm comm_in);
     ~BlacsCtxtHandler() { this->exit(); }
@@ -150,7 +150,7 @@ private:
     //! flag for initialization
     bool initialized_ = false;
 
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     ddla::DdlaDesc ddla_desc_;
 #endif
 
@@ -218,13 +218,13 @@ public:
     bool is_initialized() const noexcept { return this->initialized_; };
     void barrier(CTXT_SCOPE scope = CTXT_SCOPE::A) const;
 
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     const ddla::DdlaDesc& ddla_desc() const noexcept { return ddla_desc_; }
     void set_ddla_desc(const ddla::DdlaHandle_t& ddla_handle){
         ddla_desc_.set_ddla_handle(ddla_handle);
         ddla_desc_.init(this->m_, this->n_, this->mb_, this->nb_, this->irsrc_, this->icsrc_);
     }
-    #endif
+#endif
 #ifdef LIBRPA_USE_ELPA
     void set_elpa_handle(bool use_gpu_gw_wc = true){
         int error;
@@ -243,14 +243,14 @@ public:
 
         elpa_setup(elpa_handle_);
 
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
         if(use_gpu_gw_wc)
         {
             elpa_set(elpa_handle_, "use_gpu_id", ddla_desc_.ddla_handle()->local_device, &error);
-#ifdef ENABLE_HIP
+#ifdef LIBRPA_USE_HIP
             elpa_set(elpa_handle_, "amd-gpu", 1, &error);
 #endif
-#ifdef ENABLE_CUDA
+#ifdef LIBRPA_USE_CUDA
             elpa_set(elpa_handle_, "nvidia-gpu", 1, &error);
 #endif
             elpa_set(elpa_handle_, "use_ccl", 0, &error);

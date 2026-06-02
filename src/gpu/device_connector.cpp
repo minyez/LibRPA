@@ -1,6 +1,6 @@
 #include "device_connector.h"
 
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
 #include <ddla/ddla.h>
 #include <ddla/ddla_connector.h>
 #include <thrust/complex.h>
@@ -14,7 +14,7 @@
 namespace librpa_int{
 namespace DeviceConnector{
 bool check_device_ptr(void* ptr){
-#if defined(ENABLE_CUDA)
+#if defined(LIBRPA_USE_CUDA)
     cudaPointerAttributes attr;
     cudaError_t err = cudaPointerGetAttributes(&attr, ptr);
     
@@ -23,7 +23,7 @@ bool check_device_ptr(void* ptr){
         exit(1);
     }
     return (attr.type == cudaMemoryTypeDevice);
-#elif defined(ENABLE_HIP)
+#elif defined(LIBRPA_USE_HIP)
     hipPointerAttribute_t attr;
     hipError_t status = hipPointerGetAttributes(&attr, ptr);
     

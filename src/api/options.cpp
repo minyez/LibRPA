@@ -8,7 +8,7 @@
 #include <string>
 #include <cstring>
 
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
 #include <ddla/ddla_connector.h>
 #endif
 
@@ -56,7 +56,7 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->override_qpe_solver_nan = LIBRPA_SWITCH_OFF;
     opts->use_scalapack_gw_wc = LIBRPA_SWITCH_ON;
     opts->use_cholesky_gw_wc = LIBRPA_SWITCH_OFF;
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     int deviceCount = 0;
     auto info = ddla::deviceGetDeviceCount(&deviceCount);
     if(info == ddla::deviceSuccess && deviceCount > 0)

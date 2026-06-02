@@ -319,7 +319,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     if (opts.use_scalapack_gw_wc == LIBRPA_SWITCH_ON)
     {
         bool replace_w_head = opts.replace_w_head == LIBRPA_SWITCH_ON;
-#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
         if (opts.use_gpu_gw_wc)
         {
             pds->blacs_h.init_ddla_handle();

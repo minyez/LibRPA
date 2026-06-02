@@ -12,7 +12,7 @@
 #include <unordered_set>
 #include <vector>
 #include "../src/gpu/la_connector.h"
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
 #include <ddla/ddla_connector.h>
 #endif
 

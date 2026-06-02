@@ -123,7 +123,7 @@ if(LIBRPA_USE_LIBRI)
     )
 endif()
 
-if(LIBRPA_ENABLE_CUDA)
+if(LIBRPA_USE_CUDA)
   list(APPEND lib_sources 
     # device_stream.cpp
     # matrix_device.cpp
@@ -137,7 +137,7 @@ if(LIBRPA_ENABLE_CUDA)
   )
 endif()
 
-if(LIBRPA_ENABLE_HIP)
+if(LIBRPA_USE_HIP)
   list(APPEND lib_sources
     # matrix_device.cpp
     gpu/device_connector.cpp

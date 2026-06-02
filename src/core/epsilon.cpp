@@ -31,7 +31,7 @@
 #include "utils_atomic_basis_blacs.h"
 
 #include "../gpu/la_connector.h"
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
 #include <ddla/ddla_connector.h>
 using namespace ddla;
 #endif
@@ -1824,7 +1824,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     std::complex<double>* coul_eigen_block_ptr;
     std::complex<double>* coulwc_block_ptr;
 
-#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
     if (use_gpu_gw_wc)
     {
         desc_nabf_nabf_opt.set_ddla_desc(blacs_h.ddla_handle); // set the descriptor for the device
@@ -2154,7 +2154,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             }
             global::profiler.stop("epsilon_prepare_chi0_2d");
 
-#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
             if (use_gpu_gw_wc)
             {
                 DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr, chi0_block.ptr(), chi0_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
@@ -2165,7 +2165,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             {
                 profiler.start("epsilon_compute_eps", "Compute dielectric matrix");
 
-// #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+// #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
 //                if (use_gpu_gw_wc)
 //                {
 //                    sqrtveig_blacs_ptr = coul_block_ptr;
@@ -2220,7 +2220,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     {
                         ofs_myid << get_timestamp() << "Perform the head element overwrite" << endl;
                         const std::complex<double> head_correction = epsmac_LF_imagfreq[ifreq] - 1.0;
-// #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+// #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
 //                     if(use_gpu_gw_wc){
 //                         DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr + ilo + jlo * desc_nabf_nabf_opt.lld(), &head_correction, sizeof(std::complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
 //                     }else
@@ -2230,7 +2230,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 }
                 global::profiler.stop("epsilon_compute_eps_pgemm_1");
                 // rotate back to ABF
-// #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+// #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
 //                 if(use_gpu_gw_wc){
 //                     coul_eigen_block_ptr = coul_block_ptr;
 //                     DEVICE_CHECK(deviceMemcpyAsync(coul_eigen_block_ptr, coul_eigen_block.ptr(), coul_eigen_block.size() * sizeof(std::complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
@@ -2245,7 +2245,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                         coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt,
                         coul_eigen_block.ptr(), 1, n_singular + 1, desc_nabf_nabf_opt, {0.0, 0.0},
                         chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt);
-#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
                 if (use_gpu_gw_wc)
                     DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr, chi0_block.ptr(), chi0_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
 #endif
@@ -2261,7 +2261,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             }
             else // !(epsmac_LF_imagfreq.size() > 0 && is_gamma_point(q))
             {
-#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
                 if (use_gpu_gw_wc)
                 {
                     DEVICE_CHECK(deviceMemcpyAsync(coul_block_ptr, coul_block.ptr(), coul_block.size() * sizeof(std::complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
@@ -2319,7 +2319,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             if (epsmac_LF_imagfreq.size() > 0 && is_gamma_point(q) && option_dielect_func == 3)
             {
                 // Dielectric matrix is already inverted, only multiply by square root coulwc from both sides
-#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
                 if(use_gpu_gw_wc){
                     coulwc_block_ptr = coul_block_ptr;
                     DEVICE_CHECK(deviceMemcpyAsync(coulwc_block_ptr, coulwc_block.ptr(), coulwc_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
@@ -2342,7 +2342,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 // now chi0_block is actually the dielectric matrix
                 // perform inversion
                 global::profiler.start("epsilon_solver_coulwc_1", "epsilon_solver_coulwc");
-#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
                 if (use_gpu_gw_wc)
                 {
                     coulwc_block_ptr = coul_block_ptr;
@@ -2373,7 +2373,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                                    1, desc_nabf_nabf_opt, coul_chi0_block_ptr, 1, 1,
                                    desc_nabf_nabf_opt, {0.0, 0.0}, chi0_block_ptr, 1, 1,
                                    desc_nabf_nabf_opt);
-#if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
                 if (use_gpu_gw_wc)
                 {
                     DEVICE_CHECK(deviceMemcpyAsync(chi0_block.ptr(), chi0_block_ptr,
@@ -2403,7 +2403,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
 #else
     throw std::logic_error("need compilation with LibRI");
 #endif
-    #if defined(ENABLE_HIP) || defined(ENABLE_CUDA)
+    #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
     if (use_gpu_gw_wc)
     {
         DEVICE_CHECK(deviceFreeAsync(chi0_block_ptr, blacs_h.ddla_handle->stream));

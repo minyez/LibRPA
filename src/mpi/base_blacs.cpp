@@ -36,7 +36,7 @@ BlacsCtxtHandler::BlacsCtxtHandler()
       npcols(0),
       myprow(0),
       mypcol(0)
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
       , ddla_handle(nullptr)
 #endif
 {
@@ -56,7 +56,7 @@ BlacsCtxtHandler::BlacsCtxtHandler(MPI_Comm comm_in)
       npcols(0),
       myprow(0),
       mypcol(0)
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     , ddla_handle(nullptr)
 #endif
 {
@@ -72,7 +72,7 @@ void BlacsCtxtHandler::init()
     this->initialized_ = true;
 }
 
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
 void BlacsCtxtHandler::init_ddla_handle(){
     assert(this->initialized_);
     assert(this->pgrid_set_);
@@ -90,7 +90,7 @@ void BlacsCtxtHandler::reset_comm()
     this->comm_set_ = false;
     this->initialized_ = false;
     this->pgrid_set_ = false;
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if(ddla_handle != nullptr){
         ddla::ddla_destroy(ddla_handle);
         ddla_handle = nullptr;
@@ -108,7 +108,7 @@ void BlacsCtxtHandler::reset_comm(MPI_Comm comm_in, bool init_on_reset)
     this->comm_set_ = true;
     this->pgrid_set_ = false;
     if (init_on_reset) this->init();
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if(ddla_handle!=nullptr){
         ddla::ddla_destroy(ddla_handle);
         ddla_handle = nullptr;
@@ -171,7 +171,7 @@ void BlacsCtxtHandler::exit()
             ictxt = Csys2blacs_handle(mpi_comm_h.comm);
         pgrid_set_ = false;
     }
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if(ddla_handle!=nullptr){
         ddla::ddla_destroy(ddla_handle);
         ddla_handle = nullptr;
@@ -392,7 +392,7 @@ ArrayDesc::ArrayDesc()
       g2l_r_(), g2l_c_(), l2g_r_(), l2g_c_(),
       is_loc_consecutive_r_(false), is_loc_consecutive_c_(false),
       empty_local_mat_(false), initialized_(false)
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     , ddla_desc_()
 #endif
 
@@ -411,7 +411,7 @@ ArrayDesc::ArrayDesc(const BlacsCtxtHandler &blacs_h)
       g2l_r_(), g2l_c_(), l2g_r_(), l2g_c_(),
       is_loc_consecutive_r_(false), is_loc_consecutive_c_(false),
       empty_local_mat_(false), initialized_(false)
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     , ddla_desc_()
 #endif
 
@@ -431,7 +431,7 @@ ArrayDesc::ArrayDesc(const int &ictxt)
       g2l_r_(), g2l_c_(), l2g_r_(), l2g_c_(),
       is_loc_consecutive_r_(false), is_loc_consecutive_c_(false),
       empty_local_mat_(false), initialized_(false)
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     , ddla_desc_()
 #endif
 

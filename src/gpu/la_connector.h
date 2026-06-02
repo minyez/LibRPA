@@ -1,7 +1,7 @@
 #ifndef LA_CONNECTOR_H
 #define LA_CONNECTOR_H
 
-#if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
 #include "device_connector.h"
 #include <ddla/ddla.h>
 #include <ddla/ddla_connector.h>
@@ -33,7 +33,7 @@ inline void pgemm(
     T* C,const int64_t& ic,const int64_t& jc,const ArrayDesc& array_descC
 )
 {
-    #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if(DeviceConnector::check_device_ptr((void*)A)){
         ddla::pgemm(
             transa, transb,
@@ -67,7 +67,7 @@ inline void scal(
     const int& incX,
     const ArrayDesc &array_desc
 ){
-    #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if(DeviceConnector::check_device_ptr((void*)X)){
         ddla::BLAS_CHECK(ddla::deblasScal(array_desc.ddla_desc().ddla_handle()->blasH, N, alpha, X, incX));
     }else
@@ -84,7 +84,7 @@ inline void pdam(const T1& num, T2* A, const ArrayDesc& array_desc)
     if(array_desc.m() != array_desc.n()){
         throw std::runtime_error("In LaConnector::pdam, only square matrix is supported!");
     }
-    #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if(DeviceConnector::check_device_ptr((void*)A)){
         DeviceConnector::pdam(
             num, A, array_desc
@@ -112,7 +112,7 @@ inline void axpy(
     T* Y, const int& incY,
     const BlacsCtxtHandler &blacs_h
 ){
-    #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if(DeviceConnector::check_device_ptr((void*)X)){
         ddla::deblasAxpy(
             blacs_h.ddla_handle->blasH,
@@ -141,7 +141,7 @@ inline void pgesv(
     int& info
 )
 {
-    #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if(ia!=1 || ja!=1 || ib!=1 || ib!=1){
         throw std::runtime_error("In LaConnector::pgesv, only support ia=ja=ib=jb=1 for device implementation!");
     }
@@ -180,7 +180,7 @@ inline void pposv(
 )
 {
     assert(side == 'L');
-    #if defined(ENABLE_CUDA) || defined(ENABLE_HIP)
+    #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if(ia!=1 || ja!=1 || ib!=1 || ib!=1){
         throw std::runtime_error("In LaConnector::pposv, only support ia=ja=ib=jb=1 for device implementation!");
     }
