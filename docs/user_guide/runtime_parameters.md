@@ -128,6 +128,10 @@ The driver maps the unset value to `minimax` for backward compatibility.
 | `use_2d_dielectric`      | Use the 2D dielectric-function branch where supported                        | bool   | `false`                               | Experimental |
 | `load_sigc_from_file`    | Load correlation self-energy matrix from file where supported                | bool   | `false`                               | Experimental |
 | `sqrt_coulomb_threshold` | Threshold for eigenvalues when taking the square root of Coulomb matrices    | double | 0.0                                   |              |
+| `qpe_solver_thres`       | Convergence threshold for the quasi-particle equation residual, in Hartree   | double | 1.0e-5                                |              |
+| `qpe_solver_n_iter_max`  | Maximum number of self-consistent quasi-particle equation iterations         | int    | 200                                   |              |
+| `qpe_solver_damp_factor` | Damping factor applied to each quasi-particle equation update                | double | 0.1                                   |              |
+| `override_qpe_solver_nan` | Keep the final unconverged QPE iterate instead of outputting NaN            | bool   | `false`                               | Diagnostic   |
 
 ## LibRI Parameters
 

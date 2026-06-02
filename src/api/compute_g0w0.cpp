@@ -343,6 +343,7 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
     const auto thres_qpe = opts.qpe_solver_thres;
     const auto n_iter_max = opts.qpe_solver_n_iter_max;
     const auto damp_fac = opts.qpe_solver_damp_factor;
+    const bool override_qpe_solver_nan = opts.override_qpe_solver_nan == LIBRPA_SWITCH_ON;
 
     for (int isp = 0; isp < n_spins; isp++)
     {
@@ -376,7 +377,7 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                 int flag_qpe_solver = librpa_int::qpe_solver_pade_self_consistent(
                     pade, eks_state, efermi, vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
                     n_iter_max, damp_fac);
-                if (flag_qpe_solver == 0)
+                if (flag_qpe_solver == 0 || override_qpe_solver_nan)
                 {
                     sigc_re[start_k+i] = sigc.real();
                     sigc_im[start_k+i] = sigc.imag();
@@ -386,6 +387,12 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                     global::ofs_myid << "Warning! QPE solver failed for spin " << isp + 1
                                      << " kpoint " << ik + 1 << " state " << i_state + 1
                                      << std::endl;
+                    if (override_qpe_solver_nan)
+                    {
+                        global::ofs_myid
+                            << "Using final unconverged QPE result because override_qpe_solver_nan is on"
+                            << std::endl;
+                    }
                 }
             }
         }
@@ -461,6 +468,7 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
     const auto thres_qpe = opts.qpe_solver_thres;
     const auto n_iter_max = opts.qpe_solver_n_iter_max;
     const auto damp_fac = opts.qpe_solver_damp_factor;
+    const bool override_qpe_solver_nan = opts.override_qpe_solver_nan == LIBRPA_SWITCH_ON;
 
     for (int isp = 0; isp < n_spins; isp++)
     {
@@ -494,7 +502,7 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
                 int flag_qpe_solver = librpa_int::qpe_solver_pade_self_consistent(
                     pade, eks_state, efermi, vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
                     n_iter_max, damp_fac);
-                if (flag_qpe_solver == 0)
+                if (flag_qpe_solver == 0 || override_qpe_solver_nan)
                 {
                     sigc_band_re[start_k+i] = sigc.real();
                     sigc_band_im[start_k+i] = sigc.imag();
@@ -504,6 +512,12 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
                     global::ofs_myid << "Warning! QPE solver failed for spin " << isp + 1
                                      << " kpoint " << ik + 1 << " state " << i_state + 1
                                      << std::endl;
+                    if (override_qpe_solver_nan)
+                    {
+                        global::ofs_myid
+                            << "Using final unconverged QPE result because override_qpe_solver_nan is on"
+                            << std::endl;
+                    }
                 }
             }
         }

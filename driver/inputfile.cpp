@@ -298,6 +298,12 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_switch(opts, output_gw_sigc_mat_rt);
     _parse_switch(opts, output_gw_sigc_mat_rf);
     _parse_int(opts, option_output_Wc_Rf_mat);
+
+    // QPE solver
+    _parse_int(opts, qpe_solver_n_iter_max);
+    _parse_double(opts, qpe_solver_thres);
+    _parse_double(opts, qpe_solver_damp_factor);
+    _parse_switch(opts, override_qpe_solver_nan);
 }
 
 #undef _parse_int

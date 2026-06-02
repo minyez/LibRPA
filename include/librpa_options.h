@@ -145,6 +145,9 @@ typedef struct
     //! Damping factor applied to each quasi-particle equation solver update.
     double qpe_solver_damp_factor;
 
+    //! If enabled, keep the final unconverged QPE iterate instead of outputting NaN.
+    LibrpaSwitch override_qpe_solver_nan;
+
     //! Flag of using ScaLAPACK for computing Wc from chi0
     LibrpaSwitch use_scalapack_gw_wc;
 

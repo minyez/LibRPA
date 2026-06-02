@@ -175,6 +175,7 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             bool_pair(output_gw_sigc_mat),
             bool_pair(output_gw_sigc_mat_rf),
             bool_pair(output_gw_sigc_mat_rt),
+            bool_pair(override_qpe_solver_nan),
         };
 
     for (const auto &[k, v] : str_params) ss << k << " = " << v << endl;

@@ -165,6 +165,8 @@ module librpa_f03
       integer :: qpe_solver_n_iter_max
       !> Damping factor applied to each quasi-particle equation solver update.
       real(dp) :: qpe_solver_damp_factor
+      !> Keep the final unconverged QPE iterate instead of outputting NaN.
+      logical :: override_qpe_solver_nan
       !> Use ScaLAPACK for computing \f$W^c\f$ from \f$\chi^0\f$.
       logical :: use_scalapack_gw_wc
       !> Experimental: use Cholesky factorization for computing \f$W^c\f$ from \f$\chi^0\f$.
