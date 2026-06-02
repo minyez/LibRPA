@@ -34,12 +34,24 @@ The Fortran wrapper exposes these fields as logical values.
 ## Additional Parameters for Driver
 
 These parameters are available only through the standalone driver.
+Filename parameters are interpreted relative to `input_dir`.
+Prefix parameters match all files in `input_dir` whose names begin with the given value.
+For example, the default `prefix_ri_coeff = Cs_data` matches files such as `Cs_data_0.txt`.
 
 | Parameter Name        | Description                                                          | Type   | Default Value (Options)                         | Status       |
 |-----------------------|----------------------------------------------------------------------|--------|-------------------------------------------------|--------------|
 | `task`                | Task type                                                            | string | required (`rpa`, `g0w0`, `exx`, `g0w0_band`, `exx_band`) |              |
 | `constants_choice`    | Physical constants source                                            | string | `internal` (`internal`, `aims`)                |              |
 | `input_dir`           | Input directory to find and read the AO dataset                      | string | `./`                                           |              |
+| `fn_stru`             | Structure-data filename                                              | string | `stru_out`                                     |              |
+| `fn_bz_sampling`      | Brillouin-zone sampling filename                                     | string | `bz_sampling_out`                              |              |
+| `fn_basis`            | Basis-set filename                                                   | string | `basis_out`                                    |              |
+| `fn_eigocc_scf`       | SCF eigenvalue and occupation filename                               | string | `band_out`                                     |              |
+| `prefix_ri_coeff`     | Prefix of localized RI coefficient files                             | string | `Cs_data`                                      |              |
+| `prefix_ri_coeff_shrink` | Prefix of compressed-auxiliary-basis RI coefficient files          | string | `Cs_shrinked_data`                             | Experimental |
+| `prefix_coul_full`    | Prefix of bare Coulomb matrix files                                  | string | `coulomb_mat`                                  |              |
+| `prefix_coul_cut`     | Prefix of truncated Coulomb matrix files                             | string | `coulomb_cut`                                  |              |
+| `version_coul_reader` | Coulomb reader-version selector                                      | int    | 0                                              | Experimental |
 | `cs_threshold`        | Screening threshold when reading the RI coefficient data             | double | 1e-6                                           |              |
 | `use_spinor_wfc`      | Read wavefunctions in spinor format                                  | bool   | `false`                                        | Experimental |
 | `output_energy_qp`    | Output quasiparticle energies for external BSE workflows             | bool   | `false`                                        | Experimental |
@@ -51,8 +63,8 @@ These parameters are available only through the standalone driver.
 | `sf_omega_step`       | Frequency step for spectral-function output                          | double | 0.1                                            | Experimental |
 | `sf_gf_omega_shift`   | Broadening/shift used for Green's function in spectral output        | double | 0.01                                           | Experimental |
 | `sf_sigc_omega_shift` | Broadening/shift used for correlation self-energy in spectral output | double | 0.01                                           | Experimental |
-| `sf_state_start`      | First state index for spectral-function output                       | int    | 0                                              | Experimental |
-| `sf_state_end`        | Last state index for spectral-function output                        | int    | 10000                                          | Experimental |
+| `sf_state_start`      | First state index for spectral-function output (inclusive)           | int    | 0                                              | Experimental |
+| `sf_state_end`        | Last state index for spectral-function output (exclusive)            | int    | 10000                                          | Experimental |
 
 (common-parameter-settings-for-librpa)=
 ## Common Parameter Settings for LibRPA

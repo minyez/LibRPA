@@ -369,7 +369,7 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
         read_Cs(dir_path, driver::driver_params.cs_threshold, local_atpair);
         profiler.stop("driver_read_Cs");
         profiler.start("driver_read_Vq");
-        read_Vq_row(dir_path, "coulomb_mat", driver::opts.vq_threshold, local_atpair, false);
+        read_Vq_row(dir_path, driver::driver_params.prefix_coul_full, driver::opts.vq_threshold, local_atpair, false);
         profiler.stop("driver_read_Vq");
     }
     else if(routing == LIBRPA_ROUTING_LIBRI)
@@ -387,7 +387,7 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
             blacs_h.myprow, blacs_h.mypcol);
         for(auto &iap:trangular_loc_atpair)
             local_atpair.push_back(iap);
-        read_Vq_row(dir_path, "coulomb_mat", driver::opts.vq_threshold, local_atpair, false);
+        read_Vq_row(dir_path, driver::driver_params.prefix_coul_full, driver::opts.vq_threshold, local_atpair, false);
         mpi_comm_global_h.barrier();
         profiler.stop("driver_read_Vq");
         lib_printf_coll("| Process %5d: coulomb_mat read. Wall/CPU time [min]: %12.4f %12.4f\n",
@@ -404,7 +404,7 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
         profiler.stop("driver_read_Cs");
 
         profiler.start("driver_read_Vq");
-        read_Vq_full(dir_path, "coulomb_mat", false);
+        read_Vq_full(dir_path, driver::driver_params.prefix_coul_full, false);
         profiler.stop("driver_read_Vq");
     }
 
@@ -857,7 +857,7 @@ size_t read_Cs(const string &dir_path, double threshold, const std::vector<atpai
     while ((ptr = readdir(dir)) != NULL)
     {
         string fm(ptr->d_name);
-        if (fm.find("Cs_data") == 0)
+        if (fm.find(driver::driver_params.prefix_ri_coeff) == 0)
         {
             const auto fn = dir_path + fm;
             if (!binary_checked)
@@ -1261,7 +1261,7 @@ void get_natom_ncell_from_first_Cs_file(int &n_atom, int &n_cell, const string &
     while ((ptr = readdir(dir)) != NULL)
     {
         string fn(ptr->d_name);
-        if (fn.find("Cs_data") == 0)
+        if (fn.find(driver::driver_params.prefix_ri_coeff) == 0)
         {
             file_path = dir_path + fn;
             break;
@@ -2240,7 +2240,7 @@ void read_basis_from_Cs(const string &dir_path)
         while ((ptr = readdir(dir)) != NULL)
         {
             string fm(ptr->d_name);
-            if (fm.find("Cs_data") == 0)
+            if (fm.find(driver::driver_params.prefix_ri_coeff) == 0)
             {
                 const auto fn = dir_path + fm;
                 if (!binary_checked)
@@ -2737,7 +2737,7 @@ void read_ri_shrink(const string &dir_path)
     // atom_mu_l = atom_mu;  // TODO: replace with the actual shrinked ABFs
     read_Cs_evenly_distribute(driver_params.input_dir, driver_params.cs_threshold,
                               mpi_comm_global_h.myid, mpi_comm_global_h.nprocs,
-                              "Cs_shrinked_data");
+                              driver_params.prefix_ri_coeff_shrink);
     profiler.stop("read_Cs_shrink");
 
     profiler.start("read_shrink_sinvS_fold", "Load shrink transformation");

@@ -2,6 +2,17 @@
 
 This page documents the formats of the input data files required by the LibRPA driver.
 
+## Driver input names
+
+The standalone driver reads dataset files from `input_dir`.
+By default, single-file inputs are named `stru_out`, `bz_sampling_out`, `basis_out`, and `band_out`.
+These exact filenames can be changed in `librpa.in` with `fn_stru`, `fn_bz_sampling`, `fn_basis`, and `fn_eigocc_scf`.
+
+Multi-file inputs are selected by prefix.
+The defaults are `Cs_data` for localized RI coefficients, `Cs_shrinked_data` for compressed-auxiliary-basis RI coefficients, `coulomb_mat` for bare Coulomb matrices, and `coulomb_cut` for truncated Coulomb matrices.
+These prefixes can be changed with `prefix_ri_coeff`, `prefix_ri_coeff_shrink`, `prefix_coul_full`, and `prefix_coul_cut`.
+For example, `prefix_coul_full = coulomb_mat` matches files such as `coulomb_mat_0.txt`.
+
 ## `stru_out`
 
 The file `stru_out` contains structural information and k-point mesh data.

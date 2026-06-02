@@ -13,6 +13,15 @@ DriverParams::DriverParams():
     constants_choice("internal"),
     input_dir("./"),
     use_spinor_wfc(false),
+    prefix_ri_coeff("Cs_data"),
+    prefix_ri_coeff_shrink("Cs_shrinked_data"),
+    prefix_coul_full("coulomb_mat"),
+    prefix_coul_cut("coulomb_cut"),
+    fn_stru("stru_out"),
+    fn_bz_sampling("bz_sampling_out"),
+    fn_basis("basis_out"),
+    fn_eigocc_scf("band_out"),
+    version_coul_reader(0),
     cs_threshold(1e-6),
     output_energy_qp(false),
     output_hamgnn(false),
@@ -31,15 +40,39 @@ DriverParams::DriverParams():
 std::string DriverParams::format()
 {
     std::stringstream ss;
-    ss << "task = " << task << std::endl;
-    ss << "constants_choice = " << constants_choice << std::endl;
-    ss << "input_dir = " << input_dir << std::endl;
-    ss << "use_spinor_wfc = " << std::boolalpha << use_spinor_wfc << std::endl;
+
+#define normal_pair(name) {#name, name}
+    const std::vector<std::pair<std::string, std::string>> str_params
+        {
+            normal_pair(task),
+            normal_pair(constants_choice),
+            normal_pair(input_dir),
+            normal_pair(prefix_ri_coeff),
+            normal_pair(prefix_ri_coeff_shrink),
+            normal_pair(prefix_coul_full),
+            normal_pair(prefix_coul_cut),
+            normal_pair(fn_stru),
+            normal_pair(fn_bz_sampling),
+            normal_pair(fn_basis),
+            normal_pair(fn_eigocc_scf),
+        };
+    for (const auto &[k, v]: str_params)
+        ss << k << " = " << v << std::endl;
+
+    const std::vector<std::pair<std::string, bool>> bool_params
+        {
+            normal_pair(use_spinor_wfc),
+            normal_pair(output_energy_qp),
+            normal_pair(output_gw_spec_func),
+            normal_pair(output_hamgnn),
+            normal_pair(use_pyatb),
+        };
+    for (const auto &[k, v]: bool_params)
+        ss << k << " = " << std::boolalpha << v << std::endl;
+#undef normal_pair
+
+    ss << "version_coul_reader = " << version_coul_reader << std::endl;
     ss << "cs_R_threshold = " << cs_threshold << std::endl;
-    ss << "output_energy_qp = " << std::boolalpha << output_energy_qp << std::endl;
-    ss << "output_gw_spec_func = " << std::boolalpha << output_gw_spec_func << std::endl;
-    ss << "output_hamgnn = " << std::boolalpha << output_hamgnn << std::endl;
-    ss << "use_pyatb = " << std::boolalpha << use_pyatb << std::endl;
     if (output_gw_spec_func)
     {
         ss << "sf_omega_start = " << sf_omega_start << std::endl;
@@ -84,6 +117,9 @@ librpa::Options opts;
 
 std::string format_runtime_options(const librpa::Options &opts) noexcept
 {
+    using std::endl;
+    using std::boolalpha;
+
     std::stringstream ss;
     const std::vector<std::pair<std::string, double>> double_params
         {
@@ -138,17 +174,13 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             bool_pair(output_gw_sigc_mat_rt),
         };
 
-    for (const auto &param: str_params)
-        ss << param.first.c_str() << " = " << param.second << std::endl;
+    for (const auto &[k, v] : str_params) ss << k << " = " << v << endl;
 
-    for (const auto &param: int_params)
-        ss << param.first.c_str() << " = " << param.second << std::endl;
+    for (const auto &[k, v] : int_params) ss << k << " = " << v << endl;
 
-    for (const auto &param: double_params)
-        ss << param.first.c_str() << " = " << param.second << std::endl;
+    for (const auto &[k, v] : double_params) ss << k << " = " << v << endl;
 
-    for (const auto &param: bool_params)
-        ss << param.first.c_str() << " = " << std::boolalpha << param.second << std::endl;
+    for (const auto &[k, v] : bool_params) ss << k << " = " << boolalpha << v << endl;
 
     return ss.str();
 }

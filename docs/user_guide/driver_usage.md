@@ -53,6 +53,16 @@ The driver will read the parameters defined in the file and run the calculation
 Please refer to the [guide page of runtime parameters](runtime_parameters)
 for more information about the driver and API parameters.
 
+By default, the driver reads dataset files such as `stru_out`, `basis_out`, `band_out`, `Cs_data_*`, and `coulomb_mat_*` from `input_dir`.
+If a host code exports the same data under different names, set the corresponding `fn_*` or `prefix_*` driver parameters in `librpa.in`:
+
+```ini
+fn_eigocc_scf = band_out_alt
+prefix_ri_coeff = Cs_data_alt
+prefix_coul_full = coulomb_mat_alt
+prefix_coul_cut = coulomb_cut_alt
+```
+
 ### Run the calculation
 
 After setting up the input file `librpa.in`, the LibRPA driver can be called by issuing:

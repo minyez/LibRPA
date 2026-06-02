@@ -166,6 +166,7 @@ static std::string check_dirpath(const std::string &dirpath)
 #define _parse_int(obj, name) parser.parse_int(#name, obj.name, flag)
 #define _parse_double(obj, name) parser.parse_double(#name, obj.name, flag)
 #define _parse_bool(obj, name) parser.parse_bool(#name, obj.name, flag)
+#define _parse_string(obj, name) parser.parse_string(#name, obj.name, flag);
 #define _parse_switch(obj, name) parser.parse_bool(#name, btmp, flag); if (flag == 0) obj.name = get_switch(btmp);
 #define _parse_string_post(obj, name, post) parser.parse_string(#name, stmp, flag); if (flag == 0) obj.name = post(stmp);
 
@@ -201,6 +202,15 @@ void parse_inputfile_to_params(const std::string &fn)
     {
         driver::n_spinor = 2;
     }
+    _parse_string(driver_params, prefix_ri_coeff);
+    _parse_string(driver_params, prefix_ri_coeff_shrink);
+    _parse_string(driver_params, prefix_coul_full);
+    _parse_string(driver_params, prefix_coul_cut);
+    _parse_string(driver_params, fn_stru);
+    _parse_string(driver_params, fn_basis);
+    _parse_string(driver_params, fn_bz_sampling);
+    _parse_string(driver_params, fn_eigocc_scf);
+    _parse_int(driver_params, version_coul_reader);
 
     // TODO: implement a function to read multiple double values in one line
     if (driver_params.output_gw_spec_func)
@@ -214,9 +224,10 @@ void parse_inputfile_to_params(const std::string &fn)
         _parse_double(driver_params, sf_sigc_omega_shift);
     }
 
-    // general parameters
+    // general runtime parameters
     parser.parse_string("output_dir", stmp, "librpa.d/", flag);
-    opts.set_output_dir(stmp.c_str());
+    if (flag == 0)
+        opts.set_output_dir(stmp.c_str());
     _parse_string_post(opts, parallel_routing, get_parallel_routing);
 
     parser.parse_bool("debug", btmp, false, flag);  // backward-compatible

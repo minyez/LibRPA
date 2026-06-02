@@ -114,14 +114,14 @@ int main(int argc, char **argv)
     mpi_comm_global_h.barrier();
     profiler.stop("driver_read_params");
 
-    const string path_stru = driver_params.input_dir + "stru_out";
-    const string path_bz_sampling = driver_params.input_dir + "bz_sampling_out";
-    const string path_basis = driver_params.input_dir + "basis_out";
-    const string path_scf_eigen = driver_params.input_dir + "band_out";
+    const string path_stru = driver_params.input_dir + driver_params.fn_stru;
+    const string path_bz_sampling = driver_params.input_dir + driver_params.fn_bz_sampling;
+    const string path_basis = driver_params.input_dir + driver_params.fn_basis;
+    const string path_eigocc_scf = driver_params.input_dir + driver_params.fn_eigocc_scf;
 
     profiler.start("driver_read_common_input_data", "Driver Read Task-Common Input Data");
     profiler.start("driver_band_out", "DFT SCF eigenvalues/occupations");
-    read_scf_occ_eigenvalues(path_scf_eigen);
+    read_scf_occ_eigenvalues(path_eigocc_scf);
     profiler.stop("driver_band_out");
 
     task_t task = get_task(driver_params.task);

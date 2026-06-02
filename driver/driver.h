@@ -19,6 +19,19 @@ struct DriverParams
 
     bool use_spinor_wfc;
 
+    // Input file prefixes and file names
+    std::string prefix_ri_coeff;
+    std::string prefix_ri_coeff_shrink;
+    std::string prefix_coul_full;
+    std::string prefix_coul_cut;
+    std::string fn_stru;
+    std::string fn_bz_sampling;
+    std::string fn_basis;
+    std::string fn_eigocc_scf;
+
+    // Reader version
+    int version_coul_reader;
+
     // Threshold for real-space LRI triple coefficients.
     double cs_threshold;
 
