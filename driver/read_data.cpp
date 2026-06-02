@@ -29,6 +29,8 @@
 #include "../src/utils/profiler.h"
 #include "../src/utils/utils_mem.h"
 
+#define READER_COULOMB_V1_MARKER 20129431
+
 using std::ifstream;
 using std::string;
 
