@@ -61,6 +61,73 @@ static void check_same_imagtimes(const std::vector<double> &imagtimes,
     }
 }
 
+constexpr int wfc_gemm_block_size_opt = 128;
+
+static bool should_redistribute_full_wfc_for_gemm(const ArrayDesc &desc_wfc)
+{
+    return desc_wfc.nprocs() > 1 &&
+           desc_wfc.mb() >= desc_wfc.m() &&
+           desc_wfc.nb() >= desc_wfc.n() &&
+           (desc_wfc.mb() > wfc_gemm_block_size_opt ||
+            desc_wfc.nb() > wfc_gemm_block_size_opt);
+}
+
+struct WfcGemmWorkspace
+{
+    bool redistribute = false;
+    ArrayDesc desc_opt;
+    Matz wfc_bra_opt;
+    Matz scaled_wfc_ket_opt;
+};
+
+static WfcGemmWorkspace create_wfc_gemm_workspace(const ArrayDesc &desc_wfc)
+{
+    WfcGemmWorkspace workspace;
+    workspace.redistribute = should_redistribute_full_wfc_for_gemm(desc_wfc);
+    if (!workspace.redistribute) return workspace;
+
+    workspace.desc_opt = ArrayDesc(desc_wfc.ictxt());
+    workspace.desc_opt.init(desc_wfc.m(), desc_wfc.n(),
+                            std::min(desc_wfc.m(), wfc_gemm_block_size_opt),
+                            std::min(desc_wfc.n(), wfc_gemm_block_size_opt),
+                            desc_wfc.irsrc(), desc_wfc.icsrc());
+    workspace.wfc_bra_opt.resize(workspace.desc_opt.m_loc(), workspace.desc_opt.n_loc(), MAJOR::COL);
+    workspace.scaled_wfc_ket_opt.resize(workspace.desc_opt.m_loc(), workspace.desc_opt.n_loc(), MAJOR::COL);
+    return workspace;
+}
+
+static void pgemm_wfc_scaled_wfc_h(const int n_aos, const int n_cols,
+                                   const cplxdb *wfc_bra_ptr,
+                                   const cplxdb *scaled_wfc_ket_ptr,
+                                   const ArrayDesc &desc_wfc,
+                                   WfcGemmWorkspace &workspace,
+                                   Matz &out, const ArrayDesc &desc_out)
+{
+    const cplxdb *wfc_bra_gemm_ptr = wfc_bra_ptr;
+    const cplxdb *scaled_wfc_ket_gemm_ptr = scaled_wfc_ket_ptr;
+    const int *desc_wfc_gemm = desc_wfc.desc;
+
+    if (workspace.redistribute)
+    {
+        ScalapackConnector::pgemr2d_f(n_aos, n_cols,
+                                      wfc_bra_ptr, 1, 1, desc_wfc.desc,
+                                      workspace.wfc_bra_opt.ptr(), 1, 1,
+                                      workspace.desc_opt.desc, desc_wfc.ictxt());
+        ScalapackConnector::pgemr2d_f(n_aos, n_cols,
+                                      scaled_wfc_ket_ptr, 1, 1, desc_wfc.desc,
+                                      workspace.scaled_wfc_ket_opt.ptr(), 1, 1,
+                                      workspace.desc_opt.desc, desc_wfc.ictxt());
+        wfc_bra_gemm_ptr = workspace.wfc_bra_opt.ptr();
+        scaled_wfc_ket_gemm_ptr = workspace.scaled_wfc_ket_opt.ptr();
+        desc_wfc_gemm = workspace.desc_opt.desc;
+    }
+
+    ScalapackConnector::pgemm_f('N', 'C', n_aos, n_aos, n_cols, C_ONE,
+                                wfc_bra_gemm_ptr, 1, 1, desc_wfc_gemm,
+                                scaled_wfc_ket_gemm_ptr, 1, 1, desc_wfc_gemm,
+                                C_ZERO, out.ptr(), 1, 1, desc_out.desc);
+}
+
 std::map<Vector3_Order<int>, ComplexMatrix> get_dmat_cplx_Rs_kpara(
     int ispin, int ispinor_bra, int ispinor_ket, const MeanField &mf, const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::vector<Vector3_Order<int>>& Rs, const MpiCommHandler &comm_h)
@@ -306,6 +373,7 @@ std::map<Vector3_Order<int>, Matz> get_dmat_cplx_Rs_kblacs_para(
     std::vector<cplxdb> dummy(1, C_ZERO);
     Matz scaled_wfc_ket(desc_wfc.m_loc(), desc_wfc.n_loc(), MAJOR::COL);
     Matz dmat_k(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
+    auto wfc_gemm_workspace = create_wfc_gemm_workspace(desc_wfc);
     const auto &iks_local = kblacs_ctxt.kpoints_local();
     const int nk_local = iks_local.size();
     int nk_sum = 0;
@@ -365,10 +433,8 @@ std::map<Vector3_Order<int>, Matz> get_dmat_cplx_Rs_kblacs_para(
         if (nocc > 0)
         {
             const cplxdb *wfc_bra_ptr = wfc_bra == nullptr ? dummy.data() : wfc_bra->c;
-            ScalapackConnector::pgemm_f('N', 'C', n_aos, n_aos, nocc, C_ONE,
-                                        wfc_bra_ptr, 1, 1, desc_wfc.desc,
-                                        scaled_wfc_ket.ptr(), 1, 1, desc_wfc.desc, C_ZERO,
-                                        dmat_k.ptr(), 1, 1, desc_dm.desc);
+            pgemm_wfc_scaled_wfc_h(n_aos, nocc, wfc_bra_ptr, scaled_wfc_ket.ptr(),
+                                   desc_wfc, wfc_gemm_workspace, dmat_k, desc_dm);
         }
 
 #pragma omp parallel for schedule(static) if (n_elem > 4096)
@@ -509,6 +575,7 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
     std::vector<cplxdb> dummy(1, C_ZERO);
     Matz scaled_wfc_ket(desc_wfc.m_loc(), desc_wfc.n_loc(), MAJOR::COL);
     Matz gf_k(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
+    auto wfc_gemm_workspace = create_wfc_gemm_workspace(desc_wfc);
     Matz kmat(nk_local, n_elem, MAJOR::COL);
 
     const double scale_spin = 0.5 * mf.get_n_spins() * mf.get_n_spinor();
@@ -566,10 +633,8 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
 
             gf_k = C_ZERO;
             const cplxdb *wfc_bra_ptr = wfc_bra == nullptr ? dummy.data() : wfc_bra->c;
-            ScalapackConnector::pgemm_f('N', 'C', n_aos, n_aos, n_states, C_ONE,
-                                        wfc_bra_ptr, 1, 1, desc_wfc.desc,
-                                        scaled_wfc_ket.ptr(), 1, 1, desc_wfc.desc, C_ZERO,
-                                        gf_k.ptr(), 1, 1, desc_dm.desc);
+            pgemm_wfc_scaled_wfc_h(n_aos, n_states, wfc_bra_ptr, scaled_wfc_ket.ptr(),
+                                   desc_wfc, wfc_gemm_workspace, gf_k, desc_dm);
 #pragma omp parallel for schedule(static) if (n_elem > 4096)
             for (int i = 0; i != n_elem; ++i)
             {

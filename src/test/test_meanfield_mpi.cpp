@@ -1,5 +1,6 @@
 #include "../core/meanfield_mpi.h"
 
+#include <cmath>
 #include <iostream>
 #include <iterator>
 #include <vector>
@@ -341,6 +342,107 @@ static void test_gf_cplx_imagtimes_Rs_kblacs_para_full_wfc()
     }
 }
 
+static void test_dm_gf_kblacs_para_redistributed_full_wfc()
+{
+    if (size_global < 4) return;
+
+    const int nk = 2;
+    const int nb = 144;
+    const int nao = nb;
+    const int nocc = 6;
+    const double efermi = 0.0;
+    std::vector<Vector3_Order<double>> kfrac_list{{0.0, 0.0, 0.0}, {0.5, 0.0, 0.0}};
+    const std::vector<Vector3_Order<int>> Rs{{0, 0, 0}, {1, 0, 0}};
+    const std::vector<double> imagtimes{0.75, -0.5};
+
+    const auto set_common_mf_data = [&](MeanField &mf)
+    {
+        mf.get_efermi() = efermi;
+        mf.get_weight()[0].zero_out();
+        for (int ik = 0; ik != nk; ++ik)
+        {
+            for (int ib = 0; ib != nb; ++ib)
+            {
+                mf.get_weight()[0](ik, ib) = ib < nocc ? 2.0 / nk : 0.0;
+                mf.get_eigenvals()[0](ik, ib) = ib < nocc
+                    ? -0.2 - 0.001 * ib
+                    : 0.3 + 0.001 * ib;
+            }
+        }
+    };
+    const auto set_wfc = [&](MeanField &mf, int ik)
+    {
+        auto &eig = mf.get_eigenvectors()[0][0][ik];
+        eig.create(nb, nao);
+        for (int ib = 0; ib != nb; ++ib)
+        {
+            for (int iao = 0; iao != nao; ++iao)
+            {
+                const double arg = 0.013 * (ib + 1) * (iao + 2) + 0.17 * (ik + 1);
+                eig(ib, iao) = cplxdb{std::sin(arg), 0.25 * std::cos(0.7 * arg)};
+            }
+        }
+    };
+
+    MeanField mf_ref(1, nk, nb, nao);
+    set_common_mf_data(mf_ref);
+    for (int ik = 0; ik != nk; ++ik) set_wfc(mf_ref, ik);
+
+    KPointBlacsProcessShape shape(1, size_global, false);
+    KPointBlacsParallelContext context(shape, mpi_comm_global_h.comm, nk);
+    const auto desc_wfc_full = context.create_array_desc(nao, nb, nao, nb);
+    const auto desc_dm = context.create_array_desc(nao, nao);
+
+    MeanField mf(1, nk, nb, nao);
+    set_common_mf_data(mf);
+    for (int ik = 0; ik != nk; ++ik)
+    {
+        if (context.kpoint_blacs_root_global_rank(ik) != myid_global) continue;
+        set_wfc(mf, ik);
+    }
+
+    const auto dm_Rs = get_dmat_cplx_Rs_kblacs_para(
+        0, mf, kfrac_list, Rs, context, desc_wfc_full, desc_dm);
+    const auto gf_Rs = get_gf_cplx_imagtimes_Rs_kblacs_para(
+        0, mf, kfrac_list, imagtimes, Rs, context, desc_wfc_full, desc_dm);
+
+    for (const auto &R: Rs)
+    {
+        const auto dm_ref = mf_ref.get_dmat_cplx_R(0, 0, 0, kfrac_list, R);
+        const auto &rmat = dm_Rs.at(R);
+        assert(rmat.nr() == desc_dm.m_loc());
+        assert(rmat.nc() == desc_dm.n_loc());
+        for (int jloc = 0; jloc != desc_dm.n_loc(); ++jloc)
+        {
+            const int jglob = desc_dm.indx_l2g_c(jloc);
+            for (int iloc = 0; iloc != desc_dm.m_loc(); ++iloc)
+            {
+                const int iglob = desc_dm.indx_l2g_r(iloc);
+                assert(fequal(rmat(iloc, jloc), dm_ref(iglob, jglob), cplxdb{1e-10, 0.0}));
+            }
+        }
+    }
+
+    const auto gf_ref = mf_ref.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_list, imagtimes, Rs);
+    for (const auto tau: imagtimes)
+    {
+        for (const auto &R: Rs)
+        {
+            const auto &rmat = gf_Rs.at(tau).at(R);
+            for (int jloc = 0; jloc != desc_dm.n_loc(); ++jloc)
+            {
+                const int jglob = desc_dm.indx_l2g_c(jloc);
+                for (int iloc = 0; iloc != desc_dm.m_loc(); ++iloc)
+                {
+                    const int iglob = desc_dm.indx_l2g_r(iloc);
+                    assert(fequal(rmat(iloc, jloc), gf_ref.at(tau).at(R)(iglob, jglob),
+                                  cplxdb{1e-10, 0.0}));
+                }
+            }
+        }
+    }
+}
+
 // a=3A, k222, light, minimal + 2p in tier1, FHI-aims
 static void test_dmat_cplx_Rs_kpara()
 {
@@ -422,6 +524,7 @@ int main (int argc, char *argv[])
     test_dmat_cplx_Rs_kpara();
     test_dmat_cplx_Rs_kblacs_para_full_wfc();
     test_gf_cplx_imagtimes_Rs_kblacs_para_full_wfc();
+    test_dm_gf_kblacs_para_redistributed_full_wfc();
 
     finalize_global_io();
     finalize_global_mpi();
