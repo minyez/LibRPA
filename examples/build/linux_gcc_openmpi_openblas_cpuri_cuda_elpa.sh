@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH -p p1
+#SBATCH -p 48cp3
 #SBATCH -J install
 ##SBATCH -A xgren
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:0
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
-#SBATCH --output=../../../log_install
-#SBATCH --error=../../../err_install
+#SBATCH --output=../log_cuda
+#SBATCH --error=../err_cuda
 
 ulimit -s unlimited
 ulimit -c unlimited
@@ -55,7 +55,8 @@ echo "========================="
 echo 'CPLUS_INCLUDE_PATH:' $CPLUS_INCLUDE_PATH
 echo "========================="
 
-cd ../../
+export FCFLAGS="-fPIC -g -fallow-argument-mismatch -ffree-line-length-none"
+
 BUILD_DIR=../build_cuda
 INSTALL_DIR=../librpa_cuda
 echo Start Time: `date`
@@ -69,13 +70,14 @@ cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
         -DLIBRPA_USE_LIBRI=ON \
         -DLIBRI_INCLUDE_DIR=$LIBRI/include \
         -DLIBCOMM_INCLUDE_DIR=$LIBCOMM/include \
-        -DCMAKE_CXX_FLAGS="-g -O2 -fopenmp" \
+        -DCMAKE_CXX_FLAGS="-g -O2 -fopenmp -Wunused-result -Wterminate" \
         -DUSE_GREENX_API=ON \
         -DBUILD_SHARED_LIBS=ON \
         -DLIBRPA_VERBOSE_OUTPUT=ON \
         -DLIBRPA_ENABLE_CUDA=ON \
         -DLIBRPA_ENABLE_ELPA=ON \
         -DCMAKE_CUDA_SEPARABLE_COMPILATION=ON \
+        -DCMAKE_Fortran_FLAGS="$FCFLAGS"
 
 
 cmake --build $BUILD_DIR -j 8

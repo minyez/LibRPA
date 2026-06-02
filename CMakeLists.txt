@@ -92,6 +92,7 @@ endif()
 
 if(LIBRPA_ENABLE_CUDA)
   enable_language(CUDA)
+  set(CMAKE_CUDA_STANDARD ${CMAKE_CXX_STANDARD})
 endif()
 
 if(LIBRPA_ENABLE_HIP)

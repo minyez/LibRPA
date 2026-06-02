@@ -187,7 +187,6 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
     using global::ofs_myid;
     using global::profiler;
 
-    profiler.start("use elpa to sqrt matrix");
     profiler.start(__FUNCTION__);
     // Step 1: Extract real part of the complex matrix
     auto A_local_real = A_local.get_real();
@@ -320,7 +319,6 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
 
     profiler.stop("power_hemat_blacs_4");
     profiler.stop(__FUNCTION__);
-    profiler.stop("use elpa to sqrt matrix");
 
     return scaled;
 }
