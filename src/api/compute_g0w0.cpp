@@ -3,8 +3,10 @@
 
 // Standard C++ headers
 #include <algorithm>
+#include <iomanip>
 #include <limits>
 #include <map>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -132,6 +134,33 @@ std::vector<librpa_int::cplxdb> collect_sigc_diag_to_callers(
     }
 
     return values_sum;
+}
+
+constexpr int analycont_source_dump_precision = 11;
+
+void dump_analycont_source_data(std::ostream &os, const librpa_int::AnalyCont &ac,
+                                const char *api_name, const int isp, const int ik,
+                                const int i_state)
+{
+    const auto &xs = ac.get_source_xs();
+    const auto &data = ac.get_source_data();
+    const auto flags = os.flags();
+    const auto precision = os.precision();
+
+    os << "Source data used by analytic continuation in " << api_name
+       << " for spin " << isp + 1 << " kpoint " << ik + 1
+       << " state " << i_state + 1 << std::endl;
+    os << "n_analycont_source_data = " << data.size() << std::endl;
+    os << "i x_re x_im y_re y_im" << std::endl;
+    os << std::scientific << std::setprecision(analycont_source_dump_precision);
+    const int n = std::min(static_cast<int>(xs.size()), static_cast<int>(data.size()));
+    for (int i = 0; i != n; ++i)
+    {
+        os << i + 1 << " " << xs[i].real() << " " << xs[i].imag() << " "
+           << data[i].real() << " " << data[i].imag() << std::endl;
+    }
+    os.flags(flags);
+    os.precision(precision);
 }
 
 } // namespace
@@ -378,22 +407,24 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                 int flag_qpe_solver = librpa_int::qpe_solver_pade_self_consistent(
                     pade, eks_state, efermi, vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
                     n_iter_max, damp_fac, use_adaptive_damp);
-                if (flag_qpe_solver == 0 || override_qpe_solver_nan)
-                {
-                    sigc_re[start_k+i] = sigc.real();
-                    sigc_im[start_k+i] = sigc.imag();
-                }
-                else
+                if (flag_qpe_solver != 0)
                 {
                     global::ofs_myid << "Warning! QPE solver failed for spin " << isp + 1
                                      << " kpoint " << ik + 1 << " state " << i_state + 1
                                      << std::endl;
+                    dump_analycont_source_data(global::ofs_myid, pade,
+                                               "librpa_get_g0w0_sigc_kgrid", isp, ik, i_state);
                     if (override_qpe_solver_nan)
                     {
                         global::ofs_myid
                             << "Using final unconverged QPE result because override_qpe_solver_nan is on"
                             << std::endl;
                     }
+                }
+                if (flag_qpe_solver == 0 || override_qpe_solver_nan)
+                {
+                    sigc_re[start_k+i] = sigc.real();
+                    sigc_im[start_k+i] = sigc.imag();
                 }
             }
         }
@@ -504,22 +535,24 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
                 int flag_qpe_solver = librpa_int::qpe_solver_pade_self_consistent(
                     pade, eks_state, efermi, vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
                     n_iter_max, damp_fac, use_adaptive_damp);
-                if (flag_qpe_solver == 0 || override_qpe_solver_nan)
-                {
-                    sigc_band_re[start_k+i] = sigc.real();
-                    sigc_band_im[start_k+i] = sigc.imag();
-                }
-                else
+                if (flag_qpe_solver != 0)
                 {
                     global::ofs_myid << "Warning! QPE solver failed for spin " << isp + 1
                                      << " kpoint " << ik + 1 << " state " << i_state + 1
                                      << std::endl;
+                    dump_analycont_source_data(global::ofs_myid, pade,
+                                               "librpa_get_g0w0_sigc_band_k", isp, ik, i_state);
                     if (override_qpe_solver_nan)
                     {
                         global::ofs_myid
                             << "Using final unconverged QPE result because override_qpe_solver_nan is on"
                             << std::endl;
                     }
+                }
+                if (flag_qpe_solver == 0 || override_qpe_solver_nan)
+                {
+                    sigc_band_re[start_k+i] = sigc.real();
+                    sigc_band_im[start_k+i] = sigc.imag();
                 }
             }
         }
