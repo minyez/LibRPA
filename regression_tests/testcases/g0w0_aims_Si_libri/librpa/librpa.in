@@ -1,6 +1,9 @@
 # Driver parameters
 task = g0w0
 input_dir = ../dataset
+version_coul_reader = 1
+prefix_coul_full = coulomb_full_iq
+prefix_coul_cut  = coulomb_cut_iq
 # API runtime
 nfreq = 6
 replace_w_head = t

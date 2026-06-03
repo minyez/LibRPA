@@ -1,6 +1,7 @@
 testcases/*/*
 !testcases/*/*.in
 !testcases/*/*.py
+!testcases/*/*.md
 !testcases/*/librpa
 !testcases/*/dataset.tar.gz
 testcases/*/librpa/*
