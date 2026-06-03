@@ -14,15 +14,29 @@ namespace librpa_int
 
 class AnalyCont
 {
+protected:
+    std::vector<cplxdb> source_xs;
+    std::vector<cplxdb> source_data;
+
 public:
+    virtual ~AnalyCont() = default;
     virtual cplxdb get(const cplxdb &x) const = 0;
+
+    /*!
+     * @brief get the complex source points used by the analytic continuation
+     */
+    const std::vector<cplxdb> &get_source_xs() const { return source_xs; };
+
+    /*!
+     * @brief get the complex source values used by the analytic continuation
+     */
+    const std::vector<cplxdb> &get_source_data() const { return source_data; };
 };
 
 class AnalyContPade: public AnalyCont
 {
 private:
     int n_pars;
-    std::vector<cplxdb> par_x;
     std::vector<cplxdb> par_y;
 
 public:

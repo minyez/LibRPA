@@ -18,7 +18,6 @@ AnalyContPade::AnalyContPade(int n_pars_in, const std::vector<cplxdb> &xs, const
     : n_pars(n_pars_in)
 {
     const int n_data = data.size();
-    std::vector<cplxdb> data_npar;
 
     // Use all data if requested number of parameters is invalid
     if (n_pars < 0) n_pars = n_data;
@@ -27,29 +26,29 @@ AnalyContPade::AnalyContPade(int n_pars_in, const std::vector<cplxdb> &xs, const
     {
         // Use all data points
         n_pars = n_data;
-        par_x = xs;
-        data_npar = data;
+        source_xs = xs;
+        source_data = data;
     }
     else
     {
         // Select the data points evenly, when number of parameters are fewer than data points
-        par_x.resize(n_pars);
-        data_npar.resize(n_pars);
+        source_xs.resize(n_pars);
+        source_data.resize(n_pars);
         int step = n_data / (n_pars - 1);
         for (int ipar = 0; ipar < n_pars - 1; ipar++)
         {
-            par_x[ipar] = xs[ipar * step];
-            data_npar[ipar] = data[ipar * step];
+            source_xs[ipar] = xs[ipar * step];
+            source_data[ipar] = data[ipar * step];
         }
-        par_x[n_pars-1] = xs[n_data-1];
-        data_npar[n_pars-1] = data[n_data-1];
+        source_xs[n_pars-1] = xs[n_data-1];
+        source_data[n_pars-1] = data[n_data-1];
     }
 
     // Calculate the continuation coefficients, using Thiel's reciprocal difference method
     ComplexMatrix g(n_pars, n_pars);
     for (int i_par = 0; i_par < n_pars; i_par++)
     {
-        g(i_par, 0) = data_npar[i_par];
+        g(i_par, 0) = source_data[i_par];
     }
 
     for (int i_par = 1; i_par < n_pars; i_par++)
@@ -57,7 +56,7 @@ AnalyContPade::AnalyContPade(int n_pars_in, const std::vector<cplxdb> &xs, const
         for (int i = i_par; i < n_pars; i++)
         {
             g(i, i_par) = 
-                (g(i_par-1, i_par-1) - g(i, i_par-1)) / ((par_x[i] - par_x[i_par-1]) * g(i, i_par-1));
+                (g(i_par-1, i_par-1) - g(i, i_par-1)) / ((source_xs[i] - source_xs[i_par-1]) * g(i, i_par-1));
         }
     }
 
@@ -75,7 +74,7 @@ AnalyContPade::get(const cplxdb &x) const
 
     for (int i_par = n_pars - 1; i_par > 0; i_par--)
     {
-        tmp = 1.0 + par_y[i_par] * (x - par_x[i_par-1]) / tmp;
+        tmp = 1.0 + par_y[i_par] * (x - source_xs[i_par-1]) / tmp;
     }
     return par_y[0] / tmp;
 }
@@ -94,10 +93,10 @@ AnalyContPade::get_derivative(const cplxdb &x) const
     g[n_pars-1] = par_y[n_pars-1];
     for (int i_par = n_pars - 2; i_par >= 0; i_par--)
     {
-        const cplxdb denominator = 1.0 + (x - par_x[i_par]) * g[i_par+1];
+        const cplxdb denominator = 1.0 + (x - source_xs[i_par]) * g[i_par+1];
         g[i_par] = par_y[i_par] / denominator;
         dg[i_par] = -par_y[i_par]
-                    * (g[i_par+1] + (x - par_x[i_par]) * dg[i_par+1])
+                    * (g[i_par+1] + (x - source_xs[i_par]) * dg[i_par+1])
                     / (denominator * denominator);
     }
     return dg[0];

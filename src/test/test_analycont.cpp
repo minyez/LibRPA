@@ -87,8 +87,31 @@ void test_get_spectfunc_acpade()
     assert(fequal_array(2, sf.data(), ref_sf.data(), false));
 }
 
+void test_analycont_pade_source_data()
+{
+    constexpr int n = 8;
+    constexpr int n_pars = 4;
+    std::vector<cplxdb> xs(n);
+    std::vector<cplxdb> data(n);
+    initialize_1_over_x_minus_x0_data(n, {2.0, 2.0}, xs, data);
+
+    librpa_int::AnalyContPade pade(n_pars, xs, data);
+    const auto &source_xs = pade.get_source_xs();
+    const auto &source_data = pade.get_source_data();
+    assert(source_xs.size() == n_pars);
+    assert(source_data.size() == n_pars);
+
+    const int expected_indices[n_pars] = {0, 2, 4, 7};
+    for (int i = 0; i != n_pars; ++i)
+    {
+        assert(source_xs[i] == xs[expected_indices[i]]);
+        assert(source_data[i] == data[expected_indices[i]]);
+    }
+}
+
 int main(int argc, char *argv[])
 {
     test_analycont_pade();
     test_get_spectfunc_acpade();
+    test_analycont_pade_source_data();
 }
