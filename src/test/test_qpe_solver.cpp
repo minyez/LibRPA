@@ -32,6 +32,18 @@ static void initialize_single_pole_data(int n, const cplxdb &x0, std::vector<cpl
     }
 }
 
+static void initialize_linear_data(int n, const cplxdb &slope, const cplxdb &intercept,
+                                   std::vector<cplxdb> &xs, std::vector<cplxdb> &data)
+{
+    xs.resize(n);
+    data.resize(n);
+    for (int i = 0; i < n; i++)
+    {
+        xs[i] = {0.0, static_cast<double>(i+1)};
+        data[i] = slope * xs[i] + intercept;
+    }
+}
+
 void check_single_pole_self_energy(const bool use_adaptive_damp)
 {
     constexpr int nfreq = 6;
@@ -58,6 +70,34 @@ void check_single_pole_self_energy(const bool use_adaptive_damp)
     assert(info == 0);
     assert(fequal(e_qp, e_qp_ref, 1.0e-8));
     assert(std::abs(sigc - sigc_ref) < 1.0e-8);
+}
+
+void test_quasi_newton_uses_pade_derivative()
+{
+    constexpr int nfreq = 4;
+    constexpr double e_mf = 0.5;
+    constexpr double e_fermi = 0.2;
+    constexpr double sigma_x = 0.1;
+    constexpr double e_qp_ref = 0.8;
+    const cplxdb slope = {2.0, 0.0};
+    const cplxdb intercept = {0.05, 0.0};
+    const cplxdb sigc_ref = slope * cplxdb{e_qp_ref - e_fermi, 0.0} + intercept;
+    const double vxc = e_mf + sigma_x + sigc_ref.real() - e_qp_ref;
+
+    std::vector<cplxdb> xs;
+    std::vector<cplxdb> data;
+    initialize_linear_data(nfreq, slope, intercept, xs, data);
+    AnalyContPade pade(nfreq, xs, data);
+
+    double e_qp = 0.0;
+    cplxdb sigc;
+    const int info = qpe_solver_pade_quasi_newton(
+        pade, e_mf, e_fermi, vxc, sigma_x, e_qp, sigc, 0.0, 1.0e-10, 8, 1.0,
+        false);
+
+    assert(info == 0);
+    assert(fequal(e_qp, e_qp_ref, 1.0e-10));
+    assert(std::abs(sigc - sigc_ref) < 1.0e-10);
 }
 
 void test_perturbative_qp_weight()
@@ -98,5 +138,6 @@ int main(int argc, char *argv[])
 {
     check_single_pole_self_energy(false);
     check_single_pole_self_energy(true);
+    test_quasi_newton_uses_pade_derivative();
     test_perturbative_qp_weight();
 }
