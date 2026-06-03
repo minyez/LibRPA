@@ -1,0 +1,22 @@
+# Build artifacts
+build/
+*.o
+*.so
+*.a
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Reference materials (papers, notes, external docs)
+reference/
+
+# Sync script (contains user-specific paths)
+sync_to_hpc3.sh
+AGENTS.md

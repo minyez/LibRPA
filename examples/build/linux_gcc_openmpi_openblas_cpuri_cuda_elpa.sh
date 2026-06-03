@@ -29,10 +29,10 @@ source $SETUP_DIR/setup_scalapack_extern
 source $SETUP_DIR/setup_cereal_extern
 source $SETUP_DIR/setup_elpa_extern
 
-LibDDLA_PATH=~/app/libddla/260522/LibDDLA-1_install
-export CPATH=$LibDDLA_PATH/include:$CPATH
-export LIBRARY_PATH=$LibDDLA_PATH/lib:$LIBRARY_PATH
-export LD_LIBRARY_PATH=$LibDDLA_PATH/lib:$LD_LIBRARY_PATH
+# LibDDLA_PATH=~/app/libddla/260522/LibDDLA-1_install
+# export CPATH=$LibDDLA_PATH/include:$CPATH
+# export LIBRARY_PATH=$LibDDLA_PATH/lib:$LIBRARY_PATH
+# export LD_LIBRARY_PATH=$LibDDLA_PATH/lib:$LD_LIBRARY_PATH
 
 PREFIX=./
 LAPACK=$INSTALL_DIR/openblas-0.3.29/lib

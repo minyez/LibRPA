@@ -35,6 +35,11 @@ if(LIBRPA_BUNDLED_ELPA_PROJECT_TARGET)
   add_dependencies(rpa_lib ${LIBRPA_BUNDLED_ELPA_PROJECT_TARGET})
 endif()
 
+if(LIBRPA_USE_CUDA OR LIBRPA_USE_HIP)
+  target_link_libraries(rpa_lib PRIVATE ddla_lib)
+  target_include_directories(rpa_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/LibDDLA/include)
+endif()
+
 target_include_directories(rpa_lib
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
