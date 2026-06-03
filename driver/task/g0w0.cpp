@@ -97,8 +97,9 @@ void driver::task_g0w0()
     // Build the self-energy matrix (including exchange and correlation)
     h.build_g0w0_sigma(opts);
 
-    const int i_state_low = 0;
-    const int i_state_high = n_states;
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    const int i_state_low = driver_params.i_state_low;
+    const int i_state_high = driver_params.i_state_high;
     const int n_states_calc = i_state_high - i_state_low;
     const size_t n_local = n_states_calc * n_spins * iks_eigvec_this.size();
     std::vector<double> vexx_all;
@@ -165,7 +166,6 @@ void driver::task_g0w0()
 
     // Now, master process has all the data
 
-    auto pds = librpa_int::api::get_dataset_instance(h);
     // TODO: hide things below to API
     // auto &chi0 = *(pds->p_chi0);
 

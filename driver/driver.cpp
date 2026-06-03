@@ -1,6 +1,7 @@
 #include "driver.h"
 
 #include <ios>
+#include <stdexcept>
 #include <sstream>
 #include <string>
 #include "librpa_enums.h"
@@ -24,6 +25,8 @@ DriverParams::DriverParams():
     version_coul_reader(0),
     cs_threshold(1e-6),
     output_energy_qp(false),
+    i_state_low(0),
+    i_state_high(default_i_state_high),
     output_hamgnn(false),
     use_pyatb(false),
     output_gw_spec_func(false),
@@ -73,6 +76,8 @@ std::string DriverParams::format()
 
     ss << "version_coul_reader = " << version_coul_reader << std::endl;
     ss << "cs_R_threshold = " << cs_threshold << std::endl;
+    ss << "i_state_low = " << i_state_low << std::endl;
+    ss << "i_state_high = " << i_state_high << std::endl;
     if (output_gw_spec_func)
     {
         ss << "sf_omega_start = " << sf_omega_start << std::endl;

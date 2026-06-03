@@ -36,6 +36,84 @@
 using std::ifstream;
 using std::string;
 
+struct QpStateRange
+{
+    int low;
+    int high;
+};
+
+static QpStateRange automatic_qp_state_range(const librpa_int::MeanField &mf)
+{
+    const int n_states_mf = mf.get_n_states();
+    if (n_states_mf <= 0)
+    {
+        throw std::runtime_error("Cannot resolve QP state range from an empty meanfield object");
+    }
+
+    const double gap = mf.get_band_gap();
+    const double efermi = mf.get_efermi();
+    const double e_low = efermi - 0.5 * gap - 0.5;
+    const double e_high = efermi + 0.5 * gap + 0.5;
+    const int i_state_low = mf.get_max_state_below_energy(e_low) + 1;
+    const int i_state_high = mf.get_min_state_above_energy(e_high);
+
+    if (i_state_high <= i_state_low)
+    {
+        return {0, n_states_mf};
+    }
+    return {i_state_low, i_state_high};
+}
+
+static void normalize_qp_state_range_from_kgrid_mf(const librpa_int::MeanField &mf)
+{
+    auto &params = driver::driver_params;
+    const int n_states_mf = mf.get_n_states();
+    if (n_states_mf <= 0)
+    {
+        throw std::runtime_error("Cannot resolve QP state range from an empty meanfield object");
+    }
+
+    const bool automatic_low = params.i_state_low < 0;
+    const bool automatic_high = params.i_state_high < 0;
+    const bool use_automatic_default_high =
+        params.i_state_high == driver::DriverParams::default_i_state_high &&
+        (automatic_low || automatic_high);
+    const QpStateRange automatic_range =
+        (automatic_low || automatic_high || use_automatic_default_high)
+            ? automatic_qp_state_range(mf)
+            : QpStateRange{0, n_states_mf};
+
+    if (automatic_low)
+    {
+        params.i_state_low = automatic_range.low;
+    }
+    else if (params.i_state_low > n_states_mf)
+    {
+        std::stringstream ss;
+        ss << "i_state_low = " << params.i_state_low
+           << " exceeds the maximum number of states (" << n_states_mf << ")";
+        throw std::runtime_error(ss.str());
+    }
+
+    if (automatic_high || use_automatic_default_high)
+    {
+        params.i_state_high = automatic_range.high;
+    }
+    else if (params.i_state_high > n_states_mf)
+    {
+        params.i_state_high = n_states_mf;
+    }
+
+    if (params.i_state_high <= params.i_state_low)
+    {
+        std::stringstream ss;
+        ss << "Empty QP state range: i_state_low = " << params.i_state_low
+           << ", i_state_high = " << params.i_state_high
+           << ". The high state index is exclusive.";
+        throw std::runtime_error(ss.str());
+    }
+}
+
 void read_scf_occ_eigenvalues(const string &file_path)
 {
     using std::to_string;
@@ -146,6 +224,8 @@ void read_scf_occ_eigenvalues(const string &file_path)
     // free buffer
     delete[] eskb;
     delete[] wskb;
+
+    normalize_qp_state_range_from_kgrid_mf(pds->mf);
 }
 
 int read_vxc(const string &file_path, std::vector<matrix> &vxc)

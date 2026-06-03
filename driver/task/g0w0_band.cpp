@@ -73,8 +73,8 @@ void driver::task_g0w0_band()
     // Build the self-energy matrix (including exchange and correlation)
     h.build_g0w0_sigma(opts);
 
-    const int i_state_low = 0;
-    const int i_state_high = n_states;
+    const int i_state_low = driver_params.i_state_low;
+    const int i_state_high = driver_params.i_state_high;
     const int n_states_calc = i_state_high - i_state_low;
     std::vector<double> vexx_all;
     std::vector<cplxdb> sigc_all;
@@ -140,8 +140,9 @@ void driver::task_g0w0_band()
     }
 
     const std::string banner(124, '-');
-    const auto &kfrac_list = librpa_int::api::get_dataset_instance(h)->pbc.kfrac_list;
-    const auto &mf = librpa_int::api::get_dataset_instance(h)->mf;
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    const auto &kfrac_list = pds->pbc.kfrac_list;
+    const auto &mf = pds->mf;
 
     if (flag_read_vxc == 0)
     {
@@ -218,6 +219,10 @@ void driver::task_g0w0_band()
     ofs_myid << "iks_band_eigvec_this: " << iks_band_eigvec_this << endl;
     profiler.stop("g0w0_band_load_band_mf");
 
+    const int i_state_low_band = driver_params.i_state_low;
+    const int i_state_high_band = driver_params.i_state_high;
+    const int n_states_band_calc = i_state_high_band - i_state_low_band;
+
     profiler.start("read_vxc_band", "Load DFT xc potential for band");
     const auto vxc_band_all = read_vxc_band(driver_params.input_dir, n_states, n_spins, kfrac_band.size());
     profiler.stop("read_vxc_band");
@@ -228,24 +233,27 @@ void driver::task_g0w0_band()
     std::vector<cplxdb> sigc_band_all;
     {
         const auto &iks_this = iks_band_eigvec_this;
-        const size_t n_local = n_states_calc * n_spins * iks_this.size();
-        const auto vexx_band = h.get_exx_pot_band_k(opts, n_spins, iks_this, i_state_low, i_state_high);
+        const size_t n_local = n_states_band_calc * n_spins * iks_this.size();
+        const auto vexx_band =
+            h.get_exx_pot_band_k(opts, n_spins, iks_this, i_state_low_band, i_state_high_band);
 
         std::vector<double> vxc_this(n_local);
         for (int isp = 0; isp != n_spins; isp++)
         {
-            const auto start_isp = isp * iks_this.size() * n_states_calc;
+            const auto start_isp = isp * iks_this.size() * n_states_band_calc;
             for (size_t ik_this = 0; ik_this < iks_this.size(); ik_this++)
             {
                 const auto ik = iks_this[ik_this];
-                const auto start_k = start_isp + ik_this * n_states_calc;
-                for (int i = 0; i < n_states_calc; i++)
+                const auto start_k = start_isp + ik_this * n_states_band_calc;
+                for (int i = 0; i < n_states_band_calc; i++)
                 {
-                    vxc_this[start_k+i] = vxc_band_all[isp](ik, i+i_state_low);
+                    vxc_this[start_k+i] = vxc_band_all[isp](ik, i+i_state_low_band);
                 }
             }
         }
-        const auto sigc_band = h.get_g0w0_sigc_band_k(opts, n_spins, iks_this, i_state_low, i_state_high, vxc_this, vexx_band);
+        const auto sigc_band =
+            h.get_g0w0_sigc_band_k(opts, n_spins, iks_this, i_state_low_band,
+                                   i_state_high_band, vxc_this, vexx_band);
 
         profiler.start("collect_exx_sigc_band");
         if (!opts.use_kpara_scf_eigvec)
@@ -261,20 +269,22 @@ void driver::task_g0w0_band()
         {
             // data parallelized over k-point, collect them to master process
             const auto n_kpts = n_kpoints_band;
-            const size_t n_all = n_states_calc * n_spins * n_kpts;
+            const size_t n_all = n_states_band_calc * n_spins * n_kpts;
             vexx_band_all.resize(n_all);
             sigc_band_all.resize(n_all);
             for (int isp = 0; isp != n_spins; isp++)
             {
-                const auto st_isp_local = isp * iks_this.size() * n_states_calc;
-                const auto st_isp = isp * n_kpts * n_states_calc;
+                const auto st_isp_local = isp * iks_this.size() * n_states_band_calc;
+                const auto st_isp = isp * n_kpts * n_states_band_calc;
                 for (size_t ik_this = 0; ik_this < iks_this.size(); ik_this++)
                 {
                     const auto ik = iks_this[ik_this];
-                    const auto st_local = st_isp_local + ik_this * n_states_calc;
-                    const auto st = st_isp + ik * n_states_calc;
-                    memcpy(sigc_band_all.data() + st, sigc_band.data() + st_local, n_states_calc * sizeof(cplxdb));
-                    memcpy(vexx_band_all.data() + st, vexx_band.data() + st_local, n_states_calc * sizeof(double));
+                    const auto st_local = st_isp_local + ik_this * n_states_band_calc;
+                    const auto st = st_isp + ik * n_states_band_calc;
+                    memcpy(sigc_band_all.data() + st, sigc_band.data() + st_local,
+                           n_states_band_calc * sizeof(cplxdb));
+                    memcpy(vexx_band_all.data() + st, vexx_band.data() + st_local,
+                           n_states_band_calc * sizeof(double));
                 }
             }
             mpi_comm_global_h.reduce(MPI_IN_PLACE, vexx_band_all.data(), n_all, 0, MPI_SUM);
@@ -289,7 +299,7 @@ void driver::task_g0w0_band()
     }
 
     profiler.start("output_g0w0_band");
-    const auto &mf_band = librpa_int::api::get_dataset_instance(h)->mf_band;
+    const auto &mf_band = pds->mf_band;
     {
         const int n_kpts = n_kpoints_band;
         if (myid_global == 0)
@@ -298,10 +308,10 @@ void driver::task_g0w0_band()
             {
                 for (int i_kpoint = 0; i_kpoint < n_kpts; i_kpoint++)
                 {
-                    const size_t start_k = (i_spin * n_kpts + i_kpoint) * n_states_calc;
-                    for (int i = 0; i < n_states_calc; i++)
+                    const int start_k = (i_spin * n_kpts + i_kpoint) * n_states_band_calc;
+                    for (int i = 0; i < n_states_band_calc; i++)
                     {
-                        const int i_state = i + i_state_low;
+                        const int i_state = i + i_state_low_band;
                         if (sigc_band_all[start_k+i].real() == std::numeric_limits<double>::quiet_NaN())
                         {
                             lib_printf("Warning! QPE solver failed for spin %d, kpoint %d, state %d\n",
@@ -331,14 +341,14 @@ void driver::task_g0w0_band()
                 for (int i_kpoint = 0; i_kpoint < n_kpts; i_kpoint++)
                 {
                     const auto &k = kfrac_band[i_kpoint];
-                    const size_t start_k = (i_spin * n_kpts + i_kpoint) * n_states_calc;
+                    const int start_k = (i_spin * n_kpts + i_kpoint) * n_states_band_calc;
 
                     ofs_ks << setw(5) << i_kpoint + 1 << setw(15) << setprecision(7) << k.x << setw(15) << setprecision(7) << k.y << std::setw(15) << std::setprecision(7) << k.z;
                     ofs_gw << setw(5) << i_kpoint + 1 << setw(15) << setprecision(7) << k.x << setw(15) << setprecision(7) << k.y << std::setw(15) << std::setprecision(7) << k.z;
                     ofs_hf << setw(5) << i_kpoint + 1 << setw(15) << setprecision(7) << k.x << setw(15) << setprecision(7) << k.y << std::setw(15) << std::setprecision(7) << k.z;
-                    for (int i = 0; i < n_states_calc; i++)
+                    for (int i = 0; i < n_states_band_calc; i++)
                     {
-                        const int i_state = i + i_state_low;
+                        const int i_state = i + i_state_low_band;
                         const auto occ_state = mf_band.get_weight()[i_spin](i_kpoint, i_state) * mf_band.get_n_kpoints();
                         const auto eks_state = mf_band.get_eigenvals()[i_spin](i_kpoint, i_state) * HA2EV;
                         const auto vxc_state = vxc_band_all[i_spin](i_kpoint, i_state) * HA2EV;

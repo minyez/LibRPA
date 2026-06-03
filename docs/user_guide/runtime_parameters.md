@@ -55,6 +55,8 @@ For example, the default `prefix_ri_coeff = Cs_data` matches files such as `Cs_d
 | `cs_threshold`        | Screening threshold when reading the RI coefficient data             | double | 1e-6                                           |              |
 | `use_spinor_wfc`      | Read wavefunctions in spinor format                                  | bool   | `false`                                        | Experimental |
 | `output_energy_qp`    | Output quasiparticle energies for external BSE workflows             | bool   | `false`                                        | Experimental |
+| `i_state_low`         | First state index for printed QP energies (inclusive)                | int    | 0                                              | Experimental |
+| `i_state_high`        | Last state index for printed QP energies (exclusive)                 | int    | 999999 (essentially all states)                | Experimental |
 | `output_hamgnn`       | Output GW energies for HamGNN machine-learning workflows             | bool   | `false`                                        | Experimental |
 | `use_pyatb`           | Use PyATB mean-field data for dielectric head/wing calculations      | bool   | `false`                                        | Experimental |
 | `output_gw_spec_func` | Output GW spectral-function data                                     | bool   | `false`                                        | Experimental |
@@ -65,6 +67,10 @@ For example, the default `prefix_ri_coeff = Cs_data` matches files such as `Cs_d
 | `sf_sigc_omega_shift` | Broadening/shift used for correlation self-energy in spectral output | double | 0.01                                           | Experimental |
 | `sf_state_start`      | First state index for spectral-function output (inclusive)           | int    | 0                                              | Experimental |
 | `sf_state_end`        | Last state index for spectral-function output (exclusive)            | int    | 10000                                          | Experimental |
+
+When either `i_state_low` or `i_state_high` is negative, the missing bound is selected from
+the energy window `[E_F - 0.5 * gap - 0.5 Ha, E_F + 0.5 * gap + 0.5 Ha]`, where `gap` is the energy gap of the mean-field reference.
+An `i_state_high` value larger than the number of states is truncated to the number of states.
 
 (common-parameter-settings-for-librpa)=
 ## Common Parameter Settings for LibRPA

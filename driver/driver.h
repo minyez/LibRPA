@@ -13,6 +13,8 @@ namespace driver
 // Runtime options specific to the driver
 struct DriverParams
 {
+    static constexpr int default_i_state_high = 999999;
+
     std::string task;
     std::string constants_choice;
     std::string input_dir;
@@ -37,6 +39,11 @@ struct DriverParams
 
     // Output energy_qp file for external BSE calculation
     bool output_energy_qp;
+
+    // State range for printing quasi-particle energies, [i_state_low, i_state_high).
+    // Negative values enable automatic selection from a Fermi-level/gap energy window.
+    int i_state_low;
+    int i_state_high;
 
     // Output gw energy for HamGNN machine learning
     bool output_hamgnn;
