@@ -9,22 +9,24 @@ The input files are the legacy ``<input_prefix>_*.txt`` files consumed by
   rectangular matrix blocks with complex<double> payloads.
 
 The output file ``<output_prefix>_<iq>.dat`` is binary.
-Currently supported reader is version 1, whose format is
+Reader version 1 stores deterministic atom-pair blocks:
 
 * int32 marker for target reader version
 * int32 q-point index, 1-based
 * int32 number of auxiliary basis functions, Naux
 * int32 value type flag: 0 for real double data, 1 for complex double data
-* Naux*(Naux+1)/2 doubles if real, or interleaved real/imag double pairs if complex
-
-The matrix payload always stores the upper triangle in row-major triangular
-order: row 1 columns 1..Naux, then row 2 columns 2..Naux, and so on. If only
-the lower half is present in the legacy input, the corresponding entries are
-conjugate-transposed while writing.
+* int32 number of atoms, Natoms
+* Natoms int32 values with per-atom auxiliary basis sizes
+* dense row-major atom-pair blocks for (0,0), (0,1), ..., (0,Natoms-1),
+  (1,1), ..., with full dense diagonal blocks
 
 When legacy inputs are known to be full or upper-triangular, ``--skip-lower``
 can be used to ignore lower-triangular entries instead of reading them into the
 new output.
+
+For large streaming conversions split across multiple legacy input files,
+``--workers`` can process those input files concurrently while sharing the
+per-q output files through positional writes.
 
 When possible, the script also writes ``bz_sampling_out`` from the legacy
 ``stru_out`` k-grid tail and the q-point weights in the Coulomb block headers.
@@ -35,10 +37,13 @@ from __future__ import annotations
 
 import argparse
 import array
+from bisect import bisect_right
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import re
 import struct
 import sys
+import threading
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
@@ -48,8 +53,8 @@ COMPLEX_FLAG = 1
 Q_WEIGHT_TOL = 1e-10
 
 # Version markers. Must match those in driver/read_data.cpp
-COULOMB_V1_MARKER = 20129431
-COULOMB_V1_HEADER_SIZE = 4 * 4
+COULOMB_V1_MARKER = 20129432
+COULOMB_V1_HEADER_BASE_SIZE = 5 * 4
 
 
 class ConversionError(RuntimeError):
@@ -187,10 +192,15 @@ class CoulombMatrix:
         real_tol: float,
         force_complex: bool,
         overwrite: bool,
+        atom_layout: Optional["AtomLayout"] = None,
     ) -> Tuple[str, int]:
-        if target_reader_version == 1:
-            return self._write_1(output_path, endian, real_tol, force_complex, overwrite)
-        raise ValueError("Unknown target reader version")
+        if target_reader_version != 1:
+            raise ValueError("Unknown target reader version")
+        if atom_layout is None:
+            raise ConversionError("reader v1 output requires per-atom auxiliary sizes")
+        return self._write_1(
+            output_path, endian, real_tol, force_complex, overwrite, atom_layout
+        )
 
     def _write_1(
         self,
@@ -199,7 +209,9 @@ class CoulombMatrix:
         real_tol: float,
         force_complex: bool,
         overwrite: bool,
+        atom_layout: "AtomLayout",
     ) -> Tuple[str, int]:
+        atom_layout.validate_naux(self.naux, output_path)
         if output_path.exists() and not overwrite:
             raise ConversionError(
                 f"{output_path} already exists. Please clean up old output files manually "
@@ -210,24 +222,51 @@ class CoulombMatrix:
         tmp_path = output_path.with_name(output_path.name + ".tmp")
         try:
             with tmp_path.open("wb") as handle:
-                handle.write(struct.pack(endian + "iiii",
-                             COULOMB_V1_MARKER, self.iq, self.naux, flag))
-                self.write_upper_triangle(handle, endian, flag)
+                handle.write(
+                    struct.pack(
+                        endian + "iiiii",
+                        COULOMB_V1_MARKER,
+                        self.iq,
+                        self.naux,
+                        flag,
+                        atom_layout.natoms,
+                    )
+                )
+                handle.write(struct.pack(endian + f"{atom_layout.natoms}i", *atom_layout.atom_naux))
+                self.write_atom_pair_blocks(handle, endian, flag, atom_layout)
             os.replace(tmp_path, output_path)
         finally:
             if tmp_path.exists():
                 tmp_path.unlink()
         return kind, output_path.stat().st_size
 
-    def write_upper_triangle(self, handle, endian: str, flag: int) -> None:
-        for row in range(self.naux):
-            row_values = array.array("d")
-            for col in range(row, self.naux):
-                real, imag = self.upper_value(row, col)
-                row_values.append(real)
-                if flag == COMPLEX_FLAG:
-                    row_values.append(imag)
-            write_doubles(handle, row_values, endian)
+    def write_atom_pair_blocks(
+        self,
+        handle,
+        endian: str,
+        flag: int,
+        atom_layout: "AtomLayout",
+    ) -> None:
+        for i_atom in range(atom_layout.natoms):
+            row_begin = atom_layout.offsets[i_atom]
+            for j_atom in range(i_atom, atom_layout.natoms):
+                col_begin = atom_layout.offsets[j_atom]
+                nrow = atom_layout.atom_naux[i_atom]
+                ncol = atom_layout.atom_naux[j_atom]
+                for local_row in range(nrow):
+                    row = row_begin + local_row
+                    row_values = array.array("d")
+                    for local_col in range(ncol):
+                        col = col_begin + local_col
+                        if row <= col:
+                            real, imag = self.upper_value(row, col)
+                        else:
+                            real, imag = self.upper_value(col, row)
+                            imag = -imag
+                        row_values.append(real)
+                        if flag == COMPLEX_FLAG:
+                            row_values.append(imag)
+                    write_doubles(handle, row_values, endian)
 
 
 def endian_prefix(name: str) -> str:
@@ -293,12 +332,60 @@ def validate_block(
         )
 
 
-def upper_tri_count(naux: int) -> int:
-    return naux * (naux + 1) // 2
+def atom_pair_index(i_atom: int, j_atom: int, natoms: int) -> int:
+    if i_atom > j_atom:
+        raise ValueError("atom-pair index expects i_atom <= j_atom")
+    return i_atom * natoms - i_atom * (i_atom - 1) // 2 + (j_atom - i_atom)
 
 
-def upper_tri_index(row: int, col: int, naux: int) -> int:
-    return row * naux - row * (row - 1) // 2 + (col - row)
+class AtomLayout:
+    def __init__(self, atom_naux: Sequence[int]) -> None:
+        if not atom_naux:
+            raise ConversionError("reader v1 output requires at least one atom auxiliary size")
+        self.atom_naux = [int(nb) for nb in atom_naux]
+        if any(nb <= 0 for nb in self.atom_naux):
+            raise ConversionError(f"invalid per-atom auxiliary sizes: {self.atom_naux}")
+        self.natoms = len(self.atom_naux)
+        self.offsets = [0]
+        for nb in self.atom_naux:
+            self.offsets.append(self.offsets[-1] + nb)
+        self.naux = self.offsets[-1]
+        self.pair_offsets = [0] * (self.natoms * (self.natoms + 1) // 2 + 1)
+        payload_offset = 0
+        for i_atom in range(self.natoms):
+            for j_atom in range(i_atom, self.natoms):
+                index = atom_pair_index(i_atom, j_atom, self.natoms)
+                self.pair_offsets[index] = payload_offset
+                payload_offset += self.atom_naux[i_atom] * self.atom_naux[j_atom]
+        self.pair_offsets[-1] = payload_offset
+
+    def validate_naux(self, naux: int, path: Path) -> None:
+        if self.naux != naux:
+            raise ConversionError(
+                f"{path}: reader v1 atom auxiliary sizes sum to {self.naux}, "
+                f"but Coulomb block has Naux={naux}"
+            )
+
+    def atom_for_aux(self, index: int) -> Tuple[int, int]:
+        if index < 0 or index >= self.naux:
+            raise ConversionError(
+                f"global auxiliary index {index} is outside [0, {self.naux})"
+            )
+        atom = bisect_right(self.offsets, index) - 1
+        return atom, index - self.offsets[atom]
+
+    def pair_payload_offset(self, i_atom: int, j_atom: int) -> int:
+        return self.pair_offsets[atom_pair_index(i_atom, j_atom, self.natoms)]
+
+    def pair_value_offset(self, i_atom: int, j_atom: int, i_local: int, j_local: int) -> int:
+        return (
+            self.pair_payload_offset(i_atom, j_atom)
+            + i_local * self.atom_naux[j_atom]
+            + j_local
+        )
+
+    def payload_value_count(self) -> int:
+        return self.pair_offsets[-1]
 
 
 class StreamingCoulombOutput:
@@ -310,12 +397,18 @@ class StreamingCoulombOutput:
         naux: int,
         endian: str,
         target_reader_version: int,
+        atom_layout: Optional[AtomLayout] = None,
     ) -> None:
         if target_reader_version != 1:
             raise ValueError("Unknown target reader version")
         self.iq = iq
         self.naux = naux
         self.endian = endian
+        self.target_reader_version = target_reader_version
+        self.atom_layout = atom_layout
+        if atom_layout is None:
+            raise ConversionError("reader v1 streaming output requires per-atom auxiliary sizes")
+        atom_layout.validate_naux(naux, output_dir / f"{output_prefix}_{iq}.dat")
         self.path = output_dir / f"{output_prefix}_{iq}.dat"
         self.tmp_path = self.path.with_name(self.path.name + ".tmp")
         if self.path.exists() or self.tmp_path.exists():
@@ -324,21 +417,81 @@ class StreamingCoulombOutput:
                 "old output files manually before rerunning."
             )
         self.fd = os.open(self.tmp_path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o644)
-        header = struct.pack(endian + "iiii", COULOMB_V1_MARKER, iq, naux, COMPLEX_FLAG)
+        header = struct.pack(
+            endian + "iiiii",
+            COULOMB_V1_MARKER,
+            iq,
+            naux,
+            COMPLEX_FLAG,
+            atom_layout.natoms,
+        )
         os.write(self.fd, header)
-        os.ftruncate(self.fd, COULOMB_V1_HEADER_SIZE + upper_tri_count(naux) * 16)
+        os.write(
+            self.fd,
+            struct.pack(endian + f"{atom_layout.natoms}i", *atom_layout.atom_naux),
+        )
+        os.ftruncate(
+            self.fd,
+            COULOMB_V1_HEADER_BASE_SIZE
+            + 4 * atom_layout.natoms
+            + atom_layout.payload_value_count() * 16,
+        )
         self.closed = False
 
     def _offset(self, row: int, col: int) -> int:
-        return COULOMB_V1_HEADER_SIZE + upper_tri_index(row, col, self.naux) * 16
+        assert self.atom_layout is not None
+        i_atom, i_local = self.atom_layout.atom_for_aux(row)
+        j_atom, j_local = self.atom_layout.atom_for_aux(col)
+        if i_atom <= j_atom:
+            return self._offset_by_local(i_atom, j_atom, i_local, j_local)
+        return self._offset_by_local(j_atom, i_atom, j_local, i_local)
+
+    def _offset_by_local(
+        self,
+        i_atom: int,
+        j_atom: int,
+        i_local: int,
+        j_local: int,
+    ) -> int:
+        assert self.atom_layout is not None
+        return (
+            COULOMB_V1_HEADER_BASE_SIZE
+            + 4 * self.atom_layout.natoms
+            + self.atom_layout.pair_value_offset(i_atom, j_atom, i_local, j_local) * 16
+        )
 
     def write_pair(self, row: int, col: int, real: float, imag: float) -> None:
-        if row <= col:
-            out_row, out_col, out_imag = row, col, imag
+        assert self.atom_layout is not None
+        i_atom, i_local = self.atom_layout.atom_for_aux(row)
+        j_atom, j_local = self.atom_layout.atom_for_aux(col)
+        if i_atom < j_atom:
+            payload = struct.pack(self.endian + "dd", real, imag)
+            os.pwrite(
+                self.fd,
+                payload,
+                self._offset_by_local(i_atom, j_atom, i_local, j_local),
+            )
+        elif i_atom > j_atom:
+            payload = struct.pack(self.endian + "dd", real, -imag)
+            os.pwrite(
+                self.fd,
+                payload,
+                self._offset_by_local(j_atom, i_atom, j_local, i_local),
+            )
         else:
-            out_row, out_col, out_imag = col, row, -imag
-        payload = struct.pack(self.endian + "dd", real, out_imag)
-        os.pwrite(self.fd, payload, self._offset(out_row, out_col))
+            payload = struct.pack(self.endian + "dd", real, imag)
+            os.pwrite(
+                self.fd,
+                payload,
+                self._offset_by_local(i_atom, i_atom, i_local, j_local),
+            )
+            if i_local != j_local:
+                payload_conj = struct.pack(self.endian + "dd", real, -imag)
+                os.pwrite(
+                    self.fd,
+                    payload_conj,
+                    self._offset_by_local(i_atom, i_atom, j_local, i_local),
+                )
 
     def write_row_segment(
         self,
@@ -347,25 +500,61 @@ class StreamingCoulombOutput:
         row_values: array.array,
         write_lower_part: bool,
     ) -> None:
+        assert self.atom_layout is not None
         ncol = len(row_values) // 2
-        col_end = col_begin + ncol - 1
+        row_atom, row_local = self.atom_layout.atom_for_aux(row)
+        col = col_begin
+        while col < col_begin + ncol:
+            col_atom, col_local = self.atom_layout.atom_for_aux(col)
+            span_end = min(
+                col_begin + ncol,
+                self.atom_layout.offsets[col_atom + 1],
+            )
+            span_pairs_begin = 2 * (col - col_begin)
+            span_pairs_end = 2 * (span_end - col_begin)
 
-        if write_lower_part:
-            lower_end = min(row - 1, col_end)
-            for col in range(col_begin, lower_end + 1):
-                pair_begin = 2 * (col - col_begin)
-                self.write_pair(row, col, row_values[pair_begin], row_values[pair_begin + 1])
-
-        upper_begin = max(row, col_begin)
-        if upper_begin > col_end:
-            return
-        pair_begin = 2 * (upper_begin - col_begin)
-        upper_values = row_values[pair_begin:]
-        os.pwrite(
-            self.fd,
-            doubles_to_bytes(upper_values, self.endian),
-            self._offset(row, upper_begin),
-        )
+            if row_atom < col_atom:
+                os.pwrite(
+                    self.fd,
+                    doubles_to_bytes(row_values[span_pairs_begin:span_pairs_end], self.endian),
+                    self._offset_by_local(row_atom, col_atom, row_local, col_local),
+                )
+            elif row_atom == col_atom:
+                exact_col = col
+                exact_pairs_begin = span_pairs_begin
+                if not write_lower_part and exact_col < row:
+                    skip_cols = min(row - exact_col, span_end - exact_col)
+                    exact_col += skip_cols
+                    exact_pairs_begin += 2 * skip_cols
+                if exact_col < span_end:
+                    exact_local = exact_col - self.atom_layout.offsets[col_atom]
+                    os.pwrite(
+                        self.fd,
+                        doubles_to_bytes(row_values[exact_pairs_begin:span_pairs_end], self.endian),
+                        self._offset_by_local(row_atom, row_atom, row_local, exact_local),
+                    )
+                    for col2 in range(exact_col, span_end):
+                        col2_local = col2 - self.atom_layout.offsets[col_atom]
+                        if col2_local == row_local:
+                            continue
+                        pair_begin = 2 * (col2 - col_begin)
+                        real = row_values[pair_begin]
+                        imag = row_values[pair_begin + 1]
+                        os.pwrite(
+                            self.fd,
+                            struct.pack(self.endian + "dd", real, -imag),
+                            self._offset_by_local(row_atom, row_atom, col2_local, row_local),
+                        )
+            elif write_lower_part:
+                for col2 in range(col, span_end):
+                    pair_begin = 2 * (col2 - col_begin)
+                    self.write_pair(
+                        row,
+                        col2,
+                        row_values[pair_begin],
+                        row_values[pair_begin + 1],
+                    )
+            col = span_end
 
     def write_lower_transpose_tile(
         self,
@@ -375,18 +564,17 @@ class StreamingCoulombOutput:
         tile_values: array.array,
         tile_nrow: int,
     ) -> None:
-        for local_col in range(ncol):
-            out_row = col_begin + local_col
-            row_values = array.array("d")
-            for local_row in range(tile_nrow):
+        for local_row in range(tile_nrow):
+            row = row_begin + local_row
+            for local_col in range(ncol):
+                col = col_begin + local_col
                 pair_begin = 2 * (local_row * ncol + local_col)
-                row_values.append(tile_values[pair_begin])
-                row_values.append(-tile_values[pair_begin + 1])
-            os.pwrite(
-                self.fd,
-                doubles_to_bytes(row_values, self.endian),
-                self._offset(out_row, row_begin),
-            )
+                self.write_pair(
+                    row,
+                    col,
+                    tile_values[pair_begin],
+                    tile_values[pair_begin + 1],
+                )
 
     def close(self, commit: bool) -> Tuple[int, int, str, int, Path]:
         if self.closed:
@@ -410,19 +598,44 @@ def streaming_output_for(
     endian: str,
     target_reader_version: int,
     path: Path,
+    atom_layout: Optional[AtomLayout],
 ) -> StreamingCoulombOutput:
     output = outputs.get(iq)
     if output is None:
         output = StreamingCoulombOutput(
-            output_dir, output_prefix, iq, naux, endian, target_reader_version
+            output_dir, output_prefix, iq, naux, endian, target_reader_version, atom_layout
         )
         outputs[iq] = output
     elif output.naux != naux:
         raise ConversionError(
             f"{path}: q-point {iq} appears with inconsistent Naux values "
             f"({output.naux} and {naux})"
-        )
+    )
     return output
+
+
+def streaming_output_for_locked(
+    outputs: Dict[int, StreamingCoulombOutput],
+    output_dir: Path,
+    output_prefix: str,
+    iq: int,
+    naux: int,
+    endian: str,
+    target_reader_version: int,
+    path: Path,
+    atom_layout: Optional[AtomLayout],
+    lock: Optional[threading.Lock],
+) -> StreamingCoulombOutput:
+    if lock is None:
+        return streaming_output_for(
+            outputs, output_dir, output_prefix, iq, naux, endian,
+            target_reader_version, path, atom_layout
+        )
+    with lock:
+        return streaming_output_for(
+            outputs, output_dir, output_prefix, iq, naux, endian,
+            target_reader_version, path, atom_layout
+        )
 
 
 def stream_buffer_nrows(ncol: int, stream_buffer_mb: float) -> int:
@@ -464,6 +677,20 @@ def record_q_weight(q_weights: Dict[int, float], iq: int, q_weight: float, path:
             f"{path}: q-point {iq} appears with inconsistent weights "
             f"({old_weight:.16e} and {q_weight:.16e})"
         )
+
+
+def record_q_weight_locked(
+    q_weights: Dict[int, float],
+    iq: int,
+    q_weight: float,
+    path: Path,
+    lock: Optional[threading.Lock],
+) -> None:
+    if lock is None:
+        record_q_weight(q_weights, iq, q_weight, path)
+        return
+    with lock:
+        record_q_weight(q_weights, iq, q_weight, path)
 
 
 def binary_layout_matches(path: Path, endian: str) -> bool:
@@ -648,8 +875,11 @@ def parse_binary_file_streaming(
     q_weights: Dict[int, float],
     endian: str,
     target_reader_version: int,
+    atom_layout: Optional[AtomLayout],
     stream_buffer_mb: float,
     skip_lower: bool,
+    q_weight_lock: Optional[threading.Lock] = None,
+    output_lock: Optional[threading.Lock] = None,
 ) -> Tuple[int, int]:
     with path.open("rb") as handle:
         n_irk_points, n_irk_points_local = struct.unpack(
@@ -663,7 +893,7 @@ def parse_binary_file_streaming(
             )
             (q_weight,) = struct.unpack(endian + "d", block_header[24:32])
             validate_block(path, naux, row_begin, row_end, col_begin, col_end, iq)
-            record_q_weight(q_weights, iq, q_weight, path)
+            record_q_weight_locked(q_weights, iq, q_weight, path, q_weight_lock)
 
             nrow = row_end - row_begin + 1
             ncol = col_end - col_begin + 1
@@ -673,9 +903,9 @@ def parse_binary_file_streaming(
                 handle.seek(nrow * ncol * 16, os.SEEK_CUR)
                 continue
 
-            output = streaming_output_for(
+            output = streaming_output_for_locked(
                 outputs, output_dir, output_prefix, iq, naux, endian,
-                target_reader_version, path
+                target_reader_version, path, atom_layout, output_lock
             )
             if row_begin > col_end:
                 rows_per_tile = stream_buffer_nrows(ncol, stream_buffer_mb)
@@ -733,8 +963,11 @@ def parse_text_file_streaming(
     q_weights: Dict[int, float],
     endian: str,
     target_reader_version: int,
+    atom_layout: Optional[AtomLayout],
     stream_buffer_mb: float,
     skip_lower: bool,
+    q_weight_lock: Optional[threading.Lock] = None,
+    output_lock: Optional[threading.Lock] = None,
 ) -> Tuple[int, int]:
     stream = TokenStream(path)
     try:
@@ -760,7 +993,7 @@ def parse_text_file_streaming(
             iq = stream.next_int("q-point index")
             q_weight = stream.next_float("q-point weight")
             validate_block(path, naux, row_begin, row_end, col_begin, col_end, iq)
-            record_q_weight(q_weights, iq, q_weight, path)
+            record_q_weight_locked(q_weights, iq, q_weight, path, q_weight_lock)
 
             ncol = col_end - col_begin + 1
             row_begin0 = row_begin - 1
@@ -773,9 +1006,9 @@ def parse_text_file_streaming(
                 nblocks += 1
                 continue
 
-            output = streaming_output_for(
+            output = streaming_output_for_locked(
                 outputs, output_dir, output_prefix, iq, naux, endian,
-                target_reader_version, path
+                target_reader_version, path, atom_layout, output_lock
             )
             if row_begin > col_end:
                 nrow = row_end - row_begin + 1
@@ -1054,6 +1287,198 @@ def maybe_generate_bz_sampling(
     return output_bz_path
 
 
+def parse_atom_naux_argument(text: str) -> List[int]:
+    parts = [part for part in re.split(r"[\s,]+", text.strip()) if part]
+    if not parts:
+        raise ConversionError("--atom-naux was provided but no sizes were found")
+    try:
+        values = [int(part) for part in parts]
+    except ValueError as exc:
+        raise ConversionError(f"invalid --atom-naux value {text!r}") from exc
+    if any(value <= 0 for value in values):
+        raise ConversionError(f"--atom-naux sizes must be positive: {values}")
+    return values
+
+
+def read_atom_types_from_stru(stru_path: Path) -> List[int]:
+    stream = TokenStream(stru_path)
+    try:
+        for _ in range(18):
+            stream.next_float("lattice or reciprocal lattice vector")
+
+        n_atoms = stream.next_int("number of atoms")
+        atom_types = []
+        for _ in range(n_atoms):
+            stream.next_float("atom x coordinate")
+            stream.next_float("atom y coordinate")
+            stream.next_float("atom z coordinate")
+            atom_type = stream.next_int("atom type")
+            if atom_type <= 0:
+                raise ConversionError(f"{stru_path}: invalid atom type {atom_type}")
+            atom_types.append(atom_type - 1)
+    finally:
+        stream.close()
+    return atom_types
+
+
+def read_atom_naux_from_basis_and_stru(basis_path: Path, stru_path: Path) -> List[int]:
+    atom_types = read_atom_types_from_stru(stru_path)
+    stream = TokenStream(basis_path)
+    try:
+        ntypes = stream.next_int("number of atom types")
+        stream.next_int("total number of wavefunction basis functions")
+        stream.next_int("total number of auxiliary basis functions")
+        stream.next_token("basis kind")
+        type_naux: Dict[int, int] = {}
+        for _ in range(ntypes):
+            atom_type = stream.next_int("atom type") - 1
+            stream.next_int("number of wavefunction basis functions for atom type")
+            naux = stream.next_int("number of auxiliary basis functions for atom type")
+            if atom_type < 0 or naux <= 0:
+                raise ConversionError(f"{basis_path}: invalid atom type basis entry")
+            type_naux[atom_type] = naux
+    finally:
+        stream.close()
+
+    try:
+        return [type_naux[atom_type] for atom_type in atom_types]
+    except KeyError as exc:
+        raise ConversionError(
+            f"{basis_path}: missing basis entry for atom type {exc.args[0] + 1}"
+        ) from exc
+
+
+def cs_binary_layout_matches(path: Path, endian: str) -> bool:
+    file_size = path.stat().st_size
+    if file_size < 12:
+        return False
+    try:
+        with path.open("rb") as handle:
+            header = handle.read(12)
+            if len(header) != 12:
+                return False
+            natom, ncell, nblocks = struct.unpack(endian + "iii", header)
+            if natom <= 0 or ncell < 0 or nblocks < 0:
+                return False
+            pos = 12
+            for _ in range(nblocks):
+                block_header = handle.read(32)
+                if len(block_header) != 32:
+                    return False
+                dims = struct.unpack(endian + "iiiiiiii", block_header)
+                if dims[0] <= 0 or dims[0] > natom or dims[1] <= 0 or dims[1] > natom:
+                    return False
+                if dims[5] <= 0 or dims[6] <= 0 or dims[7] <= 0:
+                    return False
+                payload_size = dims[5] * dims[6] * dims[7] * 8
+                pos += 32 + payload_size
+                if pos > file_size:
+                    return False
+                handle.seek(payload_size, os.SEEK_CUR)
+            return pos == file_size
+    except OSError:
+        return False
+
+
+def parse_cs_text_atom_naux(path: Path, atom_naux: Dict[int, int]) -> int:
+    stream = TokenStream(path)
+    try:
+        natom = stream.next_int("number of atoms in Cs file")
+        stream.next_int("number of cells in Cs file")
+        while True:
+            first = stream.next_optional()
+            if first is None:
+                break
+            ia1_token, line_no = first
+            try:
+                ia1 = int(ia1_token) - 1
+            except ValueError as exc:
+                raise ConversionError(
+                    f"{path}:{line_no}: expected atom index, got {ia1_token!r}"
+                ) from exc
+            stream.next_int("second atom index")
+            stream.next_int("cell index 1")
+            stream.next_int("cell index 2")
+            stream.next_int("cell index 3")
+            n_i = stream.next_int("number of wavefunction basis functions on atom I")
+            n_j = stream.next_int("number of wavefunction basis functions on atom J")
+            n_mu = stream.next_int("number of auxiliary basis functions on atom I")
+            if ia1 < 0 or ia1 >= natom or n_i <= 0 or n_j <= 0 or n_mu <= 0:
+                raise ConversionError(f"{path}: invalid Cs block header")
+            atom_naux[ia1] = n_mu
+            for _ in range(n_i * n_j * n_mu):
+                stream.next_float("RI coefficient")
+    finally:
+        stream.close()
+    return natom
+
+
+def parse_cs_binary_atom_naux(path: Path, endian: str, atom_naux: Dict[int, int]) -> int:
+    with path.open("rb") as handle:
+        natom, _ncell, nblocks = struct.unpack(
+            endian + "iii", read_exact(handle, 12, path, "binary Cs header")
+        )
+        for _ in range(nblocks):
+            dims = struct.unpack(
+                endian + "iiiiiiii",
+                read_exact(handle, 32, path, "binary Cs block header"),
+            )
+            ia1 = dims[0] - 1
+            if ia1 < 0 or ia1 >= natom or dims[5] <= 0 or dims[6] <= 0 or dims[7] <= 0:
+                raise ConversionError(f"{path}: invalid binary Cs block header")
+            atom_naux[ia1] = dims[7]
+            handle.seek(dims[5] * dims[6] * dims[7] * 8, os.SEEK_CUR)
+    return natom
+
+
+def read_atom_naux_from_cs(input_dir: Path, cs_prefix: str, endian: str) -> List[int]:
+    files = sorted(
+        (path for path in input_dir.glob(f"{cs_prefix}*") if path.is_file()),
+        key=natural_key,
+    )
+    if not files:
+        raise ConversionError(
+            "reader v1 output requires per-atom auxiliary sizes, but neither basis/structure "
+            f"metadata nor files matching {cs_prefix}* were found"
+        )
+
+    atom_naux_map: Dict[int, int] = {}
+    natom_seen: Optional[int] = None
+    for path in files:
+        if cs_binary_layout_matches(path, endian):
+            natom = parse_cs_binary_atom_naux(path, endian, atom_naux_map)
+        else:
+            natom = parse_cs_text_atom_naux(path, atom_naux_map)
+        if natom_seen is None:
+            natom_seen = natom
+        elif natom_seen != natom:
+            raise ConversionError(
+                f"{path}: inconsistent atom count in Cs files ({natom_seen} and {natom})"
+            )
+
+    assert natom_seen is not None
+    missing = [iat + 1 for iat in range(natom_seen) if iat not in atom_naux_map]
+    if missing:
+        raise ConversionError(
+            "could not infer auxiliary sizes for atom(s) "
+            + ", ".join(str(iat) for iat in missing)
+            + " from Cs files"
+        )
+    return [atom_naux_map[iat] for iat in range(natom_seen)]
+
+
+def resolve_atom_layout(args: argparse.Namespace, input_dir: Path, endian: str) -> AtomLayout:
+    if args.atom_naux:
+        return AtomLayout(parse_atom_naux_argument(args.atom_naux))
+
+    basis_path = input_dir / args.basis_name
+    stru_path = input_dir / args.stru_name
+    if basis_path.exists() and stru_path.exists():
+        return AtomLayout(read_atom_naux_from_basis_and_stru(basis_path, stru_path))
+
+    return AtomLayout(read_atom_naux_from_cs(input_dir, args.ri_prefix, endian))
+
+
 def convert(args: argparse.Namespace) -> None:
     input_dir = args.input_dir.resolve()
     output_dir = args.output_dir.resolve() if args.output_dir else input_dir
@@ -1061,6 +1486,7 @@ def convert(args: argparse.Namespace) -> None:
     check_no_existing_output_files(output_dir, args.output_prefix)
 
     endian = endian_prefix(args.endian)
+    atom_layout = resolve_atom_layout(args, input_dir, endian)
     input_files = discover_input_files(input_dir, args.input_prefix, args.output_prefix)
     if not input_files:
         raise ConversionError(
@@ -1071,7 +1497,7 @@ def convert(args: argparse.Namespace) -> None:
         if args.check_complete:
             raise ConversionError("--stream-complex cannot be combined with --check-complete")
         q_weights, total_blocks, format_counts, outputs = convert_streaming_complex(
-            args, input_files, input_dir, output_dir, endian
+            args, input_files, input_dir, output_dir, endian, atom_layout
         )
         if not args.no_bz_sampling:
             maybe_generate_bz_sampling(
@@ -1112,6 +1538,7 @@ def convert(args: argparse.Namespace) -> None:
             args.real_tol,
             args.force_complex,
             False,
+            atom_layout,
         )
         outputs.append((iq, matrix.naux, kind, nbytes, output_path))
 
@@ -1132,6 +1559,7 @@ def convert_streaming_complex(
     input_dir: Path,
     output_dir: Path,
     endian: str,
+    atom_layout: Optional[AtomLayout],
 ) -> Tuple[Dict[int, float], int, Dict[str, int], List[Tuple[int, int, str, int, Path]]]:
     del input_dir
     outputs_streaming: Dict[int, StreamingCoulombOutput] = {}
@@ -1140,11 +1568,9 @@ def convert_streaming_complex(
     format_counts = {"text": 0, "binary": 0}
     committed = False
     try:
-        for path in input_files:
-            input_format = detect_format(path, endian)
-            format_counts[input_format] += 1
-            if input_format == "binary":
-                _nirk, nblocks = parse_binary_file_streaming(
+        if args.workers <= 1 or len(input_files) == 1:
+            for path in input_files:
+                input_format, nblocks = convert_streaming_complex_file(
                     path,
                     outputs_streaming,
                     output_dir,
@@ -1152,22 +1578,48 @@ def convert_streaming_complex(
                     q_weights,
                     endian,
                     args.target_reader_version,
+                    atom_layout,
                     args.stream_buffer_mb,
                     args.skip_lower,
+                    None,
+                    None,
                 )
-            else:
-                _nirk, nblocks = parse_text_file_streaming(
-                    path,
-                    outputs_streaming,
-                    output_dir,
-                    args.output_prefix,
-                    q_weights,
-                    endian,
-                    args.target_reader_version,
-                    args.stream_buffer_mb,
-                    args.skip_lower,
-                )
-            total_blocks += nblocks
+                format_counts[input_format] += 1
+                total_blocks += nblocks
+        else:
+            q_weight_lock = threading.Lock()
+            output_lock = threading.Lock()
+            first_error: Optional[BaseException] = None
+            with ThreadPoolExecutor(max_workers=args.workers) as executor:
+                futures = [
+                    executor.submit(
+                        convert_streaming_complex_file,
+                        path,
+                        outputs_streaming,
+                        output_dir,
+                        args.output_prefix,
+                        q_weights,
+                        endian,
+                        args.target_reader_version,
+                        atom_layout,
+                        args.stream_buffer_mb,
+                        args.skip_lower,
+                        q_weight_lock,
+                        output_lock,
+                    )
+                    for path in input_files
+                ]
+                for future in as_completed(futures):
+                    try:
+                        input_format, nblocks = future.result()
+                    except BaseException as exc:
+                        if first_error is None:
+                            first_error = exc
+                    else:
+                        format_counts[input_format] += 1
+                        total_blocks += nblocks
+            if first_error is not None:
+                raise first_error
 
         outputs = [
             output.close(commit=True)
@@ -1179,6 +1631,54 @@ def convert_streaming_complex(
         if not committed:
             for output in outputs_streaming.values():
                 output.close(commit=False)
+
+
+def convert_streaming_complex_file(
+    path: Path,
+    outputs_streaming: Dict[int, StreamingCoulombOutput],
+    output_dir: Path,
+    output_prefix: str,
+    q_weights: Dict[int, float],
+    endian: str,
+    target_reader_version: int,
+    atom_layout: Optional[AtomLayout],
+    stream_buffer_mb: float,
+    skip_lower: bool,
+    q_weight_lock: Optional[threading.Lock],
+    output_lock: Optional[threading.Lock],
+) -> Tuple[str, int]:
+    input_format = detect_format(path, endian)
+    if input_format == "binary":
+        _nirk, nblocks = parse_binary_file_streaming(
+            path,
+            outputs_streaming,
+            output_dir,
+            output_prefix,
+            q_weights,
+            endian,
+            target_reader_version,
+            atom_layout,
+            stream_buffer_mb,
+            skip_lower,
+            q_weight_lock,
+            output_lock,
+        )
+    else:
+        _nirk, nblocks = parse_text_file_streaming(
+            path,
+            outputs_streaming,
+            output_dir,
+            output_prefix,
+            q_weights,
+            endian,
+            target_reader_version,
+            atom_layout,
+            stream_buffer_mb,
+            skip_lower,
+            q_weight_lock,
+            output_lock,
+        )
+    return input_format, nblocks
 
 
 def print_conversion_summary(
@@ -1244,6 +1744,28 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Targeting version of Coulomb reader of driver (default: 1)",
     )
     parser.add_argument(
+        "--atom-naux",
+        help=(
+            "comma- or whitespace-separated per-atom auxiliary sizes for reader v1 output; "
+            "used when basis/structure metadata is unavailable"
+        ),
+    )
+    parser.add_argument(
+        "--basis-name",
+        default="basis_out",
+        help="basis metadata filename used for reader v1 output (default: basis_out)",
+    )
+    parser.add_argument(
+        "--stru-name",
+        default="stru_out",
+        help="structure metadata filename used for reader v1 output (default: stru_out)",
+    )
+    parser.add_argument(
+        "--ri-prefix",
+        default="Cs_data",
+        help="RI coefficient filename prefix used to infer reader v1 atom basis if needed (default: Cs_data)",
+    )
+    parser.add_argument(
         "--real-tol",
         type=float,
         default=1e-13,
@@ -1272,6 +1794,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "buffer size for transposing fully lower-triangular blocks in "
             "--stream-complex mode (default: 512)"
+        ),
+    )
+    parser.add_argument(
+        "-j",
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "number of legacy input files to process concurrently in "
+            "--stream-complex mode (default: 1)"
         ),
     )
     parser.add_argument(
@@ -1320,6 +1852,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         parser.error("--real-tol must be non-negative")
     if args.stream_buffer_mb < 0.0:
         parser.error("--stream-buffer-mb must be non-negative")
+    if args.workers < 1:
+        parser.error("--workers must be at least 1")
     try:
         convert(args)
     except ConversionError as exc:

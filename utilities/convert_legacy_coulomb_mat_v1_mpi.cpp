@@ -1,0 +1,1164 @@
+// Compile the code via
+//   mpicxx -std=c++17 -o convert_legacy_coulomb_mat_v1_mpi.exx convert_legacy_coulomb_mat_v1_mpi.cpp
+// Run as
+//   mpirun -np 4 convert_legacy_coulomb_mat_v1_mpi.exx
+#include <mpi.h>
+
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <limits>
+#include <map>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace fs = std::filesystem;
+
+namespace
+{
+
+constexpr int COULOMB_V1_MARKER = 20129432;
+constexpr int COMPLEX_FLAG = 1;
+constexpr int V1_HEADER_BASE_SIZE = 5 * static_cast<int>(sizeof(int));
+constexpr int LEGACY_COMPLEX_BYTES = 2 * static_cast<int>(sizeof(double));
+
+struct ComplexValue
+{
+    double real = 0.0;
+    double imag = 0.0;
+};
+
+static_assert(sizeof(ComplexValue) == 2 * sizeof(double),
+              "ComplexValue must be two contiguous doubles");
+
+struct Options
+{
+    fs::path input_dir = ".";
+    fs::path output_dir;
+    std::string input_prefix = "coulomb_mat";
+    std::string output_prefix = "coulomb_full_iq";
+    std::string basis_name = "basis_out";
+    std::string stru_name = "stru_out";
+    std::string ri_prefix = "Cs_data";
+    std::string atom_naux_arg;
+    int rows_per_task = 16;
+    bool quiet = false;
+};
+
+struct AtomLayout
+{
+    std::vector<int> atom_naux;
+    std::vector<int> atom_offsets;
+    std::vector<std::int64_t> pair_offsets;
+    int naux = 0;
+    int natoms = 0;
+
+    explicit AtomLayout(std::vector<int> atom_naux_in = {})
+        : atom_naux(std::move(atom_naux_in))
+    {
+        if (atom_naux.empty()) return;
+        natoms = static_cast<int>(atom_naux.size());
+        atom_offsets.resize(natoms + 1, 0);
+        for (int i = 0; i != natoms; ++i)
+        {
+            if (atom_naux[i] <= 0)
+                throw std::runtime_error("per-atom auxiliary sizes must be positive");
+            atom_offsets[i + 1] = atom_offsets[i] + atom_naux[i];
+        }
+        naux = atom_offsets.back();
+
+        pair_offsets.resize(static_cast<std::size_t>(natoms) * (natoms + 1) / 2 + 1);
+        std::int64_t offset = 0;
+        for (int I = 0; I != natoms; ++I)
+        {
+            for (int J = I; J != natoms; ++J)
+            {
+                pair_offsets[atom_pair_index(I, J)] = offset;
+                offset += static_cast<std::int64_t>(atom_naux[I]) * atom_naux[J];
+            }
+        }
+        pair_offsets.back() = offset;
+    }
+
+    std::size_t atom_pair_index(int I, int J) const
+    {
+        assert(I <= J);
+        return static_cast<std::size_t>(I) * natoms
+               - static_cast<std::size_t>(I) * (I - 1) / 2 + (J - I);
+    }
+
+    std::pair<int, int> atom_for_aux(int index) const
+    {
+        if (index < 0 || index >= naux)
+            throw std::runtime_error("auxiliary index out of range");
+        const auto it = std::upper_bound(atom_offsets.begin(), atom_offsets.end(), index);
+        const int atom = static_cast<int>(it - atom_offsets.begin()) - 1;
+        return {atom, index - atom_offsets[atom]};
+    }
+
+    MPI_Offset header_bytes() const
+    {
+        return V1_HEADER_BASE_SIZE + static_cast<MPI_Offset>(natoms) * sizeof(int);
+    }
+
+    MPI_Offset payload_value_count() const
+    {
+        return static_cast<MPI_Offset>(pair_offsets.back());
+    }
+
+    MPI_Offset pair_value_offset(int I, int J, int i_local, int j_local) const
+    {
+        return static_cast<MPI_Offset>(pair_offsets[atom_pair_index(I, J)])
+               + static_cast<MPI_Offset>(i_local) * atom_naux[J] + j_local;
+    }
+
+    MPI_Offset byte_offset(int I, int J, int i_local, int j_local) const
+    {
+        return header_bytes() + pair_value_offset(I, J, i_local, j_local)
+                                  * LEGACY_COMPLEX_BYTES;
+    }
+
+    MPI_Offset file_size_bytes() const
+    {
+        return header_bytes() + payload_value_count() * LEGACY_COMPLEX_BYTES;
+    }
+};
+
+struct BinaryTask
+{
+    int file_index = 0;
+    int iq = 0;
+    int naux = 0;
+    int row_begin = 0;
+    int nrows = 0;
+    int col_begin = 0;
+    int ncol = 0;
+    MPI_Offset payload_offset = 0;
+};
+
+struct Timing
+{
+    double read_seconds = 0.0;
+    double write_seconds = 0.0;
+};
+
+std::string usage()
+{
+    return
+        "Usage: mpirun -np N convert_legacy_coulomb_mat_v1_mpi [input_dir] [options]\n"
+        "\n"
+        "Converts legacy Coulomb files to reader-v1 atom-pair-block files.\n"
+        "Assumptions are fixed: stream complex output, skip lower input, target v1.\n"
+        "\n"
+        "Options:\n"
+        "  -O, --output-dir    DIR     Output directory (default: input_dir)\n"
+        "  -i, --input-prefix  PREFIX  Legacy input prefix (default: coulomb_mat)\n"
+        "  -o, --output-prefix PREFIX  Output prefix (default: coulomb_full_iq)\n"
+        "  -T, --target-reader-version 1\n"
+        "                              Accepted for compatibility; only v1 is supported\n"
+        "      --atom-naux  LIST       Per-atom auxiliary sizes, comma/space separated\n"
+        "      --basis-name NAME       Basis metadata filename (default: basis_out)\n"
+        "      --stru-name  NAME       Structure metadata filename (default: stru_out)\n"
+        "      --ri-prefix  PREFIX     RI coefficient prefix for basis fallback (default: Cs_data)\n"
+        "      --rows-per-task N       Binary legacy row chunk size (default: 16)\n"
+        "      --stream-complex        Accepted for compatibility; always enabled\n"
+        "      --skip-lower            Accepted for compatibility; always enabled\n"
+        "      --quiet                 Suppress conversion summary\n"
+        "  -h, --help                  Show this message\n";
+}
+
+bool starts_with(const std::string &text, const std::string &prefix)
+{
+    return text.rfind(prefix, 0) == 0;
+}
+
+bool ends_with(const std::string &text, const std::string &suffix)
+{
+    return text.size() >= suffix.size()
+           && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+double parse_double_token(std::string token)
+{
+    for (auto &ch: token)
+        if (ch == 'd' || ch == 'D') ch = 'e';
+    return std::stod(token);
+}
+
+std::vector<int> parse_atom_naux_list(const std::string &text)
+{
+    std::string normalized = text;
+    for (auto &ch: normalized)
+        if (ch == ',') ch = ' ';
+    std::istringstream iss(normalized);
+    std::vector<int> values;
+    int value = 0;
+    while (iss >> value) values.push_back(value);
+    if (values.empty())
+        throw std::runtime_error("--atom-naux did not contain any sizes");
+    for (const auto nb: values)
+        if (nb <= 0) throw std::runtime_error("--atom-naux sizes must be positive");
+    return values;
+}
+
+Options parse_args(int argc, char **argv)
+{
+    Options opts;
+    bool input_seen = false;
+    for (int i = 1; i < argc; ++i)
+    {
+        const std::string arg = argv[i];
+        auto next_value = [&](const std::string &name) -> std::string {
+            if (i + 1 >= argc)
+                throw std::runtime_error("missing value for " + name);
+            return argv[++i];
+        };
+
+        if (arg == "-h" || arg == "--help")
+        {
+            std::cout << usage();
+            MPI_Finalize();
+            std::exit(0);
+        }
+        else if (arg == "-O" || arg == "--output-dir")
+        {
+            opts.output_dir = next_value(arg);
+        }
+        else if (arg == "-i" || arg == "--input-prefix")
+        {
+            opts.input_prefix = next_value(arg);
+        }
+        else if (arg == "-o" || arg == "--output-prefix")
+        {
+            opts.output_prefix = next_value(arg);
+        }
+        else if (arg == "-T" || arg == "--target-reader-version")
+        {
+            const auto version = next_value(arg);
+            if (version != "1")
+                throw std::runtime_error("this MPI converter only supports -T 1");
+        }
+        else if (arg == "--atom-naux")
+        {
+            opts.atom_naux_arg = next_value(arg);
+        }
+        else if (arg == "--basis-name")
+        {
+            opts.basis_name = next_value(arg);
+        }
+        else if (arg == "--stru-name")
+        {
+            opts.stru_name = next_value(arg);
+        }
+        else if (arg == "--ri-prefix")
+        {
+            opts.ri_prefix = next_value(arg);
+        }
+        else if (arg == "--rows-per-task")
+        {
+            opts.rows_per_task = std::stoi(next_value(arg));
+            if (opts.rows_per_task <= 0)
+                throw std::runtime_error("--rows-per-task must be positive");
+        }
+        else if (arg == "--stream-complex" || arg == "--skip-lower")
+        {
+            // Fixed fast path: complex-valued streaming output with lower input skipped.
+        }
+        else if (arg == "--quiet")
+        {
+            opts.quiet = true;
+        }
+        else if (!starts_with(arg, "-") && !input_seen)
+        {
+            opts.input_dir = arg;
+            input_seen = true;
+        }
+        else
+        {
+            throw std::runtime_error("unknown argument: " + arg);
+        }
+    }
+    if (opts.output_dir.empty()) opts.output_dir = opts.input_dir;
+    return opts;
+}
+
+std::vector<int> read_atom_types_from_stru(const fs::path &path)
+{
+    std::ifstream in(path);
+    if (!in.good())
+        throw std::runtime_error("failed to open " + path.string());
+
+    std::string tok;
+    for (int i = 0; i != 18; ++i) in >> tok;
+    int natoms = 0;
+    in >> natoms;
+    if (!in.good() || natoms <= 0)
+        throw std::runtime_error("invalid structure file " + path.string());
+
+    std::vector<int> atom_types(natoms);
+    for (int i = 0; i != natoms; ++i)
+    {
+        std::string x, y, z;
+        int type = 0;
+        in >> x >> y >> z >> type;
+        if (!in.good() || type <= 0)
+            throw std::runtime_error("invalid atom entry in " + path.string());
+        atom_types[i] = type - 1;
+    }
+    return atom_types;
+}
+
+std::vector<int> read_atom_naux_from_basis_and_stru(const fs::path &basis_path,
+                                                    const fs::path &stru_path)
+{
+    const auto atom_types = read_atom_types_from_stru(stru_path);
+    std::ifstream in(basis_path);
+    if (!in.good())
+        throw std::runtime_error("failed to open " + basis_path.string());
+
+    int ntypes = 0;
+    int total_wfc = 0;
+    int total_aux = 0;
+    std::string kind;
+    in >> ntypes >> total_wfc >> total_aux >> kind;
+    if (!in.good() || ntypes <= 0)
+        throw std::runtime_error("invalid basis file " + basis_path.string());
+
+    std::map<int, int> type_naux;
+    for (int i = 0; i != ntypes; ++i)
+    {
+        int type = 0;
+        int n_wfc = 0;
+        int n_aux = 0;
+        in >> type >> n_wfc >> n_aux;
+        if (!in.good() || type <= 0 || n_aux <= 0)
+            throw std::runtime_error("invalid basis type entry in " + basis_path.string());
+        type_naux[type - 1] = n_aux;
+    }
+
+    std::vector<int> atom_naux;
+    atom_naux.reserve(atom_types.size());
+    for (const auto type: atom_types)
+    {
+        const auto it = type_naux.find(type);
+        if (it == type_naux.end())
+            throw std::runtime_error("basis file lacks atom type " + std::to_string(type + 1));
+        atom_naux.push_back(it->second);
+    }
+    return atom_naux;
+}
+
+bool cs_binary_layout_matches(const fs::path &path)
+{
+    const auto file_size = fs::file_size(path);
+    if (file_size < 12) return false;
+
+    std::ifstream in(path, std::ios::binary);
+    int natom = 0;
+    int ncell = 0;
+    int nblocks = 0;
+    in.read(reinterpret_cast<char *>(&natom), sizeof(int));
+    in.read(reinterpret_cast<char *>(&ncell), sizeof(int));
+    in.read(reinterpret_cast<char *>(&nblocks), sizeof(int));
+    if (!in.good() || natom <= 0 || ncell < 0 || nblocks < 0) return false;
+
+    std::uintmax_t pos = 12;
+    for (int ib = 0; ib != nblocks; ++ib)
+    {
+        int dims[8];
+        in.read(reinterpret_cast<char *>(dims), sizeof(dims));
+        if (!in.good()) return false;
+        if (dims[0] <= 0 || dims[0] > natom || dims[1] <= 0 || dims[1] > natom)
+            return false;
+        if (dims[5] <= 0 || dims[6] <= 0 || dims[7] <= 0) return false;
+        const auto payload = static_cast<std::uintmax_t>(dims[5]) * dims[6] * dims[7]
+                             * sizeof(double);
+        pos += sizeof(dims) + payload;
+        if (pos > file_size) return false;
+        in.seekg(static_cast<std::streamoff>(payload), std::ios::cur);
+    }
+    return pos == file_size;
+}
+
+void parse_cs_binary_atom_naux(const fs::path &path, std::map<int, int> &atom_naux,
+                               int &natoms_seen)
+{
+    std::ifstream in(path, std::ios::binary);
+    int natom = 0;
+    int ncell = 0;
+    int nblocks = 0;
+    in.read(reinterpret_cast<char *>(&natom), sizeof(int));
+    in.read(reinterpret_cast<char *>(&ncell), sizeof(int));
+    in.read(reinterpret_cast<char *>(&nblocks), sizeof(int));
+    if (!in.good() || natom <= 0 || nblocks < 0)
+        throw std::runtime_error("invalid binary Cs header in " + path.string());
+    if (natoms_seen < 0) natoms_seen = natom;
+    if (natoms_seen != natom)
+        throw std::runtime_error("inconsistent atom count in Cs files");
+
+    for (int ib = 0; ib != nblocks; ++ib)
+    {
+        int dims[8];
+        in.read(reinterpret_cast<char *>(dims), sizeof(dims));
+        if (!in.good())
+            throw std::runtime_error("truncated binary Cs header in " + path.string());
+        const int ia1 = dims[0] - 1;
+        if (ia1 < 0 || ia1 >= natom || dims[5] <= 0 || dims[6] <= 0 || dims[7] <= 0)
+            throw std::runtime_error("invalid binary Cs block in " + path.string());
+        atom_naux[ia1] = dims[7];
+        const auto payload = static_cast<std::streamoff>(dims[5]) * dims[6] * dims[7]
+                             * sizeof(double);
+        in.seekg(payload, std::ios::cur);
+    }
+}
+
+void parse_cs_text_atom_naux(const fs::path &path, std::map<int, int> &atom_naux,
+                             int &natoms_seen)
+{
+    std::ifstream in(path);
+    int natom = 0;
+    int ncell = 0;
+    in >> natom >> ncell;
+    if (!in.good() || natom <= 0)
+        throw std::runtime_error("invalid text Cs header in " + path.string());
+    if (natoms_seen < 0) natoms_seen = natom;
+    if (natoms_seen != natom)
+        throw std::runtime_error("inconsistent atom count in Cs files");
+
+    while (true)
+    {
+        int ia1 = 0, ia2 = 0, r1 = 0, r2 = 0, r3 = 0;
+        int n_i = 0, n_j = 0, n_mu = 0;
+        in >> ia1;
+        if (!in.good()) break;
+        in >> ia2 >> r1 >> r2 >> r3 >> n_i >> n_j >> n_mu;
+        if (!in.good() || ia1 <= 0 || ia1 > natom || n_i <= 0 || n_j <= 0 || n_mu <= 0)
+            throw std::runtime_error("invalid text Cs block in " + path.string());
+        atom_naux[ia1 - 1] = n_mu;
+        std::string value;
+        for (std::int64_t i = 0; i != static_cast<std::int64_t>(n_i) * n_j * n_mu; ++i)
+            in >> value;
+    }
+}
+
+std::vector<int> read_atom_naux_from_cs(const fs::path &input_dir,
+                                        const std::string &ri_prefix)
+{
+    std::vector<fs::path> files;
+    for (const auto &entry: fs::directory_iterator(input_dir))
+    {
+        if (!entry.is_regular_file()) continue;
+        const auto name = entry.path().filename().string();
+        if (starts_with(name, ri_prefix)) files.push_back(entry.path());
+    }
+    std::sort(files.begin(), files.end());
+    if (files.empty())
+        throw std::runtime_error("could not infer atom auxiliary sizes; no "
+                                 + ri_prefix + "* files found");
+
+    std::map<int, int> atom_naux_map;
+    int natoms_seen = -1;
+    for (const auto &path: files)
+    {
+        if (cs_binary_layout_matches(path))
+            parse_cs_binary_atom_naux(path, atom_naux_map, natoms_seen);
+        else
+            parse_cs_text_atom_naux(path, atom_naux_map, natoms_seen);
+    }
+
+    std::vector<int> atom_naux(natoms_seen);
+    for (int i = 0; i != natoms_seen; ++i)
+    {
+        const auto it = atom_naux_map.find(i);
+        if (it == atom_naux_map.end())
+            throw std::runtime_error("could not infer auxiliary size for atom "
+                                     + std::to_string(i + 1));
+        atom_naux[i] = it->second;
+    }
+    return atom_naux;
+}
+
+AtomLayout resolve_atom_layout(const Options &opts)
+{
+    if (!opts.atom_naux_arg.empty())
+        return AtomLayout(parse_atom_naux_list(opts.atom_naux_arg));
+
+    const auto basis_path = opts.input_dir / opts.basis_name;
+    const auto stru_path = opts.input_dir / opts.stru_name;
+    if (fs::exists(basis_path) && fs::exists(stru_path))
+        return AtomLayout(read_atom_naux_from_basis_and_stru(basis_path, stru_path));
+
+    return AtomLayout(read_atom_naux_from_cs(opts.input_dir, opts.ri_prefix));
+}
+
+std::vector<fs::path> discover_input_files(const Options &opts)
+{
+    std::vector<fs::path> files;
+    const auto prefix = opts.input_prefix + "_";
+    for (const auto &entry: fs::directory_iterator(opts.input_dir))
+    {
+        if (!entry.is_regular_file()) continue;
+        const auto name = entry.path().filename().string();
+        if (starts_with(name, prefix) && ends_with(name, ".txt"))
+            files.push_back(entry.path());
+    }
+    std::sort(files.begin(), files.end());
+    if (files.empty())
+        throw std::runtime_error("no input files found with prefix " + opts.input_prefix);
+    return files;
+}
+
+void validate_legacy_block(const fs::path &path, int naux, int row_begin, int row_end,
+                           int col_begin, int col_end, int iq)
+{
+    if (naux <= 0 || iq <= 0)
+        throw std::runtime_error("invalid legacy Coulomb block in " + path.string());
+    if (row_begin <= 0 || row_end < row_begin || row_end > naux)
+        throw std::runtime_error("invalid row range in " + path.string());
+    if (col_begin <= 0 || col_end < col_begin || col_end > naux)
+        throw std::runtime_error("invalid column range in " + path.string());
+}
+
+bool legacy_binary_layout_matches(const fs::path &path)
+{
+    const auto file_size = fs::file_size(path);
+    if (file_size < 8) return false;
+    std::ifstream in(path, std::ios::binary);
+    int nirk = 0;
+    int nblocks = 0;
+    in.read(reinterpret_cast<char *>(&nirk), sizeof(int));
+    in.read(reinterpret_cast<char *>(&nblocks), sizeof(int));
+    if (!in.good() || nirk <= 0 || nblocks < 0 || nblocks > nirk) return false;
+
+    std::uintmax_t pos = 8;
+    for (int ib = 0; ib != nblocks; ++ib)
+    {
+        int ints[6];
+        double weight = 0.0;
+        in.read(reinterpret_cast<char *>(ints), sizeof(ints));
+        in.read(reinterpret_cast<char *>(&weight), sizeof(double));
+        if (!in.good()) return false;
+        const int naux = ints[0], row_begin = ints[1], row_end = ints[2];
+        const int col_begin = ints[3], col_end = ints[4], iq = ints[5];
+        if (naux <= 0 || iq <= 0 || row_begin <= 0 || row_end < row_begin ||
+            row_end > naux || col_begin <= 0 || col_end < col_begin || col_end > naux)
+            return false;
+        const auto nrow = static_cast<std::uintmax_t>(row_end - row_begin + 1);
+        const auto ncol = static_cast<std::uintmax_t>(col_end - col_begin + 1);
+        const auto payload = nrow * ncol * LEGACY_COMPLEX_BYTES;
+        pos += 32 + payload;
+        if (pos > file_size) return false;
+        in.seekg(static_cast<std::streamoff>(payload), std::ios::cur);
+    }
+    return pos == file_size;
+}
+
+void set_q_naux(std::map<int, int> &q_naux, int iq, int naux)
+{
+    const auto it = q_naux.find(iq);
+    if (it == q_naux.end())
+    {
+        q_naux[iq] = naux;
+        return;
+    }
+    if (it->second != naux)
+        throw std::runtime_error("inconsistent Naux for q-point " + std::to_string(iq));
+}
+
+void scan_binary_file(const fs::path &path, int file_index, int rows_per_task,
+                      std::vector<BinaryTask> &tasks, std::map<int, int> &q_naux,
+                      std::int64_t &nblocks_total)
+{
+    std::ifstream in(path, std::ios::binary);
+    int nirk = 0;
+    int nblocks = 0;
+    in.read(reinterpret_cast<char *>(&nirk), sizeof(int));
+    in.read(reinterpret_cast<char *>(&nblocks), sizeof(int));
+    if (!in.good()) throw std::runtime_error("failed to read " + path.string());
+
+    MPI_Offset pos = 8;
+    for (int ib = 0; ib != nblocks; ++ib)
+    {
+        int naux = 0, row_begin = 0, row_end = 0, col_begin = 0, col_end = 0, iq = 0;
+        double q_weight = 0.0;
+        in.read(reinterpret_cast<char *>(&naux), sizeof(int));
+        in.read(reinterpret_cast<char *>(&row_begin), sizeof(int));
+        in.read(reinterpret_cast<char *>(&row_end), sizeof(int));
+        in.read(reinterpret_cast<char *>(&col_begin), sizeof(int));
+        in.read(reinterpret_cast<char *>(&col_end), sizeof(int));
+        in.read(reinterpret_cast<char *>(&iq), sizeof(int));
+        in.read(reinterpret_cast<char *>(&q_weight), sizeof(double));
+        validate_legacy_block(path, naux, row_begin, row_end, col_begin, col_end, iq);
+        set_q_naux(q_naux, iq, naux);
+
+        const int nrow = row_end - row_begin + 1;
+        const int ncol = col_end - col_begin + 1;
+        const int row_begin0 = row_begin - 1;
+        const int col_begin0 = col_begin - 1;
+        const int col_end0 = col_end - 1;
+        const MPI_Offset payload_offset = pos + 32;
+
+        for (int local_row = 0; local_row < nrow;)
+        {
+            const int global_row = row_begin0 + local_row;
+            if (global_row > col_end0) break; // strictly lower rows under --skip-lower
+            const int usable_rows = std::min({rows_per_task, nrow - local_row,
+                                              col_end0 + 1 - global_row});
+            tasks.push_back({
+                file_index, iq, naux, global_row, usable_rows, col_begin0, ncol,
+                payload_offset + static_cast<MPI_Offset>(local_row) * ncol
+                                 * LEGACY_COMPLEX_BYTES
+            });
+            local_row += usable_rows;
+        }
+
+        const MPI_Offset payload_bytes = static_cast<MPI_Offset>(nrow) * ncol
+                                         * LEGACY_COMPLEX_BYTES;
+        pos += 32 + payload_bytes;
+        in.seekg(static_cast<std::streamoff>(payload_bytes), std::ios::cur);
+        ++nblocks_total;
+    }
+}
+
+void scan_text_file(const fs::path &path, std::map<int, int> &q_naux,
+                    std::int64_t &nblocks_total)
+{
+    std::ifstream in(path);
+    int nirk = 0;
+    in >> nirk;
+    if (!in.good() || nirk <= 0)
+        throw std::runtime_error("invalid text Coulomb header in " + path.string());
+
+    while (true)
+    {
+        int naux = 0, row_begin = 0, row_end = 0, col_begin = 0, col_end = 0, iq = 0;
+        std::string q_weight;
+        in >> naux;
+        if (!in.good()) break;
+        in >> row_begin >> row_end >> col_begin >> col_end >> iq >> q_weight;
+        validate_legacy_block(path, naux, row_begin, row_end, col_begin, col_end, iq);
+        set_q_naux(q_naux, iq, naux);
+        const std::int64_t nvalues = static_cast<std::int64_t>(row_end - row_begin + 1)
+                                     * (col_end - col_begin + 1);
+        std::string dummy;
+        for (std::int64_t i = 0; i != 2 * nvalues; ++i) in >> dummy;
+        ++nblocks_total;
+    }
+}
+
+std::vector<char> pack_strings(const std::vector<fs::path> &paths,
+                               std::vector<int> &lengths)
+{
+    std::vector<char> blob;
+    lengths.clear();
+    for (const auto &path: paths)
+    {
+        const auto text = path.string();
+        lengths.push_back(static_cast<int>(text.size()));
+        blob.insert(blob.end(), text.begin(), text.end());
+    }
+    return blob;
+}
+
+std::vector<fs::path> unpack_strings(const std::vector<int> &lengths,
+                                     const std::vector<char> &blob)
+{
+    std::vector<fs::path> paths;
+    std::size_t pos = 0;
+    for (const auto len: lengths)
+    {
+        paths.emplace_back(std::string(blob.data() + pos, blob.data() + pos + len));
+        pos += len;
+    }
+    return paths;
+}
+
+template <typename T>
+void bcast_vector(std::vector<T> &values, int root, MPI_Comm comm)
+{
+    int size = static_cast<int>(values.size());
+    MPI_Bcast(&size, 1, MPI_INT, root, comm);
+    values.resize(size);
+    if (size > 0)
+        MPI_Bcast(values.data(), static_cast<int>(sizeof(T) * values.size()),
+                  MPI_BYTE, root, comm);
+}
+
+void bcast_paths(std::vector<fs::path> &paths, int root, MPI_Comm comm)
+{
+    int rank = 0;
+    MPI_Comm_rank(comm, &rank);
+    std::vector<int> lengths;
+    std::vector<char> blob;
+    if (rank == root) blob = pack_strings(paths, lengths);
+    bcast_vector(lengths, root, comm);
+    int blob_size = static_cast<int>(blob.size());
+    MPI_Bcast(&blob_size, 1, MPI_INT, root, comm);
+    blob.resize(blob_size);
+    if (blob_size > 0) MPI_Bcast(blob.data(), blob_size, MPI_BYTE, root, comm);
+    if (rank != root) paths = unpack_strings(lengths, blob);
+}
+
+std::vector<std::int64_t> pack_tasks(const std::vector<BinaryTask> &tasks)
+{
+    std::vector<std::int64_t> packed;
+    packed.reserve(tasks.size() * 8);
+    for (const auto &task: tasks)
+    {
+        packed.push_back(task.file_index);
+        packed.push_back(task.iq);
+        packed.push_back(task.naux);
+        packed.push_back(task.row_begin);
+        packed.push_back(task.nrows);
+        packed.push_back(task.col_begin);
+        packed.push_back(task.ncol);
+        packed.push_back(static_cast<std::int64_t>(task.payload_offset));
+    }
+    return packed;
+}
+
+std::vector<BinaryTask> unpack_tasks(const std::vector<std::int64_t> &packed)
+{
+    if (packed.size() % 8 != 0)
+        throw std::runtime_error("internal error: malformed packed task list");
+    std::vector<BinaryTask> tasks;
+    tasks.reserve(packed.size() / 8);
+    for (std::size_t i = 0; i != packed.size(); i += 8)
+    {
+        tasks.push_back({
+            static_cast<int>(packed[i]),
+            static_cast<int>(packed[i + 1]),
+            static_cast<int>(packed[i + 2]),
+            static_cast<int>(packed[i + 3]),
+            static_cast<int>(packed[i + 4]),
+            static_cast<int>(packed[i + 5]),
+            static_cast<int>(packed[i + 6]),
+            static_cast<MPI_Offset>(packed[i + 7])
+        });
+    }
+    return tasks;
+}
+
+fs::path output_path_for(const Options &opts, int iq)
+{
+    return opts.output_dir / (opts.output_prefix + "_" + std::to_string(iq) + ".dat");
+}
+
+void check_no_existing_outputs(const Options &opts)
+{
+    if (!fs::exists(opts.output_dir)) return;
+    const auto prefix = opts.output_prefix + "_";
+    for (const auto &entry: fs::directory_iterator(opts.output_dir))
+    {
+        if (!entry.is_regular_file()) continue;
+        const auto name = entry.path().filename().string();
+        if (starts_with(name, prefix) && ends_with(name, ".dat"))
+            throw std::runtime_error("existing output file found: "
+                                     + entry.path().string()
+                                     + "; please clean up manually");
+    }
+}
+
+void create_output_file(const Options &opts, const AtomLayout &layout, int iq,
+                        Timing &timing)
+{
+    const auto path = output_path_for(opts, iq);
+    MPI_File file = MPI_FILE_NULL;
+    double t0 = MPI_Wtime();
+    const int ierr = MPI_File_open(MPI_COMM_SELF, path.string().c_str(),
+                                   MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_EXCL,
+                                   MPI_INFO_NULL, &file);
+    timing.write_seconds += MPI_Wtime() - t0;
+    if (ierr != MPI_SUCCESS)
+        throw std::runtime_error("failed to create output file " + path.string());
+
+    const int header[5] = {
+        COULOMB_V1_MARKER, iq, layout.naux, COMPLEX_FLAG, layout.natoms
+    };
+    t0 = MPI_Wtime();
+    MPI_File_write_at(file, 0, const_cast<int *>(header), sizeof(header),
+                      MPI_BYTE, MPI_STATUS_IGNORE);
+    timing.write_seconds += MPI_Wtime() - t0;
+    t0 = MPI_Wtime();
+    MPI_File_write_at(file, V1_HEADER_BASE_SIZE,
+                      const_cast<int *>(layout.atom_naux.data()),
+                      static_cast<int>(layout.atom_naux.size() * sizeof(int)),
+                      MPI_BYTE, MPI_STATUS_IGNORE);
+    timing.write_seconds += MPI_Wtime() - t0;
+    t0 = MPI_Wtime();
+    MPI_File_set_size(file, layout.file_size_bytes());
+    timing.write_seconds += MPI_Wtime() - t0;
+    t0 = MPI_Wtime();
+    MPI_File_close(&file);
+    timing.write_seconds += MPI_Wtime() - t0;
+}
+
+class MpiFileCache
+{
+public:
+    ~MpiFileCache()
+    {
+        close_all();
+    }
+
+    MPI_File get_input(int index, const std::vector<fs::path> &paths, Timing &timing)
+    {
+        const auto it = input_files.find(index);
+        if (it != input_files.end()) return it->second;
+
+        MPI_File file = MPI_FILE_NULL;
+        const double t0 = MPI_Wtime();
+        const int ierr = MPI_File_open(MPI_COMM_SELF, paths.at(index).string().c_str(),
+                                       MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
+        timing.read_seconds += MPI_Wtime() - t0;
+        if (ierr != MPI_SUCCESS)
+            throw std::runtime_error("failed to open input file "
+                                     + paths.at(index).string());
+        input_files[index] = file;
+        return file;
+    }
+
+    MPI_File get_output(int iq, const Options &opts, Timing &timing)
+    {
+        const auto it = output_files.find(iq);
+        if (it != output_files.end()) return it->second;
+
+        MPI_File file = MPI_FILE_NULL;
+        const auto path = output_path_for(opts, iq);
+        const double t0 = MPI_Wtime();
+        const int ierr = MPI_File_open(MPI_COMM_SELF, path.string().c_str(),
+                                       MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
+        timing.write_seconds += MPI_Wtime() - t0;
+        if (ierr != MPI_SUCCESS)
+            throw std::runtime_error("failed to open output file " + path.string());
+        output_files[iq] = file;
+        return file;
+    }
+
+    void close_all(Timing *timing = nullptr)
+    {
+        for (auto &[_, file]: input_files)
+        {
+            const double t0 = MPI_Wtime();
+            MPI_File_close(&file);
+            if (timing != nullptr) timing->read_seconds += MPI_Wtime() - t0;
+        }
+        for (auto &[_, file]: output_files)
+        {
+            const double t0 = MPI_Wtime();
+            MPI_File_close(&file);
+            if (timing != nullptr) timing->write_seconds += MPI_Wtime() - t0;
+        }
+        input_files.clear();
+        output_files.clear();
+    }
+
+private:
+    std::unordered_map<int, MPI_File> input_files;
+    std::unordered_map<int, MPI_File> output_files;
+};
+
+void mpi_read_exact(MPI_File file, MPI_Offset offset, void *buffer, std::size_t nbytes,
+                    const std::string &label, Timing &timing)
+{
+    char *ptr = static_cast<char *>(buffer);
+    std::size_t left = nbytes;
+    while (left > 0)
+    {
+        const int chunk = static_cast<int>(std::min<std::size_t>(
+            left, static_cast<std::size_t>(std::numeric_limits<int>::max())));
+        MPI_Status status;
+        const double t0 = MPI_Wtime();
+        const int ierr = MPI_File_read_at(file, offset, ptr, chunk, MPI_BYTE, &status);
+        timing.read_seconds += MPI_Wtime() - t0;
+        if (ierr != MPI_SUCCESS)
+            throw std::runtime_error("MPI read failed for " + label);
+        int got = 0;
+        MPI_Get_count(&status, MPI_BYTE, &got);
+        if (got != chunk)
+            throw std::runtime_error("truncated MPI read for " + label);
+        offset += chunk;
+        ptr += chunk;
+        left -= chunk;
+    }
+}
+
+void mpi_write_exact(MPI_File file, MPI_Offset offset, const void *buffer, std::size_t nbytes,
+                     const std::string &label, Timing &timing)
+{
+    const char *ptr = static_cast<const char *>(buffer);
+    std::size_t left = nbytes;
+    while (left > 0)
+    {
+        const int chunk = static_cast<int>(std::min<std::size_t>(
+            left, static_cast<std::size_t>(std::numeric_limits<int>::max())));
+        const double t0 = MPI_Wtime();
+        const int ierr = MPI_File_write_at(file, offset, const_cast<char *>(ptr),
+                                           chunk, MPI_BYTE, MPI_STATUS_IGNORE);
+        timing.write_seconds += MPI_Wtime() - t0;
+        if (ierr != MPI_SUCCESS)
+            throw std::runtime_error("MPI write failed for " + label);
+        offset += chunk;
+        ptr += chunk;
+        left -= chunk;
+    }
+}
+
+void write_pair_conjugate(MPI_File output, const AtomLayout &layout,
+                          int atom, int row_local, int col_local,
+                          const ComplexValue &value, Timing &timing)
+{
+    if (row_local == col_local) return;
+    const ComplexValue conj_value{value.real, -value.imag};
+    mpi_write_exact(output, layout.byte_offset(atom, atom, col_local, row_local),
+                    &conj_value, sizeof(conj_value), "diagonal conjugate", timing);
+}
+
+void write_row_v1(MPI_File output, const AtomLayout &layout, int row, int col_begin,
+                  int ncol, const ComplexValue *values, Timing &timing)
+{
+    const auto [row_atom, row_local] = layout.atom_for_aux(row);
+    int col = std::max(row, col_begin);
+    const int col_end = col_begin + ncol;
+
+    while (col < col_end)
+    {
+        const auto [col_atom, col_local] = layout.atom_for_aux(col);
+        const int span_end = std::min(col_end, layout.atom_offsets[col_atom + 1]);
+        const int span_len = span_end - col;
+        const auto *span_values = values + (col - col_begin);
+
+        if (row_atom < col_atom)
+        {
+            mpi_write_exact(output,
+                            layout.byte_offset(row_atom, col_atom, row_local, col_local),
+                            span_values,
+                            static_cast<std::size_t>(span_len) * sizeof(ComplexValue),
+                            "off-diagonal atom-pair row", timing);
+        }
+        else if (row_atom == col_atom)
+        {
+            mpi_write_exact(output,
+                            layout.byte_offset(row_atom, row_atom, row_local, col_local),
+                            span_values,
+                            static_cast<std::size_t>(span_len) * sizeof(ComplexValue),
+                            "diagonal atom-pair row", timing);
+            for (int offset = 0; offset != span_len; ++offset)
+            {
+                write_pair_conjugate(output, layout, row_atom, row_local,
+                                     col_local + offset, span_values[offset], timing);
+            }
+        }
+
+        col = span_end;
+    }
+}
+
+void process_binary_task(const BinaryTask &task, const Options &opts, const AtomLayout &layout,
+                         const std::vector<fs::path> &input_files, MpiFileCache &cache,
+                         Timing &timing)
+{
+    if (task.naux != layout.naux)
+        throw std::runtime_error("legacy Naux does not match v1 atom layout");
+
+    MPI_File input = cache.get_input(task.file_index, input_files, timing);
+    MPI_File output = cache.get_output(task.iq, opts, timing);
+    std::vector<ComplexValue> buffer(static_cast<std::size_t>(task.nrows) * task.ncol);
+    mpi_read_exact(input, task.payload_offset, buffer.data(),
+                   buffer.size() * sizeof(ComplexValue), "legacy binary Coulomb rows",
+                   timing);
+
+    for (int local_row = 0; local_row != task.nrows; ++local_row)
+    {
+        write_row_v1(output, layout, task.row_begin + local_row, task.col_begin,
+                     task.ncol,
+                     buffer.data() + static_cast<std::size_t>(local_row) * task.ncol,
+                     timing);
+    }
+}
+
+void process_text_file(const fs::path &path, const Options &opts, const AtomLayout &layout,
+                       MpiFileCache &cache, Timing &timing)
+{
+    double t0 = MPI_Wtime();
+    std::ifstream in(path);
+    timing.read_seconds += MPI_Wtime() - t0;
+    int nirk = 0;
+    t0 = MPI_Wtime();
+    in >> nirk;
+    timing.read_seconds += MPI_Wtime() - t0;
+    if (!in.good() || nirk <= 0)
+        throw std::runtime_error("invalid text Coulomb header in " + path.string());
+
+    while (true)
+    {
+        int naux = 0, row_begin = 0, row_end = 0, col_begin = 0, col_end = 0, iq = 0;
+        std::string q_weight;
+        t0 = MPI_Wtime();
+        in >> naux;
+        timing.read_seconds += MPI_Wtime() - t0;
+        if (!in.good()) break;
+        t0 = MPI_Wtime();
+        in >> row_begin >> row_end >> col_begin >> col_end >> iq >> q_weight;
+        timing.read_seconds += MPI_Wtime() - t0;
+        validate_legacy_block(path, naux, row_begin, row_end, col_begin, col_end, iq);
+        if (naux != layout.naux)
+            throw std::runtime_error("legacy Naux does not match v1 atom layout");
+
+        const int nrow = row_end - row_begin + 1;
+        const int ncol = col_end - col_begin + 1;
+        const int row_begin0 = row_begin - 1;
+        const int col_begin0 = col_begin - 1;
+        MPI_File output = cache.get_output(iq, opts, timing);
+
+        for (int local_row = 0; local_row != nrow; ++local_row)
+        {
+            std::vector<ComplexValue> row_values(ncol);
+            t0 = MPI_Wtime();
+            for (int col = 0; col != ncol; ++col)
+            {
+                std::string real_s, imag_s;
+                in >> real_s >> imag_s;
+                row_values[col].real = parse_double_token(real_s);
+                row_values[col].imag = parse_double_token(imag_s);
+            }
+            timing.read_seconds += MPI_Wtime() - t0;
+            const int row = row_begin0 + local_row;
+            if (row <= col_end - 1)
+                write_row_v1(output, layout, row, col_begin0, ncol, row_values.data(),
+                             timing);
+        }
+    }
+}
+
+} // namespace
+
+int main(int argc, char **argv)
+{
+    MPI_Init(&argc, &argv);
+    int rank = 0;
+    int nprocs = 1;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+
+    try
+    {
+        Options opts;
+        AtomLayout layout;
+        std::vector<fs::path> input_files;
+        std::vector<BinaryTask> binary_tasks;
+        std::vector<int> text_file_indices;
+        std::map<int, int> q_naux;
+        std::int64_t total_blocks = 0;
+        Timing timing;
+
+        if (rank == 0)
+        {
+            opts = parse_args(argc, argv);
+            fs::create_directories(opts.output_dir);
+            check_no_existing_outputs(opts);
+            layout = resolve_atom_layout(opts);
+            input_files = discover_input_files(opts);
+
+            for (int ifile = 0; ifile != static_cast<int>(input_files.size()); ++ifile)
+            {
+                const auto &path = input_files[ifile];
+                double t0 = MPI_Wtime();
+                const bool is_binary = legacy_binary_layout_matches(path);
+                timing.read_seconds += MPI_Wtime() - t0;
+                if (is_binary)
+                {
+                    t0 = MPI_Wtime();
+                    scan_binary_file(path, ifile, opts.rows_per_task, binary_tasks,
+                                     q_naux, total_blocks);
+                    timing.read_seconds += MPI_Wtime() - t0;
+                }
+                else
+                {
+                    text_file_indices.push_back(ifile);
+                    t0 = MPI_Wtime();
+                    scan_text_file(path, q_naux, total_blocks);
+                    timing.read_seconds += MPI_Wtime() - t0;
+                }
+            }
+
+            for (const auto &[iq, naux]: q_naux)
+            {
+                if (naux != layout.naux)
+                    throw std::runtime_error("q-point " + std::to_string(iq)
+                                             + " has Naux=" + std::to_string(naux)
+                                             + ", but atom layout sums to "
+                                             + std::to_string(layout.naux));
+                create_output_file(opts, layout, iq, timing);
+            }
+
+            if (!opts.quiet)
+            {
+                std::cout << "Discovered " << input_files.size() << " input file(s), "
+                          << binary_tasks.size() << " binary row task(s), "
+                          << text_file_indices.size() << " text file task(s), "
+                          << q_naux.size() << " q-point output file(s)." << std::endl;
+            }
+        }
+
+        // Broadcast options as strings/primitive values needed by all ranks.
+        // Reparse command line on non-root ranks to keep this simple and deterministic.
+        if (rank != 0) opts = parse_args(argc, argv);
+
+        std::vector<int> atom_naux = layout.atom_naux;
+        bcast_vector(atom_naux, 0, MPI_COMM_WORLD);
+        if (rank != 0) layout = AtomLayout(atom_naux);
+        bcast_paths(input_files, 0, MPI_COMM_WORLD);
+        bcast_vector(text_file_indices, 0, MPI_COMM_WORLD);
+
+        auto packed_tasks = pack_tasks(binary_tasks);
+        bcast_vector(packed_tasks, 0, MPI_COMM_WORLD);
+        if (rank != 0) binary_tasks = unpack_tasks(packed_tasks);
+
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        MpiFileCache cache;
+        for (std::size_t itask = rank; itask < binary_tasks.size(); itask += nprocs)
+        {
+            process_binary_task(binary_tasks[itask], opts, layout, input_files, cache,
+                                timing);
+        }
+        for (std::size_t itext = rank; itext < text_file_indices.size(); itext += nprocs)
+        {
+            process_text_file(input_files[text_file_indices[itext]], opts, layout, cache,
+                              timing);
+        }
+        cache.close_all(&timing);
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        const double local_timing[2] = {timing.read_seconds, timing.write_seconds};
+        double max_timing[2] = {0.0, 0.0};
+        MPI_Reduce(local_timing, max_timing, 2, MPI_DOUBLE, MPI_MAX, 0,
+                   MPI_COMM_WORLD);
+        if (rank == 0 && !opts.quiet)
+        {
+            std::cout << "Converted " << total_blocks << " legacy Coulomb block(s) to v1."
+                      << std::endl;
+            std::cout << std::fixed << std::setprecision(6)
+                      << "Input read time (max over ranks): " << max_timing[0] << " s\n"
+                      << "Output write time (max over ranks): " << max_timing[1] << " s"
+                      << std::endl;
+        }
+
+        MPI_Finalize();
+        return 0;
+    }
+    catch (const std::exception &exc)
+    {
+        std::cerr << "rank " << rank << ": error: " << exc.what() << std::endl;
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    return 1;
+}

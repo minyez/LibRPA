@@ -31,7 +31,7 @@
 #include "../src/utils/profiler.h"
 #include "../src/utils/utils_mem.h"
 
-#define READER_COULOMB_V1_MARKER 20129431
+#define READER_COULOMB_V1_MARKER 20129432
 
 using std::ifstream;
 using std::string;
@@ -1446,14 +1446,17 @@ namespace
 
 constexpr int COULOMB_V1_REAL_FLAG = 0;
 constexpr int COULOMB_V1_COMPLEX_FLAG = 1;
-constexpr MPI_Offset COULOMB_V1_HEADER_SIZE = 4 * static_cast<MPI_Offset>(sizeof(int));
+constexpr MPI_Offset COULOMB_V1_HEADER_BASE_SIZE =
+    5 * static_cast<MPI_Offset>(sizeof(int));
 
-MPI_Offset coulomb_v1_upper_index(const std::size_t row, const std::size_t col,
-                                  const std::size_t naux)
+static_assert(sizeof(std::complex<double>) == 2 * sizeof(double),
+              "Coulomb atom-pair IO expects std::complex<double> as two doubles");
+
+std::size_t coulomb_atom_pair_index(const std::size_t I, const std::size_t J,
+                                    const std::size_t natoms)
 {
-    assert(row <= col);
-    return static_cast<MPI_Offset>(
-        row * naux - row * (row - 1) / 2 + (col - row));
+    assert(I <= J);
+    return I * natoms - I * (I - 1) / 2 + (J - I);
 }
 
 class CoulombV1File
@@ -1469,12 +1472,13 @@ public:
             throw std::logic_error("Failed to open Coulomb v1 file " + path);
         }
 
-        int header[4];
+        int header[5];
         read_bytes(0, header, sizeof(header));
         const int marker = header[0];
         iq = header[1];
         naux = header[2];
         value_flag = header[3];
+        natoms = header[4];
 
         if (marker != READER_COULOMB_V1_MARKER)
         {
@@ -1491,6 +1495,10 @@ public:
         {
             throw std::logic_error(path + ": invalid Coulomb v1 Naux");
         }
+        if (natoms <= 0)
+        {
+            throw std::logic_error(path + ": invalid Coulomb v1 atom count");
+        }
         if (value_flag != COULOMB_V1_REAL_FLAG &&
             value_flag != COULOMB_V1_COMPLEX_FLAG)
         {
@@ -1500,16 +1508,50 @@ public:
         value_bytes = value_flag == COULOMB_V1_COMPLEX_FLAG ?
             2 * sizeof(double) : sizeof(double);
 
+        atom_naux.resize(static_cast<std::size_t>(natoms));
+        read_bytes(COULOMB_V1_HEADER_BASE_SIZE, atom_naux.data(),
+                   atom_naux.size() * sizeof(int));
+
+        int naux_sum = 0;
+        for (const auto nb: atom_naux)
+        {
+            if (nb <= 0)
+            {
+                throw std::logic_error(path + ": invalid per-atom auxiliary size");
+            }
+            naux_sum += nb;
+        }
+        if (naux_sum != naux)
+        {
+            std::ostringstream ss;
+            ss << path << ": Coulomb v1 per-atom auxiliary sizes sum to "
+               << naux_sum << ", expected " << naux;
+            throw std::logic_error(ss.str());
+        }
+
+        const auto npairs = static_cast<std::size_t>(natoms) *
+            (static_cast<std::size_t>(natoms) + 1) / 2;
+        block_offsets.resize(npairs + 1);
+        MPI_Offset offset = header_size();
+        for (std::size_t I = 0; I != atom_naux.size(); ++I)
+        {
+            for (std::size_t J = I; J != atom_naux.size(); ++J)
+            {
+                const auto ipair = coulomb_atom_pair_index(I, J, atom_naux.size());
+                block_offsets[ipair] = offset;
+                offset += static_cast<MPI_Offset>(atom_naux[I]) *
+                          static_cast<MPI_Offset>(atom_naux[J]) * value_bytes;
+            }
+        }
+        block_offsets[npairs] = offset;
+
         MPI_Offset file_size = 0;
         MPI_File_get_size(file, &file_size);
-        const auto naux_offset = static_cast<MPI_Offset>(naux);
-        const MPI_Offset expected_size = COULOMB_V1_HEADER_SIZE +
-            naux_offset * (naux_offset + 1) / 2 * value_bytes;
-        if (file_size != expected_size)
+        if (file_size != offset)
         {
             std::ostringstream ss;
             ss << path << ": invalid Coulomb v1 file size " << file_size
-               << ", expected " << expected_size;
+               << ", expected " << offset;
             throw std::logic_error(ss.str());
         }
     }
@@ -1551,11 +1593,15 @@ public:
         }
     }
 
-    MPI_Offset payload_offset(const std::size_t row, const std::size_t col) const
+    MPI_Offset header_size() const
     {
-        return COULOMB_V1_HEADER_SIZE +
-            coulomb_v1_upper_index(row, col, static_cast<std::size_t>(naux)) *
-            value_bytes;
+        return COULOMB_V1_HEADER_BASE_SIZE +
+            static_cast<MPI_Offset>(natoms) * sizeof(int);
+    }
+
+    MPI_Offset block_offset(const std::size_t I, const std::size_t J) const
+    {
+        return block_offsets.at(coulomb_atom_pair_index(I, J, atom_naux.size()));
     }
 
     std::string path;
@@ -1563,45 +1609,14 @@ public:
     int iq = 0;
     int naux = 0;
     int value_flag = COULOMB_V1_COMPLEX_FLAG;
+    int natoms = 0;
     MPI_Offset value_bytes = 2 * static_cast<MPI_Offset>(sizeof(double));
+    std::vector<int> atom_naux;
+    std::vector<MPI_Offset> block_offsets;
 };
-
-void read_coulomb_v1_upper_segment(const CoulombV1File &file,
-                                   const std::size_t row,
-                                   const std::size_t col_begin,
-                                   const std::size_t ncol,
-                                   std::complex<double> *out)
-{
-    if (ncol == 0)
-    {
-        return;
-    }
-
-    if (file.value_flag == COULOMB_V1_COMPLEX_FLAG)
-    {
-        std::vector<double> buffer(2 * ncol);
-        file.read_bytes(file.payload_offset(row, col_begin),
-                        buffer.data(), buffer.size() * sizeof(double));
-        for (std::size_t i = 0; i < ncol; ++i)
-        {
-            out[i] = std::complex<double>(buffer[2 * i], buffer[2 * i + 1]);
-        }
-    }
-    else
-    {
-        std::vector<double> buffer(ncol);
-        file.read_bytes(file.payload_offset(row, col_begin),
-                        buffer.data(), buffer.size() * sizeof(double));
-        for (std::size_t i = 0; i < ncol; ++i)
-        {
-            out[i] = std::complex<double>(buffer[i], 0.0);
-        }
-    }
-}
 
 std::vector<std::complex<double>> read_coulomb_v1_atom_pair(
     const CoulombV1File &file,
-    const librpa_int::AtomicBasis &basis_aux,
     const std::size_t I,
     const std::size_t J)
 {
@@ -1610,48 +1625,56 @@ std::vector<std::complex<double>> read_coulomb_v1_atom_pair(
         throw std::logic_error("Coulomb reader v1 expects upper-triangular atom pairs");
     }
 
-    const std::size_t nrow = basis_aux[I];
-    const std::size_t ncol = basis_aux[J];
-    const std::size_t row_begin = basis_aux.get_global_index(I, 0);
-    const std::size_t col_begin = basis_aux.get_global_index(J, 0);
-    std::vector<std::complex<double>> block(nrow * ncol);
+    const auto nrow = static_cast<std::size_t>(file.atom_naux[I]);
+    const auto ncol = static_cast<std::size_t>(file.atom_naux[J]);
+    const auto n = nrow * ncol;
+    std::vector<std::complex<double>> block(n);
 
-    if (I < J)
+    if (file.value_flag == COULOMB_V1_COMPLEX_FLAG)
     {
-        for (std::size_t i = 0; i < nrow; ++i)
-        {
-            const std::size_t row = row_begin + i;
-            read_coulomb_v1_upper_segment(
-                file, row, col_begin, ncol, block.data() + i * ncol);
-        }
-        return block;
+        file.read_bytes(file.block_offset(I, J), block.data(),
+                        n * sizeof(std::complex<double>));
     }
-
-    for (std::size_t i = 0; i < nrow; ++i)
+    else
     {
-        const std::size_t row = row_begin + i;
-        const std::size_t n_upper = ncol - i;
-        read_coulomb_v1_upper_segment(
-            file, row, row, n_upper, block.data() + i * ncol + i);
-    }
-    for (std::size_t i = 1; i < nrow; ++i)
-    {
-        for (std::size_t j = 0; j < i; ++j)
+        std::vector<double> buffer(n);
+        file.read_bytes(file.block_offset(I, J), buffer.data(),
+                        n * sizeof(double));
+        for (std::size_t i = 0; i != n; ++i)
         {
-            block[i * ncol + j] = std::conj(block[j * ncol + i]);
+            block[i] = std::complex<double>(buffer[i], 0.0);
         }
     }
     return block;
 }
 
-void validate_coulomb_v1_naux(const CoulombV1File &file, const std::size_t expected_naux)
+void validate_coulomb_v1_basis(const CoulombV1File &file,
+                               const librpa_int::AtomicBasis &basis_aux)
 {
-    if (static_cast<std::size_t>(file.naux) != expected_naux)
+    if (static_cast<std::size_t>(file.naux) != basis_aux.nb_total)
     {
         std::ostringstream ss;
         ss << file.path << ": Coulomb v1 Naux=" << file.naux
-           << " does not match basis_aux.nb_total=" << expected_naux;
+           << " does not match basis_aux.nb_total=" << basis_aux.nb_total;
         throw std::logic_error(ss.str());
+    }
+    if (static_cast<std::size_t>(file.natoms) != basis_aux.n_atoms)
+    {
+        std::ostringstream ss;
+        ss << file.path << ": Coulomb v1 natoms=" << file.natoms
+           << " does not match basis_aux.n_atoms=" << basis_aux.n_atoms;
+        throw std::logic_error(ss.str());
+    }
+    for (std::size_t I = 0; I != basis_aux.n_atoms; ++I)
+    {
+        if (static_cast<std::size_t>(file.atom_naux[I]) != basis_aux[I])
+        {
+            std::ostringstream ss;
+            ss << file.path << ": Coulomb v1 atom " << I
+               << " Naux=" << file.atom_naux[I]
+               << " does not match basis_aux=" << basis_aux[I];
+            throw std::logic_error(ss.str());
+        }
     }
 }
 
@@ -1681,14 +1704,14 @@ size_t read_Vq_full_v1(const string &dir_path, const string &vq_fprefix,
     for (const auto &path: files)
     {
         CoulombV1File file(path);
-        validate_coulomb_v1_naux(file, basis_aux.nb_total);
+        validate_coulomb_v1_basis(file, basis_aux);
         const int iq0 = file.iq - 1;
 
         for (std::size_t I = 0; I != basis_aux.n_atoms; ++I)
         {
             for (std::size_t J = I; J != basis_aux.n_atoms; ++J)
             {
-                auto block = read_coulomb_v1_atom_pair(file, basis_aux, I, J);
+                auto block = read_coulomb_v1_atom_pair(file, I, J);
                 if (is_cut_coulomb)
                 {
                     driver::h.set_aux_cut_coulomb_k_atom_pair_packed(
@@ -1727,14 +1750,14 @@ size_t read_Vq_row_v1(const string &dir_path, const string &vq_fprefix, double t
     for (const auto &path: files)
     {
         CoulombV1File file(path);
-        validate_coulomb_v1_naux(file, basis_aux.nb_total);
+        validate_coulomb_v1_basis(file, basis_aux);
         const int iq0 = file.iq - 1;
 
         for (const auto &ap: local_atpair)
         {
             const auto I = static_cast<std::size_t>(ap.first);
             const auto J = static_cast<std::size_t>(ap.second);
-            auto block = read_coulomb_v1_atom_pair(file, basis_aux, I, J);
+            auto block = read_coulomb_v1_atom_pair(file, I, J);
             if (is_cut_coulomb)
             {
                 driver::h.set_aux_cut_coulomb_k_atom_pair_packed(
