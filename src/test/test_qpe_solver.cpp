@@ -134,10 +134,51 @@ void test_perturbative_qp_weight()
     assert(fequal(e_qp, e_qp_ref, 1.0e-10));
 }
 
+void test_adaptive_damp_branch_hop_fallback()
+{
+    constexpr double ha2ev = 27.211386245988;
+    constexpr double e_mf = 224.36314 / ha2ev;
+    constexpr double e_fermi = 0.5857220000;
+    constexpr double vxc = -14.27774 / ha2ev;
+    constexpr double sigma_x = -3.38758 / ha2ev;
+
+    std::vector<cplxdb> xs = {
+        {0.0, 4.69249941085e-02},
+        {0.0, 1.58112711805e-01},
+        {0.0, 3.30595530175e-01},
+        {0.0, 6.41469454789e-01},
+        {0.0, 1.24723699203e+00},
+        {0.0, 2.49729647300e+00},
+        {0.0, 5.30291176215e+00},
+        {0.0, 1.35255767277e+01},
+    };
+    std::vector<cplxdb> data = {
+        {-1.37547254497e+00, -6.41621915982e-03},
+        {-1.37287749437e+00, -4.96138067860e-02},
+        {-1.36838585253e+00, -8.16399081261e-02},
+        {-1.34663567190e+00, -1.74526824216e-01},
+        {-1.28720864939e+00, -2.89219092788e-01},
+        {-1.11524539502e+00, -4.89663540520e-01},
+        {-7.60085551584e-01, -6.05643169055e-01},
+        {-2.84673157366e-01, -5.08369524160e-01},
+    };
+
+    AnalyContPade pade(xs.size(), xs, data);
+    double e_qp = 0.0;
+    cplxdb sigc;
+    const int info = qpe_solver_pade_self_consistent(
+        pade, e_mf, e_fermi, vxc, sigma_x, e_qp, sigc, 1.0e-3, 1.0e-5, 200, 0.1, true);
+
+    assert(info == 0);
+    assert(std::isfinite(e_qp));
+    assert(e_qp > 5.0 && e_qp < 6.5);
+}
+
 int main(int argc, char *argv[])
 {
     check_single_pole_self_energy(false);
     check_single_pole_self_energy(true);
     test_quasi_newton_uses_pade_derivative();
     test_perturbative_qp_weight();
+    test_adaptive_damp_branch_hop_fallback();
 }

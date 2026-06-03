@@ -15,7 +15,7 @@ namespace librpa_int
 namespace
 {
 
-struct QpeIteration
+struct QpeFixedPointIteration
 {
     int iter;
     double e_trial;
@@ -53,6 +53,7 @@ constexpr double qpe_damp_max = 1.0;
 constexpr double qpe_damp_shrink = 0.5;
 constexpr double qpe_damp_grow = 1.25;
 constexpr double qpe_newton_denom_min = 1.0e-12;
+constexpr int qpe_min_damp_sign_changes_to_mix = 2;
 
 double qpe_damp_upper_bound(const double damp_fac)
 {
@@ -126,10 +127,11 @@ int qpe_solver_pade_self_consistent(
     // initial guess of e_qp as input mean-field energy
     const double e0 = e_mf - vxc + sigma_x;
     double e_qp_last = e_mf;
+    double e_trial_last = e_mf;
     double e_trial_this;
     double e_qp_this = e_mf;
     cplxdb sigc_this, sigc_last;
-    std::array<QpeIteration, n_qpe_iters_to_dump> last_iters;
+    std::array<QpeFixedPointIteration, n_qpe_iters_to_dump> last_iters;
     int n_iters_recorded = 0;
 
     if (n_iter_max <= 0)
@@ -145,6 +147,8 @@ int qpe_solver_pade_self_consistent(
     double damp = damp_max;
     double abs_diff_last = std::numeric_limits<double>::infinity();
     double diff_last = std::numeric_limits<double>::quiet_NaN();
+    int n_min_damp_sign_changes = 0;
+    bool use_residual_mixing_update = false;
 
     // std::cout << "QPE: " << e_mf << " " << e_fermi << " " << vxc << " " << sigma_x << "\n";
     while (n_iter++ < n_iter_max)
@@ -155,7 +159,9 @@ int qpe_solver_pade_self_consistent(
         const int n_backtrack = use_adaptive_damp ? n_qpe_max_backtrack : 0;
         for (int i_backtrack = 0; i_backtrack <= n_backtrack; ++i_backtrack)
         {
-            e_trial_this = e_qp_last + damp_this * diff;
+            const double e_update_base =
+                use_residual_mixing_update ? e_trial_last : e_qp_last;
+            e_trial_this = e_update_base + damp_this * diff;
             sigc_this = pade.get(static_cast<cplxdb>(e_trial_this - e_fermi));
             e_qp_this = e0 + sigc_this.real();
             abs_diff_this = std::abs(e_qp_this - e_trial_this);
@@ -174,9 +180,10 @@ int qpe_solver_pade_self_consistent(
         diff = e_qp_this - e_trial_this;
         damp = damp_this;
         e_qp_last = e_qp_this;
+        e_trial_last = e_trial_this;
         sigc_last = sigc_this;
         last_iters[n_iters_recorded % n_qpe_iters_to_dump] =
-                QpeIteration{n_iter, e_trial_this, e_qp_this, sigc_last, diff, damp};
+                QpeFixedPointIteration{n_iter, e_trial_this, e_qp_this, sigc_last, diff, damp};
         ++n_iters_recorded;
         if (abs_diff_this < thres)
         {
@@ -195,10 +202,31 @@ int qpe_solver_pade_self_consistent(
         if (use_adaptive_damp && sign_changed)
         {
             damp = std::max(damp_min, qpe_damp_shrink * damp);
+            if (damp <= damp_min && abs_diff_this > thres)
+            {
+                ++n_min_damp_sign_changes;
+                if (!use_residual_mixing_update &&
+                    n_min_damp_sign_changes >= qpe_min_damp_sign_changes_to_mix)
+                {
+                    // The legacy update can branch-hop even at the damping floor; fall back
+                    // to local residual mixing so the damping factor controls the step.
+                    use_residual_mixing_update = true;
+                    damp = damp_max;
+                }
+            }
+            else
+            {
+                n_min_damp_sign_changes = 0;
+            }
         }
         else if (use_adaptive_damp && abs_diff_this < abs_diff_last)
         {
             damp = std::min(damp_max, std::max(damp_min, qpe_damp_grow * damp));
+            n_min_damp_sign_changes = 0;
+        }
+        else
+        {
+            n_min_damp_sign_changes = 0;
         }
         diff_last = diff;
         abs_diff_last = abs_diff_this;
