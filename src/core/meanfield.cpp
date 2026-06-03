@@ -197,6 +197,52 @@ double MeanField::get_band_gap() const
     return gap;
 }
 
+int MeanField::get_max_state_below_energy(double energy) const
+{
+    int i_state_bound = -1;
+    for (int i_state = 0; i_state != n_states; ++i_state)
+    {
+        bool all_below = true;
+        for (int is = 0; is != n_spins && all_below; ++is)
+        {
+            for (int ik = 0; ik != n_kpoints; ++ik)
+            {
+                if (eskb[is](ik, i_state) >= energy)
+                {
+                    all_below = false;
+                    break;
+                }
+            }
+        }
+        if (!all_below) break;
+        i_state_bound = i_state;
+    }
+    return i_state_bound;
+}
+
+int MeanField::get_min_state_above_energy(double energy) const
+{
+    int i_state_bound = n_states;
+    for (int i_state = n_states - 1; i_state >= 0; --i_state)
+    {
+        bool all_above = true;
+        for (int is = 0; is != n_spins && all_above; ++is)
+        {
+            for (int ik = 0; ik != n_kpoints; ++ik)
+            {
+                if (eskb[is](ik, i_state) <= energy)
+                {
+                    all_above = false;
+                    break;
+                }
+            }
+        }
+        if (!all_above) break;
+        i_state_bound = i_state;
+    }
+    return i_state_bound;
+}
+
 // get_dmat_cplx can be used for both serial and k-porallel version
 ComplexMatrix MeanField::get_dmat_cplx(int ispin, int ispinor_bra, int ispinor_ket, int ikpt) const
 {

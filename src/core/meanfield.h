@@ -99,6 +99,12 @@ public:
     const std::vector<std::vector<std::vector<ComplexMatrix>>>& get_velocity() const { return velocity; }
     double get_E_min_max(double& emin, double& emax) const;
     double get_band_gap() const;
+    //! Largest state index whose state and all lower-indexed states are below energy.
+    //! Returns -1 if no state satisfies the condition.
+    int get_max_state_below_energy(double energy) const;
+    //! Smallest state index whose state and all higher-indexed states are above energy.
+    //! Returns n_states if no state satisfies the condition.
+    int get_min_state_above_energy(double energy) const;
 
     // Extract local k-point indices, used for MPI parallelization
     std::vector<int> get_iks_local() const;

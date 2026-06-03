@@ -1,4 +1,5 @@
 #include "../core/meanfield.h"
+#include <cassert>
 #include <map>
 
 #include "testutils.h"
@@ -56,8 +57,37 @@ void test_BCC_He_gamma_minimal_basis_aims()
     assert(fequal(gf_gamma(4, 4), {-0.962374022009208e+00, 0}, thres));
 }
 
+void test_state_index_energy_bounds()
+{
+    using namespace librpa_int;
+
+    MeanField mf(1, 2, 4, 4);
+    const std::vector<std::vector<double>> eig {
+        {-3.0, -1.0, 0.5, 2.0},
+        {-2.0, -0.5, 1.5, 3.0},
+    };
+    for (int ik = 0; ik != 2; ++ik)
+    {
+        for (int ist = 0; ist != 4; ++ist)
+        {
+            mf.get_eigenvals()[0](ik, ist) = eig[ik][ist];
+        }
+    }
+
+    assert(mf.get_max_state_below_energy(-3.5) == -1);
+    assert(mf.get_max_state_below_energy(-1.5) == 0);
+    assert(mf.get_max_state_below_energy(0.75) == 1);
+    assert(mf.get_max_state_below_energy(4.0) == 3);
+
+    assert(mf.get_min_state_above_energy(4.0) == 4);
+    assert(mf.get_min_state_above_energy(1.0) == 3);
+    assert(mf.get_min_state_above_energy(-0.75) == 2);
+    assert(mf.get_min_state_above_energy(-4.0) == 0);
+}
+
 int main(int argc, char *argv[])
 {
     test_BCC_He_gamma_minimal_basis_aims();
+    test_state_index_energy_bounds();
     return 0;
 }
