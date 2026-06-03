@@ -36,8 +36,19 @@ if(LIBRPA_BUNDLED_ELPA_PROJECT_TARGET)
 endif()
 
 if(LIBRPA_USE_CUDA OR LIBRPA_USE_HIP)
-  target_link_libraries(rpa_lib PRIVATE ddla_lib)
-  target_include_directories(rpa_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/LibDDLA/include)
+  if(NOT LIBDDLA_PATH AND NOT "$ENV{LIBDDLA_PATH}" STREQUAL "")
+    # External LibDDLA from environment variable
+    # target_include_directories(rpa_lib PRIVATE $ENV{LIBDDLA_PATH}/include)
+    # target_include_directories(rpa_lib PUBLIC $<BUILD_INTERFACE:$ENV{LIBDDLA_PATH}/include>)
+  elseif(LIBDDLA_PATH)
+    # External LibDDLA from CMake variable
+    # target_include_directories(rpa_lib PRIVATE ${LIBDDLA_PATH}/include)
+    # target_include_directories(rpa_lib PUBLIC $<BUILD_INTERFACE:$ENV{LIBDDLA_PATH}/include>)
+  else()
+    # Bundled LibDDLA from thirdparty/
+    target_include_directories(rpa_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/LibDDLA/include)
+    target_link_libraries(rpa_lib PRIVATE ddla_lib)
+  endif()
 endif()
 
 target_include_directories(rpa_lib
