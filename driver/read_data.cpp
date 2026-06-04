@@ -459,6 +459,8 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
         profiler.start("driver_read_Cs");
         read_Cs(dir_path, driver::driver_params.cs_threshold, local_atpair);
         profiler.stop("driver_read_Cs");
+
+        mpi_comm_global_h.barrier();
         profiler.start("driver_read_Vq");
         read_Vq_row(dir_path, driver::driver_params.prefix_coul_full,
                     driver::opts.vq_threshold, local_atpair, false,
@@ -474,6 +476,7 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
         // Vq distributed using the same strategy
         // There should be no duplicate for V
 
+        mpi_comm_global_h.barrier();
         profiler.start("driver_read_Vq");
         auto trangular_loc_atpair = librpa_int::dispatch_upper_triangular_tasks(
             n_atoms, blacs_h.myid, blacs_h.nprows, blacs_h.npcols,
@@ -483,12 +486,7 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
         read_Vq_row(dir_path, driver::driver_params.prefix_coul_full,
                     driver::opts.vq_threshold, local_atpair, false,
                     driver::driver_params.version_coul_reader);
-        mpi_comm_global_h.barrier();
         profiler.stop("driver_read_Vq");
-        lib_printf_coll("| Process %5d: coulomb_mat read. Wall/CPU time [min]: %12.4f %12.4f\n",
-                        mpi_comm_global_h.myid,
-                        profiler.get_wall_time_last("driver_read_Vq") / 60.0,
-                        profiler.get_cpu_time_last("driver_read_Vq") / 60.0);
     }
     else
     {
@@ -498,18 +496,26 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
         read_Cs(dir_path, driver::driver_params.cs_threshold, local_atpair);
         profiler.stop("driver_read_Cs");
 
+        mpi_comm_global_h.barrier();
         profiler.start("driver_read_Vq");
         read_Vq_full(dir_path, driver::driver_params.prefix_coul_full, false,
                      driver::driver_params.version_coul_reader);
         profiler.stop("driver_read_Vq");
     }
 
+    mpi_comm_global_h.barrier();
+    lib_printf_coll("| Process %5d: coulomb_mat read. Wall/CPU time [min]: %12.4f %12.4f\n",
+                    mpi_comm_global_h.myid,
+                    profiler.get_wall_time_last("driver_read_Vq") / 60.0,
+                    profiler.get_cpu_time_last("driver_read_Vq") / 60.0);
+    mpi_comm_global_h.barrier();
     lib_printf_coll("| Process %5d: Cs with %14zu non-zero keys from local atpair size %7zu. "
                     "Data memory: %10.2f MB. Wall/CPU time [min]: %12.4f %12.4f\n",
                     mpi_comm_global_h.myid, Cs_data.n_keys(), local_atpair.size(),
                     Cs_data.n_data_bytes() * 8.0e-6,
                     profiler.get_wall_time_last("driver_read_Cs") / 60.0,
                     profiler.get_cpu_time_last("driver_read_Cs") / 60.0);
+    mpi_comm_global_h.barrier();
 }
 
 static bool get_Cs_binary_data_size(int n_i, int n_j, int n_mu, std::streamoff &data_size)
@@ -1043,9 +1049,9 @@ std::vector<size_t> handle_Cs_file_dry(const string &file_path, double threshold
                     infile >> Cs_ele;
                     maxval = std::max(maxval, std::abs(stod(Cs_ele)));
                 }
-        librpa_int::global::ofs_myid << id << " " << ia1 << " " << ia2 << " (" << ic_1 << ","
-                                     << ic_2 << "," << ic_3 << ") " << maxval << " keep? "
-                                     << (maxval >= threshold) << endl;
+        // librpa_int::global::ofs_myid << id << " " << ia1 << " " << ia2 << " (" << ic_1 << ","
+        //                              << ic_2 << "," << ic_3 << ") " << maxval << " keep? "
+        //                              << (maxval >= threshold) << endl;
         if (maxval >= threshold) Cs_ids_keep.push_back(id);
         id++;
     }
@@ -1557,6 +1563,63 @@ std::string posix_io_error(const std::string &operation, const std::string &path
     return ss.str();
 }
 
+std::vector<atpair_t> sort_atom_pairs_by_coulomb_v1_order(
+    const std::vector<atpair_t> &atom_pairs,
+    const std::size_t natoms)
+{
+    std::vector<atpair_t> sorted_pairs = atom_pairs;
+    std::sort(sorted_pairs.begin(), sorted_pairs.end(),
+              [natoms](const auto &a, const auto &b)
+              {
+                  const auto ia = coulomb_atom_pair_index(a.first, a.second, natoms);
+                  const auto ib = coulomb_atom_pair_index(b.first, b.second, natoms);
+                  return ia < ib;
+              });
+    return sorted_pairs;
+}
+
+void append_atom_pair(std::ostringstream &ss, const atpair_t &pair)
+{
+    ss << "(" << pair.first << "," << pair.second << ")";
+}
+
+std::string compact_atom_pair_ranges(const std::vector<atpair_t> &sorted_pairs,
+                                     const std::size_t natoms)
+{
+    if (sorted_pairs.empty()) return "(empty)";
+
+    std::ostringstream ss;
+    std::size_t nranges = 0;
+    std::size_t range_begin = 0;
+    auto previous_index = coulomb_atom_pair_index(
+        sorted_pairs.front().first, sorted_pairs.front().second, natoms);
+
+    auto append_range = [&](const std::size_t begin, const std::size_t end) {
+        if (nranges != 0) ss << "; ";
+        append_atom_pair(ss, sorted_pairs[begin]);
+        if (begin != end)
+        {
+            ss << " ... ";
+            append_atom_pair(ss, sorted_pairs[end]);
+        }
+        ++nranges;
+    };
+
+    for (std::size_t i = 1; i != sorted_pairs.size(); ++i)
+    {
+        const auto index = coulomb_atom_pair_index(
+            sorted_pairs[i].first, sorted_pairs[i].second, natoms);
+        if (index != previous_index + 1)
+        {
+            append_range(range_begin, i - 1);
+            range_begin = i;
+        }
+        previous_index = index;
+    }
+    append_range(range_begin, sorted_pairs.size() - 1);
+    return ss.str();
+}
+
 class CoulombV1File
 {
 public:
@@ -1948,13 +2011,24 @@ size_t read_Vq_row_v1(const string &dir_path, const string &vq_fprefix, double t
             "No Coulomb reader v1 files found with prefix " + vq_fprefix);
     }
 
+    const auto sorted_local_atpair = sort_atom_pairs_by_coulomb_v1_order(
+        local_atpair, basis_aux.n_atoms);
+    ofs_myid << "read_Vq_row_v1 "
+             << (is_cut_coulomb ? "cut" : "bare")
+             << " local atom-pairs in v1 file order"
+             << " (natoms=" << basis_aux.n_atoms
+             << ", count=" << sorted_local_atpair.size()
+             << "): "
+             << compact_atom_pair_ranges(sorted_local_atpair, basis_aux.n_atoms)
+             << std::endl;
+
     for (const auto &path: files)
     {
         CoulombV1File file(path);
         validate_coulomb_v1_basis(file, basis_aux);
         const int iq0 = file.iq - 1;
 
-        for (const auto &ap: local_atpair)
+        for (const auto &ap: sorted_local_atpair)
         {
             const auto I = static_cast<std::size_t>(ap.first);
             const auto J = static_cast<std::size_t>(ap.second);
