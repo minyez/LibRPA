@@ -16,7 +16,9 @@ Reader version 1 stores deterministic atom-pair blocks:
 * int32 number of auxiliary basis functions, Naux
 * int32 value type flag: 0 for real double data, 1 for complex double data
 * int32 number of atoms, Natoms
+* int32 number of stored atom-pair blocks, Nblocks
 * Natoms int32 values with per-atom auxiliary basis sizes
+* Nblocks records of int32 atom-pair block index and int64 byte offset
 * dense row-major atom-pair blocks for (0,0), (0,1), ..., (0,Natoms-1),
   (1,1), ..., with full dense diagonal blocks
 
@@ -53,8 +55,9 @@ COMPLEX_FLAG = 1
 Q_WEIGHT_TOL = 1e-10
 
 # Version markers. Must match those in driver/read_data.cpp
-COULOMB_V1_MARKER = 20129432
-COULOMB_V1_HEADER_BASE_SIZE = 5 * 4
+COULOMB_V1_MARKER = 20129433
+COULOMB_V1_HEADER_BASE_SIZE = 6 * 4
+COULOMB_V1_BLOCK_RECORD_SIZE = 4 + 8
 
 
 class ConversionError(RuntimeError):
@@ -222,17 +225,20 @@ class CoulombMatrix:
         tmp_path = output_path.with_name(output_path.name + ".tmp")
         try:
             with tmp_path.open("wb") as handle:
+                value_bytes = 16 if flag == COMPLEX_FLAG else 8
                 handle.write(
                     struct.pack(
-                        endian + "iiiii",
+                        endian + "iiiiii",
                         COULOMB_V1_MARKER,
                         self.iq,
                         self.naux,
                         flag,
                         atom_layout.natoms,
+                        atom_layout.pair_count(),
                     )
                 )
                 handle.write(struct.pack(endian + f"{atom_layout.natoms}i", *atom_layout.atom_naux))
+                handle.write(atom_layout.block_table_bytes(endian, value_bytes))
                 self.write_atom_pair_blocks(handle, endian, flag, atom_layout)
             os.replace(tmp_path, output_path)
         finally:
@@ -359,6 +365,9 @@ class AtomLayout:
                 payload_offset += self.atom_naux[i_atom] * self.atom_naux[j_atom]
         self.pair_offsets[-1] = payload_offset
 
+    def pair_count(self) -> int:
+        return self.natoms * (self.natoms + 1) // 2
+
     def validate_naux(self, naux: int, path: Path) -> None:
         if self.naux != naux:
             raise ConversionError(
@@ -386,6 +395,31 @@ class AtomLayout:
 
     def payload_value_count(self) -> int:
         return self.pair_offsets[-1]
+
+    def payload_byte_offset(self) -> int:
+        return (
+            COULOMB_V1_HEADER_BASE_SIZE
+            + 4 * self.natoms
+            + self.pair_count() * COULOMB_V1_BLOCK_RECORD_SIZE
+        )
+
+    def block_byte_offset(self, pair_index: int, value_bytes: int) -> int:
+        return self.payload_byte_offset() + self.pair_offsets[pair_index] * value_bytes
+
+    def iter_pair_indices(self) -> Iterator[int]:
+        return iter(range(self.pair_count()))
+
+    def block_table_bytes(self, endian: str, value_bytes: int) -> bytes:
+        table = bytearray()
+        for pair_index in self.iter_pair_indices():
+            table.extend(
+                struct.pack(
+                    endian + "iq",
+                    pair_index,
+                    self.block_byte_offset(pair_index, value_bytes),
+                )
+            )
+        return bytes(table)
 
 
 class StreamingCoulombOutput:
@@ -418,22 +452,23 @@ class StreamingCoulombOutput:
             )
         self.fd = os.open(self.tmp_path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o644)
         header = struct.pack(
-            endian + "iiiii",
+            endian + "iiiiii",
             COULOMB_V1_MARKER,
             iq,
             naux,
             COMPLEX_FLAG,
             atom_layout.natoms,
+            atom_layout.pair_count(),
         )
         os.write(self.fd, header)
         os.write(
             self.fd,
             struct.pack(endian + f"{atom_layout.natoms}i", *atom_layout.atom_naux),
         )
+        os.write(self.fd, atom_layout.block_table_bytes(endian, 16))
         os.ftruncate(
             self.fd,
-            COULOMB_V1_HEADER_BASE_SIZE
-            + 4 * atom_layout.natoms
+            atom_layout.payload_byte_offset()
             + atom_layout.payload_value_count() * 16,
         )
         self.closed = False
@@ -455,8 +490,7 @@ class StreamingCoulombOutput:
     ) -> int:
         assert self.atom_layout is not None
         return (
-            COULOMB_V1_HEADER_BASE_SIZE
-            + 4 * self.atom_layout.natoms
+            self.atom_layout.payload_byte_offset()
             + self.atom_layout.pair_value_offset(i_atom, j_atom, i_local, j_local) * 16
         )
 

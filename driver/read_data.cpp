@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cctype>
 #include <complex>
+#include <cstdint>
 #include <fstream>
 #include <iomanip>
 #include <ios>
@@ -31,7 +32,7 @@
 #include "../src/utils/profiler.h"
 #include "../src/utils/utils_mem.h"
 
-#define READER_COULOMB_V1_MARKER 20129432
+#define READER_COULOMB_V1_MARKER 20129433
 
 using std::ifstream;
 using std::string;
@@ -1527,7 +1528,10 @@ namespace
 constexpr int COULOMB_V1_REAL_FLAG = 0;
 constexpr int COULOMB_V1_COMPLEX_FLAG = 1;
 constexpr MPI_Offset COULOMB_V1_HEADER_BASE_SIZE =
-    5 * static_cast<MPI_Offset>(sizeof(int));
+    6 * static_cast<MPI_Offset>(sizeof(int));
+constexpr MPI_Offset COULOMB_V1_BLOCK_RECORD_SIZE =
+    static_cast<MPI_Offset>(sizeof(int) + sizeof(std::int64_t));
+constexpr MPI_Offset COULOMB_V1_MISSING_BLOCK = -1;
 
 static_assert(sizeof(std::complex<double>) == 2 * sizeof(double),
               "Coulomb atom-pair IO expects std::complex<double> as two doubles");
@@ -1552,13 +1556,14 @@ public:
             throw std::logic_error("Failed to open Coulomb v1 file " + path);
         }
 
-        int header[5];
+        int header[6];
         read_bytes(0, header, sizeof(header));
         const int marker = header[0];
         iq = header[1];
         naux = header[2];
         value_flag = header[3];
         natoms = header[4];
+        nblocks = header[5];
 
         if (marker != READER_COULOMB_V1_MARKER)
         {
@@ -1578,6 +1583,10 @@ public:
         if (natoms <= 0)
         {
             throw std::logic_error(path + ": invalid Coulomb v1 atom count");
+        }
+        if (nblocks < 0)
+        {
+            throw std::logic_error(path + ": invalid Coulomb v1 block count");
         }
         if (value_flag != COULOMB_V1_REAL_FLAG &&
             value_flag != COULOMB_V1_COMPLEX_FLAG)
@@ -1609,30 +1618,74 @@ public:
             throw std::logic_error(ss.str());
         }
 
-        const auto npairs = static_cast<std::size_t>(natoms) *
+        npairs = static_cast<std::size_t>(natoms) *
             (static_cast<std::size_t>(natoms) + 1) / 2;
-        block_offsets.resize(npairs + 1);
-        MPI_Offset offset = header_size();
-        for (std::size_t I = 0; I != atom_naux.size(); ++I)
+        if (static_cast<std::size_t>(nblocks) > npairs)
         {
-            for (std::size_t J = I; J != atom_naux.size(); ++J)
-            {
-                const auto ipair = coulomb_atom_pair_index(I, J, atom_naux.size());
-                block_offsets[ipair] = offset;
-                offset += static_cast<MPI_Offset>(atom_naux[I]) *
-                          static_cast<MPI_Offset>(atom_naux[J]) * value_bytes;
-            }
+            throw std::logic_error(path + ": Coulomb v1 block count exceeds atom-pair count");
         }
-        block_offsets[npairs] = offset;
 
         MPI_Offset file_size = 0;
         MPI_File_get_size(file, &file_size);
-        if (file_size != offset)
+        block_offsets.assign(npairs, COULOMB_V1_MISSING_BLOCK);
+        const MPI_Offset table_end = header_size();
+        for (int iblock = 0; iblock != nblocks; ++iblock)
         {
-            std::ostringstream ss;
-            ss << path << ": invalid Coulomb v1 file size " << file_size
-               << ", expected " << offset;
-            throw std::logic_error(ss.str());
+            const MPI_Offset record_offset = block_table_offset() +
+                static_cast<MPI_Offset>(iblock) * COULOMB_V1_BLOCK_RECORD_SIZE;
+            int ipair_i32 = -1;
+            std::int64_t block_offset_i64 = 0;
+            read_bytes(record_offset, &ipair_i32, sizeof(ipair_i32));
+            read_bytes(record_offset + static_cast<MPI_Offset>(sizeof(int)),
+                       &block_offset_i64, sizeof(block_offset_i64));
+            if (ipair_i32 < 0 || static_cast<std::size_t>(ipair_i32) >= npairs)
+            {
+                std::ostringstream ss;
+                ss << path << ": invalid Coulomb v1 atom-pair index " << ipair_i32;
+                throw std::logic_error(ss.str());
+            }
+
+            const auto ipair = static_cast<std::size_t>(ipair_i32);
+            if (block_offsets[ipair] != COULOMB_V1_MISSING_BLOCK)
+            {
+                std::ostringstream ss;
+                ss << path << ": duplicated Coulomb v1 atom-pair index " << ipair_i32;
+                throw std::logic_error(ss.str());
+            }
+            const auto block_offset = static_cast<MPI_Offset>(block_offset_i64);
+            const auto [I, J] = atom_pair_from_index(ipair);
+            const MPI_Offset block_bytes =
+                static_cast<MPI_Offset>(atom_naux[I]) *
+                static_cast<MPI_Offset>(atom_naux[J]) * value_bytes;
+            if (block_offset < table_end || block_offset > file_size ||
+                block_bytes > file_size - block_offset)
+            {
+                std::ostringstream ss;
+                ss << path << ": invalid Coulomb v1 byte offset " << block_offset
+                   << " for atom-pair index " << ipair_i32;
+                throw std::logic_error(ss.str());
+            }
+            block_offsets[ipair] = block_offset;
+        }
+
+        std::vector<std::pair<MPI_Offset, MPI_Offset>> ranges;
+        ranges.reserve(static_cast<std::size_t>(nblocks));
+        for (std::size_t ipair = 0; ipair != npairs; ++ipair)
+        {
+            if (block_offsets[ipair] == COULOMB_V1_MISSING_BLOCK) continue;
+            const auto [I, J] = atom_pair_from_index(ipair);
+            const MPI_Offset block_bytes =
+                static_cast<MPI_Offset>(atom_naux[I]) *
+                static_cast<MPI_Offset>(atom_naux[J]) * value_bytes;
+            ranges.emplace_back(block_offsets[ipair], block_offsets[ipair] + block_bytes);
+        }
+        std::sort(ranges.begin(), ranges.end());
+        for (std::size_t i = 1; i != ranges.size(); ++i)
+        {
+            if (ranges[i].first < ranges[i - 1].second)
+            {
+                throw std::logic_error(path + ": overlapping Coulomb v1 atom-pair blocks");
+            }
         }
     }
 
@@ -1676,12 +1729,38 @@ public:
     MPI_Offset header_size() const
     {
         return COULOMB_V1_HEADER_BASE_SIZE +
+            static_cast<MPI_Offset>(natoms) * sizeof(int) +
+            static_cast<MPI_Offset>(nblocks) * COULOMB_V1_BLOCK_RECORD_SIZE;
+    }
+
+    MPI_Offset block_table_offset() const
+    {
+        return COULOMB_V1_HEADER_BASE_SIZE +
             static_cast<MPI_Offset>(natoms) * sizeof(int);
+    }
+
+    std::pair<std::size_t, std::size_t> atom_pair_from_index(std::size_t ipair) const
+    {
+        for (std::size_t I = 0; I != atom_naux.size(); ++I)
+        {
+            const auto row_begin = coulomb_atom_pair_index(I, I, atom_naux.size());
+            const auto row_end = row_begin + atom_naux.size() - I;
+            if (ipair >= row_begin && ipair < row_end)
+            {
+                return {I, I + ipair - row_begin};
+            }
+        }
+        throw std::logic_error(path + ": atom-pair index is out of range");
     }
 
     MPI_Offset block_offset(const std::size_t I, const std::size_t J) const
     {
         return block_offsets.at(coulomb_atom_pair_index(I, J, atom_naux.size()));
+    }
+
+    bool has_block(const std::size_t I, const std::size_t J) const
+    {
+        return block_offset(I, J) != COULOMB_V1_MISSING_BLOCK;
     }
 
     std::string path;
@@ -1690,6 +1769,8 @@ public:
     int naux = 0;
     int value_flag = COULOMB_V1_COMPLEX_FLAG;
     int natoms = 0;
+    int nblocks = 0;
+    std::size_t npairs = 0;
     MPI_Offset value_bytes = 2 * static_cast<MPI_Offset>(sizeof(double));
     std::vector<int> atom_naux;
     std::vector<MPI_Offset> block_offsets;
@@ -1703,6 +1784,11 @@ std::vector<std::complex<double>> read_coulomb_v1_atom_pair(
     if (I > J)
     {
         throw std::logic_error("Coulomb reader v1 expects upper-triangular atom pairs");
+    }
+
+    if (!file.has_block(I, J))
+    {
+        return {};
     }
 
     const auto nrow = static_cast<std::size_t>(file.atom_naux[I]);
@@ -1792,6 +1878,7 @@ size_t read_Vq_full_v1(const string &dir_path, const string &vq_fprefix,
             for (std::size_t J = I; J != basis_aux.n_atoms; ++J)
             {
                 auto block = read_coulomb_v1_atom_pair(file, I, J);
+                if (block.empty()) continue;
                 if (is_cut_coulomb)
                 {
                     driver::h.set_aux_cut_coulomb_k_atom_pair_packed(
@@ -1838,6 +1925,7 @@ size_t read_Vq_row_v1(const string &dir_path, const string &vq_fprefix, double t
             const auto I = static_cast<std::size_t>(ap.first);
             const auto J = static_cast<std::size_t>(ap.second);
             auto block = read_coulomb_v1_atom_pair(file, I, J);
+            if (block.empty()) continue;
             if (is_cut_coulomb)
             {
                 driver::h.set_aux_cut_coulomb_k_atom_pair_packed(

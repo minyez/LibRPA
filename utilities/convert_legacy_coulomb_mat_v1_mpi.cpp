@@ -1,7 +1,7 @@
 // Compile the code via
-//   mpicxx -std=c++17 -o convert_legacy_coulomb_mat_v1_mpi.exx convert_legacy_coulomb_mat_v1_mpi.cpp
+//   mpicxx -std=c++17 -o convert_legacy_coulomb_mat_v1_mpi.exe convert_legacy_coulomb_mat_v1_mpi.cpp
 // Run as
-//   mpirun -np 4 convert_legacy_coulomb_mat_v1_mpi.exx
+//   mpirun -np 4 convert_legacy_coulomb_mat_v1_mpi.exe
 #include <mpi.h>
 
 #include <algorithm>
@@ -17,6 +17,8 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -24,9 +26,10 @@ namespace fs = std::filesystem;
 namespace
 {
 
-constexpr int COULOMB_V1_MARKER = 20129432;
+constexpr int COULOMB_V1_MARKER = 20129433;
 constexpr int COMPLEX_FLAG = 1;
-constexpr int V1_HEADER_BASE_SIZE = 5 * static_cast<int>(sizeof(int));
+constexpr int V1_HEADER_BASE_SIZE = 6 * static_cast<int>(sizeof(int));
+constexpr int V1_BLOCK_RECORD_SIZE = sizeof(int) + sizeof(std::int64_t);
 constexpr int LEGACY_COMPLEX_BYTES = 2 * static_cast<int>(sizeof(double));
 
 struct ComplexValue
@@ -49,6 +52,7 @@ struct Options
     std::string ri_prefix = "Cs_data";
     std::string atom_naux_arg;
     int rows_per_task = 16;
+    int progress_blocks = 500;
     bool quiet = false;
 };
 
@@ -105,12 +109,23 @@ struct AtomLayout
 
     MPI_Offset header_bytes() const
     {
-        return V1_HEADER_BASE_SIZE + static_cast<MPI_Offset>(natoms) * sizeof(int);
+        return V1_HEADER_BASE_SIZE + static_cast<MPI_Offset>(natoms) * sizeof(int)
+               + pair_count() * V1_BLOCK_RECORD_SIZE;
     }
 
     MPI_Offset payload_value_count() const
     {
         return static_cast<MPI_Offset>(pair_offsets.back());
+    }
+
+    MPI_Offset pair_count() const
+    {
+        return static_cast<MPI_Offset>(natoms) * (natoms + 1) / 2;
+    }
+
+    MPI_Offset block_table_offset() const
+    {
+        return V1_HEADER_BASE_SIZE + static_cast<MPI_Offset>(natoms) * sizeof(int);
     }
 
     MPI_Offset pair_value_offset(int I, int J, int i_local, int j_local) const
@@ -149,6 +164,58 @@ struct Timing
     double write_seconds = 0.0;
 };
 
+struct ProgressKey
+{
+    int iq = 0;
+    std::size_t pair_index = 0;
+
+    bool operator==(const ProgressKey &other) const
+    {
+        return iq == other.iq && pair_index == other.pair_index;
+    }
+};
+
+struct ProgressKeyHash
+{
+    std::size_t operator()(const ProgressKey &key) const
+    {
+        const auto h1 = std::hash<int>{}(key.iq);
+        const auto h2 = std::hash<std::size_t>{}(key.pair_index);
+        return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+    }
+};
+
+class ProgressTracker
+{
+public:
+    ProgressTracker(int rank_in, int interval_in)
+        : rank(rank_in), interval(interval_in), start_time(MPI_Wtime())
+    {
+    }
+
+    void note(int iq, std::size_t pair_index)
+    {
+        if (interval <= 0) return;
+        const auto inserted = seen.insert({iq, pair_index}).second;
+        if (!inserted) return;
+
+        const auto count = seen.size();
+        if (count % static_cast<std::size_t>(interval) != 0) return;
+
+        std::cout << "[rank " << rank << "] processed " << count
+                  << " atom-pair block(s); latest iq=" << iq
+                  << ", pair_index=" << pair_index
+                  << ", elapsed=" << std::fixed << std::setprecision(2)
+                  << (MPI_Wtime() - start_time) << " s" << std::endl;
+    }
+
+private:
+    int rank = 0;
+    int interval = 0;
+    double start_time = 0.0;
+    std::unordered_set<ProgressKey, ProgressKeyHash> seen;
+};
+
 std::string usage()
 {
     return
@@ -168,6 +235,7 @@ std::string usage()
         "      --stru-name  NAME       Structure metadata filename (default: stru_out)\n"
         "      --ri-prefix  PREFIX     RI coefficient prefix for basis fallback (default: Cs_data)\n"
         "      --rows-per-task N       Binary legacy row chunk size (default: 16)\n"
+        "      --progress-blocks N     Print per-rank progress every N atom-pair blocks (default: 500; 0 disables)\n"
         "      --stream-complex        Accepted for compatibility; always enabled\n"
         "      --skip-lower            Accepted for compatibility; always enabled\n"
         "      --quiet                 Suppress conversion summary\n"
@@ -266,6 +334,12 @@ Options parse_args(int argc, char **argv)
             opts.rows_per_task = std::stoi(next_value(arg));
             if (opts.rows_per_task <= 0)
                 throw std::runtime_error("--rows-per-task must be positive");
+        }
+        else if (arg == "--progress-blocks")
+        {
+            opts.progress_blocks = std::stoi(next_value(arg));
+            if (opts.progress_blocks < 0)
+                throw std::runtime_error("--progress-blocks must be non-negative");
         }
         else if (arg == "--stream-complex" || arg == "--skip-lower")
         {
@@ -779,8 +853,9 @@ void create_output_file(const Options &opts, const AtomLayout &layout, int iq,
     if (ierr != MPI_SUCCESS)
         throw std::runtime_error("failed to create output file " + path.string());
 
-    const int header[5] = {
-        COULOMB_V1_MARKER, iq, layout.naux, COMPLEX_FLAG, layout.natoms
+    const int header[6] = {
+        COULOMB_V1_MARKER, iq, layout.naux, COMPLEX_FLAG, layout.natoms,
+        static_cast<int>(layout.pair_count())
     };
     t0 = MPI_Wtime();
     MPI_File_write_at(file, 0, const_cast<int *>(header), sizeof(header),
@@ -792,6 +867,26 @@ void create_output_file(const Options &opts, const AtomLayout &layout, int iq,
                       static_cast<int>(layout.atom_naux.size() * sizeof(int)),
                       MPI_BYTE, MPI_STATUS_IGNORE);
     timing.write_seconds += MPI_Wtime() - t0;
+    MPI_Offset record_offset = layout.block_table_offset();
+    for (int I = 0; I != layout.natoms; ++I)
+    {
+        for (int J = I; J != layout.natoms; ++J)
+        {
+            const int ipair = static_cast<int>(layout.atom_pair_index(I, J));
+            const std::int64_t block_offset =
+                static_cast<std::int64_t>(layout.byte_offset(I, J, 0, 0));
+            t0 = MPI_Wtime();
+            MPI_File_write_at(file, record_offset, const_cast<int *>(&ipair),
+                              sizeof(ipair), MPI_BYTE, MPI_STATUS_IGNORE);
+            timing.write_seconds += MPI_Wtime() - t0;
+            t0 = MPI_Wtime();
+            MPI_File_write_at(file, record_offset + static_cast<MPI_Offset>(sizeof(int)),
+                              const_cast<std::int64_t *>(&block_offset),
+                              sizeof(block_offset), MPI_BYTE, MPI_STATUS_IGNORE);
+            timing.write_seconds += MPI_Wtime() - t0;
+            record_offset += V1_BLOCK_RECORD_SIZE;
+        }
+    }
     t0 = MPI_Wtime();
     MPI_File_set_size(file, layout.file_size_bytes());
     timing.write_seconds += MPI_Wtime() - t0;
@@ -921,8 +1016,9 @@ void write_pair_conjugate(MPI_File output, const AtomLayout &layout,
                     &conj_value, sizeof(conj_value), "diagonal conjugate", timing);
 }
 
-void write_row_v1(MPI_File output, const AtomLayout &layout, int row, int col_begin,
-                  int ncol, const ComplexValue *values, Timing &timing)
+void write_row_v1(MPI_File output, const AtomLayout &layout, int iq, int row,
+                  int col_begin, int ncol, const ComplexValue *values,
+                  Timing &timing, ProgressTracker &progress)
 {
     const auto [row_atom, row_local] = layout.atom_for_aux(row);
     int col = std::max(row, col_begin);
@@ -942,6 +1038,7 @@ void write_row_v1(MPI_File output, const AtomLayout &layout, int row, int col_be
                             span_values,
                             static_cast<std::size_t>(span_len) * sizeof(ComplexValue),
                             "off-diagonal atom-pair row", timing);
+            progress.note(iq, layout.atom_pair_index(row_atom, col_atom));
         }
         else if (row_atom == col_atom)
         {
@@ -955,6 +1052,7 @@ void write_row_v1(MPI_File output, const AtomLayout &layout, int row, int col_be
                 write_pair_conjugate(output, layout, row_atom, row_local,
                                      col_local + offset, span_values[offset], timing);
             }
+            progress.note(iq, layout.atom_pair_index(row_atom, row_atom));
         }
 
         col = span_end;
@@ -963,7 +1061,7 @@ void write_row_v1(MPI_File output, const AtomLayout &layout, int row, int col_be
 
 void process_binary_task(const BinaryTask &task, const Options &opts, const AtomLayout &layout,
                          const std::vector<fs::path> &input_files, MpiFileCache &cache,
-                         Timing &timing)
+                         Timing &timing, ProgressTracker &progress)
 {
     if (task.naux != layout.naux)
         throw std::runtime_error("legacy Naux does not match v1 atom layout");
@@ -977,15 +1075,15 @@ void process_binary_task(const BinaryTask &task, const Options &opts, const Atom
 
     for (int local_row = 0; local_row != task.nrows; ++local_row)
     {
-        write_row_v1(output, layout, task.row_begin + local_row, task.col_begin,
+        write_row_v1(output, layout, task.iq, task.row_begin + local_row, task.col_begin,
                      task.ncol,
                      buffer.data() + static_cast<std::size_t>(local_row) * task.ncol,
-                     timing);
+                     timing, progress);
     }
 }
 
 void process_text_file(const fs::path &path, const Options &opts, const AtomLayout &layout,
-                       MpiFileCache &cache, Timing &timing)
+                       MpiFileCache &cache, Timing &timing, ProgressTracker &progress)
 {
     double t0 = MPI_Wtime();
     std::ifstream in(path);
@@ -1032,8 +1130,10 @@ void process_text_file(const fs::path &path, const Options &opts, const AtomLayo
             timing.read_seconds += MPI_Wtime() - t0;
             const int row = row_begin0 + local_row;
             if (row <= col_end - 1)
-                write_row_v1(output, layout, row, col_begin0, ncol, row_values.data(),
-                             timing);
+            {
+                write_row_v1(output, layout, iq, row, col_begin0, ncol, row_values.data(),
+                             timing, progress);
+            }
         }
     }
 }
@@ -1125,15 +1225,16 @@ int main(int argc, char **argv)
         MPI_Barrier(MPI_COMM_WORLD);
 
         MpiFileCache cache;
+        ProgressTracker progress(rank, opts.progress_blocks);
         for (std::size_t itask = rank; itask < binary_tasks.size(); itask += nprocs)
         {
             process_binary_task(binary_tasks[itask], opts, layout, input_files, cache,
-                                timing);
+                                timing, progress);
         }
         for (std::size_t itext = rank; itext < text_file_indices.size(); itext += nprocs)
         {
             process_text_file(input_files[text_file_indices[itext]], opts, layout, cache,
-                              timing);
+                              timing, progress);
         }
         cache.close_all(&timing);
 
