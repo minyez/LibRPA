@@ -11,6 +11,8 @@
 #include "../src/math/matrix.h"
 #include "../src/math/vector3_order.h"
 #include "librpa.hpp"
+#include "reader_lri.h"
+#include "reader_coulomb.h"
 
 // TODO: remove this include and internal datatypes in signature.
 // Data objects of internal types should be accessed in the implementation.
@@ -42,25 +44,13 @@ int read_eigenvector(const string &dir_path);
 // high-level reader for RI coefficients and bare Coulomb interactions
 void read_ri(const string &dir_path, librpa::ParallelRouting &routing);
 
-size_t read_Cs(const string &dir_path, double threshold, const std::vector<atpair_t> &local_atpair);
-
 void read_velocity(const string &file_path, MeanField &mf);
 void read_velocity_aims(MeanField &mf, const std::string &file_path);
-
-size_t read_Cs_evenly_distribute(const std::string &dir_path, double threshold, int myid, int nprocs,
-                                 const std::string keyword = "Cs_data");
-
-size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cut_coulomb,
-                    int reader_version = 0);
 
 void read_ri_shrink(const string &dir_path);
 
 size_t read_shrink_sinvS(const string &dir_path, const string &vq_fprefix,
                          std::map<Vector3_Order<double>, ComplexMatrix> &sinvS);
-
-size_t read_Vq_row(const std::string &dir_path, const std::string &vq_fprefix, double threshold,
-                   const std::vector<atpair_t> &local_atpair, bool is_cut_coulomb,
-                   int reader_version = 0);
 
 void read_stru(const std::string &file_path);
 
@@ -69,15 +59,10 @@ void read_bz_sampling(const std::string &file_path);
 void read_bz_sampling_from_stru(const std::string &file_path);
 
 void read_basis(const std::string &file_path);
-// Fallback method to read basis dimensions from Cs files, for early dataset versions
-void read_basis_from_Cs(const string &dir_path);
-
 void read_dielec_func(const string &file_path, std::vector<double> &omegas,
                       std::vector<double> &dielec_func_imagfreq);
 
 void erase_Cs_from_local_atp(atpair_R_mat_t &Cs, std::vector<atpair_t> &local_atpair);
-
-void get_natom_ncell_from_first_Cs_file(int &n_atom, int &n_cell, const string &dir_path);
 
 void read_band_kpath_info(const string &file_path);
 

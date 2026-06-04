@@ -10,6 +10,8 @@ list(APPEND exe_sources
   inputfile.cpp
   main.cpp
   read_data.cpp
+  reader_lri.cpp
+  reader_coulomb.cpp
   task.cpp
   # Specific task implementations
   task/exx.cpp
