@@ -27,6 +27,17 @@
                 comparison="cmp_table.abs_diff(1e-4)"
       />
     </testcase>
+
+    <testcase name="16-atom C supercell (aims input)" directory="exx_aims_C_sc_libri">
+      <build require_libri="true"
+      />
+      <validate name="EXX potential on k-grid"
+                regex="Band\s+e_exx.*e_exx"
+                headers="1"
+                rows="80"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+    </testcase>
   </group>
 
   <group name="One-shot GW quasi-particle energies (QPE)" prefix="G0W0">
