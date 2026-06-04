@@ -18,20 +18,21 @@ set(CMAKE_PROJECT_VERSION "${version}")
 set(LIBRPA_DRIVER_NAME         "chi0_main.exe")
 
 # Public options setup
+# Convention:
+# - `LIBRPA_USE_` for thirdparty/external components
+# - `LIBRPA_ENABLE_` for internal components (binding, test, ...)
 option(LIBRPA_USE_LIBRI            "Use LibRI for tensor contraction in LibRPA" OFF)
 option(LIBRPA_USE_EXTERNAL_ELPA    "Use an external ELPA eigensolver library from an installation prefix" OFF)
 option(LIBRPA_USE_BUNDLED_ELPA     "Build and use a bundled ELPA eigensolver library from thirdparty/ELPA" OFF)
 option(LIBRPA_BUNDLED_ELPA_OPENMP  "Build bundled ELPA with OpenMP support" OFF)
-option(LIBRPA_USE_CMAKE_INC        "Use cmake.inc for configure" OFF)
+option(LIBRPA_USE_CMAKE_INC        "Use cmake.inc for configure (deprecated)" OFF)
 option(LIBRPA_USE_EXTERNAL_GREENX  "Use an external GreenX target provided by the parent project instead of the bundled copy" OFF)
 option(LIBRPA_ENABLE_TEST          "Flag to build LibRPA tests" ON)
 option(LIBRPA_ENABLE_DRIVER        "Flag to build LibRPA driver executable" ON)
 option(LIBRPA_ENABLE_FORTRAN_BIND  "Flag to build LibRPA Fotran binding" OFF)
 option(LIBRPA_VERBOSE_OUTPUT       "Flag to print verbose information in stdout and process output of LibRPA" OFF)
-# NOTE: static library not tested
-# option(BUILD_LIBRPA_SHARED  "Flag to build shared libraries" ON)
-option(LIBRPA_USE_CUDA "Enable CUDA language support" OFF)
-option(LIBRPA_ENABlE_HIP "Enable HIP language support" OFF)
+option(LIBRPA_USE_CUDA             "Enable CUDA language support" OFF)
+option(LIBRPA_USE_HIP              "Enable HIP language support" OFF)
 
 option(LIBRPA_ENABLE_CPP_TEST      "Flag to build tests for C++ components" ON)
 option(LIBRPA_ENABLE_FORTRAN_TEST  "Flag to build tests for Fortran bindings" ON)
@@ -94,10 +95,12 @@ if(LIBRPA_USE_CUDA)
   set(CMAKE_CUDA_STANDARD ${CMAKE_CXX_STANDARD})
 endif()
 
-if(LIBRPA_USE_HIP)
-  # find_package(hip REQUIRED)
-  # enable_language(HIP)
-endif()
+# NOTE: Enabling HIP here may result in compiler inconsistency for the modules in test.
+#       Switch off temporarily. Instead, HIP flags are appended manually.
+# if(LIBRPA_USE_HIP)
+#   find_package(hip REQUIRED)
+#   enable_language(HIP)
+# endif()
 
 # bypass the deprecation warning of classic C++ of oneAPI
 if(CMAKE_CXX_COMPILER_ID MATCHES Intel)

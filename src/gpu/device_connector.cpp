@@ -20,7 +20,7 @@ bool check_device_ptr(void* ptr){
     
     if (err != cudaSuccess) {
         std::cerr << "cudaPointerGetAttributes failed: " << cudaGetErrorString(err) << std::endl;
-        exit(1);
+        return false;
     }
     return (attr.type == cudaMemoryTypeDevice);
 #elif defined(LIBRPA_USE_HIP)

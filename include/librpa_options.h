@@ -29,6 +29,7 @@ extern "C" {
  * computation functions.
  *
  * @note The data layout must match the Fortran binding.
+ *       Use utilities/check_librpa_options.py for inter-binding check.
  */
 typedef struct
 {
@@ -167,10 +168,10 @@ typedef struct
     //! Flag of using cholesky factorization for computing Wc from chi0
     LibrpaSwitch use_cholesky_gw_wc;
 
-    // ! Flag of using GPU for computing Wc from chi0
+    //! Flag of using GPU for computing Wc from chi0
     LibrpaSwitch use_gpu_gw_wc;
 
-    // ! Flag of using elpa for sqrt coulomb matrix
+    //! Flag of using elpa for sqrt coulomb matrix
     LibrpaSwitch use_elpa_sqrt_coulomb;
 
     //! Flag of replacing head of screened interaction by macroscopic dielectric function
