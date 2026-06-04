@@ -16,6 +16,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -31,6 +32,12 @@ constexpr int COMPLEX_FLAG = 1;
 constexpr int V1_HEADER_BASE_SIZE = 6 * static_cast<int>(sizeof(int));
 constexpr int V1_BLOCK_RECORD_SIZE = sizeof(int) + sizeof(std::int64_t);
 constexpr int LEGACY_COMPLEX_BYTES = 2 * static_cast<int>(sizeof(double));
+constexpr std::uint64_t CHECKPOINT_MAGIC = 0x31544b435f415052ULL; // "RPA_CKT1", little-endian
+constexpr std::uint64_t CHECKPOINT_VERSION = 1;
+constexpr int CHECKPOINT_HEADER_WORDS = 8;
+constexpr MPI_Offset CHECKPOINT_HEADER_BYTES =
+    CHECKPOINT_HEADER_WORDS * static_cast<MPI_Offset>(sizeof(std::int64_t));
+constexpr std::size_t MAX_CACHED_FILES = 64;
 
 struct ComplexValue
 {
@@ -51,9 +58,11 @@ struct Options
     std::string stru_name = "stru_out";
     std::string ri_prefix = "Cs_data";
     std::string atom_naux_arg;
+    fs::path checkpoint_path;
     int rows_per_task = 16;
     int progress_blocks = 500;
     bool quiet = false;
+    bool restart = false;
 };
 
 struct AtomLayout
@@ -158,6 +167,18 @@ struct BinaryTask
     MPI_Offset payload_offset = 0;
 };
 
+struct TextTask
+{
+    int file_index = 0;
+    int iq = 0;
+    int naux = 0;
+    int row_begin = 0;
+    int nrows = 0;
+    int col_begin = 0;
+    int ncol = 0;
+    std::int64_t payload_offset = 0;
+};
+
 struct Timing
 {
     double read_seconds = 0.0;
@@ -236,6 +257,8 @@ std::string usage()
         "      --ri-prefix  PREFIX     RI coefficient prefix for basis fallback (default: Cs_data)\n"
         "      --rows-per-task N       Binary legacy row chunk size (default: 16)\n"
         "      --progress-blocks N     Print per-rank progress every N atom-pair blocks (default: 500; 0 disables)\n"
+        "      --restart              Resume from the temporary checkpoint file\n"
+        "      --checkpoint PATH      Checkpoint file (default: output_dir/.<output_prefix>.v1_mpi.ckpt)\n"
         "      --stream-complex        Accepted for compatibility; always enabled\n"
         "      --skip-lower            Accepted for compatibility; always enabled\n"
         "      --quiet                 Suppress conversion summary\n"
@@ -341,6 +364,14 @@ Options parse_args(int argc, char **argv)
             if (opts.progress_blocks < 0)
                 throw std::runtime_error("--progress-blocks must be non-negative");
         }
+        else if (arg == "--restart")
+        {
+            opts.restart = true;
+        }
+        else if (arg == "--checkpoint")
+        {
+            opts.checkpoint_path = next_value(arg);
+        }
         else if (arg == "--stream-complex" || arg == "--skip-lower")
         {
             // Fixed fast path: complex-valued streaming output with lower input skipped.
@@ -360,6 +391,9 @@ Options parse_args(int argc, char **argv)
         }
     }
     if (opts.output_dir.empty()) opts.output_dir = opts.input_dir;
+    if (opts.checkpoint_path.empty())
+        opts.checkpoint_path = opts.output_dir
+                               / ("." + opts.output_prefix + ".v1_mpi.ckpt");
     return opts;
 }
 
@@ -701,7 +735,19 @@ void scan_binary_file(const fs::path &path, int file_index, int rows_per_task,
     }
 }
 
-void scan_text_file(const fs::path &path, std::map<int, int> &q_naux,
+void skip_text_values(std::ifstream &in, std::int64_t nvalues, const fs::path &path)
+{
+    std::string dummy;
+    for (std::int64_t i = 0; i != 2 * nvalues; ++i)
+    {
+        in >> dummy;
+        if (!in.good())
+            throw std::runtime_error("truncated text Coulomb values in " + path.string());
+    }
+}
+
+void scan_text_file(const fs::path &path, int file_index, int rows_per_task,
+                    std::vector<TextTask> &tasks, std::map<int, int> &q_naux,
                     std::int64_t &nblocks_total)
 {
     std::ifstream in(path);
@@ -719,10 +765,33 @@ void scan_text_file(const fs::path &path, std::map<int, int> &q_naux,
         in >> row_begin >> row_end >> col_begin >> col_end >> iq >> q_weight;
         validate_legacy_block(path, naux, row_begin, row_end, col_begin, col_end, iq);
         set_q_naux(q_naux, iq, naux);
-        const std::int64_t nvalues = static_cast<std::int64_t>(row_end - row_begin + 1)
-                                     * (col_end - col_begin + 1);
-        std::string dummy;
-        for (std::int64_t i = 0; i != 2 * nvalues; ++i) in >> dummy;
+        const int nrow = row_end - row_begin + 1;
+        const int ncol = col_end - col_begin + 1;
+        const int row_begin0 = row_begin - 1;
+        const int col_begin0 = col_begin - 1;
+        const int col_end0 = col_end - 1;
+        for (int local_row = 0; local_row < nrow;)
+        {
+            const int global_row = row_begin0 + local_row;
+            const int rows_this =
+                (global_row <= col_end0)
+                    ? std::min({rows_per_task, nrow - local_row,
+                                col_end0 + 1 - global_row})
+                    : nrow - local_row;
+            const auto payload_pos = in.tellg();
+            if (payload_pos == std::streampos(-1))
+                throw std::runtime_error("failed to record text offset in "
+                                         + path.string());
+            if (global_row <= col_end0)
+            {
+                tasks.push_back({
+                    file_index, iq, naux, global_row, rows_this, col_begin0, ncol,
+                    static_cast<std::int64_t>(payload_pos)
+                });
+            }
+            skip_text_values(in, static_cast<std::int64_t>(rows_this) * ncol, path);
+            local_row += rows_this;
+        }
         ++nblocks_total;
     }
 }
@@ -820,24 +889,75 @@ std::vector<BinaryTask> unpack_tasks(const std::vector<std::int64_t> &packed)
     return tasks;
 }
 
+std::vector<std::int64_t> pack_text_tasks(const std::vector<TextTask> &tasks)
+{
+    std::vector<std::int64_t> packed;
+    packed.reserve(tasks.size() * 8);
+    for (const auto &task: tasks)
+    {
+        packed.push_back(task.file_index);
+        packed.push_back(task.iq);
+        packed.push_back(task.naux);
+        packed.push_back(task.row_begin);
+        packed.push_back(task.nrows);
+        packed.push_back(task.col_begin);
+        packed.push_back(task.ncol);
+        packed.push_back(task.payload_offset);
+    }
+    return packed;
+}
+
+std::vector<TextTask> unpack_text_tasks(const std::vector<std::int64_t> &packed)
+{
+    if (packed.size() % 8 != 0)
+        throw std::runtime_error("internal error: malformed packed text task list");
+    std::vector<TextTask> tasks;
+    tasks.reserve(packed.size() / 8);
+    for (std::size_t i = 0; i != packed.size(); i += 8)
+    {
+        tasks.push_back({
+            static_cast<int>(packed[i]),
+            static_cast<int>(packed[i + 1]),
+            static_cast<int>(packed[i + 2]),
+            static_cast<int>(packed[i + 3]),
+            static_cast<int>(packed[i + 4]),
+            static_cast<int>(packed[i + 5]),
+            static_cast<int>(packed[i + 6]),
+            packed[i + 7]
+        });
+    }
+    return tasks;
+}
+
 fs::path output_path_for(const Options &opts, int iq)
 {
     return opts.output_dir / (opts.output_prefix + "_" + std::to_string(iq) + ".dat");
 }
 
-void check_no_existing_outputs(const Options &opts)
+bool has_existing_outputs(const Options &opts)
 {
-    if (!fs::exists(opts.output_dir)) return;
+    if (!fs::exists(opts.output_dir)) return false;
     const auto prefix = opts.output_prefix + "_";
     for (const auto &entry: fs::directory_iterator(opts.output_dir))
     {
         if (!entry.is_regular_file()) continue;
         const auto name = entry.path().filename().string();
         if (starts_with(name, prefix) && ends_with(name, ".dat"))
-            throw std::runtime_error("existing output file found: "
-                                     + entry.path().string()
-                                     + "; please clean up manually");
+            return true;
     }
+    return false;
+}
+
+void check_no_existing_outputs(const Options &opts)
+{
+    if (has_existing_outputs(opts))
+        throw std::runtime_error("existing output file found for prefix "
+                                 + opts.output_prefix
+                                 + "; please clean up manually or use --restart");
+    if (fs::exists(opts.checkpoint_path))
+        throw std::runtime_error("existing checkpoint file found: "
+                                 + opts.checkpoint_path.string()
+                                 + "; please clean up manually or use --restart");
 }
 
 void create_output_file(const Options &opts, const AtomLayout &layout, int iq,
@@ -895,6 +1015,208 @@ void create_output_file(const Options &opts, const AtomLayout &layout, int iq,
     timing.write_seconds += MPI_Wtime() - t0;
 }
 
+void validate_output_file(const Options &opts, const AtomLayout &layout, int iq)
+{
+    const auto path = output_path_for(opts, iq);
+    if (!fs::exists(path))
+        throw std::runtime_error("missing restart output file " + path.string());
+    if (fs::file_size(path) != static_cast<std::uintmax_t>(layout.file_size_bytes()))
+        throw std::runtime_error("restart output file has unexpected size: "
+                                 + path.string());
+
+    std::ifstream in(path, std::ios::binary);
+    int header[6];
+    in.read(reinterpret_cast<char *>(header), sizeof(header));
+    if (!in.good())
+        throw std::runtime_error("failed to read restart output header: "
+                                 + path.string());
+    if (header[0] != COULOMB_V1_MARKER || header[1] != iq ||
+        header[2] != layout.naux || header[3] != COMPLEX_FLAG ||
+        header[4] != layout.natoms || header[5] != static_cast<int>(layout.pair_count()))
+        throw std::runtime_error("restart output header does not match this run: "
+                                 + path.string());
+
+    std::vector<int> atom_naux(layout.natoms);
+    in.read(reinterpret_cast<char *>(atom_naux.data()),
+            static_cast<std::streamsize>(atom_naux.size() * sizeof(int)));
+    if (!in.good() || atom_naux != layout.atom_naux)
+        throw std::runtime_error("restart output atom layout does not match this run: "
+                                 + path.string());
+
+    for (int I = 0; I != layout.natoms; ++I)
+    {
+        for (int J = I; J != layout.natoms; ++J)
+        {
+            int ipair = -1;
+            std::int64_t block_offset = -1;
+            in.read(reinterpret_cast<char *>(&ipair), sizeof(ipair));
+            in.read(reinterpret_cast<char *>(&block_offset), sizeof(block_offset));
+            if (!in.good() ||
+                ipair != static_cast<int>(layout.atom_pair_index(I, J)) ||
+                block_offset != static_cast<std::int64_t>(layout.byte_offset(I, J, 0, 0)))
+                throw std::runtime_error(
+                    "restart output block table does not match this run: "
+                    + path.string());
+        }
+    }
+}
+
+void hash_byte(std::uint64_t &hash, unsigned char byte)
+{
+    constexpr std::uint64_t prime = 1099511628211ULL;
+    hash ^= byte;
+    hash *= prime;
+}
+
+template <typename T>
+void hash_scalar(std::uint64_t &hash, T value)
+{
+    static_assert(std::is_integral<T>::value, "hash_scalar expects an integer type");
+    using U = typename std::make_unsigned<T>::type;
+    U unsigned_value = static_cast<U>(value);
+    for (std::size_t i = 0; i != sizeof(U); ++i)
+    {
+        hash_byte(hash, static_cast<unsigned char>(unsigned_value & 0xffU));
+        unsigned_value >>= 8;
+    }
+}
+
+void hash_string(std::uint64_t &hash, const std::string &text)
+{
+    hash_scalar(hash, static_cast<std::uint64_t>(text.size()));
+    for (const auto ch: text)
+        hash_byte(hash, static_cast<unsigned char>(ch));
+}
+
+void hash_path_metadata(std::uint64_t &hash, const fs::path &path)
+{
+    hash_string(hash, path.string());
+    hash_scalar(hash, static_cast<std::uint64_t>(fs::file_size(path)));
+    const auto stamp = fs::last_write_time(path).time_since_epoch().count();
+    hash_scalar(hash, static_cast<std::int64_t>(stamp));
+}
+
+std::uint64_t conversion_signature(const Options &opts, const AtomLayout &layout,
+                                   const std::vector<fs::path> &input_files,
+                                   const std::vector<BinaryTask> &binary_tasks,
+                                   const std::vector<TextTask> &text_tasks,
+                                   const std::map<int, int> &q_naux)
+{
+    std::uint64_t hash = 1469598103934665603ULL;
+    hash_scalar(hash, static_cast<std::int64_t>(COULOMB_V1_MARKER));
+    hash_string(hash, opts.input_prefix);
+    hash_string(hash, opts.output_prefix);
+    hash_scalar(hash, static_cast<std::int64_t>(opts.rows_per_task));
+    hash_scalar(hash, static_cast<std::int64_t>(layout.natoms));
+    hash_scalar(hash, static_cast<std::int64_t>(layout.naux));
+    for (const auto naux: layout.atom_naux)
+        hash_scalar(hash, static_cast<std::int64_t>(naux));
+    for (const auto &path: input_files)
+        hash_path_metadata(hash, path);
+    for (const auto &task: binary_tasks)
+    {
+        hash_scalar(hash, static_cast<std::int64_t>(task.file_index));
+        hash_scalar(hash, static_cast<std::int64_t>(task.iq));
+        hash_scalar(hash, static_cast<std::int64_t>(task.naux));
+        hash_scalar(hash, static_cast<std::int64_t>(task.row_begin));
+        hash_scalar(hash, static_cast<std::int64_t>(task.nrows));
+        hash_scalar(hash, static_cast<std::int64_t>(task.col_begin));
+        hash_scalar(hash, static_cast<std::int64_t>(task.ncol));
+        hash_scalar(hash, static_cast<std::int64_t>(task.payload_offset));
+    }
+    for (const auto &task: text_tasks)
+    {
+        hash_scalar(hash, static_cast<std::int64_t>(task.file_index));
+        hash_scalar(hash, static_cast<std::int64_t>(task.iq));
+        hash_scalar(hash, static_cast<std::int64_t>(task.naux));
+        hash_scalar(hash, static_cast<std::int64_t>(task.row_begin));
+        hash_scalar(hash, static_cast<std::int64_t>(task.nrows));
+        hash_scalar(hash, static_cast<std::int64_t>(task.col_begin));
+        hash_scalar(hash, static_cast<std::int64_t>(task.ncol));
+        hash_scalar(hash, task.payload_offset);
+    }
+    for (const auto &[iq, naux]: q_naux)
+    {
+        hash_scalar(hash, static_cast<std::int64_t>(iq));
+        hash_scalar(hash, static_cast<std::int64_t>(naux));
+    }
+    return hash;
+}
+
+std::vector<std::uint64_t> checkpoint_header(std::size_t nbinary_tasks,
+                                             std::size_t ntext_tasks,
+                                             const AtomLayout &layout,
+                                             std::uint64_t signature)
+{
+    return {
+        CHECKPOINT_MAGIC,
+        CHECKPOINT_VERSION,
+        static_cast<std::uint64_t>(COULOMB_V1_MARKER),
+        static_cast<std::uint64_t>(nbinary_tasks),
+        static_cast<std::uint64_t>(ntext_tasks),
+        static_cast<std::uint64_t>(layout.naux),
+        static_cast<std::uint64_t>(layout.natoms),
+        signature
+    };
+}
+
+std::vector<unsigned char> read_checkpoint_file(const Options &opts,
+                                                std::size_t nbinary_tasks,
+                                                std::size_t ntext_tasks,
+                                                const AtomLayout &layout,
+                                                std::uint64_t signature)
+{
+    const auto expected_header =
+        checkpoint_header(nbinary_tasks, ntext_tasks, layout, signature);
+    const std::uintmax_t expected_size =
+        static_cast<std::uintmax_t>(CHECKPOINT_HEADER_BYTES + nbinary_tasks
+                                    + ntext_tasks);
+    if (fs::file_size(opts.checkpoint_path) != expected_size)
+        throw std::runtime_error("checkpoint file has unexpected size: "
+                                 + opts.checkpoint_path.string());
+
+    std::ifstream in(opts.checkpoint_path, std::ios::binary);
+    std::vector<std::uint64_t> header(CHECKPOINT_HEADER_WORDS);
+    in.read(reinterpret_cast<char *>(header.data()),
+            static_cast<std::streamsize>(header.size() * sizeof(std::uint64_t)));
+    if (!in.good() || header != expected_header)
+        throw std::runtime_error("checkpoint file does not match this conversion: "
+                                 + opts.checkpoint_path.string());
+
+    std::vector<unsigned char> completed(nbinary_tasks + ntext_tasks);
+    in.read(reinterpret_cast<char *>(completed.data()),
+            static_cast<std::streamsize>(completed.size()));
+    if (!in.good())
+        throw std::runtime_error("failed to read checkpoint flags: "
+                                 + opts.checkpoint_path.string());
+    for (const auto flag: completed)
+        if (flag != 0 && flag != 1)
+            throw std::runtime_error("checkpoint file contains invalid flags: "
+                                     + opts.checkpoint_path.string());
+    return completed;
+}
+
+void write_checkpoint_file(const Options &opts, std::size_t nbinary_tasks,
+                           std::size_t ntext_tasks, const AtomLayout &layout,
+                           std::uint64_t signature,
+                           const std::vector<unsigned char> &completed)
+{
+    if (completed.size() != nbinary_tasks + ntext_tasks)
+        throw std::runtime_error("internal error: checkpoint flag count mismatch");
+    std::ofstream out(opts.checkpoint_path, std::ios::binary | std::ios::trunc);
+    if (!out.good())
+        throw std::runtime_error("failed to create checkpoint file "
+                                 + opts.checkpoint_path.string());
+    const auto header = checkpoint_header(nbinary_tasks, ntext_tasks, layout, signature);
+    out.write(reinterpret_cast<const char *>(header.data()),
+              static_cast<std::streamsize>(header.size() * sizeof(std::uint64_t)));
+    out.write(reinterpret_cast<const char *>(completed.data()),
+              static_cast<std::streamsize>(completed.size()));
+    if (!out.good())
+        throw std::runtime_error("failed to write checkpoint file "
+                                 + opts.checkpoint_path.string());
+}
+
 class MpiFileCache
 {
 public:
@@ -908,6 +1230,7 @@ public:
         const auto it = input_files.find(index);
         if (it != input_files.end()) return it->second;
 
+        evict_one_input_if_needed(timing);
         MPI_File file = MPI_FILE_NULL;
         const double t0 = MPI_Wtime();
         const int ierr = MPI_File_open(MPI_COMM_SELF, paths.at(index).string().c_str(),
@@ -925,6 +1248,7 @@ public:
         const auto it = output_files.find(iq);
         if (it != output_files.end()) return it->second;
 
+        evict_one_output_if_needed(timing);
         MPI_File file = MPI_FILE_NULL;
         const auto path = output_path_for(opts, iq);
         const double t0 = MPI_Wtime();
@@ -956,8 +1280,101 @@ public:
     }
 
 private:
+    void evict_one_input_if_needed(Timing &timing)
+    {
+        if (input_files.size() < MAX_CACHED_FILES) return;
+        auto it = input_files.begin();
+        const double t0 = MPI_Wtime();
+        MPI_File_close(&it->second);
+        timing.read_seconds += MPI_Wtime() - t0;
+        input_files.erase(it);
+    }
+
+    void evict_one_output_if_needed(Timing &timing)
+    {
+        if (output_files.size() < MAX_CACHED_FILES) return;
+        auto it = output_files.begin();
+        const double t0 = MPI_Wtime();
+        MPI_File_close(&it->second);
+        timing.write_seconds += MPI_Wtime() - t0;
+        output_files.erase(it);
+    }
+
     std::unordered_map<int, MPI_File> input_files;
     std::unordered_map<int, MPI_File> output_files;
+};
+
+class TextFileCache
+{
+public:
+    std::ifstream &get_input(int index, const std::vector<fs::path> &paths,
+                             Timing &timing)
+    {
+        const auto it = input_files.find(index);
+        if (it != input_files.end()) return it->second;
+
+        evict_one_input_if_needed();
+        const double t0 = MPI_Wtime();
+        auto inserted = input_files.emplace(index, std::ifstream(paths.at(index)));
+        timing.read_seconds += MPI_Wtime() - t0;
+        auto &stream = inserted.first->second;
+        if (!stream.good())
+            throw std::runtime_error("failed to open text input file "
+                                     + paths.at(index).string());
+        return stream;
+    }
+
+private:
+    void evict_one_input_if_needed()
+    {
+        if (input_files.size() < MAX_CACHED_FILES) return;
+        input_files.erase(input_files.begin());
+    }
+
+    std::unordered_map<int, std::ifstream> input_files;
+};
+
+class CheckpointWriter
+{
+public:
+    ~CheckpointWriter()
+    {
+        close();
+    }
+
+    void open(const fs::path &path)
+    {
+        close();
+        const int ierr = MPI_File_open(MPI_COMM_SELF, path.string().c_str(),
+                                       MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
+        if (ierr != MPI_SUCCESS)
+            throw std::runtime_error("failed to open checkpoint file " + path.string());
+    }
+
+    void mark(std::size_t work_index)
+    {
+        if (file == MPI_FILE_NULL) return;
+        const unsigned char done = 1;
+        const int ierr = MPI_File_write_at(file,
+                                           CHECKPOINT_HEADER_BYTES
+                                               + static_cast<MPI_Offset>(work_index),
+                                           const_cast<unsigned char *>(&done),
+                                           1, MPI_BYTE, MPI_STATUS_IGNORE);
+        if (ierr != MPI_SUCCESS)
+            throw std::runtime_error("failed to update checkpoint file");
+    }
+
+    void close()
+    {
+        if (file != MPI_FILE_NULL)
+        {
+            MPI_File_close(&file);
+            file = MPI_FILE_NULL;
+        }
+    }
+
+private:
+    MPI_File file = MPI_FILE_NULL;
 };
 
 void mpi_read_exact(MPI_File file, MPI_Offset offset, void *buffer, std::size_t nbytes,
@@ -1082,59 +1499,41 @@ void process_binary_task(const BinaryTask &task, const Options &opts, const Atom
     }
 }
 
-void process_text_file(const fs::path &path, const Options &opts, const AtomLayout &layout,
-                       MpiFileCache &cache, Timing &timing, ProgressTracker &progress)
+void process_text_task(const TextTask &task, const Options &opts, const AtomLayout &layout,
+                       const std::vector<fs::path> &input_files, MpiFileCache &cache,
+                       TextFileCache &text_cache, Timing &timing,
+                       ProgressTracker &progress)
 {
+    if (task.naux != layout.naux)
+        throw std::runtime_error("legacy Naux does not match v1 atom layout");
+
+    auto &in = text_cache.get_input(task.file_index, input_files, timing);
     double t0 = MPI_Wtime();
-    std::ifstream in(path);
+    in.clear();
+    in.seekg(static_cast<std::streamoff>(task.payload_offset), std::ios::beg);
     timing.read_seconds += MPI_Wtime() - t0;
-    int nirk = 0;
-    t0 = MPI_Wtime();
-    in >> nirk;
-    timing.read_seconds += MPI_Wtime() - t0;
-    if (!in.good() || nirk <= 0)
-        throw std::runtime_error("invalid text Coulomb header in " + path.string());
+    if (!in.good())
+        throw std::runtime_error("failed to seek text Coulomb task in "
+                                 + input_files.at(task.file_index).string());
 
-    while (true)
+    MPI_File output = cache.get_output(task.iq, opts, timing);
+    for (int local_row = 0; local_row != task.nrows; ++local_row)
     {
-        int naux = 0, row_begin = 0, row_end = 0, col_begin = 0, col_end = 0, iq = 0;
-        std::string q_weight;
+        std::vector<ComplexValue> row_values(task.ncol);
         t0 = MPI_Wtime();
-        in >> naux;
-        timing.read_seconds += MPI_Wtime() - t0;
-        if (!in.good()) break;
-        t0 = MPI_Wtime();
-        in >> row_begin >> row_end >> col_begin >> col_end >> iq >> q_weight;
-        timing.read_seconds += MPI_Wtime() - t0;
-        validate_legacy_block(path, naux, row_begin, row_end, col_begin, col_end, iq);
-        if (naux != layout.naux)
-            throw std::runtime_error("legacy Naux does not match v1 atom layout");
-
-        const int nrow = row_end - row_begin + 1;
-        const int ncol = col_end - col_begin + 1;
-        const int row_begin0 = row_begin - 1;
-        const int col_begin0 = col_begin - 1;
-        MPI_File output = cache.get_output(iq, opts, timing);
-
-        for (int local_row = 0; local_row != nrow; ++local_row)
+        for (int col = 0; col != task.ncol; ++col)
         {
-            std::vector<ComplexValue> row_values(ncol);
-            t0 = MPI_Wtime();
-            for (int col = 0; col != ncol; ++col)
-            {
-                std::string real_s, imag_s;
-                in >> real_s >> imag_s;
-                row_values[col].real = parse_double_token(real_s);
-                row_values[col].imag = parse_double_token(imag_s);
-            }
-            timing.read_seconds += MPI_Wtime() - t0;
-            const int row = row_begin0 + local_row;
-            if (row <= col_end - 1)
-            {
-                write_row_v1(output, layout, iq, row, col_begin0, ncol, row_values.data(),
-                             timing, progress);
-            }
+            std::string real_s, imag_s;
+            in >> real_s >> imag_s;
+            if (!in.good())
+                throw std::runtime_error("truncated text Coulomb task in "
+                                         + input_files.at(task.file_index).string());
+            row_values[col].real = parse_double_token(real_s);
+            row_values[col].imag = parse_double_token(imag_s);
         }
+        timing.read_seconds += MPI_Wtime() - t0;
+        write_row_v1(output, layout, task.iq, task.row_begin + local_row,
+                     task.col_begin, task.ncol, row_values.data(), timing, progress);
     }
 }
 
@@ -1154,7 +1553,8 @@ int main(int argc, char **argv)
         AtomLayout layout;
         std::vector<fs::path> input_files;
         std::vector<BinaryTask> binary_tasks;
-        std::vector<int> text_file_indices;
+        std::vector<TextTask> text_tasks;
+        std::vector<unsigned char> completed_flags;
         std::map<int, int> q_naux;
         std::int64_t total_blocks = 0;
         Timing timing;
@@ -1163,7 +1563,17 @@ int main(int argc, char **argv)
         {
             opts = parse_args(argc, argv);
             fs::create_directories(opts.output_dir);
-            check_no_existing_outputs(opts);
+            const bool checkpoint_exists = fs::exists(opts.checkpoint_path);
+            if (!opts.restart)
+            {
+                check_no_existing_outputs(opts);
+            }
+            else if (!checkpoint_exists && has_existing_outputs(opts))
+            {
+                throw std::runtime_error(
+                    "existing output files require checkpoint file "
+                    + opts.checkpoint_path.string());
+            }
             layout = resolve_atom_layout(opts);
             input_files = discover_input_files(opts);
 
@@ -1182,11 +1592,25 @@ int main(int argc, char **argv)
                 }
                 else
                 {
-                    text_file_indices.push_back(ifile);
                     t0 = MPI_Wtime();
-                    scan_text_file(path, q_naux, total_blocks);
+                    scan_text_file(path, ifile, opts.rows_per_task, text_tasks,
+                                   q_naux, total_blocks);
                     timing.read_seconds += MPI_Wtime() - t0;
                 }
+            }
+
+            const auto signature =
+                conversion_signature(opts, layout, input_files, binary_tasks,
+                                     text_tasks, q_naux);
+            if (opts.restart && checkpoint_exists)
+            {
+                completed_flags =
+                    read_checkpoint_file(opts, binary_tasks.size(), text_tasks.size(),
+                                         layout, signature);
+            }
+            else
+            {
+                completed_flags.assign(binary_tasks.size() + text_tasks.size(), 0);
             }
 
             for (const auto &[iq, naux]: q_naux)
@@ -1196,15 +1620,28 @@ int main(int argc, char **argv)
                                              + " has Naux=" + std::to_string(naux)
                                              + ", but atom layout sums to "
                                              + std::to_string(layout.naux));
-                create_output_file(opts, layout, iq, timing);
+                if (opts.restart && checkpoint_exists)
+                    validate_output_file(opts, layout, iq);
+                else
+                    create_output_file(opts, layout, iq, timing);
             }
+            write_checkpoint_file(opts, binary_tasks.size(), text_tasks.size(),
+                                  layout, signature, completed_flags);
 
             if (!opts.quiet)
             {
                 std::cout << "Discovered " << input_files.size() << " input file(s), "
                           << binary_tasks.size() << " binary row task(s), "
-                          << text_file_indices.size() << " text file task(s), "
+                          << text_tasks.size() << " text row task(s), "
                           << q_naux.size() << " q-point output file(s)." << std::endl;
+                const auto completed_count =
+                    std::count(completed_flags.begin(), completed_flags.end(), 1);
+                if (opts.restart && checkpoint_exists)
+                    std::cout << "Restart checkpoint: " << completed_count << "/"
+                              << completed_flags.size()
+                              << " work item(s) already complete." << std::endl;
+                std::cout << "Checkpoint file: " << opts.checkpoint_path.string()
+                          << std::endl;
             }
         }
 
@@ -1216,27 +1653,40 @@ int main(int argc, char **argv)
         bcast_vector(atom_naux, 0, MPI_COMM_WORLD);
         if (rank != 0) layout = AtomLayout(atom_naux);
         bcast_paths(input_files, 0, MPI_COMM_WORLD);
-        bcast_vector(text_file_indices, 0, MPI_COMM_WORLD);
+        bcast_vector(completed_flags, 0, MPI_COMM_WORLD);
 
         auto packed_tasks = pack_tasks(binary_tasks);
         bcast_vector(packed_tasks, 0, MPI_COMM_WORLD);
         if (rank != 0) binary_tasks = unpack_tasks(packed_tasks);
+        auto packed_text_tasks = pack_text_tasks(text_tasks);
+        bcast_vector(packed_text_tasks, 0, MPI_COMM_WORLD);
+        if (rank != 0) text_tasks = unpack_text_tasks(packed_text_tasks);
 
         MPI_Barrier(MPI_COMM_WORLD);
 
         MpiFileCache cache;
+        TextFileCache text_cache;
+        CheckpointWriter checkpoint;
+        checkpoint.open(opts.checkpoint_path);
         ProgressTracker progress(rank, opts.progress_blocks);
         for (std::size_t itask = rank; itask < binary_tasks.size(); itask += nprocs)
         {
+            if (completed_flags[itask] != 0) continue;
             process_binary_task(binary_tasks[itask], opts, layout, input_files, cache,
                                 timing, progress);
+            checkpoint.mark(itask);
         }
-        for (std::size_t itext = rank; itext < text_file_indices.size(); itext += nprocs)
+        const auto text_offset = binary_tasks.size();
+        for (std::size_t itext = rank; itext < text_tasks.size(); itext += nprocs)
         {
-            process_text_file(input_files[text_file_indices[itext]], opts, layout, cache,
-                              timing, progress);
+            const auto work_index = text_offset + itext;
+            if (completed_flags[work_index] != 0) continue;
+            process_text_task(text_tasks[itext], opts, layout, input_files, cache,
+                              text_cache, timing, progress);
+            checkpoint.mark(work_index);
         }
         cache.close_all(&timing);
+        checkpoint.close();
 
         MPI_Barrier(MPI_COMM_WORLD);
         const double local_timing[2] = {timing.read_seconds, timing.write_seconds};
@@ -1252,6 +1702,9 @@ int main(int argc, char **argv)
                       << "Output write time (max over ranks): " << max_timing[1] << " s"
                       << std::endl;
         }
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (rank == 0)
+            fs::remove(opts.checkpoint_path);
 
         MPI_Finalize();
         return 0;
