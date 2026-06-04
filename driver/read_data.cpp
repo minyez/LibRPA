@@ -1393,7 +1393,7 @@ void read_ri_shrink(const string &dir_path)
     // atom_mu_l = atom_mu;  // TODO: replace with the actual shrinked ABFs
     read_Cs_evenly_distribute(driver_params.input_dir, driver_params.cs_threshold,
                               mpi_comm_global_h.myid, mpi_comm_global_h.nprocs,
-                              driver_params.prefix_ri_coeff_shrink);
+                              driver_params.prefix_lri_coeff_shrink);
     profiler.stop("read_Cs_shrink");
 
     profiler.start("read_shrink_sinvS_fold", "Load shrink transformation");

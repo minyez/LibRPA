@@ -36,7 +36,7 @@ The Fortran wrapper exposes these fields as logical values.
 These parameters are available only through the standalone driver.
 Filename parameters are interpreted relative to `input_dir`.
 Prefix parameters match all files in `input_dir` whose names begin with the given value.
-For example, the default `prefix_ri_coeff = Cs_data` matches files such as `Cs_data_0.txt`.
+For example, the default `prefix_lri_coeff = Cs_data` matches files such as `Cs_data_0.txt`.
 
 | Parameter Name        | Description                                                          | Type   | Default Value (Options)                         | Status       |
 |-----------------------|----------------------------------------------------------------------|--------|-------------------------------------------------|--------------|
@@ -47,8 +47,8 @@ For example, the default `prefix_ri_coeff = Cs_data` matches files such as `Cs_d
 | `fn_bz_sampling`      | Brillouin-zone sampling filename                                     | string | `bz_sampling_out`                              |              |
 | `fn_basis`            | Basis-set filename                                                   | string | `basis_out`                                    |              |
 | `fn_eigocc_scf`       | SCF eigenvalue and occupation filename                               | string | `band_out`                                     |              |
-| `prefix_ri_coeff`     | Prefix of localized RI coefficient files                             | string | `Cs_data`                                      |              |
-| `prefix_ri_coeff_shrink` | Prefix of compressed-auxiliary-basis RI coefficient files          | string | `Cs_shrinked_data`                             | Experimental |
+| `prefix_lri_coeff`    | Prefix of localized RI coefficient files                             | string | `Cs_data`                                      |              |
+| `prefix_lri_coeff_shrink` | Prefix of compressed-auxiliary-basis RI coefficient files          | string | `Cs_shrinked_data`                             | Experimental |
 | `prefix_coul_full`    | Prefix of bare Coulomb matrix files                                  | string | `coulomb_mat`                                  |              |
 | `prefix_coul_cut`     | Prefix of truncated Coulomb matrix files                             | string | `coulomb_cut`                                  |              |
 | `version_coul_reader` | Coulomb reader-version selector (`0` legacy, `1` atom-pair blocks) | int | 0 | Experimental |

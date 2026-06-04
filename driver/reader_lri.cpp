@@ -637,7 +637,7 @@ size_t read_Cs(const string &dir_path, double threshold, const std::vector<atpai
     while ((ptr = readdir(dir)) != NULL)
     {
         string fm(ptr->d_name);
-        if (fm.find(driver::driver_params.prefix_ri_coeff) == 0)
+        if (fm.find(driver::driver_params.prefix_lri_coeff) == 0)
         {
             const auto fn = dir_path + fm;
             if (!binary_checked)
@@ -1119,7 +1119,7 @@ void get_natom_ncell_from_first_Cs_file(int &n_atom, int &n_cell, const string &
     while ((ptr = readdir(dir)) != NULL)
     {
         string fn(ptr->d_name);
-        if (fn.find(driver::driver_params.prefix_ri_coeff) == 0)
+        if (fn.find(driver::driver_params.prefix_lri_coeff) == 0)
         {
             file_path = dir_path + fn;
             break;
@@ -1294,7 +1294,7 @@ void read_basis_from_Cs(const string &dir_path)
         while ((ptr = readdir(dir)) != NULL)
         {
             string fm(ptr->d_name);
-            if (fm.find(driver::driver_params.prefix_ri_coeff) == 0)
+            if (fm.find(driver::driver_params.prefix_lri_coeff) == 0)
             {
                 const auto fn = dir_path + fm;
                 if (!binary_checked)

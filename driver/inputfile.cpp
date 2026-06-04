@@ -204,8 +204,8 @@ void parse_inputfile_to_params(const std::string &fn)
     {
         driver::n_spinor = 2;
     }
-    _parse_string(driver_params, prefix_ri_coeff);
-    _parse_string(driver_params, prefix_ri_coeff_shrink);
+    _parse_string(driver_params, prefix_lri_coeff);
+    _parse_string(driver_params, prefix_lri_coeff_shrink);
     _parse_string(driver_params, prefix_coul_full);
     _parse_string(driver_params, prefix_coul_cut);
     _parse_string(driver_params, fn_stru);
