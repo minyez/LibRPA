@@ -1,12 +1,18 @@
 #include "read_data.h"
 
 #include <dirent.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <cassert>
+#include <cerrno>
 #include <cctype>
 #include <complex>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <ios>
@@ -1543,17 +1549,23 @@ std::size_t coulomb_atom_pair_index(const std::size_t I, const std::size_t J,
     return I * natoms - I * (I - 1) / 2 + (J - I);
 }
 
+std::string posix_io_error(const std::string &operation, const std::string &path,
+                           const int err)
+{
+    std::ostringstream ss;
+    ss << operation << " Coulomb v1 file " << path << ": " << std::strerror(err);
+    return ss.str();
+}
+
 class CoulombV1File
 {
 public:
     explicit CoulombV1File(const std::string &path_in): path(path_in)
     {
-        const int ierr = MPI_File_open(librpa_int::global::mpi_comm_global,
-                                       path.c_str(), MPI_MODE_RDONLY,
-                                       MPI_INFO_NULL, &file);
-        if (ierr != MPI_SUCCESS)
+        fd = ::open(path.c_str(), O_RDONLY);
+        if (fd < 0)
         {
-            throw std::logic_error("Failed to open Coulomb v1 file " + path);
+            throw std::logic_error(posix_io_error("Failed to open", path, errno));
         }
 
         int header[6];
@@ -1624,20 +1636,44 @@ public:
         {
             throw std::logic_error(path + ": Coulomb v1 block count exceeds atom-pair count");
         }
+        atom_pairs.reserve(npairs);
+        for (std::size_t I = 0; I != static_cast<std::size_t>(natoms); ++I)
+        {
+            for (std::size_t J = I; J != static_cast<std::size_t>(natoms); ++J)
+            {
+                atom_pairs.emplace_back(I, J);
+            }
+        }
 
-        MPI_Offset file_size = 0;
-        MPI_File_get_size(file, &file_size);
+        struct stat st;
+        if (::fstat(fd, &st) != 0)
+        {
+            throw std::logic_error(posix_io_error("Failed to stat", path, errno));
+        }
+        if (st.st_size < 0)
+        {
+            throw std::logic_error(path + ": invalid Coulomb v1 file size");
+        }
+        const MPI_Offset file_size = static_cast<MPI_Offset>(st.st_size);
         block_offsets.assign(npairs, COULOMB_V1_MISSING_BLOCK);
         const MPI_Offset table_end = header_size();
+        std::vector<char> block_table(
+            static_cast<std::size_t>(nblocks) *
+            static_cast<std::size_t>(COULOMB_V1_BLOCK_RECORD_SIZE));
+        if (!block_table.empty())
+        {
+            read_bytes(block_table_offset(), block_table.data(), block_table.size());
+        }
         for (int iblock = 0; iblock != nblocks; ++iblock)
         {
-            const MPI_Offset record_offset = block_table_offset() +
-                static_cast<MPI_Offset>(iblock) * COULOMB_V1_BLOCK_RECORD_SIZE;
+            const char *record = block_table.data() +
+                static_cast<std::size_t>(iblock) *
+                static_cast<std::size_t>(COULOMB_V1_BLOCK_RECORD_SIZE);
             int ipair_i32 = -1;
             std::int64_t block_offset_i64 = 0;
-            read_bytes(record_offset, &ipair_i32, sizeof(ipair_i32));
-            read_bytes(record_offset + static_cast<MPI_Offset>(sizeof(int)),
-                       &block_offset_i64, sizeof(block_offset_i64));
+            std::memcpy(&ipair_i32, record, sizeof(ipair_i32));
+            std::memcpy(&block_offset_i64, record + sizeof(ipair_i32),
+                        sizeof(block_offset_i64));
             if (ipair_i32 < 0 || static_cast<std::size_t>(ipair_i32) >= npairs)
             {
                 std::ostringstream ss;
@@ -1691,9 +1727,9 @@ public:
 
     ~CoulombV1File()
     {
-        if (file != MPI_FILE_NULL)
+        if (fd >= 0)
         {
-            MPI_File_close(&file);
+            ::close(fd);
         }
     }
 
@@ -1706,23 +1742,27 @@ public:
         std::size_t bytes_left = nbytes;
         while (bytes_left > 0)
         {
-            const int chunk = static_cast<int>(std::min<std::size_t>(
-                bytes_left, static_cast<std::size_t>(std::numeric_limits<int>::max())));
-            MPI_Status status;
-            const int ierr = MPI_File_read_at(file, offset, ptr, chunk, MPI_BYTE, &status);
-            if (ierr != MPI_SUCCESS)
+            if (offset < 0 || offset > static_cast<MPI_Offset>(
+                    std::numeric_limits<off_t>::max()))
             {
-                throw std::logic_error("Failed to read Coulomb v1 file " + path);
+                throw std::logic_error(path + ": Coulomb v1 read offset is out of range");
             }
-            int bytes_read = 0;
-            MPI_Get_count(&status, MPI_BYTE, &bytes_read);
-            if (bytes_read != chunk)
+            const std::size_t chunk = std::min<std::size_t>(
+                bytes_left,
+                static_cast<std::size_t>(std::numeric_limits<ssize_t>::max()));
+            const ssize_t bytes_read = ::pread(
+                fd, ptr, chunk, static_cast<off_t>(offset));
+            if (bytes_read < 0)
+            {
+                throw std::logic_error(posix_io_error("Failed to read", path, errno));
+            }
+            if (bytes_read == 0)
             {
                 throw std::logic_error("Truncated Coulomb v1 file " + path);
             }
-            offset += chunk;
-            ptr += chunk;
-            bytes_left -= chunk;
+            offset += static_cast<MPI_Offset>(bytes_read);
+            ptr += bytes_read;
+            bytes_left -= static_cast<std::size_t>(bytes_read);
         }
     }
 
@@ -1741,16 +1781,9 @@ public:
 
     std::pair<std::size_t, std::size_t> atom_pair_from_index(std::size_t ipair) const
     {
-        for (std::size_t I = 0; I != atom_naux.size(); ++I)
-        {
-            const auto row_begin = coulomb_atom_pair_index(I, I, atom_naux.size());
-            const auto row_end = row_begin + atom_naux.size() - I;
-            if (ipair >= row_begin && ipair < row_end)
-            {
-                return {I, I + ipair - row_begin};
-            }
-        }
-        throw std::logic_error(path + ": atom-pair index is out of range");
+        if (ipair >= atom_pairs.size())
+            throw std::logic_error(path + ": atom-pair index is out of range");
+        return atom_pairs[ipair];
     }
 
     MPI_Offset block_offset(const std::size_t I, const std::size_t J) const
@@ -1764,7 +1797,7 @@ public:
     }
 
     std::string path;
-    MPI_File file = MPI_FILE_NULL;
+    int fd = -1;
     int iq = 0;
     int naux = 0;
     int value_flag = COULOMB_V1_COMPLEX_FLAG;
@@ -1773,6 +1806,7 @@ public:
     std::size_t npairs = 0;
     MPI_Offset value_bytes = 2 * static_cast<MPI_Offset>(sizeof(double));
     std::vector<int> atom_naux;
+    std::vector<std::pair<std::size_t, std::size_t>> atom_pairs;
     std::vector<MPI_Offset> block_offsets;
 };
 
