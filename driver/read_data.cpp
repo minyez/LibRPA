@@ -1544,6 +1544,8 @@ constexpr MPI_Offset COULOMB_V1_HEADER_BASE_SIZE =
 constexpr MPI_Offset COULOMB_V1_BLOCK_RECORD_SIZE =
     static_cast<MPI_Offset>(sizeof(int) + sizeof(std::int64_t));
 constexpr MPI_Offset COULOMB_V1_MISSING_BLOCK = -1;
+constexpr std::size_t COULOMB_V1_MAX_COLLECTED_READ_BYTES =
+    256ULL * 1024ULL * 1024ULL;
 
 static_assert(sizeof(std::complex<double>) == 2 * sizeof(double),
               "Coulomb atom-pair IO expects std::complex<double> as two doubles");
@@ -1618,6 +1620,18 @@ std::string compact_atom_pair_ranges(const std::vector<atpair_t> &sorted_pairs,
     }
     append_range(range_begin, sorted_pairs.size() - 1);
     return ss.str();
+}
+
+std::size_t checked_size_from_offset(const MPI_Offset value,
+                                     const std::string &context)
+{
+    if (value < 0 ||
+        static_cast<unsigned long long>(value) >
+            static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max()))
+    {
+        throw std::logic_error(context + ": byte count is out of range");
+    }
+    return static_cast<std::size_t>(value);
 }
 
 class CoulombV1File
@@ -1873,6 +1887,22 @@ public:
     std::vector<MPI_Offset> block_offsets;
 };
 
+struct CoulombV1BlockRead
+{
+    std::size_t I = 0;
+    std::size_t J = 0;
+    MPI_Offset offset = 0;
+    MPI_Offset nbytes = 0;
+    std::size_t nvalues = 0;
+};
+
+struct CoulombV1CollectedRead
+{
+    MPI_Offset offset = 0;
+    MPI_Offset nbytes = 0;
+    std::vector<CoulombV1BlockRead> blocks;
+};
+
 std::vector<std::complex<double>> read_coulomb_v1_atom_pair(
     const CoulombV1File &file,
     const std::size_t I,
@@ -1909,6 +1939,187 @@ std::vector<std::complex<double>> read_coulomb_v1_atom_pair(
         }
     }
     return block;
+}
+
+MPI_Offset coulomb_v1_block_bytes(const CoulombV1File &file,
+                                  const std::size_t I,
+                                  const std::size_t J)
+{
+    return static_cast<MPI_Offset>(file.atom_naux[I]) *
+        static_cast<MPI_Offset>(file.atom_naux[J]) * file.value_bytes;
+}
+
+std::vector<CoulombV1BlockRead> make_coulomb_v1_block_reads(
+    const CoulombV1File &file,
+    const std::vector<atpair_t> &sorted_atom_pairs)
+{
+    std::vector<CoulombV1BlockRead> reads;
+    reads.reserve(sorted_atom_pairs.size());
+    for (const auto &ap: sorted_atom_pairs)
+    {
+        const auto I = static_cast<std::size_t>(ap.first);
+        const auto J = static_cast<std::size_t>(ap.second);
+        if (!file.has_block(I, J)) continue;
+
+        const auto nrow = static_cast<std::size_t>(file.atom_naux[I]);
+        const auto ncol = static_cast<std::size_t>(file.atom_naux[J]);
+        reads.push_back(
+            {I, J, file.block_offset(I, J), coulomb_v1_block_bytes(file, I, J),
+             nrow * ncol});
+    }
+    return reads;
+}
+
+std::vector<CoulombV1CollectedRead> collect_coulomb_v1_reads(
+    const std::vector<CoulombV1BlockRead> &blocks)
+{
+    std::vector<CoulombV1CollectedRead> collected;
+    for (const auto &block: blocks)
+    {
+        const bool need_new_read =
+            collected.empty() ||
+            block.offset != collected.back().offset + collected.back().nbytes ||
+            (!collected.back().blocks.empty() &&
+             block.nbytes >
+                 static_cast<MPI_Offset>(COULOMB_V1_MAX_COLLECTED_READ_BYTES) -
+                     collected.back().nbytes);
+
+        if (need_new_read)
+        {
+            collected.push_back({block.offset, block.nbytes, {block}});
+        }
+        else
+        {
+            auto &read = collected.back();
+            read.nbytes += block.nbytes;
+            read.blocks.push_back(block);
+        }
+    }
+    return collected;
+}
+
+void set_coulomb_v1_atom_pair(const int iq0,
+                              const std::size_t I,
+                              const std::size_t J,
+                              const int naux_i,
+                              const int naux_j,
+                              const std::complex<double> *block,
+                              const double threshold,
+                              const bool is_cut_coulomb)
+{
+    if (is_cut_coulomb)
+    {
+        driver::h.set_aux_cut_coulomb_k_atom_pair_packed(
+            iq0, I, J, naux_i, naux_j, block, threshold);
+    }
+    else
+    {
+        driver::h.set_aux_bare_coulomb_k_atom_pair_packed(
+            iq0, I, J, naux_i, naux_j, block, threshold);
+    }
+}
+
+void process_complex_coulomb_v1_read(const CoulombV1File &file,
+                                     const CoulombV1CollectedRead &read,
+                                     const int iq0,
+                                     const double threshold,
+                                     const bool is_cut_coulomb)
+{
+    if (read.nbytes % static_cast<MPI_Offset>(sizeof(std::complex<double>)) != 0)
+    {
+        throw std::logic_error(file.path + ": collected complex read is misaligned");
+    }
+    const auto nvalues = checked_size_from_offset(
+        read.nbytes / static_cast<MPI_Offset>(sizeof(std::complex<double>)),
+        file.path);
+    std::vector<std::complex<double>> buffer(nvalues);
+    file.read_bytes(read.offset, buffer.data(),
+                    checked_size_from_offset(read.nbytes, file.path));
+
+    for (const auto &block: read.blocks)
+    {
+        const auto value_offset = checked_size_from_offset(
+            (block.offset - read.offset) /
+                static_cast<MPI_Offset>(sizeof(std::complex<double>)),
+            file.path);
+        set_coulomb_v1_atom_pair(iq0, block.I, block.J,
+                                 file.atom_naux[block.I],
+                                 file.atom_naux[block.J],
+                                 buffer.data() + value_offset,
+                                 threshold, is_cut_coulomb);
+    }
+}
+
+void process_real_coulomb_v1_read(const CoulombV1File &file,
+                                  const CoulombV1CollectedRead &read,
+                                  const int iq0,
+                                  const double threshold,
+                                  const bool is_cut_coulomb)
+{
+    if (read.nbytes % static_cast<MPI_Offset>(sizeof(double)) != 0)
+    {
+        throw std::logic_error(file.path + ": collected real read is misaligned");
+    }
+    const auto nvalues = checked_size_from_offset(
+        read.nbytes / static_cast<MPI_Offset>(sizeof(double)), file.path);
+    std::vector<double> buffer(nvalues);
+    file.read_bytes(read.offset, buffer.data(),
+                    checked_size_from_offset(read.nbytes, file.path));
+
+    for (const auto &block: read.blocks)
+    {
+        const auto value_offset = checked_size_from_offset(
+            (block.offset - read.offset) / static_cast<MPI_Offset>(sizeof(double)),
+            file.path);
+        std::vector<std::complex<double>> complex_block(block.nvalues);
+        for (std::size_t i = 0; i != block.nvalues; ++i)
+        {
+            complex_block[i] = std::complex<double>(buffer[value_offset + i], 0.0);
+        }
+        set_coulomb_v1_atom_pair(iq0, block.I, block.J,
+                                 file.atom_naux[block.I],
+                                 file.atom_naux[block.J],
+                                 complex_block.data(),
+                                 threshold, is_cut_coulomb);
+    }
+}
+
+void read_coulomb_v1_atom_pairs_collected(
+    const CoulombV1File &file,
+    const int iq0,
+    const std::vector<atpair_t> &sorted_atom_pairs,
+    const double threshold,
+    const bool is_cut_coulomb)
+{
+    using librpa_int::global::ofs_myid;
+
+    const auto block_reads = make_coulomb_v1_block_reads(file, sorted_atom_pairs);
+    const auto collected_reads = collect_coulomb_v1_reads(block_reads);
+    MPI_Offset payload_bytes = 0;
+    for (const auto &block: block_reads) payload_bytes += block.nbytes;
+    std::ostringstream payload_mb;
+    payload_mb << std::fixed << std::setprecision(2)
+               << static_cast<double>(payload_bytes) * 1.0e-6;
+    ofs_myid << "read_Vq_row_v1 "
+             << (is_cut_coulomb ? "cut" : "bare")
+             << " collected payload reads for " << file.path
+             << ": blocks=" << block_reads.size()
+             << ", reads=" << collected_reads.size()
+             << ", payload=" << payload_mb.str() << " MB" << std::endl;
+
+    for (const auto &read: collected_reads)
+    {
+        if (file.value_flag == COULOMB_V1_COMPLEX_FLAG)
+        {
+            process_complex_coulomb_v1_read(
+                file, read, iq0, threshold, is_cut_coulomb);
+        }
+        else
+        {
+            process_real_coulomb_v1_read(
+                file, read, iq0, threshold, is_cut_coulomb);
+        }
+    }
 }
 
 void validate_coulomb_v1_basis(const CoulombV1File &file,
@@ -2027,24 +2238,8 @@ size_t read_Vq_row_v1(const string &dir_path, const string &vq_fprefix, double t
         CoulombV1File file(path);
         validate_coulomb_v1_basis(file, basis_aux);
         const int iq0 = file.iq - 1;
-
-        for (const auto &ap: sorted_local_atpair)
-        {
-            const auto I = static_cast<std::size_t>(ap.first);
-            const auto J = static_cast<std::size_t>(ap.second);
-            auto block = read_coulomb_v1_atom_pair(file, I, J);
-            if (block.empty()) continue;
-            if (is_cut_coulomb)
-            {
-                driver::h.set_aux_cut_coulomb_k_atom_pair_packed(
-                    iq0, I, J, basis_aux[I], basis_aux[J], block.data(), threshold);
-            }
-            else
-            {
-                driver::h.set_aux_bare_coulomb_k_atom_pair_packed(
-                    iq0, I, J, basis_aux[I], basis_aux[J], block.data(), threshold);
-            }
-        }
+        read_coulomb_v1_atom_pairs_collected(
+            file, iq0, sorted_local_atpair, threshold, is_cut_coulomb);
     }
 
     profiler.stop(__FUNCTION__);
