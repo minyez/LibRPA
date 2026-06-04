@@ -159,6 +159,8 @@ module librpa_f03
       logical :: use_shrink_chi
       !> Number of parameters for analytic continuation.
       integer :: n_params_anacon
+      !> Quasi-particle equation solver: 0 fixed-point, 1 quasi-Newton, 2 perturbative.
+      integer :: option_qpe_solver
       !> Convergence threshold for the quasi-particle equation solver, in Hartree.
       real(dp) :: qpe_solver_thres
       !> Maximum number of iterations for the quasi-particle equation solver; must be positive.

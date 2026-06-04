@@ -302,6 +302,7 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_int(opts, option_output_Wc_Rf_mat);
 
     // QPE solver
+    _parse_int(opts, option_qpe_solver);
     _parse_int(opts, qpe_solver_n_iter_max);
     _parse_double(opts, qpe_solver_thres);
     _parse_double(opts, qpe_solver_damp_factor);

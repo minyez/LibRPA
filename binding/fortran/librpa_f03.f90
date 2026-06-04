@@ -162,6 +162,7 @@ module librpa_f03
 
       ! GW specific
       integer(c_int) :: n_params_anacon
+      integer(c_int) :: option_qpe_solver
       real(c_double) :: qpe_solver_thres
       integer(c_int) :: qpe_solver_n_iter_max
       real(c_double) :: qpe_solver_damp_factor
@@ -250,6 +251,8 @@ module librpa_f03
       logical :: use_shrink_chi
       !> Number of parameters for analytic continuation.
       integer :: n_params_anacon
+      !> Quasi-particle equation solver: 0 fixed-point, 1 quasi-Newton, 2 perturbative.
+      integer :: option_qpe_solver
       !> Convergence threshold for the quasi-particle equation solver, in Hartree.
       real(dp) :: qpe_solver_thres
       !> Maximum number of iterations for the quasi-particle equation solver; must be positive.
@@ -957,6 +960,7 @@ contains
       call sync_opt(opts%use_shrink_abfs,         opts%opts_c%use_shrink_abfs,         direction)
       call sync_opt(opts%use_shrink_chi,          opts%opts_c%use_shrink_chi,          direction)
       call sync_opt(opts%n_params_anacon,         opts%opts_c%n_params_anacon,         direction)
+      call sync_opt(opts%option_qpe_solver,       opts%opts_c%option_qpe_solver,       direction)
       call sync_opt(opts%qpe_solver_thres,        opts%opts_c%qpe_solver_thres,        direction)
       call sync_opt(opts%qpe_solver_n_iter_max,   opts%opts_c%qpe_solver_n_iter_max,   direction)
       call sync_opt(opts%qpe_solver_damp_factor,  opts%opts_c%qpe_solver_damp_factor,  direction)

@@ -134,6 +134,7 @@ The driver maps the unset value to `minimax` for backward compatibility.
 | `use_2d_dielectric`      | Use the 2D dielectric-function branch where supported                        | bool   | `false`                               | Experimental |
 | `load_sigc_from_file`    | Load correlation self-energy matrix from file where supported                | bool   | `false`                               | Experimental |
 | `sqrt_coulomb_threshold` | Threshold for eigenvalues when taking the square root of Coulomb matrices    | double | 0.0                                   |              |
+| `option_qpe_solver`      | QP equation solver: 0=fixed-point self-consistent, 1=quasi-Newton self-consistent, 2=perturbative | int | 0 |              |
 | `qpe_solver_thres`       | Convergence threshold for the QP equation residual, in Hartree               | double | 1.0e-5                                |              |
 | `qpe_solver_n_iter_max`  | Maximum number of self-consistent QP equation iterations                     | int    | 200                                   |              |
 | `qpe_solver_damp_factor` | Damping factor for QP equation updates; used as the initial and maximum factor when adaptive damping is enabled | double | 0.1  |              |

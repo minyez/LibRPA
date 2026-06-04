@@ -109,6 +109,8 @@ void librpa_build_g0w0_sigma(LibrpaHandler *h, const LibrpaOptions *p_opts);
  *                              It should be at least as long as n_spins * n_kpoints_local * (i_state_high - i_state_low).
  *                              It can be obtained using librpa_get_exx_pot_kgrid.
  * @param[out] sigc_re          Real-part of the correlation self-energy for the selected states.
+ *                              For option_qpe_solver=2, this is the perturbative effective real
+ *                              contribution that reconstructs the perturbative QP energy.
  *                              It should be at least as long as n_spins * n_kpoints_local * (i_state_high - i_state_low).
  * @param[out] sigc_im          Same as sigc_re, but for the imaginary part.
  */
@@ -133,6 +135,8 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts,
  *                              It should be at least as long as n_spins * n_kpts_band_this * (i_state_high - i_state_low).
  *                              It can be obtained using librpa_get_exx_pot_kgrid.
  * @param[out] sigc_band_re     Real-part of the correlation self-energy for the selected states.
+ *                              For option_qpe_solver=2, this is the perturbative effective real
+ *                              contribution that reconstructs the perturbative QP energy.
  *                              It should be at least as long as n_spins * n_kpts_band_this * (i_state_high - i_state_low).
  * @param[out] sigc_band_im     Same as sigc_band_re, but for the imaginary part.
  */

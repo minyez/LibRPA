@@ -136,6 +136,15 @@ typedef struct
     //! Number of parameters for analytic continuation
     int n_params_anacon;
 
+    //! Quasi-particle equation solver option.
+    /*!
+     * Available values:
+     * - 0: fixed-point self-consistent solver
+     * - 1: quasi-Newton self-consistent solver using the Pade derivative
+     * - 2: perturbative solver linearized at the mean-field energy
+     */
+    int option_qpe_solver;
+
     //! Convergence threshold for the quasi-particle equation solver, in Hartree.
     double qpe_solver_thres;
 

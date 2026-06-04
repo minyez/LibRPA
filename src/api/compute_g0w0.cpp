@@ -50,6 +50,52 @@ int sigc_diag_index(const int isp, const int ik_collect, const int ifreq, const 
     return (((isp * nk_collect + ik_collect) * nfreq + ifreq) * n_states_calc + i_state);
 }
 
+int solve_qpe_with_option(const int option_qpe_solver,
+                          const librpa_int::AnalyContPade &pade,
+                          const double e_mf,
+                          const double e_fermi,
+                          const double vxc,
+                          const double sigma_x,
+                          double &e_qp,
+                          librpa_int::cplxdb &sigc,
+                          const double diff_init,
+                          const double thres,
+                          const int n_iter_max,
+                          const double damp_fac,
+                          const bool use_adaptive_damp)
+{
+    switch (option_qpe_solver)
+    {
+    case 0:
+        return librpa_int::qpe_solver_pade_self_consistent(
+            pade, e_mf, e_fermi, vxc, sigma_x, e_qp, sigc, diff_init, thres,
+            n_iter_max, damp_fac, use_adaptive_damp);
+    case 1:
+        return librpa_int::qpe_solver_pade_quasi_newton(
+            pade, e_mf, e_fermi, vxc, sigma_x, e_qp, sigc, diff_init, thres,
+            n_iter_max, damp_fac, use_adaptive_damp);
+    case 2:
+    {
+        librpa_int::cplxdb sigc_deriv;
+        double qp_weight = std::numeric_limits<double>::quiet_NaN();
+        const int info = librpa_int::qpe_solver_pade_perturbative(
+            pade, e_mf, e_fermi, vxc, sigma_x, e_qp, sigc, sigc_deriv, qp_weight);
+        if (info == 0)
+        {
+            // The public API returns SigC and existing drivers reconstruct
+            // e_qp = e_mf - vxc + sigma_x + Re SigC from it.  For perturbative
+            // mode, fold the renormalization into an effective real SigC.
+            sigc.real(e_qp - e_mf + vxc - sigma_x);
+        }
+        return info;
+    }
+    default:
+        throw LIBRPA_RUNTIME_ERROR(
+            "Invalid option_qpe_solver: " + std::to_string(option_qpe_solver)
+            + ". Available values are 0 (fixed-point), 1 (quasi-Newton), and 2 (perturbative).");
+    }
+}
+
 // Publish SigC diagonal values from the rank that owns each rotated k-block.
 // The caller later uses these values locally with its matching vxc/vexx input.
 std::vector<librpa_int::cplxdb> collect_sigc_diag_to_callers(
@@ -372,6 +418,7 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
     const auto thres_qpe = opts.qpe_solver_thres;
     const auto n_iter_max = opts.qpe_solver_n_iter_max;
     const auto damp_fac = opts.qpe_solver_damp_factor;
+    const auto option_qpe_solver = opts.option_qpe_solver;
     const bool use_adaptive_damp = opts.use_qpe_adaptive_damp == LIBRPA_SWITCH_ON;
     const bool override_qpe_solver_nan = opts.override_qpe_solver_nan == LIBRPA_SWITCH_ON;
 
@@ -404,9 +451,9 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                 sigc_re[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 sigc_im[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
-                int flag_qpe_solver = librpa_int::qpe_solver_pade_self_consistent(
-                    pade, eks_state, efermi, vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
-                    n_iter_max, damp_fac, use_adaptive_damp);
+                int flag_qpe_solver = solve_qpe_with_option(
+                    option_qpe_solver, pade, eks_state, efermi, vxc_state, exx_state, e_qp,
+                    sigc, diff_init, thres_qpe, n_iter_max, damp_fac, use_adaptive_damp);
                 if (flag_qpe_solver != 0)
                 {
                     global::ofs_myid << "Warning! QPE solver failed for spin " << isp + 1
@@ -500,6 +547,7 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
     const auto thres_qpe = opts.qpe_solver_thres;
     const auto n_iter_max = opts.qpe_solver_n_iter_max;
     const auto damp_fac = opts.qpe_solver_damp_factor;
+    const auto option_qpe_solver = opts.option_qpe_solver;
     const bool use_adaptive_damp = opts.use_qpe_adaptive_damp == LIBRPA_SWITCH_ON;
     const bool override_qpe_solver_nan = opts.override_qpe_solver_nan == LIBRPA_SWITCH_ON;
 
@@ -532,9 +580,9 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
                 sigc_band_re[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 sigc_band_im[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
-                int flag_qpe_solver = librpa_int::qpe_solver_pade_self_consistent(
-                    pade, eks_state, efermi, vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
-                    n_iter_max, damp_fac, use_adaptive_damp);
+                int flag_qpe_solver = solve_qpe_with_option(
+                    option_qpe_solver, pade, eks_state, efermi, vxc_state, exx_state, e_qp,
+                    sigc, diff_init, thres_qpe, n_iter_max, damp_fac, use_adaptive_damp);
                 if (flag_qpe_solver != 0)
                 {
                     global::ofs_myid << "Warning! QPE solver failed for spin " << isp + 1
