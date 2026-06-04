@@ -213,6 +213,7 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_string(driver_params, fn_bz_sampling);
     _parse_string(driver_params, fn_eigocc_scf);
     _parse_int(driver_params, version_coul_reader);
+    _parse_int(driver_params, version_lri_reader);
 
     // TODO: implement a function to read multiple double values in one line
     if (driver_params.output_gw_spec_func)

@@ -23,6 +23,7 @@ DriverParams::DriverParams():
     fn_basis("basis_out"),
     fn_eigocc_scf("band_out"),
     version_coul_reader(0),
+    version_lri_reader(0),
     cs_threshold(1e-6),
     output_energy_qp(false),
     i_state_low(0),
@@ -75,6 +76,7 @@ std::string DriverParams::format()
 #undef normal_pair
 
     ss << "version_coul_reader = " << version_coul_reader << std::endl;
+    ss << "version_lri_reader = " << version_lri_reader << std::endl;
     ss << "cs_R_threshold = " << cs_threshold << std::endl;
     ss << "i_state_low = " << i_state_low << std::endl;
     ss << "i_state_high = " << i_state_high << std::endl;

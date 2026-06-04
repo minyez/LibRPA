@@ -459,7 +459,9 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
         for (const auto &p: tri_local_atpair)
             local_atpair.push_back(p);
         profiler.start("driver_read_Cs");
-        read_Cs(dir_path, driver::driver_params.cs_threshold, local_atpair);
+        read_Cs(dir_path, driver::driver_params.cs_threshold, local_atpair,
+                driver::driver_params.prefix_lri_coeff,
+                driver::driver_params.version_lri_reader);
         profiler.stop("driver_read_Cs");
 
         mpi_comm_global_h.barrier();
@@ -473,7 +475,10 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
     {
         lib_printf_root("Evenly distributed Cs and V for LibRI\n");
         profiler.start("driver_read_Cs");
-        read_Cs_evenly_distribute(dir_path, driver::driver_params.cs_threshold, mpi_comm_global_h.myid, mpi_comm_global_h.nprocs);
+        read_Cs_evenly_distribute(dir_path, driver::driver_params.cs_threshold,
+                                  mpi_comm_global_h.myid, mpi_comm_global_h.nprocs,
+                                  driver::driver_params.prefix_lri_coeff,
+                                  driver::driver_params.version_lri_reader);
         profiler.stop("driver_read_Cs");
         // Vq distributed using the same strategy
         // There should be no duplicate for V
@@ -495,7 +500,9 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
         lib_printf_root("Complete copy of Cs and V on each process\n");
         local_atpair = generate_atom_pair_from_nat(n_atoms, false);
         profiler.start("driver_read_Cs");
-        read_Cs(dir_path, driver::driver_params.cs_threshold, local_atpair);
+        read_Cs(dir_path, driver::driver_params.cs_threshold, local_atpair,
+                driver::driver_params.prefix_lri_coeff,
+                driver::driver_params.version_lri_reader);
         profiler.stop("driver_read_Cs");
 
         mpi_comm_global_h.barrier();
@@ -1393,7 +1400,8 @@ void read_ri_shrink(const string &dir_path)
     // atom_mu_l = atom_mu;  // TODO: replace with the actual shrinked ABFs
     read_Cs_evenly_distribute(driver_params.input_dir, driver_params.cs_threshold,
                               mpi_comm_global_h.myid, mpi_comm_global_h.nprocs,
-                              driver_params.prefix_lri_coeff_shrink);
+                              driver_params.prefix_lri_coeff_shrink,
+                              driver_params.version_lri_reader);
     profiler.stop("read_Cs_shrink");
 
     profiler.start("read_shrink_sinvS_fold", "Load shrink transformation");

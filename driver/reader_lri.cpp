@@ -22,6 +22,7 @@
 
 #include "driver.h"
 #include "../src/api/instance_manager.h"
+#include "../src/io/fs.h"
 #include "../src/io/global_io.h"
 #include "../src/io/stl_io_helper.h"
 #include "../src/mpi/global_mpi.h"
@@ -62,11 +63,14 @@ namespace
 constexpr std::streamoff CS_BINARY_LEGACY_HEADER_SIZE =
     3 * static_cast<std::streamoff>(sizeof(int));
 constexpr std::streamoff CS_BINARY_V1_HEADER_BASE_SIZE =
-    4 * static_cast<std::streamoff>(sizeof(int));
+    3 * static_cast<std::streamoff>(sizeof(int)) +
+    2 * static_cast<std::streamoff>(sizeof(std::int64_t));
 constexpr std::streamoff CS_BINARY_LEGACY_BLOCK_HEADER_SIZE =
     8 * static_cast<std::streamoff>(sizeof(int));
 constexpr std::size_t CS_BINARY_V1_BLOCK_RECORD_SIZE =
     5 * sizeof(std::int32_t) + sizeof(double) + sizeof(std::int64_t);
+constexpr std::size_t CS_BINARY_V1_MAX_COLLECTED_READ_BYTES =
+    256ULL * 1024ULL * 1024ULL;
 
 struct CsBinaryV1Record
 {
@@ -77,15 +81,38 @@ struct CsBinaryV1Record
     std::int64_t offset = 0;
 };
 
-bool get_Cs_binary_v1_header_size(const int nblocks, std::streamoff &header_size)
+struct CsBinaryV1ReadTask
 {
-    if (nblocks < 0) return false;
+    std::string file_path;
+    std::size_t block_id = 0;
+    CsBinaryV1Record block;
+    std::streamoff nbytes = 0;
+};
+
+struct CsBinaryV1CollectedRead
+{
+    std::string file_path;
+    std::streamoff offset = 0;
+    std::streamoff nbytes = 0;
+    std::vector<CsBinaryV1ReadTask> tasks;
+};
+
+bool get_Cs_binary_v1_header_size(const std::int64_t nblocks_max,
+                                  std::streamoff &header_size)
+{
+    if (nblocks_max < 0 ||
+        static_cast<unsigned long long>(nblocks_max) >
+            static_cast<unsigned long long>(std::numeric_limits<std::streamoff>::max()))
+    {
+        return false;
+    }
     const auto record_size = static_cast<std::streamoff>(CS_BINARY_V1_BLOCK_RECORD_SIZE);
     const auto max_header_size = std::numeric_limits<std::streamoff>::max();
-    if (nblocks > (max_header_size - CS_BINARY_V1_HEADER_BASE_SIZE) / record_size)
+    if (static_cast<std::streamoff>(nblocks_max) >
+        (max_header_size - CS_BINARY_V1_HEADER_BASE_SIZE) / record_size)
         return false;
     header_size =
-        CS_BINARY_V1_HEADER_BASE_SIZE + static_cast<std::streamoff>(nblocks) * record_size;
+        CS_BINARY_V1_HEADER_BASE_SIZE + static_cast<std::streamoff>(nblocks_max) * record_size;
     return true;
 }
 
@@ -126,37 +153,32 @@ bool parse_Cs_binary_v1_header(const string &file_path,
     }
 
     int marker = 0;
-    int n_apcell_file = 0;
+    std::int64_t n_apcell_file = 0;
+    std::int64_t n_apcell_file_max = 0;
     infile.seekg(0, std::ios::beg);
     infile.read((char *) &marker, sizeof(int));
     infile.read((char *) &natom, sizeof(int));
     infile.read((char *) &ncell, sizeof(int));
-    infile.read((char *) &n_apcell_file, sizeof(int));
+    infile.read((char *) &n_apcell_file, sizeof(std::int64_t));
+    infile.read((char *) &n_apcell_file_max, sizeof(std::int64_t));
     if (!infile.good() || marker != READER_LRICOEF_V1_MARKER)
     {
         return fail("Invalid binary Cs v1 marker in: " + file_path);
     }
-    if (!infile.good() || natom <= 0 || ncell < 0 || n_apcell_file < 0)
+    if (!infile.good() || natom <= 0 || ncell < 0 || n_apcell_file < 0 ||
+        n_apcell_file_max < n_apcell_file)
     {
         return fail("Invalid binary Cs v1 header in: " + file_path);
     }
 
     std::streamoff header_size = 0;
-    if (!get_Cs_binary_v1_header_size(n_apcell_file, header_size) ||
+    if (!get_Cs_binary_v1_header_size(n_apcell_file_max, header_size) ||
         header_size > file_size)
     {
         return fail("Invalid binary Cs v1 header size in: " + file_path);
     }
-    if (n_apcell_file == 0)
-    {
-        if (file_size != header_size)
-            return fail("Binary Cs v1 file has no block records but contains payload: " +
-                        file_path);
-        return true;
-    }
-
     records.reserve(static_cast<std::size_t>(n_apcell_file));
-    for (int i = 0; i != n_apcell_file; ++i)
+    for (std::int64_t i = 0; i != n_apcell_file_max; ++i)
     {
         char record[CS_BINARY_V1_BLOCK_RECORD_SIZE];
         infile.read(record, CS_BINARY_V1_BLOCK_RECORD_SIZE);
@@ -181,6 +203,20 @@ bool parse_Cs_binary_v1_header(const string &file_path,
         std::memcpy(&block.offset,
                     record + 5 * sizeof(std::int32_t) + sizeof(double),
                     sizeof(std::int64_t));
+
+        if (i >= n_apcell_file)
+        {
+            const bool is_zero_padding =
+                block.ia1 == 0 && block.ia2 == 0 &&
+                block.R[0] == 0 && block.R[1] == 0 && block.R[2] == 0 &&
+                block.max_abs == 0.0 && block.offset == 0;
+            if (!is_zero_padding)
+            {
+                return fail("Nonzero padding record in binary Cs v1 block table: " +
+                            file_path);
+            }
+            continue;
+        }
 
         if (block.ia1 <= 0 || block.ia1 > natom ||
             block.ia2 <= 0 || block.ia2 > natom)
@@ -223,6 +259,19 @@ std::vector<CsBinaryV1Record> read_Cs_binary_v1_header_or_throw(
         throw std::runtime_error(error);
     }
     return records;
+}
+
+void throw_unknown_Cs_reader_version(const int reader_version)
+{
+    throw std::logic_error("Unknown LRI coefficient reader version " +
+                           std::to_string(reader_version));
+}
+
+void throw_Cs_v1_requires_reader_version(const string &file_path)
+{
+    throw std::logic_error(
+        "LRI coefficient reader v1 file found while version_lri_reader = 0; "
+        "set version_lri_reader = 1 to read: " + file_path);
 }
 
 int checked_Cs_basis_size(const std::size_t value,
@@ -317,6 +366,216 @@ void validate_Cs_binary_v1_blocks(const string &file_path,
         if (ranges[i].first < ranges[i - 1].second)
         {
             throw std::runtime_error(file_path + ": overlapping Cs reader v1 payload blocks");
+        }
+    }
+}
+
+template <typename BasisWfc, typename BasisAux>
+std::vector<CsBinaryV1ReadTask> make_Cs_binary_v1_read_tasks(
+    const std::vector<string> &files,
+    const double threshold,
+    const BasisWfc &basis_wfc,
+    const BasisAux &basis_aux)
+{
+    std::vector<CsBinaryV1ReadTask> tasks;
+    for (const auto &file_path: files)
+    {
+        int natom = 0;
+        int ncell = 0;
+        std::streamoff file_size = 0;
+        const auto records = read_Cs_binary_v1_header_or_throw(
+            file_path, natom, ncell, file_size);
+        validate_Cs_binary_v1_blocks(
+            file_path, natom, file_size, records, basis_wfc, basis_aux);
+
+        std::vector<CsBinaryV1ReadTask> file_tasks;
+        file_tasks.reserve(records.size());
+        for (std::size_t i = 0; i != records.size(); ++i)
+        {
+            const auto &block = records[i];
+            if (block.max_abs < threshold) continue;
+
+            int n_i = 0;
+            int n_j = 0;
+            int n_mu = 0;
+            get_Cs_binary_v1_block_dimensions(
+                block, basis_wfc, basis_aux, file_path, n_i, n_j, n_mu);
+
+            std::streamoff data_size = 0;
+            if (!get_Cs_binary_data_size(n_i, n_j, n_mu, data_size))
+            {
+                throw std::runtime_error("Invalid Cs reader v1 block dimensions in: " +
+                                         file_path);
+            }
+            file_tasks.push_back({file_path, i, block, data_size});
+        }
+
+        std::sort(file_tasks.begin(), file_tasks.end(),
+                  [](const auto &a, const auto &b)
+                  {
+                      if (a.block.offset != b.block.offset)
+                          return a.block.offset < b.block.offset;
+                      return a.block_id < b.block_id;
+                  });
+        tasks.insert(tasks.end(), file_tasks.begin(), file_tasks.end());
+    }
+    return tasks;
+}
+
+std::uint64_t checked_task_nbytes(const std::streamoff nbytes,
+                                  const std::string &file_path)
+{
+    if (nbytes < 0 ||
+        static_cast<unsigned long long>(nbytes) >
+            static_cast<unsigned long long>(std::numeric_limits<std::uint64_t>::max()))
+    {
+        throw std::runtime_error(file_path + ": Cs reader v1 task byte size is out of range");
+    }
+    return static_cast<std::uint64_t>(nbytes);
+}
+
+int owner_rank_from_cumulative_begin(const std::uint64_t cumulative_begin,
+                                     const std::uint64_t total_bytes,
+                                     const int nprocs)
+{
+    if (total_bytes == 0) return 0;
+    const long double scaled =
+        static_cast<long double>(cumulative_begin) * nprocs /
+        static_cast<long double>(total_bytes);
+    int owner = static_cast<int>(scaled);
+    if (owner < 0) owner = 0;
+    if (owner >= nprocs) owner = nprocs - 1;
+    return owner;
+}
+
+std::vector<CsBinaryV1ReadTask> select_Cs_binary_v1_tasks_for_rank(
+    const std::vector<CsBinaryV1ReadTask> &tasks,
+    const int myid,
+    const int nprocs)
+{
+    std::uint64_t total_bytes = 0;
+    for (const auto &task: tasks)
+    {
+        const auto nbytes = checked_task_nbytes(task.nbytes, task.file_path);
+        if (total_bytes > std::numeric_limits<std::uint64_t>::max() - nbytes)
+        {
+            throw std::runtime_error("Cs reader v1 total scheduled bytes are out of range");
+        }
+        total_bytes += nbytes;
+    }
+
+    std::vector<CsBinaryV1ReadTask> selected;
+    std::uint64_t cumulative_begin = 0;
+    for (const auto &task: tasks)
+    {
+        const auto nbytes = checked_task_nbytes(task.nbytes, task.file_path);
+        if (owner_rank_from_cumulative_begin(cumulative_begin, total_bytes, nprocs) == myid)
+        {
+            selected.push_back(task);
+        }
+        cumulative_begin += nbytes;
+    }
+    return selected;
+}
+
+std::size_t checked_streamoff_to_size(const std::streamoff value,
+                                      const std::string &file_path)
+{
+    if (value < 0 ||
+        static_cast<unsigned long long>(value) >
+            static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max()))
+    {
+        throw std::runtime_error(file_path + ": Cs reader v1 byte count is out of range");
+    }
+    return static_cast<std::size_t>(value);
+}
+
+std::vector<CsBinaryV1CollectedRead> collect_Cs_binary_v1_reads(
+    const std::vector<CsBinaryV1ReadTask> &tasks)
+{
+    std::vector<CsBinaryV1CollectedRead> collected;
+    for (const auto &task: tasks)
+    {
+        const auto task_begin = static_cast<std::streamoff>(task.block.offset);
+        const auto task_end = task_begin + task.nbytes;
+        if (task_end < task_begin)
+        {
+            throw std::runtime_error(task.file_path + ": Cs reader v1 task range is invalid");
+        }
+
+        bool need_new_read = collected.empty() ||
+            task.file_path != collected.back().file_path ||
+            task_begin < collected.back().offset + collected.back().nbytes;
+
+        if (!need_new_read)
+        {
+            const auto read_begin = collected.back().offset;
+            const auto read_nbytes = task_end - read_begin;
+            need_new_read =
+                read_nbytes < 0 ||
+                static_cast<unsigned long long>(read_nbytes) >
+                    static_cast<unsigned long long>(CS_BINARY_V1_MAX_COLLECTED_READ_BYTES);
+        }
+
+        if (need_new_read)
+        {
+            collected.push_back({task.file_path, task_begin, task.nbytes, {task}});
+        }
+        else
+        {
+            auto &read = collected.back();
+            read.nbytes = task_end - read.offset;
+            read.tasks.push_back(task);
+        }
+    }
+    return collected;
+}
+
+template <typename BasisWfc, typename BasisAux>
+void read_Cs_binary_v1_tasks(const std::vector<CsBinaryV1ReadTask> &tasks,
+                             const BasisWfc &basis_wfc,
+                             const BasisAux &basis_aux)
+{
+    const auto collected_reads = collect_Cs_binary_v1_reads(tasks);
+    for (const auto &read: collected_reads)
+    {
+        ifstream infile(read.file_path, std::ios::in | std::ios::binary);
+        if (!infile.good())
+        {
+            throw std::logic_error("Failed to open " + read.file_path);
+        }
+
+        std::vector<char> buffer(checked_streamoff_to_size(read.nbytes, read.file_path));
+        infile.seekg(read.offset, std::ios::beg);
+        infile.read(buffer.data(), read.nbytes);
+        if (!infile.good())
+        {
+            throw std::runtime_error("Failed to read Cs reader v1 payload in: " +
+                                     read.file_path);
+        }
+
+        for (const auto &task: read.tasks)
+        {
+            int n_i = 0;
+            int n_j = 0;
+            int n_mu = 0;
+            get_Cs_binary_v1_block_dimensions(
+                task.block, basis_wfc, basis_aux, task.file_path, n_i, n_j, n_mu);
+
+            std::shared_ptr<matrix> cs_ptr = std::make_shared<matrix>();
+            cs_ptr->create(n_i * n_j, n_mu);
+            const auto buffer_offset =
+                checked_streamoff_to_size(
+                    static_cast<std::streamoff>(task.block.offset) - read.offset,
+                    task.file_path);
+            std::memcpy(cs_ptr->c, buffer.data() + buffer_offset,
+                        checked_streamoff_to_size(task.nbytes, task.file_path));
+
+            const int ia1 = task.block.ia1 - 1;
+            const int ia2 = task.block.ia2 - 1;
+            int R[3] = {task.block.R[0], task.block.R[1], task.block.R[2]};
+            driver::h.set_lri_coeff(driver::opts.parallel_routing, ia1, ia2,
+                                    n_i, n_j, n_mu, R, cs_ptr->c);
         }
     }
 }
@@ -620,11 +879,42 @@ static size_t handle_Cs_file_binary(const string &file_path, double threshold, c
     return cs_discard;
 }
 
-size_t read_Cs(const string &dir_path, double threshold, const std::vector<atpair_t> &local_atpair)
+size_t read_Cs(const string &dir_path, double threshold,
+               const std::vector<atpair_t> &local_atpair, const string keyword,
+               int reader_version)
 {
     using namespace std;
 
     size_t cs_discard = 0;
+    if (reader_version == 1)
+    {
+        const auto files = librpa_int::discover_files_with_prefix(dir_path, keyword);
+        if (files.empty())
+        {
+            throw std::logic_error(
+                "No LRI coefficient reader v1 files found with prefix " +
+                keyword);
+        }
+        if (librpa_int::global::myid_global == 0)
+        {
+            cout << "Binary Cs reader v1 enabled" << endl;
+        }
+        for (const auto &fn: files)
+        {
+            if (!has_Cs_binary_v1_layout(fn))
+            {
+                throw std::logic_error(
+                    "LRI coefficient reader v1 expected a valid v1 header in: " + fn);
+            }
+            cs_discard += handle_Cs_file_binary(fn, threshold, local_atpair);
+        }
+        return cs_discard;
+    }
+    if (reader_version != 0)
+    {
+        throw_unknown_Cs_reader_version(reader_version);
+    }
+
     // cout << "Begin to read Cs" << endl;
     // cout << "cs_threshold:  " << threshold << endl;
     struct dirent *ptr;
@@ -637,9 +927,15 @@ size_t read_Cs(const string &dir_path, double threshold, const std::vector<atpai
     while ((ptr = readdir(dir)) != NULL)
     {
         string fm(ptr->d_name);
-        if (fm.find(driver::driver_params.prefix_lri_coeff) == 0)
+        if (fm.find(keyword) == 0)
         {
             const auto fn = dir_path + fm;
+            if (has_Cs_binary_v1_layout(fn))
+            {
+                closedir(dir);
+                dir = NULL;
+                throw_Cs_v1_requires_reader_version(fn);
+            }
             if (!binary_checked)
             {
                 binary = check_Cs_file_binary(fn);
@@ -990,11 +1286,45 @@ static size_t handle_Cs_file_binary_by_ids(const string &file_path, double thres
 }
 
 size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int myid, int nprocs,
-                                 const string keyword)
+                                 const string keyword, int reader_version)
 {
     using namespace std;
     using namespace librpa_int;
     using namespace librpa_int::global;
+
+    if (reader_version == 1)
+    {
+        auto files = librpa_int::discover_files_with_prefix(dir_path, keyword);
+        if (files.empty())
+        {
+            throw std::logic_error(
+                "No LRI coefficient reader v1 files found with prefix " + keyword);
+        }
+
+        size_t cs_discard = 0;
+        profiler.start("handle_Cs_file_dry");
+        auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
+        const auto &basis_wfc = ds->basis_wfc;
+        const auto &basis_aux = ds->basis_aux;
+        const auto tasks = make_Cs_binary_v1_read_tasks(files, threshold, basis_wfc, basis_aux);
+        const auto tasks_this_proc = select_Cs_binary_v1_tasks_for_rank(tasks, myid, nprocs);
+        cs_discard = tasks.size() - tasks_this_proc.size();
+        ofs_myid << "Cs reader v1 scheduled " << tasks_this_proc.size()
+                 << " of " << tasks.size() << " kept block(s) across "
+                 << files.size() << " file(s)" << endl;
+        profiler.stop("handle_Cs_file_dry");
+        if (myid == 0) lib_printf("Finished Cs filtering\n");
+
+        profiler.start("handle_Cs_file");
+        read_Cs_binary_v1_tasks(tasks_this_proc, basis_wfc, basis_aux);
+        profiler.stop("handle_Cs_file");
+        if (myid == 0) lib_printf("Finished Cs parsing\n");
+        return cs_discard;
+    }
+    if (reader_version != 0)
+    {
+        throw_unknown_Cs_reader_version(reader_version);
+    }
 
     size_t cs_discard = 0;
     struct dirent *ptr;
@@ -1012,10 +1342,18 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
         string fn(ptr->d_name);
         if (fn.find(keyword) == 0)
         {
-            files.push_back(dir_path + fn);
+            const auto file_path = dir_path + fn;
+            if (has_Cs_binary_v1_layout(file_path))
+            {
+                profiler.stop("handle_Cs_file_dry");
+                closedir(dir);
+                dir = NULL;
+                throw_Cs_v1_requires_reader_version(file_path);
+            }
+            files.push_back(file_path);
             if (!binary_checked)
             {
-                binary = check_Cs_file_binary(dir_path + fn);
+                binary = check_Cs_file_binary(file_path);
                 binary_checked = true;
             }
         }

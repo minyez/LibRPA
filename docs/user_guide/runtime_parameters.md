@@ -52,6 +52,7 @@ For example, the default `prefix_lri_coeff = Cs_data` matches files such as `Cs_
 | `prefix_coul_full`    | Prefix of bare Coulomb matrix files                                  | string | `coulomb_mat`                                  |              |
 | `prefix_coul_cut`     | Prefix of truncated Coulomb matrix files                             | string | `coulomb_cut`                                  |              |
 | `version_coul_reader` | Coulomb reader-version selector (`0` legacy, `1` atom-pair blocks) | int | 0 | Experimental |
+| `version_lri_reader`  | Local RI coefficient reader-version selector (`0` legacy, `1` v1 header with payload offsets) | int | 0 | Experimental |
 | `cs_threshold`        | Screening threshold when reading the RI coefficient data             | double | 1e-6                                           |              |
 | `use_spinor_wfc`      | Read wavefunctions in spinor format                                  | bool   | `false`                                        | Experimental |
 | `output_energy_qp`    | Output quasiparticle energies for external BSE workflows             | bool   | `false`                                        | Experimental |

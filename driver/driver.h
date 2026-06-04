@@ -33,6 +33,7 @@ struct DriverParams
 
     // Reader version
     int version_coul_reader;
+    int version_lri_reader;
 
     // Threshold for real-space LRI triple coefficients.
     double cs_threshold;
