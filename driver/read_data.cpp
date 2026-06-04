@@ -10,6 +10,7 @@
 #include <cassert>
 #include <cerrno>
 #include <cctype>
+#include <cmath>
 #include <complex>
 #include <cstdint>
 #include <cstring>
@@ -39,6 +40,7 @@
 #include "../src/utils/utils_mem.h"
 
 #define READER_COULOMB_V1_MARKER 20129433
+#define READER_LRICOEF_V1_MARKER 10267453
 
 using std::ifstream;
 using std::string;
@@ -537,6 +539,276 @@ static bool get_Cs_binary_data_size(int n_i, int n_j, int n_mu, std::streamoff &
     return true;
 }
 
+static_assert(sizeof(int) == sizeof(std::int32_t),
+              "Cs binary readers expect native int to be int32");
+
+namespace
+{
+
+constexpr std::streamoff CS_BINARY_LEGACY_HEADER_SIZE =
+    3 * static_cast<std::streamoff>(sizeof(int));
+constexpr std::streamoff CS_BINARY_V1_HEADER_BASE_SIZE =
+    4 * static_cast<std::streamoff>(sizeof(int));
+constexpr std::streamoff CS_BINARY_LEGACY_BLOCK_HEADER_SIZE =
+    8 * static_cast<std::streamoff>(sizeof(int));
+constexpr std::size_t CS_BINARY_V1_BLOCK_RECORD_SIZE =
+    5 * sizeof(std::int32_t) + sizeof(double) + sizeof(std::int64_t);
+
+struct CsBinaryV1Record
+{
+    int ia1 = 0;
+    int ia2 = 0;
+    int R[3] = {0, 0, 0};
+    double max_abs = 0.0;
+    std::int64_t offset = 0;
+};
+
+bool get_Cs_binary_v1_header_size(const int nblocks, std::streamoff &header_size)
+{
+    if (nblocks < 0) return false;
+    const auto record_size = static_cast<std::streamoff>(CS_BINARY_V1_BLOCK_RECORD_SIZE);
+    const auto max_header_size = std::numeric_limits<std::streamoff>::max();
+    if (nblocks > (max_header_size - CS_BINARY_V1_HEADER_BASE_SIZE) / record_size)
+        return false;
+    header_size =
+        CS_BINARY_V1_HEADER_BASE_SIZE + static_cast<std::streamoff>(nblocks) * record_size;
+    return true;
+}
+
+bool parse_Cs_binary_v1_header(const string &file_path,
+                               std::vector<CsBinaryV1Record> &records,
+                               int &natom,
+                               int &ncell,
+                               std::streamoff &file_size,
+                               std::string *error)
+{
+    auto fail = [error](const std::string &message)
+    {
+        if (error != nullptr) *error = message;
+        return false;
+    };
+
+    records.clear();
+    natom = 0;
+    ncell = 0;
+    file_size = 0;
+
+    ifstream infile(file_path, std::ios::in | std::ios::binary);
+    if (!infile.good())
+    {
+        return fail("Failed to open " + file_path);
+    }
+
+    infile.seekg(0, std::ios::end);
+    const auto end_pos = infile.tellg();
+    if (end_pos == std::streampos(-1))
+    {
+        return fail("Failed to determine size of binary Cs file: " + file_path);
+    }
+    file_size = static_cast<std::streamoff>(end_pos);
+    if (file_size < CS_BINARY_V1_HEADER_BASE_SIZE)
+    {
+        return fail("Binary Cs file is too small: " + file_path);
+    }
+
+    int marker = 0;
+    int n_apcell_file = 0;
+    infile.seekg(0, std::ios::beg);
+    infile.read((char *) &marker, sizeof(int));
+    infile.read((char *) &natom, sizeof(int));
+    infile.read((char *) &ncell, sizeof(int));
+    infile.read((char *) &n_apcell_file, sizeof(int));
+    if (!infile.good() || marker != READER_LRICOEF_V1_MARKER)
+    {
+        return fail("Invalid binary Cs v1 marker in: " + file_path);
+    }
+    if (!infile.good() || natom <= 0 || ncell < 0 || n_apcell_file < 0)
+    {
+        return fail("Invalid binary Cs v1 header in: " + file_path);
+    }
+
+    std::streamoff header_size = 0;
+    if (!get_Cs_binary_v1_header_size(n_apcell_file, header_size) ||
+        header_size > file_size)
+    {
+        return fail("Invalid binary Cs v1 header size in: " + file_path);
+    }
+    if (n_apcell_file == 0)
+    {
+        if (file_size != header_size)
+            return fail("Binary Cs v1 file has no block records but contains payload: " +
+                        file_path);
+        return true;
+    }
+
+    records.reserve(static_cast<std::size_t>(n_apcell_file));
+    for (int i = 0; i != n_apcell_file; ++i)
+    {
+        char record[CS_BINARY_V1_BLOCK_RECORD_SIZE];
+        infile.read(record, CS_BINARY_V1_BLOCK_RECORD_SIZE);
+        if (!infile.good())
+        {
+            return fail("Truncated binary Cs v1 block table in: " + file_path);
+        }
+
+        std::int32_t ints[5];
+        for (int j = 0; j != 5; ++j)
+        {
+            std::memcpy(&ints[j], record + j * sizeof(std::int32_t), sizeof(std::int32_t));
+        }
+
+        CsBinaryV1Record block;
+        block.ia1 = static_cast<int>(ints[0]);
+        block.ia2 = static_cast<int>(ints[1]);
+        block.R[0] = static_cast<int>(ints[2]);
+        block.R[1] = static_cast<int>(ints[3]);
+        block.R[2] = static_cast<int>(ints[4]);
+        std::memcpy(&block.max_abs, record + 5 * sizeof(std::int32_t), sizeof(double));
+        std::memcpy(&block.offset,
+                    record + 5 * sizeof(std::int32_t) + sizeof(double),
+                    sizeof(std::int64_t));
+
+        if (block.ia1 <= 0 || block.ia1 > natom ||
+            block.ia2 <= 0 || block.ia2 > natom)
+        {
+            return fail("Invalid atom index in binary Cs v1 block table: " + file_path);
+        }
+        if (!std::isfinite(block.max_abs) || block.max_abs < 0.0)
+        {
+            return fail("Invalid max-abs value in binary Cs v1 block table: " + file_path);
+        }
+        if (block.offset < header_size || block.offset >= file_size)
+        {
+            return fail("Invalid byte offset in binary Cs v1 block table: " + file_path);
+        }
+
+        records.push_back(block);
+    }
+    return true;
+}
+
+bool has_Cs_binary_v1_layout(const string &file_path)
+{
+    std::vector<CsBinaryV1Record> records;
+    int natom = 0;
+    int ncell = 0;
+    std::streamoff file_size = 0;
+    return parse_Cs_binary_v1_header(file_path, records, natom, ncell, file_size, nullptr);
+}
+
+std::vector<CsBinaryV1Record> read_Cs_binary_v1_header_or_throw(
+    const string &file_path,
+    int &natom,
+    int &ncell,
+    std::streamoff &file_size)
+{
+    std::vector<CsBinaryV1Record> records;
+    std::string error;
+    if (!parse_Cs_binary_v1_header(file_path, records, natom, ncell, file_size, &error))
+    {
+        throw std::runtime_error(error);
+    }
+    return records;
+}
+
+int checked_Cs_basis_size(const std::size_t value,
+                          const string &file_path,
+                          const char *basis_name,
+                          const int atom)
+{
+    if (value == 0 ||
+        value > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+    {
+        std::ostringstream ss;
+        ss << file_path << ": invalid " << basis_name << " size " << value
+           << " for atom " << atom;
+        throw std::runtime_error(ss.str());
+    }
+    return static_cast<int>(value);
+}
+
+template <typename BasisWfc, typename BasisAux>
+void get_Cs_binary_v1_block_dimensions(const CsBinaryV1Record &block,
+                                       const BasisWfc &basis_wfc,
+                                       const BasisAux &basis_aux,
+                                       const string &file_path,
+                                       int &n_i,
+                                       int &n_j,
+                                       int &n_mu)
+{
+    const int ia1 = block.ia1 - 1;
+    const int ia2 = block.ia2 - 1;
+    n_i = checked_Cs_basis_size(basis_wfc[ia1], file_path, "wave-function basis", ia1);
+    n_j = checked_Cs_basis_size(basis_wfc[ia2], file_path, "wave-function basis", ia2);
+    n_mu = checked_Cs_basis_size(basis_aux[ia1], file_path, "auxiliary basis", ia1);
+}
+
+template <typename BasisWfc, typename BasisAux>
+void validate_Cs_binary_v1_blocks(const string &file_path,
+                                  const int natom,
+                                  const std::streamoff file_size,
+                                  const std::vector<CsBinaryV1Record> &records,
+                                  const BasisWfc &basis_wfc,
+                                  const BasisAux &basis_aux)
+{
+    if (!basis_wfc.initialized())
+    {
+        throw std::runtime_error(file_path +
+                                 ": Cs reader v1 requires wave-function basis information");
+    }
+    if (!basis_aux.initialized())
+    {
+        throw std::runtime_error(file_path +
+                                 ": Cs reader v1 requires auxiliary basis information");
+    }
+    if (basis_wfc.n_atoms != static_cast<std::size_t>(natom) ||
+        basis_aux.n_atoms != static_cast<std::size_t>(natom))
+    {
+        std::ostringstream ss;
+        ss << file_path << ": Cs reader v1 atom count " << natom
+           << " does not match loaded basis atom counts wfc=" << basis_wfc.n_atoms
+           << ", aux=" << basis_aux.n_atoms;
+        throw std::runtime_error(ss.str());
+    }
+
+    std::vector<std::pair<std::streamoff, std::streamoff>> ranges;
+    ranges.reserve(records.size());
+    for (const auto &block: records)
+    {
+        int n_i = 0;
+        int n_j = 0;
+        int n_mu = 0;
+        get_Cs_binary_v1_block_dimensions(
+            block, basis_wfc, basis_aux, file_path, n_i, n_j, n_mu);
+
+        std::streamoff data_size = 0;
+        if (!get_Cs_binary_data_size(n_i, n_j, n_mu, data_size) ||
+            block.offset < 0 ||
+            block.offset > std::numeric_limits<std::streamoff>::max() ||
+            data_size > file_size - static_cast<std::streamoff>(block.offset))
+        {
+            std::ostringstream ss;
+            ss << file_path << ": invalid Cs reader v1 payload offset "
+               << block.offset << " for atom pair (" << block.ia1 << ", "
+               << block.ia2 << ")";
+            throw std::runtime_error(ss.str());
+        }
+        const auto begin = static_cast<std::streamoff>(block.offset);
+        ranges.emplace_back(begin, begin + data_size);
+    }
+
+    std::sort(ranges.begin(), ranges.end());
+    for (std::size_t i = 1; i != ranges.size(); ++i)
+    {
+        if (ranges[i].first < ranges[i - 1].second)
+        {
+            throw std::runtime_error(file_path + ": overlapping Cs reader v1 payload blocks");
+        }
+    }
+}
+
+} // namespace
+
 static bool has_Cs_binary_layout(const string &file_path)
 {
     ifstream infile(file_path, std::ios::in | std::ios::binary);
@@ -550,8 +822,8 @@ static bool has_Cs_binary_layout(const string &file_path)
     if (end_pos == std::streampos(-1)) return false;
 
     const auto file_size = static_cast<std::streamoff>(end_pos);
-    const auto header_size = static_cast<std::streamoff>(3 * sizeof(int));
-    const auto block_header_size = static_cast<std::streamoff>(8 * sizeof(int));
+    const auto header_size = CS_BINARY_LEGACY_HEADER_SIZE;
+    const auto block_header_size = CS_BINARY_LEGACY_BLOCK_HEADER_SIZE;
     if (file_size < header_size) return false;
 
     infile.seekg(0, std::ios::beg);
@@ -627,6 +899,7 @@ static bool check_Cs_file_binary(const string &file_path)
 {
     // Binary Cs headers start with three native ints.  The old text-first probe could
     // mis-detect a binary file when the first byte of natom happened to be an ASCII digit.
+    if (has_Cs_binary_v1_layout(file_path)) return true;
     if (has_Cs_binary_layout(file_path)) return true;
     if (has_binary_control_bytes(file_path)) return true;
     return !has_Cs_text_header(file_path);
@@ -887,6 +1160,76 @@ static size_t handle_Cs_file_binary(const string &file_path, double threshold, c
 {
     using namespace std;
 
+    if (has_Cs_binary_v1_layout(file_path))
+    {
+        set<size_t> loc_atp_index;
+        for (auto &lap : local_atpair)
+        {
+            loc_atp_index.insert(lap.first);
+            loc_atp_index.insert(lap.second);
+        }
+
+        int natom = 0;
+        int ncell = 0;
+        std::streamoff file_size = 0;
+        const auto records = read_Cs_binary_v1_header_or_throw(
+            file_path, natom, ncell, file_size);
+
+        auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
+        const auto &basis_wfc = ds->basis_wfc;
+        const auto &basis_aux = ds->basis_aux;
+        validate_Cs_binary_v1_blocks(
+            file_path, natom, file_size, records, basis_wfc, basis_aux);
+
+        ifstream infile(file_path, std::ios::in | std::ios::binary);
+        if (!infile.good())
+        {
+            throw std::logic_error("Failed to open " + file_path);
+        }
+
+        size_t cs_discard = 0;
+        for (const auto &block: records)
+        {
+            const int ia1 = block.ia1 - 1;
+            const int ia2 = block.ia2 - 1;
+            const bool keep =
+                loc_atp_index.count(static_cast<size_t>(ia1)) && block.max_abs >= threshold;
+            if (!keep)
+            {
+                cs_discard++;
+                continue;
+            }
+
+            int n_i = 0;
+            int n_j = 0;
+            int n_mu = 0;
+            get_Cs_binary_v1_block_dimensions(
+                block, basis_wfc, basis_aux, file_path, n_i, n_j, n_mu);
+
+            std::streamoff data_size = 0;
+            if (!get_Cs_binary_data_size(n_i, n_j, n_mu, data_size))
+            {
+                throw std::runtime_error("Invalid Cs reader v1 block dimensions in: " +
+                                         file_path);
+            }
+
+            shared_ptr<matrix> cs_ptr = make_shared<matrix>();
+            cs_ptr->create(n_i * n_j, n_mu);
+            infile.seekg(static_cast<std::streamoff>(block.offset), std::ios::beg);
+            infile.read((char *) cs_ptr->c, data_size);
+            if (!infile.good())
+            {
+                throw std::runtime_error("Failed to read Cs reader v1 payload in: " +
+                                         file_path);
+            }
+
+            int R[3] = {block.R[0], block.R[1], block.R[2]};
+            driver::h.set_lri_coeff(driver::opts.parallel_routing, ia1, ia2,
+                                    n_i, n_j, n_mu, R, cs_ptr->c);
+        }
+        return cs_discard;
+    }
+
     set<size_t> loc_atp_index;
     for (auto &lap : local_atpair)
     {
@@ -1062,6 +1405,22 @@ std::vector<size_t> handle_Cs_file_dry(const string &file_path, double threshold
 
 std::vector<size_t> handle_Cs_file_binary_dry(const string &file_path, double threshold)
 {
+    if (has_Cs_binary_v1_layout(file_path))
+    {
+        int natom = 0;
+        int ncell = 0;
+        std::streamoff file_size = 0;
+        const auto records = read_Cs_binary_v1_header_or_throw(
+            file_path, natom, ncell, file_size);
+
+        std::vector<size_t> Cs_ids_keep;
+        for (std::size_t i = 0; i != records.size(); ++i)
+        {
+            if (records[i].max_abs >= threshold) Cs_ids_keep.push_back(i);
+        }
+        return Cs_ids_keep;
+    }
+
     std::vector<size_t> Cs_ids_keep;
     ifstream infile;
     int dims[8];
@@ -1183,7 +1542,69 @@ static size_t handle_Cs_file_by_ids(const std::string &file_path, double thresho
 static size_t handle_Cs_file_binary_by_ids(const string &file_path, double threshold, const std::vector<size_t> &ids)
 {
     using namespace std;
-    using librpa_int::global::ofs_myid;
+
+    if (has_Cs_binary_v1_layout(file_path))
+    {
+        int natom = 0;
+        int ncell = 0;
+        std::streamoff file_size = 0;
+        const auto records = read_Cs_binary_v1_header_or_throw(
+            file_path, natom, ncell, file_size);
+
+        auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
+        const auto &basis_wfc = ds->basis_wfc;
+        const auto &basis_aux = ds->basis_aux;
+        validate_Cs_binary_v1_blocks(
+            file_path, natom, file_size, records, basis_wfc, basis_aux);
+
+        ifstream infile(file_path, std::ios::in | std::ios::binary);
+        if (!infile.good())
+        {
+            throw std::logic_error("Failed to open " + file_path);
+        }
+
+        size_t cs_discard = 0;
+        for (std::size_t i = 0; i != records.size(); ++i)
+        {
+            const auto &block = records[i];
+            const int ia1 = block.ia1 - 1;
+            const int ia2 = block.ia2 - 1;
+
+            if (std::find(ids.cbegin(), ids.cend(), i) == ids.cend())
+            {
+                cs_discard++;
+                continue;
+            }
+
+            int n_i = 0;
+            int n_j = 0;
+            int n_mu = 0;
+            get_Cs_binary_v1_block_dimensions(
+                block, basis_wfc, basis_aux, file_path, n_i, n_j, n_mu);
+
+            std::streamoff data_size = 0;
+            if (!get_Cs_binary_data_size(n_i, n_j, n_mu, data_size))
+            {
+                throw std::runtime_error("Invalid Cs reader v1 block dimensions in: " +
+                                         file_path);
+            }
+
+            shared_ptr<matrix> cs_ptr = make_shared<matrix>();
+            cs_ptr->create(n_i * n_j, n_mu);
+            infile.seekg(static_cast<std::streamoff>(block.offset), std::ios::beg);
+            infile.read((char *) cs_ptr->c, data_size);
+            if (!infile.good())
+            {
+                throw std::runtime_error("Failed to read Cs reader v1 payload in: " +
+                                         file_path);
+            }
+
+            int R[3] = {block.R[0], block.R[1], block.R[2]};
+            driver::h.set_lri_coeff(driver::opts.parallel_routing, ia1, ia2,
+                                    n_i, n_j, n_mu, R, cs_ptr->c);
+        }
+        return cs_discard;
+    }
 
     ifstream infile;
     int dims[8];
@@ -2987,12 +3408,20 @@ static void get_basis_from_Cs(const string &file_path, std::map<int, size_t> &ma
 
 static void get_basis_from_Cs_binary(const string &file_path, std::map<int, size_t> &map_at_wfc, std::map<int, size_t> &map_at_aux)
 {
+    if (has_Cs_binary_v1_layout(file_path))
+    {
+        throw std::runtime_error(
+            "Cannot infer basis dimensions from Cs reader v1 file " + file_path +
+            "; provide basis_out because v1 Cs block headers store offsets and max values, "
+            "not n_i/n_j/n_mu");
+    }
+
     ifstream infile;
     int dims[8];
     int n_apcell_file;
     int natom, ncell;
-    const auto header_size = static_cast<std::streamoff>(3 * sizeof(int));
-    const auto block_header_size = static_cast<std::streamoff>(8 * sizeof(int));
+    const auto header_size = CS_BINARY_LEGACY_HEADER_SIZE;
+    const auto block_header_size = CS_BINARY_LEGACY_BLOCK_HEADER_SIZE;
 
     infile.open(file_path, std::ios::in | std::ios::binary);
     if (!infile.good())
