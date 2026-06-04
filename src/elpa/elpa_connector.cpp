@@ -26,6 +26,7 @@ namespace librpa_int
 namespace ElpaConnector
 {
 
+// FIXME: need review with ELPA and GPU/HIP
 /*!
  * @brief Compute power of Hermitian matrix using BLACS
  *
@@ -169,7 +170,6 @@ matrix_m<std::complex<T>> power_hemat_elpa(
         ddla::DEVICE_CHECK(deviceFreeAsync(d_W, ddla_handle->stream));
     }
 #endif
-    scaled = Z_local.copy();
     // send back the scaled eigenvector matrix with descriptor using optimized block size to that
     profiler.stop("power_hemat_blacs_5");
     profiler.stop(__FUNCTION__);

@@ -2320,10 +2320,11 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             {
                 // Dielectric matrix is already inverted, only multiply by square root coulwc from both sides
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-                if(use_gpu_gw_wc){
+                if(use_gpu_gw_wc)
+                {
                     coulwc_block_ptr = coul_block_ptr;
                     DEVICE_CHECK(deviceMemcpyAsync(coulwc_block_ptr, coulwc_block.ptr(), coulwc_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
-                }else
+                }
 #endif
                 LaConnector::pdam(-1.0, chi0_block_ptr, desc_nabf_nabf_opt);
                 global::profiler.start("epsilon_multiply_coulwc", "Multiply truncated Coulomb");
