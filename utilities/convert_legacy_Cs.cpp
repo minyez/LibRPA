@@ -1,7 +1,7 @@
 // Compile the code via
-//   c++ -std=c++17 -O2 -o convert_legacy_Cs_v1.exe convert_legacy_Cs_v1.cpp
+//   c++ -std=c++17 -O2 -o convert_legacy_Cs.exe convert_legacy_Cs.cpp
 // Run as
-//   convert_legacy_Cs_v1.exe Cs_data_1.txt v1_Cs_data_1.dat
+//   convert_legacy_Cs.exe Cs_data_1.txt v1_Cs_data_1.dat
 #include <algorithm>
 #include <cerrno>
 #include <cmath>
@@ -64,7 +64,7 @@ struct LegacyScan
 std::string usage()
 {
     return
-        "Usage: convert_legacy_Cs_v1 INPUT_FILE OUTPUT_FILE [options]\n"
+        "Usage: convert_legacy_Cs INPUT_FILE OUTPUT_FILE [options]\n"
         "\n"
         "Converts one legacy LRI coefficient (Cs) file to reader-v1 format.\n"
         "Both legacy text and unformatted binary Cs files are accepted.\n"

@@ -1,7 +1,7 @@
 // Compile the code via
-//   mpicxx -std=c++17 -o convert_legacy_coulomb_mat_v1_mpi.exe convert_legacy_coulomb_mat_v1_mpi.cpp
+//   mpicxx -std=c++17 -o convert_legacy_coulomb_mat_mpi.exe convert_legacy_coulomb_mat_mpi.cpp
 // Run as
-//   mpirun -np 4 convert_legacy_coulomb_mat_v1_mpi.exe
+//   mpirun -np 4 convert_legacy_coulomb_mat_mpi.exe
 #include <mpi.h>
 
 #include <algorithm>
@@ -240,7 +240,7 @@ private:
 std::string usage()
 {
     return
-        "Usage: mpirun -np N convert_legacy_coulomb_mat_v1_mpi [input_dir] [options]\n"
+        "Usage: mpirun -np N convert_legacy_coulomb_mat_mpi [input_dir] [options]\n"
         "\n"
         "Converts legacy Coulomb files to reader-v1 atom-pair-block files.\n"
         "Assumptions are fixed: stream complex output, skip lower input, target v1.\n"
