@@ -34,30 +34,16 @@ The Fortran wrapper exposes these fields as logical values.
 ## Additional Parameters for Driver
 
 These parameters are available only through the standalone driver.
-Filename parameters are interpreted relative to `input_dir`.
-Prefix parameters match all files in `input_dir` whose names begin with the given value.
-For example, the default `prefix_lri_coeff = Cs_data` matches files such as `Cs_data_0.txt`.
 
 | Parameter Name        | Description                                                          | Type   | Default Value (Options)                         | Status       |
 |-----------------------|----------------------------------------------------------------------|--------|-------------------------------------------------|--------------|
 | `task`                | Task type                                                            | string | required (`rpa`, `g0w0`, `exx`, `g0w0_band`, `exx_band`) |              |
 | `constants_choice`    | Physical constants source                                            | string | `internal` (`internal`, `aims`)                |              |
-| `input_dir`           | Input directory to find and read the AO dataset                      | string | `./`                                           |              |
-| `fn_stru`             | Structure-data filename                                              | string | `stru_out`                                     |              |
-| `fn_bz_sampling`      | Brillouin-zone sampling filename                                     | string | `bz_sampling_out`                              |              |
-| `fn_basis`            | Basis-set filename                                                   | string | `basis_out`                                    |              |
-| `fn_eigocc_scf`       | SCF eigenvalue and occupation filename                               | string | `band_out`                                     |              |
-| `prefix_lri_coeff`    | Prefix of localized RI coefficient files                             | string | `Cs_data`                                      |              |
-| `prefix_lri_coeff_shrink` | Prefix of compressed-auxiliary-basis RI coefficient files          | string | `Cs_shrinked_data`                             | Experimental |
-| `prefix_coul_full`    | Prefix of bare Coulomb matrix files                                  | string | `coulomb_mat`                                  |              |
-| `prefix_coul_cut`     | Prefix of truncated Coulomb matrix files                             | string | `coulomb_cut`                                  |              |
-| `version_coul_reader` | Coulomb reader-version selector (`-1` auto-detect, `0` legacy, `1` atom-pair blocks) | int | -1 | Experimental |
-| `version_lri_reader`  | Local RI coefficient reader-version selector (`-1` auto-detect, `0` legacy, `1` v1 header with payload offsets) | int | -1 | Experimental |
 | `cs_threshold`        | Screening threshold when reading the RI coefficient data             | double | 1e-6                                           |              |
-| `use_spinor_wfc`      | Read wavefunctions in spinor format                                  | bool   | `false`                                        | Experimental |
+| `use_spinor_wfc`      | Read wavefunctions in spinor format                                  | bool   | `false`                                        |              |
 | `output_energy_qp`    | Output quasiparticle energies for external BSE workflows             | bool   | `false`                                        | Experimental |
-| `i_state_low`         | First state index for printed QP energies (inclusive)                | int    | 0                                              | Experimental |
-| `i_state_high`        | Last state index for printed QP energies (exclusive)                 | int    | 999999 (essentially all states)                | Experimental |
+| `i_state_low`         | First state index for printed QP energies (inclusive)                | int    | 0                                              |              |
+| `i_state_high`        | Last state index for printed QP energies (exclusive)                 | int    | 999999 (essentially all states)                |              |
 | `output_hamgnn`       | Output GW energies for HamGNN machine-learning workflows             | bool   | `false`                                        | Experimental |
 | `use_pyatb`           | Use PyATB mean-field data for dielectric head/wing calculations      | bool   | `false`                                        | Experimental |
 | `output_gw_spec_func` | Output GW spectral-function data                                     | bool   | `false`                                        | Experimental |
@@ -72,6 +58,29 @@ For example, the default `prefix_lri_coeff = Cs_data` matches files such as `Cs_
 When either `i_state_low` or `i_state_high` is negative, the missing bound is selected from
 the energy window `[E_F - 0.5 * gap - 0.5 Ha, E_F + 0.5 * gap + 0.5 Ha]`, where `gap` is the energy gap of the mean-field reference.
 An `i_state_high` value larger than the number of states is truncated to the number of states.
+
+The following parameters are dedicated to input file reading.
+Filename parameters are interpreted relative to `input_dir`.
+Prefix parameters match all files in `input_dir` whose names begin with the given value.
+For example, the default `prefix_lri_coeff = Cs_data` matches files such as `Cs_data_0.txt`.
+
+| Parameter Name        | Description                                                          | Type   | Default Value (Options)                         | Status       |
+|-----------------------|----------------------------------------------------------------------|--------|-------------------------------------------------|--------------|
+| `input_dir`           | Input directory to find and read the AO dataset                      | string | `./`                                           |              |
+| `fn_stru`             | Structure-data filename                                              | string | `stru_out`                                     |              |
+| `fn_bz_sampling`      | Brillouin-zone sampling filename                                     | string | `bz_sampling_out`                              |              |
+| `fn_basis`            | Basis-set filename                                                   | string | `basis_out`                                    |              |
+| `fn_eigocc_scf`       | SCF eigenvalue and occupation filename                               | string | `band_out`                                     |              |
+| `fn_dielfunc`         | Dielectric-function filename for dielectric-head correction           | string | `dielecfunc_out`                               |              |
+| `fn_vxc_scf`          | SCF exchange-correlation potential filename                          | string | `vxc_out`                                      |              |
+| `fn_band_kpath_info`  | Band-path k-point metadata filename                                  | string | `band_kpath_info`                              |              |
+| `prefix_lri_coeff`    | Prefix of localized RI coefficient files                             | string | `Cs_data`                                      |              |
+| `prefix_lri_coeff_shrink` | Prefix of compressed-auxiliary-basis RI coefficient files          | string | `Cs_shrinked_data`                             | Experimental |
+| `prefix_coul_full`    | Prefix of bare Coulomb matrix files                                  | string | `coulomb_mat`                                  |              |
+| `prefix_coul_cut`     | Prefix of truncated Coulomb matrix files                             | string | `coulomb_cut`                                  |              |
+| `prefix_eigvecs_scf`  | Prefix of SCF Kohn-Sham eigenvector files                            | string | `KS_eigenvector`                               |              |
+| `version_coul_reader` | Coulomb reader-version selector (`-1` auto-detect, `0` legacy, `1` atom-pair blocks) | int | -1 | Experimental |
+| `version_lri_reader`  | Local RI coefficient reader-version selector (`-1` auto-detect, `0` legacy, `1` v1 header with payload offsets) | int | -1 | Experimental |
 
 When a reader-version selector is `-1`, the driver detects the format once from the first
 file matching the corresponding prefix and reuses that reader for all files with the same prefix.
@@ -108,9 +117,9 @@ The driver maps the unset value to `minimax` for backward compatibility.
 
 | Parameter Name      | Description                                                      | Type | Default Value (Options) | Status       |
 |---------------------|------------------------------------------------------------------|------|-------------------------|--------------|
-| `use_fullcoul_eps`  | Use full Coulomb interaction in $\varepsilon = 1 - v \chi^0$     | bool | `true`                  | Experimental |
-| `use_fullcoul_exx`  | Use full Coulomb interaction in the exact-exchange operator      | bool | `false`                 | Experimental |
-| `use_fullcoul_wc`   | Use full Coulomb interaction in $W^c = (\varepsilon^{-1} - 1) v$ | bool | `false`                 | Experimental |
+| `use_fullcoul_eps`  | Use full Coulomb interaction in $\varepsilon = 1 - v \chi^0$     | bool | `true`                  |              |
+| `use_fullcoul_exx`  | Use full Coulomb interaction in the exact-exchange operator      | bool | `false`                 |              |
+| `use_fullcoul_wc`   | Use full Coulomb interaction in $W^c = (\varepsilon^{-1} - 1) v$ | bool | `false`                 |              |
 | `n_bands_chi0`      | Maximum number of bands for response-function construction       | int  | -1 (< 0 for all bands)  | Experimental |
 | `n_bands_sigc`      | Maximum number of bands for correlation self-energy construction | int  | -1 (< 0 for all bands)  | Experimental |
 
@@ -135,8 +144,8 @@ The driver maps the unset value to `minimax` for backward compatibility.
 | `n_params_anacon`        | Number of parameters for analytic continuation                               | int    | -1 (uses all `nfreq` data)            |              |
 | `use_scalapack_gw_wc`    | Use ScaLAPACK for computing $W^c$ from $\chi^0$                              | bool   | `true`                                |              |
 | `use_cholesky_gw_wc`     | Use Cholesky factorization for computing $W^c$ from $\chi^0$                 | bool   | `false`                               | Experimental |
-| `replace_w_head`         | Replace the dielectric matrix head by the macroscopic dielectric function    | bool   | `false`                               | Experimental |
-| `option_dielect_func`    | Option for dielectric function on the imaginary axis                         | int    | 0 (0=direct, 1=spline, 2=model fit)   | Experimental |
+| `replace_w_head`         | Replace the dielectric matrix head by the macroscopic dielectric function    | bool   | `false`                               |              |
+| `option_dielect_func`    | Option for dielectric function on the imaginary axis                         | int    | 0 (0=direct, 1=spline, 2=model fit)   |              |
 | `use_2d_dielectric`      | Use the 2D dielectric-function branch where supported                        | bool   | `false`                               | Experimental |
 | `load_sigc_from_file`    | Load correlation self-energy matrix from file where supported                | bool   | `false`                               | Experimental |
 | `sqrt_coulomb_threshold` | Threshold for eigenvalues when taking the square root of Coulomb matrices    | double | 0.0                                   |              |

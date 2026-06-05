@@ -395,7 +395,7 @@ int read_eigenvector(const string &dir_path)
     {
         string fm(ptr->d_name);
         // cout << fm << " find:" << fm.find("KS_eigenvector") << "\n";
-        if (fm.find("KS_eigenvector") == 0)
+        if (fm.find(driver::driver_params.prefix_eigvecs_scf) == 0)
         {
             ret = handle_KS_file(dir_path + fm);
             if (ret != 0)

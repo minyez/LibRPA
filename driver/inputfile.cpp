@@ -208,10 +208,14 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_string(driver_params, prefix_lri_coeff_shrink);
     _parse_string(driver_params, prefix_coul_full);
     _parse_string(driver_params, prefix_coul_cut);
+    _parse_string(driver_params, prefix_eigvecs_scf);
     _parse_string(driver_params, fn_stru);
     _parse_string(driver_params, fn_basis);
     _parse_string(driver_params, fn_bz_sampling);
     _parse_string(driver_params, fn_eigocc_scf);
+    _parse_string(driver_params, fn_dielfunc);
+    _parse_string(driver_params, fn_vxc_scf);
+    _parse_string(driver_params, fn_band_kpath_info);
     _parse_int(driver_params, version_coul_reader);
     _parse_int(driver_params, version_lri_reader);
 

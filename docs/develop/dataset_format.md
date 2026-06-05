@@ -5,14 +5,27 @@ This page documents the formats of the input data files required by the LibRPA d
 ## Driver input names
 
 The standalone driver reads dataset files from `input_dir`.
-By default, single-file inputs are named `stru_out`, `bz_sampling_out`, `basis_out`, and `band_out`.
-These exact filenames can be changed in `librpa.in` with `fn_stru`, `fn_bz_sampling`, `fn_basis`, and `fn_eigocc_scf`.
+By default, single-file inputs are named [`stru_out`](#stru-out),
+[`bz_sampling_out`](#bz-sampling-out), [`basis_out`](#basis-out), and
+[`band_out`](#band-out). Additional optional single-file inputs use
+[`dielecfunc_out`](#dielecfunc-out), [`vxc_out`](#vxc-out), and
+[`band_kpath_info`](#band-kpath-info).
+These exact filenames can be changed in `librpa.in` with `fn_stru`,
+`fn_bz_sampling`, `fn_basis`, `fn_eigocc_scf`, `fn_dielfunc`,
+`fn_vxc_scf`, and `fn_band_kpath_info`.
 
 Multi-file inputs are selected by prefix.
-The defaults are `Cs_data` for localized RI coefficients, `Cs_shrinked_data` for compressed-auxiliary-basis RI coefficients, `coulomb_mat` for bare Coulomb matrices, and `coulomb_cut` for truncated Coulomb matrices.
-These prefixes can be changed with `prefix_lri_coeff`, `prefix_lri_coeff_shrink`, `prefix_coul_full`, and `prefix_coul_cut`.
+The defaults are [`Cs_data`](#cs-data) for localized RI coefficients,
+[`Cs_shrinked_data`](#cs-data) for compressed-auxiliary-basis RI coefficients,
+[`coulomb_mat`](#coulomb-mat) for bare Coulomb matrices,
+[`coulomb_cut`](#coulomb-cut) for truncated Coulomb matrices, and
+[`KS_eigenvector`](#ks-eigenvector-scf) for SCF Kohn-Sham eigenvectors.
+These prefixes can be changed with `prefix_lri_coeff`,
+`prefix_lri_coeff_shrink`, `prefix_coul_full`, `prefix_coul_cut`, and
+`prefix_eigvecs_scf`.
 For example, `prefix_coul_full = coulomb_mat` matches files such as `coulomb_mat_0.txt`.
 
+(stru-out)=
 ## `stru_out`
 
 The file `stru_out` contains structural information and k-point mesh data.
@@ -36,6 +49,7 @@ This information is now stored in [`bz_sampling_out`](#bz-sampling-out) and is r
   Suppose the integer on the n-th line is m.
   This means that the irreducible representative of the n-th k-point in the full k-point set is the m-th k-point in the full set.
 
+(basis-out)=
 ## `basis_out`
 
 This file describes the atomic basis sets used in the calculation,
@@ -232,6 +246,7 @@ with open(cfile_path, 'rb') as h:
         apcells[apcell] = array
 ```
 
+(band-out)=
 ## `band_out`
 
 This file contains band energies and occupation numbers from the mean-field starting-point calculation.
@@ -264,10 +279,12 @@ The 3 float numbers stand for the occupation number, the energy in Hartree unit 
 unit, respectively.
 For spin-unpolarized calculation, `f_n` is a number from 0 to 2, otherwise it is from 0 to 1.
 
+(ks-eigenvector-scf)=
 ## `KS_eigenvector_xxx.txt`
 These files contain the wave functions (eigenvectors) from the starting-point calculation expanded by orbital basis.
 Each file can be divided in blocks of `n_states*n_basis*n_spins+1` lines,
-where `n_states`, `n_basis` and `n_spins` will be extracted from `band_out` file.
+where `n_states`, `n_basis` and `n_spins` will be extracted from
+[`band_out`](#band-out).
 Each block stores the data for a particular k-point, $c^i_{n,k\sigma}$:
 ```
 i_k_point
@@ -311,6 +328,23 @@ parts of the element. The data is ordered in C-style row major.
 There files are basically the same as `coulomb_mat_xxx.txt`, but store the truncated Coulomb to
 be used in the GW calculation.
 
+(dielecfunc-out)=
+## `dielecfunc_out`
+
+The file `dielecfunc_out` stores the macroscopic dielectric function on the
+imaginary-frequency grid used for dielectric-head correction.
+
+Each data line contains three columns:
+
+1. imaginary frequency
+2. real part of the dielectric function
+3. imaginary part of the dielectric function
+
+LibRPA reads the first two columns for the imaginary-frequency dielectric
+function; the third column is accepted for compatibility with exported data
+that writes complex values.
+
+(vxc-out)=
 ## `vxc_out`
 
 The file `vxc_out` stores the exchange-correlation potential for electronic states on the SCF k-point grid.
@@ -347,13 +381,14 @@ first in Hartree unit while the second in eV.
 
 For band-structure calculations, LibRPA reads the following input files:
 
-- `band_kpath_info`
-- `band_KS_eigenvalue_k_{ik:05d}.txt`
-- `band_KS_eigenvector_k_{ik:05d}.txt`
-- `band_vxc_k_{ik:05d}.txt`
+- [`band_kpath_info`](#band-kpath-info)
+- [`band_KS_eigenvalue_k_{ik:05d}.txt`](#band-ks-eigenvalue)
+- [`band_KS_eigenvector_k_{ik:05d}.txt`](#band-ks-eigenvector)
+- [`band_vxc_k_{ik:05d}.txt`](#band-vxc)
 
 Here `ik` is the 1-based index of the k-point along the band path, written with five digits.
 
+(band-kpath-info)=
 ### `band_kpath_info`
 
 The file `band_kpath_info` defines the k-point path used for the band-structure calculation.
@@ -381,6 +416,7 @@ For example:
 
 Each such line represents one k-point in fractional reciprocal coordinates.
 
+(band-ks-eigenvalue)=
 ### `band_KS_eigenvalue_k_{ik:05d}.txt`
 
 For each k-point on the band path, the file `band_KS_eigenvalue_k_{ik:05d}.txt` stores the Kohn-Sham eigenvalues used by LibRPA.
@@ -407,6 +443,7 @@ This line indicates that, at the selected k-point,
 
 The data are ordered such that state index `i_state` runs fastest and followed by spin index `i_spin`.
 
+(band-vxc)=
 ### `band_vxc_k_{ik:05d}.txt`
 
 For each k-point on the band path, the file `band_vxc_k_{ik:05d}.txt` stores the diagonal matrix elements of the exchange-correlation potential for the corresponding Kohn-Sham states.
@@ -426,6 +463,7 @@ For example:
 This line gives the exchange-correlation potential for state `3` in spin channel `1` at the selected k-point.
 The data are ordered such that state index `i_state` runs fastest and followed by spin index `i_spin`.
 
+(band-ks-eigenvector)=
 ### `band_KS_eigenvector_k_{ik:05d}.txt`
 
 For each k-point on the band path, the file `band_KS_eigenvector_k_{ik:05d}.txt` stores the Kohn-Sham eigenvectors at that k-point.

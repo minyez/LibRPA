@@ -26,10 +26,14 @@ struct DriverParams
     std::string prefix_lri_coeff_shrink;
     std::string prefix_coul_full;
     std::string prefix_coul_cut;
+    std::string prefix_eigvecs_scf;
     std::string fn_stru;
     std::string fn_bz_sampling;
     std::string fn_basis;
     std::string fn_eigocc_scf;
+    std::string fn_dielfunc;
+    std::string fn_vxc_scf;
+    std::string fn_band_kpath_info;
 
     // Reader version
     int version_coul_reader;

@@ -44,7 +44,7 @@ void driver::task_g0w0_band()
     }
     profiler.stop("read_vq_cut");
 
-    const auto file_df = driver_params.input_dir + "dielecfunc_out";
+    const auto file_df = driver_params.input_dir + driver_params.fn_dielfunc;
     if (driver::get_bool(opts.replace_w_head) && librpa_int::path_exists(file_df.c_str()))
     {
         if (mpi_comm_global_h.is_root())
@@ -60,7 +60,7 @@ void driver::task_g0w0_band()
 
     profiler.start("read_vxc", "Load DFT xc potential");
     std::vector<matrix> vxc;
-    int flag_read_vxc = read_vxc(driver_params.input_dir + "vxc_out", vxc);
+    int flag_read_vxc = read_vxc(driver_params.input_dir + driver_params.fn_vxc_scf, vxc);
     if (flag_read_vxc == 0)
     {
         if (mpi_comm_global_h.is_root())
@@ -200,7 +200,7 @@ void driver::task_g0w0_band()
     /* Below we handle the band k-points data
      * First load the information of k-points along the k-path */
     profiler.start("g0w0_band_load_band_mf", "Read eigen solutions at band kpoints");
-    read_band_kpath_info(driver_params.input_dir + "band_kpath_info");
+    read_band_kpath_info(driver_params.input_dir + driver_params.fn_band_kpath_info);
     const int nkpts_band = kfrac_band.size();
 
     if (mpi_comm_global_h.is_root())

@@ -46,7 +46,7 @@ void driver::task_g0w0()
     }
     profiler.stop("read_vq_cut");
 
-    const auto file_df = driver_params.input_dir + "dielecfunc_out";
+    const auto file_df = driver_params.input_dir + driver_params.fn_dielfunc;
     if (driver::get_bool(opts.replace_w_head) && librpa_int::path_exists(file_df.c_str()))
     {
         if (mpi_comm_global_h.is_root())
@@ -83,7 +83,7 @@ void driver::task_g0w0()
 
     profiler.start("read_vxc", "Load DFT xc potential");
     std::vector<matrix> vxc;
-    int flag_read_vxc = read_vxc(driver_params.input_dir + "vxc_out", vxc);
+    int flag_read_vxc = read_vxc(driver_params.input_dir + driver_params.fn_vxc_scf, vxc);
     if (flag_read_vxc == 0)
     {
         if (mpi_comm_global_h.is_root())
