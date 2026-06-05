@@ -46,5 +46,13 @@ extern const char * libri_include_dir;
 
 extern const char * libcomm_include_dir;
 
+extern const char * ddla_use_ccl;
+
+extern const char * ddla_use_gpu_cpu_tunnel;
+
+extern const char * libddla_path;
+
+extern const char * elpa_dir;
+
 } /* end of namespace envs */
 } /* end of namespace librpa_int */

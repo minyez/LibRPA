@@ -36,5 +36,13 @@ const char * libcomm_include_dir = "${LibComm_INCLUDE_DIR}";
 
 const char * greenx_commit_hash = "${LIBRPA_GREENX_COMMIT_HASH}";
 
+const char * ddla_use_ccl = "${DDLA_USE_CCL}";
+
+const char * ddla_use_gpu_cpu_tunnel = "${DDLA_USE_GPU_CPU_TUNNEL}";
+
+const char * libddla_path = "${LIBDDLA_PATH}";
+
+const char * elpa_dir = "${EXTERNAL_ELPA_DIR}";
+
 } /* end of namespace envs */
 } /* end of namespace librpa_int */

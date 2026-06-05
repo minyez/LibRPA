@@ -145,7 +145,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(
     std::complex<T> *C;
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
     if(use_gpu_gw_wc){
-        ddla::DEVICE_CHECK(deviceMemcpyAsync(d_C, Z_local.ptr(), Z_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
+        ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_C, A_local.size() * sizeof(std::complex<T>), ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
         C = d_C;
     }else
@@ -166,8 +166,9 @@ matrix_m<std::complex<T>> power_hemat_elpa(
     if(use_gpu_gw_wc){
         ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled.ptr(), A, scaled.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local.ptr(), C, A_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-        ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
+        ddla::DEVICE_CHECK(deviceFreeAsync(d_C, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceFreeAsync(d_W, ddla_handle->stream));
+        ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
     }
 #endif
     // send back the scaled eigenvector matrix with descriptor using optimized block size to that
@@ -287,6 +288,7 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
     if(use_gpu_gw_wc)
     {
+        ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_C, A_local_real.size() * sizeof(T), ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
         C = d_C;
     }else
@@ -310,8 +312,9 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
     if(use_gpu_gw_wc){
         ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled_real.ptr(), A, scaled_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local_real.ptr(), C, A_local_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-        ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceFreeAsync(d_W, ddla_handle->stream));
+        ddla::DEVICE_CHECK(deviceFreeAsync(d_C, ddla_handle->stream));
+        ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
     }
 #endif
     A_local = A_local_real.to_complex();

@@ -14,6 +14,9 @@
 #include "../io/global_io.h"
 #ifdef LIBRPA_VERBOSE
 #include "utils_mem.h"
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+#include <ddla/ddla_connector.h>
+#endif
 #endif
 
 namespace librpa_int {
@@ -112,8 +115,14 @@ void Profiler::start(const std::string &tname, const std::string &tnote) noexcep
     double free_mem_gb;
     get_node_free_mem(free_mem_gb);
     global::ofs_myid << get_timestamp() <<" Timer start: " << tname << ". "
-                           << "Free memory on node [GB]: " << free_mem_gb << std::endl;
+                           << "Free memory on node [GB]: " << free_mem_gb;
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+    size_t free_mem_gpu_bt, total_mem_gpu_bt;
+    ddla::DEVICE_CHECK(deviceMemGetInfo(&free_mem_gpu_bt, &total_mem_gpu_bt));
+    global::ofs_myid << "  on GPU [GB]: " << free_mem_gpu_bt/1024./1024./1024.;
 #endif
+#endif
+    global::ofs_myid << std::endl;
     current->start();
 }
 
@@ -129,7 +138,13 @@ void Profiler::stop(const std::string &tname) noexcept
             double free_mem_gb;
             get_node_free_mem(free_mem_gb);
             global::ofs_myid << get_timestamp() << " Timer stop:  " << tname << ". "
-                             << "Free memory on node [GB]: " << free_mem_gb << std::endl;;
+                             << "Free memory on node [GB]: " << free_mem_gb;
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+            size_t free_mem_gpu_bt, total_mem_gpu_bt;
+            ddla::DEVICE_CHECK(deviceMemGetInfo(&free_mem_gpu_bt, &total_mem_gpu_bt));
+            global::ofs_myid << "  on GPU [GB]: " << free_mem_gpu_bt/1024./1024./1024.;
+#endif
+            global::ofs_myid << std::endl;
 #endif
             current->stop();
             current = current->parent;

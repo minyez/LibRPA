@@ -29,7 +29,14 @@ const std::string& cmake_info_storage()
         << "| GreenX commit hash       : " << envs::greenx_commit_hash << "\n"
         << "| Use LibRI                : " << envs::use_libri << "\n"
         << "| LibRI include directory  : " << envs::libri_include_dir << "\n"
-        << "| LibComm include directory: " << envs::libcomm_include_dir << "\n";
+        << "| LibComm include directory: " << envs::libcomm_include_dir << "\n"
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+        << "| DDLA_USE_CCL             : " << envs::ddla_use_ccl << "\n"
+        << "| DDLA_USE_GPU_CPU_TUNNEL  : " << envs::ddla_use_gpu_cpu_tunnel << "\n"
+        << "| LibDDLA path             : " << envs::libddla_path << "\n"
+        << "| ELPA directory           : " << envs::elpa_dir << "\n"
+#endif
+        ;
         return ss.str();
     }();
     return s;
