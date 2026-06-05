@@ -205,9 +205,24 @@ A few remarks
 - The weights in the irreducible k-point summary are the accumulated weights of the corresponding symmetry-equivalent k-points.
 - The representative index stored in the last field of the full k-point list can be used to identify which full-grid point serves as the representative of the irreducible class.
 
-## `Cs_data_xxx.txt`
+(cs-data)=
+## `Cs_data*`
 
 These files contain the localized RI triple coefficients.
+The same format rules apply to the files selected by `prefix_lri_coeff_shrink`,
+whose default prefix is [`Cs_shrinked_data`](#cs-data).
+
+LibRPA supports two reader versions:
+
+- `version_lri_reader = 0`: legacy text or legacy binary files
+- `version_lri_reader = 1`: binary v1 files with a block table and payload offsets
+- `version_lri_reader = -1`: auto-detect from the first file matching the prefix
+
+Do not mix legacy and v1 files under the same prefix. Files are discovered by
+prefix only, so suffixes such as `.txt`, `.dat`, or no suffix are all accepted
+by the v1 reader.
+
+### Legacy text format
 
 In plain text format, each file has a header with two integers:
 total number of atoms and number of periodic unit cells.
@@ -223,6 +238,20 @@ lattice vector $\mathbf{R} = n_1 \mathbf{a}_1 + n_2 \mathbf{a}_2 + n_3 \mathbf{a
 The auxiliary basis is located on `i_atom_1`. The number of basis functions on `i_atom_1` and `i_atom_2` 
 are `n_basis_1` and `n_basis_2`, respectively. The number of auxiliary functions is `n_aux_basis_1`.
 The indices of `C` runs in the Fortran order, i. e. the first index runs the fastest.
+
+Equivalently, the file order is
+
+```text
+for i in basis_1:
+  for j in basis_2:
+    for mu in aux_basis_1:
+      C(mu, j, i)
+```
+
+and LibRPA stores the loaded block as a row-major matrix
+`Cs(i * n_basis_2 + j, mu)`.
+
+### Legacy binary format
 
 In binary format, the data is organized similarly in the plain text format, except for an extra integer
 is included in the header, which is the number of atom pairs and lattice vectors included in the file.
@@ -245,6 +274,100 @@ with open(cfile_path, 'rb') as h:
         array = np.reshape(array, (nb1, nb2, nbb1))
         apcells[apcell] = array
 ```
+
+### Binary v1 format
+
+The v1 LRI coefficient format is designed for random-access reading and
+parallel scheduling. It begins with a fixed-size binary header followed by a
+block table and dense double-precision payloads. All integer fields use native
+32-bit or 64-bit binary representation as listed below, and all floating-point
+fields are native double precision.
+
+Header:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `marker` | `int32` | must be `-10267453` |
+| `n_atoms` | `int32` | number of atoms |
+| `n_cells` | `int32` | number of periodic unit cells represented by the dataset |
+| `n_apcell_file` | `int64` | number of valid atom-pair/cell blocks in this file |
+| `n_apcell_file_max` | `int64` | number of reserved block-table records |
+
+The header is followed by `n_apcell_file_max` block-table records. The first
+`n_apcell_file` records are valid; the remaining records, if any, must be
+zero-filled padding.
+
+Each block-table record has the following fields:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `i_atom_1` | `int32` | 1-based atom index for the auxiliary-basis center |
+| `i_atom_2` | `int32` | 1-based atom index for the second orbital-basis center |
+| `R1`, `R2`, `R3` | `int32` | unit-cell displacement between the two atoms |
+| `max_abs` | `double` | maximum absolute coefficient in the block, used for threshold filtering |
+| `offset` | `int64` | absolute byte offset of this block's payload from the start of the file |
+
+The v1 record does not store `n_basis_1`, `n_basis_2`, or `n_aux_basis_1`.
+Those dimensions are reconstructed from the wave-function and auxiliary basis
+metadata that have already been loaded from the dataset, normally from
+[`basis_out`](#basis-out):
+
+```text
+n_basis_1     = number of wave-function basis functions on i_atom_1
+n_basis_2     = number of wave-function basis functions on i_atom_2
+n_aux_basis_1 = number of auxiliary basis functions on i_atom_1
+```
+
+The payload for one record contains
+`n_basis_1 * n_basis_2 * n_aux_basis_1` double-precision values in the same
+logical order as the legacy format:
+
+```text
+for i in basis_1:
+  for j in basis_2:
+    for mu in aux_basis_1:
+      C(mu, j, i)
+```
+
+When writing or inspecting v1 files from Python, this corresponds to:
+
+```python
+import struct
+import numpy as np
+
+marker = -10267453
+
+with open("Cs_data_0.dat", "rb") as h:
+    marker_read, n_atoms, n_cells = struct.unpack("iii", h.read(12))
+    if marker_read != marker:
+        raise ValueError("not an LRI coefficient v1 file")
+    n_blocks, n_blocks_reserved = struct.unpack("qq", h.read(16))
+
+    records = []
+    for _ in range(n_blocks_reserved):
+        ia1, ia2, r1, r2, r3 = struct.unpack("iiiii", h.read(20))
+        max_abs, offset = struct.unpack("dq", h.read(16))
+        records.append((ia1, ia2, (r1, r2, r3), max_abs, offset))
+
+    ia1, ia2, R, max_abs, offset = records[0]
+    # The dimensions come from basis_out. These are example values.
+    n_basis_1, n_basis_2, n_aux_basis_1 = 5, 5, 18
+    h.seek(offset)
+    raw = h.read(8 * n_basis_1 * n_basis_2 * n_aux_basis_1)
+    coeff = np.frombuffer(raw, dtype=np.float64).reshape(
+        (n_basis_1, n_basis_2, n_aux_basis_1)
+    )
+```
+
+Legacy Cs files can be converted one file at a time with:
+
+```bash
+c++ -std=c++17 -O2 -o convert_legacy_Cs.exe utilities/convert_legacy_Cs.cpp
+./convert_legacy_Cs.exe Cs_data_0.txt Cs_data_0.dat --overwrite
+```
+
+Then set `version_lri_reader = 1` in `librpa.in`, or leave
+`version_lri_reader = -1` to auto-detect the v1 marker.
 
 (band-out)=
 ## `band_out`
@@ -298,9 +421,26 @@ The remaining lines store the data with running index $i$, $n$, $\sigma$ in C-st
 i. e., spin index runs fastest, then state index and finally basis index.
 Each line has two float numbers, which are the real and imaginary part of $c^i_{n,k\sigma}$.
 
-## `coulomb_mat_xxx.txt`
+(coulomb-mat)=
+## `coulomb_mat*`
 
-These files contains the Coulomb matrices in auxiliary basis.
+These files contain the bare Coulomb matrices in the auxiliary basis.
+The truncated Coulomb matrices used in GW are selected by `prefix_coul_cut`,
+whose default prefix is [`coulomb_cut`](#coulomb-cut), and use the same formats.
+
+LibRPA supports two reader versions:
+
+- `version_coul_reader = 0`: legacy text or legacy binary rectangular matrix blocks
+- `version_coul_reader = 1`: binary v1 files with atom-pair blocks
+- `version_coul_reader = -1`: auto-detect from the first file matching the prefix
+
+Do not mix legacy and v1 Coulomb files under the same prefix. The legacy reader
+expects filenames that both start with the selected prefix and end in `.txt`.
+The v1 reader discovers files by prefix only, so binary files such as
+`coulomb_full_iq_1.dat` are accepted if `prefix_coul_full = coulomb_full_iq`.
+
+### Legacy text format
+
 A single header line contains an integer, the number of irreducible k-point at
 which the Coulomb matrices are computed.
 The remaining part of the file is organized in blocks
@@ -323,9 +463,132 @@ After the block header, there should be `(row_end-row_start+1)` times `(col_end-
 for the actual matrix element data. Each line contains two float numbers, which are the real and imaginary
 parts of the element. The data is ordered in C-style row major.
 
-## `coulomb_cut_xxx.txt`
+### Legacy binary format
 
-There files are basically the same as `coulomb_mat_xxx.txt`, but store the truncated Coulomb to
+The legacy binary Coulomb format stores the same rectangular blocks as the
+legacy text format. It starts with two native `int32` values:
+
+1. total number of irreducible q-points
+2. number of q-point blocks stored in this file
+
+Each q-point block then contains:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `n_aux_basis` | `int32` | total number of auxiliary basis functions |
+| `row_start`, `row_end` | `int32` | 1-based inclusive row range |
+| `col_start`, `col_end` | `int32` | 1-based inclusive column range |
+| `i_q_point` | `int32` | 1-based q-point index in the full k-point list |
+| `q_weight` | `double` | weight of the irreducible q-point |
+| payload | `complex<double>[]` | dense row-major block values |
+
+Here `complex<double>` is stored as two consecutive double values, real part
+first and imaginary part second.
+
+### Binary v1 atom-pair format
+
+The v1 Coulomb format stores one q-point per file. Each file contains dense
+atom-pair blocks in the auxiliary basis. Only upper-triangular atom pairs
+`I <= J` are stored because the full matrix is Hermitian.
+
+Header:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `marker` | `int32` | must be `-20129433` |
+| `i_q_point` | `int32` | 1-based q-point index in the full k-point list |
+| `n_aux_basis` | `int32` | total number of auxiliary basis functions |
+| `value_flag` | `int32` | `0` for real double payloads, `1` for complex payloads |
+| `n_atoms` | `int32` | number of atoms |
+| `n_blocks` | `int32` | number of stored atom-pair blocks |
+
+The header is followed by `n_atoms` `int32` values giving the number of
+auxiliary basis functions on each atom. These counts must sum to
+`n_aux_basis` and must match [`basis_out`](#basis-out).
+
+Next comes a block table with `n_blocks` records:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `i_pair` | `int32` | zero-based upper-triangular atom-pair index |
+| `offset` | `int64` | absolute byte offset of this atom-pair payload |
+
+The atom-pair index enumerates upper-triangular pairs in this order:
+
+```text
+(0,0), (0,1), ..., (0,n_atoms-1), (1,1), (1,2), ...
+```
+
+For a pair `(I, J)` with `I <= J`, the corresponding index is:
+
+```text
+i_pair = I * n_atoms - I * (I - 1) / 2 + (J - I)
+```
+
+Each payload is a dense row-major matrix of shape
+`(n_aux_basis_on_atom_I, n_aux_basis_on_atom_J)`.
+If `value_flag = 1`, values are stored as `complex<double>` pairs
+`real, imag`. If `value_flag = 0`, values are stored as real `double` values
+and LibRPA sets the imaginary part to zero.
+
+Unlike the legacy format, v1 Coulomb files do not store q-point weights.
+Keep [`bz_sampling_out`](#bz-sampling-out) in the dataset so q-point weights and irreducible
+q-point mapping are available separately.
+
+A minimal Python reader for the v1 header and the first atom-pair block is:
+
+```python
+import struct
+import numpy as np
+
+marker = -20129433
+
+with open("coulomb_full_iq_1.dat", "rb") as h:
+    header = struct.unpack("iiiiii", h.read(24))
+    marker_read, iq, naux, value_flag, n_atoms, n_blocks = header
+    if marker_read != marker:
+        raise ValueError("not a Coulomb v1 file")
+
+    atom_naux = struct.unpack(f"{n_atoms}i", h.read(4 * n_atoms))
+    table = []
+    for _ in range(n_blocks):
+        i_pair = struct.unpack("i", h.read(4))[0]
+        offset = struct.unpack("q", h.read(8))[0]
+        table.append((i_pair, offset))
+
+    i_pair, offset = table[0]
+    nrow, ncol = atom_naux[0], atom_naux[0]
+    h.seek(offset)
+    if value_flag == 1:
+        block = np.frombuffer(h.read(16 * nrow * ncol), dtype=np.complex128)
+    else:
+        block = np.frombuffer(h.read(8 * nrow * ncol), dtype=np.float64)
+    block = block.reshape((nrow, ncol))
+```
+
+Legacy Coulomb files can be converted to v1 with the MPI converter:
+
+```bash
+mpicxx -std=c++17 -O2 -o convert_legacy_coulomb_mat_mpi.exe \
+  utilities/convert_legacy_coulomb_mat_mpi.cpp
+mpirun -np 4 ./convert_legacy_coulomb_mat_mpi.exe /path/to/dataset \
+  -i coulomb_mat -o coulomb_full_iq
+```
+
+Use the generated prefix in `librpa.in`:
+
+```text
+prefix_coul_full = coulomb_full_iq
+version_coul_reader = 1
+```
+
+For truncated Coulomb data, convert the [`coulomb_cut`](#coulomb-cut) files with a separate
+output prefix and set `prefix_coul_cut` accordingly.
+
+(coulomb-cut)=
+## `coulomb_cut*`
+
+These files are the same as [`coulomb_mat*`](#coulomb-mat), but store the truncated Coulomb to
 be used in the GW calculation.
 
 (dielecfunc-out)=
