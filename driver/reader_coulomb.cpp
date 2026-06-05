@@ -880,6 +880,43 @@ size_t read_Vq_row_v1(const string &dir_path, const string &vq_fprefix, double t
 
 } // namespace
 
+int detect_coulomb_reader_version(const string &dir_path, const string &vq_fprefix)
+{
+    const auto files = librpa_int::discover_files_with_prefix(dir_path, vq_fprefix);
+    if (files.empty())
+    {
+        throw std::logic_error("No Coulomb files found with prefix " + vq_fprefix);
+    }
+
+    ifstream infile(files.front(), std::ios::in | std::ios::binary);
+    if (!infile.good())
+    {
+        throw std::logic_error("Failed to open " + files.front());
+    }
+
+    int marker_or_count = 0;
+    infile.read((char *) &marker_or_count, sizeof(int));
+    if (infile.good())
+    {
+        if (marker_or_count >= 0) return 0;
+        if (marker_or_count == READER_COULOMB_V1_MARKER) return 1;
+
+        throw std::logic_error(
+            files.front() + ": unknown Coulomb reader marker " +
+            std::to_string(marker_or_count));
+    }
+
+    int text_value = 0;
+    ifstream text_infile(files.front(), std::ios::in);
+    if (text_infile >> text_value && text_value >= 0)
+    {
+        return 0;
+    }
+
+    throw std::logic_error("Failed to detect Coulomb reader version from " +
+                           files.front());
+}
+
 size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cut_coulomb,
                     int reader_version)
 {
@@ -887,6 +924,11 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
     using std::endl;
     using librpa_int::ComplexMatrix;
     using namespace librpa_int::global;
+
+    if (reader_version < 0)
+    {
+        reader_version = detect_coulomb_reader_version(dir_path, vq_fprefix);
+    }
 
     if (reader_version == 1)
     {
@@ -1228,6 +1270,11 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
     using librpa_int::ComplexMatrix;
     using librpa_int::atom_mapping;
     using namespace librpa_int::global;
+
+    if (reader_version < 0)
+    {
+        reader_version = detect_coulomb_reader_version(dir_path, vq_fprefix);
+    }
 
     if (reader_version == 1)
     {

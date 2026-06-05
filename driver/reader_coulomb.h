@@ -8,6 +8,9 @@
 
 bool check_coulomb_file_binary(const std::string &file_path);
 
+int detect_coulomb_reader_version(const std::string &dir_path,
+                                  const std::string &vq_fprefix);
+
 size_t read_Vq_full(const std::string &dir_path, const std::string &vq_fprefix,
                     bool is_cut_coulomb, int reader_version = 0);
 

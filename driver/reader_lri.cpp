@@ -582,6 +582,43 @@ void read_Cs_binary_v1_tasks(const std::vector<CsBinaryV1ReadTask> &tasks,
 
 } // namespace
 
+int detect_Cs_reader_version(const string &dir_path, const string keyword)
+{
+    const auto files = librpa_int::discover_files_with_prefix(dir_path, keyword);
+    if (files.empty())
+    {
+        throw std::logic_error("No LRI coefficient files found with prefix " + keyword);
+    }
+
+    ifstream infile(files.front(), std::ios::in | std::ios::binary);
+    if (!infile.good())
+    {
+        throw std::logic_error("Failed to open " + files.front());
+    }
+
+    int marker_or_natom = 0;
+    infile.read((char *) &marker_or_natom, sizeof(int));
+    if (infile.good())
+    {
+        if (marker_or_natom >= 0) return 0;
+        if (marker_or_natom == READER_LRICOEF_V1_MARKER) return 1;
+
+        throw std::logic_error(
+            files.front() + ": unknown LRI coefficient reader marker " +
+            std::to_string(marker_or_natom));
+    }
+
+    int text_value = 0;
+    ifstream text_infile(files.front(), std::ios::in);
+    if (text_infile >> text_value && text_value >= 0)
+    {
+        return 0;
+    }
+
+    throw std::logic_error("Failed to detect LRI coefficient reader version from " +
+                           files.front());
+}
+
 static bool has_Cs_binary_layout(const string &file_path)
 {
     ifstream infile(file_path, std::ios::in | std::ios::binary);
@@ -884,6 +921,11 @@ size_t read_Cs(const string &dir_path, double threshold,
                int reader_version)
 {
     using namespace std;
+
+    if (reader_version < 0)
+    {
+        reader_version = detect_Cs_reader_version(dir_path, keyword);
+    }
 
     size_t cs_discard = 0;
     if (reader_version == 1)
@@ -1291,6 +1333,11 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
     using namespace std;
     using namespace librpa_int;
     using namespace librpa_int::global;
+
+    if (reader_version < 0)
+    {
+        reader_version = detect_Cs_reader_version(dir_path, keyword);
+    }
 
     if (reader_version == 1)
     {

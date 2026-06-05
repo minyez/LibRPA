@@ -6,6 +6,9 @@
 
 #include "../src/core/ri.h"
 
+int detect_Cs_reader_version(const std::string &dir_path,
+                             const std::string keyword = "Cs_data");
+
 size_t read_Cs(const std::string &dir_path, double threshold,
                const std::vector<librpa_int::atpair_t> &local_atpair,
                const std::string keyword = "Cs_data",
