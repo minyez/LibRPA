@@ -10,7 +10,7 @@ These exact filenames can be changed in `librpa.in` with `fn_stru`, `fn_bz_sampl
 
 Multi-file inputs are selected by prefix.
 The defaults are `Cs_data` for localized RI coefficients, `Cs_shrinked_data` for compressed-auxiliary-basis RI coefficients, `coulomb_mat` for bare Coulomb matrices, and `coulomb_cut` for truncated Coulomb matrices.
-These prefixes can be changed with `prefix_ri_coeff`, `prefix_ri_coeff_shrink`, `prefix_coul_full`, and `prefix_coul_cut`.
+These prefixes can be changed with `prefix_lri_coeff`, `prefix_lri_coeff_shrink`, `prefix_coul_full`, and `prefix_coul_cut`.
 For example, `prefix_coul_full = coulomb_mat` matches files such as `coulomb_mat_0.txt`.
 
 ## `stru_out`

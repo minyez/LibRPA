@@ -51,8 +51,8 @@ For example, the default `prefix_lri_coeff = Cs_data` matches files such as `Cs_
 | `prefix_lri_coeff_shrink` | Prefix of compressed-auxiliary-basis RI coefficient files          | string | `Cs_shrinked_data`                             | Experimental |
 | `prefix_coul_full`    | Prefix of bare Coulomb matrix files                                  | string | `coulomb_mat`                                  |              |
 | `prefix_coul_cut`     | Prefix of truncated Coulomb matrix files                             | string | `coulomb_cut`                                  |              |
-| `version_coul_reader` | Coulomb reader-version selector (`0` legacy, `1` atom-pair blocks) | int | 0 | Experimental |
-| `version_lri_reader`  | Local RI coefficient reader-version selector (`0` legacy, `1` v1 header with payload offsets) | int | 0 | Experimental |
+| `version_coul_reader` | Coulomb reader-version selector (`-1` auto-detect, `0` legacy, `1` atom-pair blocks) | int | -1 | Experimental |
+| `version_lri_reader`  | Local RI coefficient reader-version selector (`-1` auto-detect, `0` legacy, `1` v1 header with payload offsets) | int | -1 | Experimental |
 | `cs_threshold`        | Screening threshold when reading the RI coefficient data             | double | 1e-6                                           |              |
 | `use_spinor_wfc`      | Read wavefunctions in spinor format                                  | bool   | `false`                                        | Experimental |
 | `output_energy_qp`    | Output quasiparticle energies for external BSE workflows             | bool   | `false`                                        | Experimental |
@@ -72,6 +72,11 @@ For example, the default `prefix_lri_coeff = Cs_data` matches files such as `Cs_
 When either `i_state_low` or `i_state_high` is negative, the missing bound is selected from
 the energy window `[E_F - 0.5 * gap - 0.5 Ha, E_F + 0.5 * gap + 0.5 Ha]`, where `gap` is the energy gap of the mean-field reference.
 An `i_state_high` value larger than the number of states is truncated to the number of states.
+
+When a reader-version selector is `-1`, the driver detects the format once from the first
+file matching the corresponding prefix and reuses that reader for all files with the same prefix.
+Versioned binary files use a negative first integer marker; non-negative first integers are treated
+as legacy input.
 
 (common-parameter-settings-for-librpa)=
 ## Common Parameter Settings for LibRPA

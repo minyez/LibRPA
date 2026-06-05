@@ -58,7 +58,7 @@ If a host code exports the same data under different names, set the correspondin
 
 ```ini
 fn_eigocc_scf = band_out_alt
-prefix_ri_coeff = Cs_data_alt
+prefix_lri_coeff = Cs_data_alt
 prefix_coul_full = coulomb_mat_alt
 prefix_coul_cut = coulomb_cut_alt
 ```
