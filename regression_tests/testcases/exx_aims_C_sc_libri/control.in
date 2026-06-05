@@ -20,10 +20,11 @@ anacon_type 1
 # Kgrids
 k_grid 1 1 1
 
-# Compute QPE for all states
-state_upper_limit 100000
-output k_eigenvalue 1
-output gw_regular_kgrid
+# # Compute QPE for all states
+# state_upper_limit 100000
+# output k_eigenvalue 1
+# output gw_regular_kgrid
+
 # restart_periodic_gw restart_pgw binary
 # periodic_gw_self_energy_restart rw
 # periodic_gw_optimize_kgrid_symmetry none
@@ -36,7 +37,7 @@ output gw_regular_kgrid
 # ==========================================
 # Usually do not need to change things below
 # Dump datasets required by LibRPA
-# output librpa
+output librpa
 
 ################################################################################
 #

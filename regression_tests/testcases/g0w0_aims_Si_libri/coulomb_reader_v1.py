@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 
 
-V2_MARKER = 20129432
+V2_MARKER = -20129432
 REAL_FLAG = 0
 COMPLEX_FLAG = 1
 

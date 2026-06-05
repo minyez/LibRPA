@@ -32,7 +32,7 @@
 #include "../src/mpi/global_mpi.h"
 #include "../src/utils/profiler.h"
 
-#define READER_COULOMB_V1_MARKER 20129433
+#define READER_COULOMB_V1_MARKER -20129433
 
 using std::ifstream;
 using std::string;

@@ -81,6 +81,7 @@ mybuild*.sh
 install/
 
 utilities/*
+!utilities/Makefile
 !utilities/*.sh
 !utilities/*.py
 !utilities/*.cpp

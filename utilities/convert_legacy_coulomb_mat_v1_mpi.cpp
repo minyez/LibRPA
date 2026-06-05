@@ -27,7 +27,7 @@ namespace fs = std::filesystem;
 namespace
 {
 
-constexpr int COULOMB_V1_MARKER = 20129433;
+constexpr int COULOMB_V1_MARKER = -20129433;
 constexpr int COMPLEX_FLAG = 1;
 constexpr int V1_HEADER_BASE_SIZE = 6 * static_cast<int>(sizeof(int));
 constexpr int V1_BLOCK_RECORD_SIZE = sizeof(int) + sizeof(std::int64_t);

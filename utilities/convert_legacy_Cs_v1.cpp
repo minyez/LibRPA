@@ -20,7 +20,7 @@ namespace fs = std::filesystem;
 namespace
 {
 
-constexpr std::int32_t READER_LRICOEF_V1_MARKER = 10267453;
+constexpr std::int32_t READER_LRICOEF_V1_MARKER = -10267453;
 constexpr std::int64_t V1_HEADER_BASE_SIZE =
     3 * static_cast<std::int64_t>(sizeof(std::int32_t)) +
     2 * static_cast<std::int64_t>(sizeof(std::int64_t));

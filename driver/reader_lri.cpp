@@ -28,7 +28,7 @@
 #include "../src/mpi/global_mpi.h"
 #include "../src/utils/profiler.h"
 
-#define READER_LRICOEF_V1_MARKER 10267453
+#define READER_LRICOEF_V1_MARKER -10267453
 
 using std::ifstream;
 using std::string;
