@@ -369,7 +369,7 @@ static void build_gf_Rt_libri_serial(
         const auto R = R_IJs.first;
         const auto IJs = R_IJs.second;
         const std::array<int,3> Ra{R.x,R.y,R.z};
-        global::ofs_myid << "Chi0 Handling IJs: " << IJs << " - R " << Ra << std::endl;
+        // global::ofs_myid << "Chi0 Handling IJs: " << IJs << " - R " << Ra << std::endl;
 
         // Compute the full G(R, tau) matrix
 #pragma omp parallel for schedule(dynamic)

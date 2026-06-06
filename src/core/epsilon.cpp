@@ -2231,7 +2231,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     const int jlo = desc_nabf_nabf_opt.indx_g2l_c(0);
                     if (ilo >= 0 && jlo >= 0)
                     {
-                        ofs_myid << get_timestamp() << "Perform the head element overwrite" << endl;
+                        ofs_myid << get_timestamp() << " Perform the head element overwrite" << endl;
                         const std::complex<double> head_correction = epsmac_LF_imagfreq[ifreq] - 1.0;
 // #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
 //                     if(use_gpu_gw_wc){

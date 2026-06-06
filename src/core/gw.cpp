@@ -503,7 +503,7 @@ void G0W0::build_spacetime(
     const auto tot_atpair_ordered = generate_atom_pair_from_nat(natom, true);
     const auto &Rlist = this->pbc.Rlist;
     auto IJR_local_gf = dispatch_vector_prod(tot_atpair_ordered, Rlist, ad_Wc.myid(), ad_Wc.nprocs(), true, false);
-    ofs_myid << "IJR_local_gf: " << IJR_local_gf << std::endl;
+    ofs_myid << "#IJR_local_gf: " << IJR_local_gf.size() << std::endl;
 
     ArrayDesc desc_gf;
     IndexScheduler sched_gf;
