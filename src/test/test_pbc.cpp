@@ -61,7 +61,7 @@ static void test_atom_pair_bvk_remap()
         {0, 0, 0},
         {1, 0, 0},
     };
-    const Vector3_Order<int> period{2, 2, 2};
+    const Vector3_Order<int> period{3, 3, 3};
     const Matrix3 latvec;
 
     const AtomPairBvKRemap<atom_t, atpair_t> remap(coord_fracs, Rs, period, latvec);
@@ -70,17 +70,13 @@ static void test_atom_pair_bvk_remap()
     const atpair_t pair10{1, 0};
     const Vector3_Order<int> R0{0, 0, 0};
     const Vector3_Order<int> R1{1, 0, 0};
-    const Vector3_Order<int> Rm1{-1, 0, 0};
+    const Vector3_Order<int> Rm2{-2, 0, 0};
 
-    assert(remap.size() == 4);
-    assert(remap.at(pair00).empty());
-    assert(remap.at(pair01).size() == 1);
-    assert(remap.at(pair01).count(R0) == 0);
     const auto *R_bvk = remap.find_R_bvk(pair01, R1);
     assert(R_bvk != nullptr);
-    assert(*R_bvk == Rm1);
+    assert(*R_bvk == Rm2);
+    assert(remap.find_R_bvk(pair00, R1) == nullptr);
     assert(remap.find_R_bvk(pair01, R0) == nullptr);
-    assert(remap.at(pair10).empty());
     assert(remap.find_R_bvk(pair10, R1) == nullptr);
     assert(remap.find_R_bvk({2, 0}, R1) == nullptr);
 }

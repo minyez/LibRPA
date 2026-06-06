@@ -123,8 +123,6 @@ public:
                const R_type &period, const Matrix3 &latvec,
                bool force_symmetry = false)
     {
-        (void)force_symmetry;
-
         remap_.clear();
         for (const auto &[I, coord_frac_I]: coord_fracs)
         {
