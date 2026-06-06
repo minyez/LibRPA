@@ -72,6 +72,7 @@ public:
     PeriodicBoundaryData pbc;
     //! Fractional coordiantes of k-points for band calculation
     std::vector<Vector3_Order<double>> kfrac_band_list;
+    AtomPairBvKRemap<atom_t> bvk_remap;
 
     //! Overlap matrix between normal and shrinked ABFs
     std::map<Vector3_Order<double>, ComplexMatrix> sinvS;

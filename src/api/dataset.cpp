@@ -38,6 +38,7 @@ Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
       atoms(),
       pbc(),
       kfrac_band_list(),
+      bvk_remap(),
       sinvS(),
       mf(),
       mf_band(),

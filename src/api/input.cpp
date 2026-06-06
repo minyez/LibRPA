@@ -345,7 +345,11 @@ void librpa_set_latvec_and_G(LibrpaHandler* h, const double lat_mat[9], const do
 
     // Set fractional coordinates if Cartesian coordinates have been parsed.
     auto &atoms = pds->atoms;
-    if (atoms.size() > 0) atoms.set({}, {}, pbc.latvec);
+    if (atoms.size() > 0)
+    {
+        atoms.set({}, {}, pbc.latvec);
+        pds->bvk_remap.build(atoms.coords_frac, pbc.Rlist, pbc.period, pbc.latvec);
+    }
 
     profiler.stop(tname);
 }
@@ -392,6 +396,10 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
             }
         }
         pds->comm_h.barrier();
+        if (pds->bvk_remap.empty())
+        {
+            pds->bvk_remap.build(atoms.coords_frac, pbc.Rlist, pbc.period, pbc.latvec);
+        }
     }
     else
     {
