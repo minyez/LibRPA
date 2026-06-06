@@ -109,9 +109,16 @@ The default values below are API defaults unless a driver-specific default is li
 | `minimax_emin`          | Minimum transition energy for minimax grid generation  | double | -1.0 (< 0 for automatic setup)                               | Experimental |
 | `minimax_emax`          | Maximum transition energy for minimax grid generation  | double | -1.0 (< 0 for automatic setup)                               | Experimental |
 | `minimax_regulation`    | Regulation parameter for minimax transfomration matrix | double | 0.0                                                          | Experimental |
+| `option_bvk_remap`      | BvK remapping convention for band interpolation        | int    | 1 | |
 
 When using the API, set `tfgrids_type` explicitly before computation.
 The driver maps the unset value to `minimax` for backward compatibility.
+
+`option_bvk_remap` affects band-path interpolation tasks and APIs.
+Regular k-grid calculations are not affected by BvK remapping.
+
+- 0: use single nearest image
+- 1: Wigner-Seitz remapping over all nearest equal-distance images
 
 ## Coulomb and Band Summation Controls
 
