@@ -208,8 +208,8 @@ bool is_gamma_point(const Vector3_Order<int> &kpt_int)
     return kpt_int.x == 0 && kpt_int.y == 0 && kpt_int.z == 0;
 }
 
-Vector3_Order<int> find_nearest_bvk_cell(const Vector3_Order<double> &coord_frac_I,
-                                         const Vector3_Order<double> &coord_frac_J,
+Vector3_Order<int> find_nearest_bvk_cell(const Vector3<double> &coord_frac_I,
+                                         const Vector3<double> &coord_frac_J,
                                          const Vector3_Order<int> &bvk_direct,
                                          const Vector3_Order<int> &period, const Matrix3 &latvec)
 {
@@ -240,8 +240,8 @@ Vector3_Order<int> find_nearest_bvk_cell(const Vector3_Order<double> &coord_frac
     return R_bvk;
 }
 
-std::vector<Vector3_Order<int>> find_nearest_bvk_cells(const Vector3_Order<double> &coord_frac_I,
-                                                       const Vector3_Order<double> &coord_frac_J,
+std::vector<Vector3_Order<int>> find_nearest_bvk_cells(const Vector3<double> &coord_frac_I,
+                                                       const Vector3<double> &coord_frac_J,
                                                        const Vector3_Order<int> &bvk_direct,
                                                        const Vector3_Order<int> &period,
                                                        const Matrix3 &latvec)

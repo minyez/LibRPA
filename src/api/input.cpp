@@ -369,9 +369,7 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
     std::vector<coord_t> v_coords(natoms);
     for (int i = 0; i < natoms; i++)
     {
-        v_coords[i][0] = posi_cart[3 * i];
-        v_coords[i][1] = posi_cart[3 * i + 1];
-        v_coords[i][2] = posi_cart[3 * i + 2];
+        v_coords[i] = coord_t{posi_cart[3 * i], posi_cart[3 * i + 1], posi_cart[3 * i + 2]};
     }
 
     // Set the fractional coordinates as well if the lattice has been set manually
@@ -389,8 +387,8 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
                 const auto i_at = librpa_int::as_atom(i);
                 const auto &c = coords.at(i_at);
                 const auto &cf = coords_frac.at(i_at);
-                lib_printf("ia %4d: %12.7f %12.7f %12.7f | %12.7f %12.7f %12.7f\n", i + 1, c[0], c[1],
-                        c[2], cf[0], cf[1], cf[2]);
+                lib_printf("ia %4d: %12.7f %12.7f %12.7f | %12.7f %12.7f %12.7f\n", i + 1, c.x, c.y,
+                        c.z, cf.x, cf.y, cf.z);
             }
         }
         pds->comm_h.barrier();
@@ -407,7 +405,7 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
             {
                 const auto i_at = librpa_int::as_atom(i);
                 const auto &c = coords.at(i_at);
-                lib_printf("ia %4d: %12.7f %12.7f %12.7f\n", i + 1, c[0], c[1], c[2]);
+                lib_printf("ia %4d: %12.7f %12.7f %12.7f\n", i + 1, c.x, c.y, c.z);
             }
         }
         pds->comm_h.barrier();

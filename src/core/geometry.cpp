@@ -16,12 +16,7 @@ Matrix3 Atoms::pseudo_recplatt_in_2pi_ = {blen, 0, 0, 0, blen, 0, 0, 0, blen};
 // G is reciprocal lattice vectors in 2pi/length^-1 unit
 inline static coord_t cart2frac(const coord_t &cart, const Matrix3 &G_in_2pi)
 {
-    return
-    {
-        (cart[0] * G_in_2pi.e11 + cart[1] * G_in_2pi.e12 + cart[2] * G_in_2pi.e13),
-        (cart[0] * G_in_2pi.e21 + cart[1] * G_in_2pi.e22 + cart[2] * G_in_2pi.e23),
-        (cart[0] * G_in_2pi.e31 + cart[1] * G_in_2pi.e32 + cart[2] * G_in_2pi.e33)
-    };
+    return G_in_2pi * cart;
 }
 
 void Atoms::set(const std::vector<int> &types_in,

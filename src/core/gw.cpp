@@ -1129,8 +1129,8 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                         {
                             const auto &I = IJ.first;
                             const auto &J = IJ.second;
-                            const Vector3_Order<double> coord_I(coords_frac.at(I));
-                            const Vector3_Order<double> coord_J(coords_frac.at(J));
+                            const auto &coord_I = coords_frac.at(I);
+                            const auto &coord_J = coords_frac.at(J);
                             for (auto &[R, sigc]: R_sigc)
                             {
                                 const auto R_bvk = find_nearest_bvk_cell(coord_I, coord_J, R, period, pbc.latvec);

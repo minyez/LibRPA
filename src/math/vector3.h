@@ -8,9 +8,10 @@
 //#include "../src_parallel/mcd.h"
 // #endif
 
+#include <array>
 #include <cmath>
-#include <iostream>
 #include <iomanip>
+#include <iostream>
 
 namespace librpa_int {
 

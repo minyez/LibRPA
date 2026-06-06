@@ -1,12 +1,16 @@
 #pragma once
-#include <array>
+#include <algorithm>
+#include <cstddef>
+#include <map>
+#include <vector>
 
 #include "../math/matrix3.h"
+#include "../math/vector3.h"
 #include "atom.h"
 
 namespace librpa_int {
 
-typedef std::array<double, 3> coord_t;
+typedef Vector3<double> coord_t;
 
 // //! Cartesian coordinates of atoms
 // extern std::map<atom_t, coord_t> coord;

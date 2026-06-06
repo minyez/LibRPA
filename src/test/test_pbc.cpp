@@ -1,5 +1,6 @@
 #include "../core/pbc.h"
 #include <cassert>
+#include <cstddef>
 
 using namespace librpa_int;
 
@@ -38,5 +39,6 @@ int main (int argc, char *argv[])
     test_is_gamma_point();
     test_get_R_index();
     test_periodic_boundary_data();
+    test_atom_pair_bvk_remap();
     return 0;
 }

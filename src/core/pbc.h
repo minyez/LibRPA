@@ -4,7 +4,9 @@
  */
 #pragma once
 #include <array>
+#include <cstddef>
 #include <map>
+#include <utility>
 #include <vector>
 
 #include "../math/matrix3.h"
@@ -78,13 +80,13 @@ int get_R_index(const std::vector<Vector3_Order<int>> &Rlist, const Vector3_Orde
 bool is_gamma_point(const Vector3_Order<double> &kpt, double thres = 1.0e-5);
 bool is_gamma_point(const Vector3_Order<int> &kpt);
 
-Vector3_Order<int> find_nearest_bvk_cell(const Vector3_Order<double> &coord_frac_I,
-                                         const Vector3_Order<double> &coord_frac_J,
+Vector3_Order<int> find_nearest_bvk_cell(const Vector3<double> &coord_frac_I,
+                                         const Vector3<double> &coord_frac_J,
                                          const Vector3_Order<int> &bvk_direct,
                                          const Vector3_Order<int> &period, const Matrix3 &latvec);
 
-std::vector<Vector3_Order<int>> find_nearest_bvk_cells(const Vector3_Order<double> &coord_frac_I,
-                                                       const Vector3_Order<double> &coord_frac_J,
+std::vector<Vector3_Order<int>> find_nearest_bvk_cells(const Vector3<double> &coord_frac_I,
+                                                       const Vector3<double> &coord_frac_J,
                                                        const Vector3_Order<int> &bvk_direct,
                                                        const Vector3_Order<int> &period,
                                                        const Matrix3 &latvec);

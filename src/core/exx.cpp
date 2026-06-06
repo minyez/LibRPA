@@ -752,13 +752,11 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
 
         for (const auto &[I, J_Rmat] : map_orig)
         {
-            const auto coord_I =
-                Vector3<double>(coords_frac.at(I)[0], coords_frac.at(I)[1], coords_frac.at(I)[2]);
+            const auto &coord_I = coords_frac.at(I);
 
             for (const auto &[J, R_mat] : J_Rmat)
             {
-                const auto coord_J = Vector3<double>(coords_frac.at(J)[0], coords_frac.at(J)[1],
-                                                     coords_frac.at(J)[2]);
+                const auto &coord_J = coords_frac.at(J);
 
                 for (const auto &[R, mat] : R_mat)
                 {
