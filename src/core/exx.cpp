@@ -762,32 +762,7 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
 
                 for (const auto &[R, mat] : R_mat)
                 {
-                    double distsq = std::numeric_limits<double>::max();
-                    Vector3<int> R_bvk;
-
-                    for (int i = -1; i < 2; ++i)
-                    {
-                        for (int j = -1; j < 2; ++j)
-                        {
-                            for (int k = -1; k < 2; ++k)
-                            {
-                                const Vector3<int> R_IJ{i * period.x + R.x, j * period.y + R.y,
-                                                        k * period.z + R.z};
-
-                                const auto diff =
-                                    (coord_I - coord_J - Vector3<double>(R_IJ.x, R_IJ.y, R_IJ.z)) *
-                                    this->pbc.latvec;
-
-                                const auto norm2 = diff.norm2();
-
-                                if (norm2 < distsq)
-                                {
-                                    distsq = norm2;
-                                    R_bvk = R_IJ;
-                                }
-                            }
-                        }
-                    }
+                    const auto R_bvk = find_nearest_bvk_cell(coord_I, coord_J, R, period, pbc.latvec);
                     map_shift[I][J][R_bvk] = mat;
                 }
             }

@@ -208,6 +208,47 @@ bool is_gamma_point(const Vector3_Order<int> &kpt_int)
     return kpt_int.x == 0 && kpt_int.y == 0 && kpt_int.z == 0;
 }
 
+Vector3_Order<int> find_nearest_bvk_cell(const Vector3_Order<double> &coord_frac_I,
+                                         const Vector3_Order<double> &coord_frac_J,
+                                         const Vector3_Order<int> &bvk_direct,
+                                         const Vector3_Order<int> &period, const Matrix3 &latvec)
+{
+    auto distsq = std::numeric_limits<double>::max();
+    Vector3<int> R_IJ;
+    Vector3_Order<int> R_bvk;
+    const auto &R = bvk_direct;
+    const auto diff_IJ0 = coord_frac_I - coord_frac_J;
+    for (int i = -1; i < 2; i++)
+    {
+        R_IJ.x = i * period.x + R.x;
+        for (int j = -1; j < 2; j++)
+        {
+            R_IJ.y = j * period.y + R.y;
+            for (int k = -1; k < 2; k++)
+            {
+                R_IJ.z = k * period.z + R.z;
+                const auto diff = (diff_IJ0 - Vector3<double>(R_IJ.x, R_IJ.y, R_IJ.z)) * latvec;
+                const auto norm2 = diff.norm2();
+                if (norm2 < distsq)
+                {
+                    distsq = norm2;
+                    R_bvk = R_IJ;
+                }
+            }
+        }
+    }
+    return R_bvk;
+}
+
+std::vector<Vector3_Order<int>> find_nearest_bvk_cells(const Vector3_Order<double> &coord_frac_I,
+                                                       const Vector3_Order<double> &coord_frac_J,
+                                                       const Vector3_Order<int> &bvk_direct,
+                                                       const Vector3_Order<int> &period,
+                                                       const Matrix3 &latvec)
+{
+    throw LIBRPA_RUNTIME_ERROR("NOT IMPLEMENTED");
+}
+
 // int kv_nmp[3] = {1, 1, 1};
 // Vector3<double> *kvec_c;
 // std::vector<Vector3_Order<double>> klist;

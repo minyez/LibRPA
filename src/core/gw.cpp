@@ -1120,41 +1120,18 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                     // Reuse the cleared-up sigc_I_JR_local object
                     if (geometry.is_frac_set())
                     {
+                        const auto &coords_frac = geometry.coords_frac;
                         // NOTE: from redistribution, sigc_is_f_IJ_R is ensured to have all [spin][freq] keys,
                         // but each value (atom-pair map) can be empty.
                         for (const auto &[IJ, R_sigc]: sigc_IJ_R)
                         {
                             const auto &I = IJ.first;
                             const auto &J = IJ.second;
+                            const Vector3_Order<double> coord_I(coords_frac.at(I));
+                            const Vector3_Order<double> coord_J(coords_frac.at(J));
                             for (auto &[R, sigc]: R_sigc)
                             {
-                                auto distsq = std::numeric_limits<double>::max();
-                                Vector3<int> R_IJ;
-                                Vector3_Order<int> R_bvk;
-                                for (int i = -1; i < 2; i++)
-                                {
-                                    R_IJ.x = i * period.x + R.x;
-                                    for (int j = -1; j < 2; j++)
-                                    {
-                                        R_IJ.y = j * period.y + R.y;
-                                        for (int k = -1; k < 2; k++)
-                                        {
-                                            R_IJ.z = k * period.z + R.z;
-                                            const auto diff =
-                                                (Vector3<double>(coord_frac.at(I)[0], coord_frac.at(I)[1],
-                                                                coord_frac.at(I)[2]) -
-                                                Vector3<double>(coord_frac.at(J)[0], coord_frac.at(J)[1],
-                                                                coord_frac.at(J)[2]) -
-                                                Vector3<double>(R_IJ.x, R_IJ.y, R_IJ.z)) * pbc.latvec;
-                                            const auto norm2 = diff.norm2();
-                                            if (norm2 < distsq)
-                                            {
-                                                distsq = norm2;
-                                                R_bvk = R_IJ;
-                                            }
-                                        }
-                                    }
-                                }
+                                const auto R_bvk = find_nearest_bvk_cell(coord_I, coord_J, R, period, pbc.latvec);
                                 sigc_isp_local[freq][I][J][R_bvk] = sigc;
                             }
                         }

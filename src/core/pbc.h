@@ -78,6 +78,17 @@ int get_R_index(const std::vector<Vector3_Order<int>> &Rlist, const Vector3_Orde
 bool is_gamma_point(const Vector3_Order<double> &kpt, double thres = 1.0e-5);
 bool is_gamma_point(const Vector3_Order<int> &kpt);
 
+Vector3_Order<int> find_nearest_bvk_cell(const Vector3_Order<double> &coord_frac_I,
+                                         const Vector3_Order<double> &coord_frac_J,
+                                         const Vector3_Order<int> &bvk_direct,
+                                         const Vector3_Order<int> &period, const Matrix3 &latvec);
+
+std::vector<Vector3_Order<int>> find_nearest_bvk_cells(const Vector3_Order<double> &coord_frac_I,
+                                                       const Vector3_Order<double> &coord_frac_J,
+                                                       const Vector3_Order<int> &bvk_direct,
+                                                       const Vector3_Order<int> &period,
+                                                       const Matrix3 &latvec);
+
 // extern int kv_nmp[3];
 // //! lattice vectors as a 3D-matrix, each row as a lattice vector. Unit: Bohr
 // extern Matrix3 latvec;
