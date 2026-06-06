@@ -39,6 +39,31 @@ def _format_command(args):
     return " ".join(shlex.quote(str(arg)) for arg in args)
 
 
+def _prepare_librpa_workspace(src: pathlib.Path, dst: pathlib.Path):
+    """Prepare one test case and return the directory where LibRPA should run."""
+    src_librpa = src / "librpa"
+    dst_librpa = dst / "librpa"
+    dst_librpa.mkdir(parents=True, exist_ok=True)
+
+    if (src_librpa / "librpa.in").is_file() and (src / "dataset.tar.gz").is_file():
+        shutil.copy2(src_librpa / "librpa.in", dst_librpa)
+        with tarfile.open(src / "dataset.tar.gz", "r:gz") as tar:
+            tar.extractall(path=dst)
+        return dst_librpa
+
+    if (src / "librpa.in").is_file() and (src / "input_librpa.tar.gz").is_file():
+        shutil.copy2(src / "librpa.in", dst)
+        with tarfile.open(src / "input_librpa.tar.gz", "r:gz") as tar:
+            tar.extractall(path=dst)
+        return dst
+
+    raise FileNotFoundError(
+        "unsupported test input layout in {}; expected either "
+        "librpa/librpa.in + dataset.tar.gz or librpa.in + input_librpa.tar.gz"
+        .format(src)
+    )
+
+
 def _disable_message(tc: dict):
     labels = tc.get("labels", {})
     disable = labels.get("disable", False)
@@ -245,19 +270,18 @@ class TestDriver:
         for tc in self._testcases_filtered:
             dname = tc["directory"]
             src = self._dir_input / dname
-            src_librpa = src / "librpa"
             dst = self._dir_testcase / dname
-            dst_librpa = dst / "librpa"
-            # prepare inputs
-            dst_librpa.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src_librpa / "librpa.in", dst_librpa)
-            with tarfile.open(src / "dataset.tar.gz", "r:gz") as tar:
-                tar.extractall(path=dst)
-            # prepare inputs
+            run_dir = _prepare_librpa_workspace(src, dst)
+            if run_dir == dst / "librpa":
+                out = pathlib.Path("librpa.out")
+                err = pathlib.Path("librpa.err")
+            else:
+                out = pathlib.Path("librpa") / "librpa.out"
+                err = pathlib.Path("librpa") / "librpa.err"
             print("Running {} [{}]".format(tc["name"], dname))
             if verbose:
                 print("Command: {}".format(_format_command(args)))
-            run_librpa(args, dst_librpa)
+            run_librpa(args, run_dir, out, err)
         print("Finished test calculations")
         print()
 

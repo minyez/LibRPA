@@ -9,8 +9,17 @@ def _extract_plain(directory: str, file: str,
     """Extract plain text data"""
     raw = {}
     d = pathlib.Path(directory)
-    for f in d.rglob(file):
+    matches = list(d.rglob(file))
+    canonical_prefix = None
+    if not matches and file.startswith("librpa/"):
+        fallback = pathlib.PurePosixPath(file).name
+        matches = list(d.rglob(fallback))
+        canonical_prefix = pathlib.Path("librpa")
+
+    for f in matches:
         rela = f.relative_to(d)
+        if canonical_prefix is not None:
+            rela = canonical_prefix / f.name
         with open(f, 'r') as h:
             lines = h.readlines()
         # When regex is None, treat the whole file as necessary data
