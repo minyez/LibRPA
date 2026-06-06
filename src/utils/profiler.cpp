@@ -121,8 +121,8 @@ void Profiler::start(const std::string &tname, const std::string &tnote) noexcep
     ddla::DEVICE_CHECK(deviceMemGetInfo(&free_mem_gpu_bt, &total_mem_gpu_bt));
     global::ofs_myid << "  on GPU [GB]: " << free_mem_gpu_bt/1024./1024./1024.;
 #endif
-#endif
     global::ofs_myid << std::endl;
+#endif
     current->start();
 }
 
