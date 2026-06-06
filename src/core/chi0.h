@@ -3,7 +3,11 @@
  @brief Utlities to compute the independent response function
  */
 #pragma once
+#include <complex>
+#include <cstddef>
+#include <map>
 #include <set>
+#include <utility>
 #include <vector>
 
 #include "../math/vector3_order.h"
@@ -19,33 +23,31 @@
 
 namespace librpa_int {
 
-using std::vector;
-
 //! Object to handle calculation of independent repsonse function (\f$\chi_0\f$)
 class Chi0
 {
 private:
     bool is_mf_eigvec_k_distributed_;
-    size_t gf_save;
-    size_t gf_discard;
+    std::size_t gf_save;
+    std::size_t gf_discard;
     //! space-time Green's function in occupied space, [ispin][isoc1][isoc2][I][J][R][tau]
     /*!
      * @note: tau (index) less than zero correspond to occupied GF,
      *        and larger than zero correspond to unoccpued GF.
      * @note: May need to use ComplexMatrix for GF.
      */
-    map<int,
-        map<int, map<int, atom_mapping<map<Vector3_Order<int>, map<double, matrix>>>::pair_t_old>>>
+    std::map<int,
+        std::map<int, std::map<int, atom_mapping<std::map<Vector3_Order<int>, std::map<double, matrix>>>::pair_t_old>>>
         gf_is_R_tau;
 
     //! R on which the space-time GF are created, used for atom-pair and rtau routings
-    vector<Vector3_Order<int>> Rlist_gf;
+    std::vector<Vector3_Order<int>> Rlist_gf;
 
     //! Indices of G_{IJ}(R) to build, local to process, used for LibRI routing
     std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs_gf_local;
 
     //! chi0 data in frequency domain and reciprocal space, [omega][q]
-    map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> chi0_q;
+    std::map<double, std::map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> chi0_q;
 
     void build_gf_Rt(Vector3_Order<int> R, double tau);
 
@@ -57,19 +59,19 @@ private:
      * @todo add threshold parameter. Maybe in the class level?
      */
     void build_chi0_q_space_time(const LibrpaParallelRouting routing, const Cs_LRI &Cs,
-                                 const vector<atpair_t> &atpairs_ABF,
+                                 const std::vector<atpair_t> &atpairs_ABF,
                                  const AtomicBasis &abf_Cs,
                                  std::map<Vector3_Order<double>, ComplexMatrix> &sinvS,
                                  const BlacsCtxtHandler &blacs_ctxt_h);
 
     // NOTE: the following three methods could be converted to static functions in chi0.cpp
     void build_chi0_q_space_time_atom_pair_routing(const Cs_LRI &Cs,
-                                                   const vector<atpair_t> &atpairs_ABF);
+                                                   const std::vector<atpair_t> &atpairs_ABF);
     void build_chi0_q_space_time_R_tau_routing(const Cs_LRI &Cs,
-                                               const vector<atpair_t> &atpairs_ABF);
+                                               const std::vector<atpair_t> &atpairs_ABF);
     template <typename Tdata>
     void build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
-                                               const vector<atpair_t> &atpairs_ABF,
+                                               const std::vector<atpair_t> &atpairs_ABF,
                                                const AtomicBasis &abf_Cs,
                                                std::map<Vector3_Order<double>, ComplexMatrix> &sinvS,
                                                const BlacsCtxtHandler &blacs_ctxt_h);
@@ -77,7 +79,7 @@ private:
     //! Internal procedure to compute chi0_q in the conventional method, i.e. in frequency domain and reciprocal space
     // TODO: implement the conventional method
     void build_chi0_q_conventional(const Cs_LRI &Cs,
-                                   const vector<atpair_t> &atpairs_ABF);
+                                   const std::vector<atpair_t> &atpairs_ABF);
     /*!
      * s_alpha and s_beta are the spin component of unoccupied Green's function, G_{alpha, beta}(tau)
      * correspondingly, occupied GF G_{beta, alpha}(-tau) will be used. itau must be positive.
@@ -116,17 +118,17 @@ public:
     //! Build the independent response function in q-omega domain for ABFs on the atom pairs atpair_ABF and q-vectors in qlist
     void build(LibrpaParallelRouting routing,
                const Cs_LRI &Cs,
-               const vector<atpair_t> &atpair_ABF,
+               const std::vector<atpair_t> &atpair_ABF,
                const AtomicBasis &abf_Cs,
                std::map<Vector3_Order<double>, ComplexMatrix> &sinvS,
                const BlacsCtxtHandler &blacs_ctxt_h);
-    const map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> & get_chi0_q() const { return chi0_q; }
+    const std::map<double, std::map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> & get_chi0_q() const { return chi0_q; }
     void free_chi0_q(const double freq, const Vector3_Order<double> q);
 
     void unfold_abfs_Wc(
-        map<Vector3_Order<double>, ComplexMatrix> &sinvS,
-        map<double, atom_mapping<std::map<Vector3_Order<double>, matrix_m<complex<double>>>>::pair_t_old> &Wc,
-        const vector<Vector3_Order<double>> &qlist, const AtomicBasis &abf_unfold,
+        std::map<Vector3_Order<double>, ComplexMatrix> &sinvS,
+        std::map<double, atom_mapping<std::map<Vector3_Order<double>, matrix_m<std::complex<double>>>>::pair_t_old> &Wc,
+        const std::vector<Vector3_Order<double>> &qlist, const AtomicBasis &abf_unfold,
         const BlacsCtxtHandler &blacs_ctxt_h);
 };
 

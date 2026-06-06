@@ -46,6 +46,11 @@ using RI::Communicate_Tensors_Map_Judge::comm_map2_first;
 
 namespace librpa_int {
 
+using std::map;
+using std::pair;
+using std::set;
+using std::vector;
+
 CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx_mat_t &coulmat,
                                                        const vector<atpair_t> &local_atpair,
                                                        const BlacsCtxtHandler &blacs_h)

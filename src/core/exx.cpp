@@ -85,7 +85,7 @@ static void build_dmat_libri_kserial(
     const MeanField &mf,
     const AtomicBasis &atbasis_wfc,
     int ispin, int ispinor_bra, int ispinor_ket,
-    const vector<Vector3_Order<double>> &kfrac_list,
+    const std::vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs,
     const bool save_cplx,
     std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<double>>> &dmat_libri,
@@ -150,7 +150,7 @@ static void build_dmat_libri_kpara(
     const MpiCommHandler &comm_h,
     const AtomicBasis &atbasis_wfc,
     int ispin, int ispinor_bra, int ispinor_ket,
-    const vector<Vector3_Order<double>> &kfrac_list,
+    const std::vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs,
     const bool save_cplx,
     std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<double>>> &dmat_libri,
@@ -220,7 +220,7 @@ static void build_dmat_libri_kblacs_para(
     const IndexScheduler &sched,
     const AtomicBasis &atbasis_wfc,
     int ispin, int ispinor_bra, int ispinor_ket,
-    const vector<Vector3_Order<double>> &kfrac_list,
+    const std::vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<Vector3_Order<int>> Rs,
     const bool save_cplx,
     std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<double>>> &dmat_libri,
@@ -288,9 +288,9 @@ void Exx::build(const LibrpaParallelRouting routing,
     RI::Exx<int, int, 3, double> exx_libri;
     RI::Exx<int, int, 3, cplxdb> exx_libri_cplx;
 
-    map<int,std::array<double,3>> atoms_pos;
+    std::map<int,std::array<double,3>> atoms_pos;
     for (int i = 0; i < n_atoms; i++)
-        atoms_pos.insert(pair<int, std::array<double, 3>>{i, {0, 0, 0}});
+        atoms_pos.insert(std::pair<int, std::array<double, 3>>{i, {0, 0, 0}});
 
     if (use_complex_exx_r)
         exx_libri_cplx.set_parallel(comm_h.comm, atoms_pos, this->pbc.latvec_array, this->pbc.period_array);
@@ -422,7 +422,7 @@ void Exx::build(const LibrpaParallelRouting routing,
 
     // initialize density matrix
     global::profiler.start("build_real_space_exx_prepare_index");
-    vector<atpair_t> atpair_dmat;
+    std::vector<atpair_t> atpair_dmat;
     for (atom_t I = 0; I < as_atom(n_atoms); I++)
         for (atom_t J = 0; J < as_atom(n_atoms); J++)
             atpair_dmat.push_back({I, J});
@@ -777,8 +777,8 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
         {
             for (int ispn_ket = 0; ispn_ket < n_spinor; ispn_ket++)
             {
-                map<atom_t, map<atom_t, map<Vector3_Order<int>, Matd>>> exx_is_local;
-                map<atom_t, map<atom_t, map<Vector3_Order<int>, Matz>>> exx_is_local_cplx;
+                std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, Matd>>> exx_is_local;
+                std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, Matz>>> exx_is_local_cplx;
                 // Convert each <I,<J, R>> pair to the nearest neighbour to speed up later Fourier transform
                 // while keep the accuracy in further band interpolation.
                 // Reuse the cleared-up exx_I_JR_local object

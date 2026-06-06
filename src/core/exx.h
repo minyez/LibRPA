@@ -46,12 +46,12 @@ class Exx
         double libri_threshold_D;
 
         //! exact-exchange Hamiltonian in real space, dimension (nspins, nspinors, nspinors, I, J, R, nao_I, nao_J)
-        map<int, map<int, map<int, map<atom_t, map<atom_t, map<Vector3_Order<int>, Matd>>>>>> exx_IJR;
-        map<int, map<int, map<int, map<atom_t, map<atom_t, map<Vector3_Order<int>, Matz>>>>>> exx_IJR_cplx;
+        std::map<int, std::map<int, std::map<int, std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, Matd>>>>>> exx_IJR;
+        std::map<int, std::map<int, std::map<int, std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, Matz>>>>>> exx_IJR_cplx;
         //! exact-exchange Hamiltonian in the basis of KS states, dimension (nspins, n_kpoints, n_bands, n_bands)
-        map<int, map<int, Matz>> exx_KS;
+        std::map<int, std::map<int, Matz>> exx_KS;
         //! exact-exchange energy of each state, dimension (nspins, n_kpoints, n_bands). This is actually the diagonal elements of Heex_KS.
-        map<int, map<int, map<int, double>>> Eexx;
+        std::map<int, std::map<int, std::map<int, double>>> Eexx;
 
         Exx(const MeanField& mf_in,
             const AtomicBasis &atbasis_wfc_in,

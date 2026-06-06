@@ -19,13 +19,8 @@
 
 namespace librpa_int {
 
-using std::vector;
-using std::map;
-using std::pair;
-using std::size_t;
-
 //! type of atom indices
-typedef size_t atom_t;
+typedef std::size_t atom_t;
 
 template <typename T>
 inline atom_t as_atom(T x) noexcept
@@ -34,7 +29,7 @@ inline atom_t as_atom(T x) noexcept
 }
 
 //! atom-pair type. NOTE: may turn into a class?
-typedef pair<atom_t, atom_t> atpair_t;
+typedef std::pair<atom_t, atom_t> atpair_t;
 
 //! Hash function for atom pair in unordered mapping/set. It works for number of atoms < 2^{32}
 struct atpair_hash
@@ -72,10 +67,10 @@ using ap_n_map = typename atom_mapping<T>::pair_t_old; // nested mapping
 
 //! get atom indcies from a atom_mapping::single_t object (old style)
 template <typename T>
-vector<atom_t> get_atom(const std::unordered_map<atom_t, T> &adata) // work
+std::vector<atom_t> get_atom(const std::unordered_map<atom_t, T> &adata) // work
 /* vector<atom_t> get_atom(const typename atom_mapping<T>::single_t &adata) // not work */
 {
-    vector<atom_t> alist;
+    std::vector<atom_t> alist;
     for (const auto &a1: adata)
             alist.push_back(a1.first);
     return alist;
@@ -83,10 +78,10 @@ vector<atom_t> get_atom(const std::unordered_map<atom_t, T> &adata) // work
 
 //! get atom pairs from a atom_mapping::pair_t object (old style)
 template <typename T>
-vector<atpair_t> get_atom_pair(const std::unordered_map<atom_t, std::unordered_map<atom_t, T>> &apdata) // work
+std::vector<atpair_t> get_atom_pair(const std::unordered_map<atom_t, std::unordered_map<atom_t, T>> &apdata) // work
 /* vector<pair<atom_t, atom_t>> get_atom_pair(const typename atom_mapping<T>::pair_t &apdata) // not work */
 {
-    vector<atpair_t> apair;
+    std::vector<atpair_t> apair;
     for (const auto &a1: apdata)
         for (const auto &a2: a1.second)
             apair.push_back({a1.first, a2.first});
@@ -95,11 +90,11 @@ vector<atpair_t> get_atom_pair(const std::unordered_map<atom_t, std::unordered_m
 
 //! get atom pairs from a atom_mapping::pair_t object
 template <typename T>
-vector<atpair_t> get_atom_pair(const std::unordered_map<atpair_t, T, atpair_hash> &apdata) // work
+std::vector<atpair_t> get_atom_pair(const std::unordered_map<atpair_t, T, atpair_hash> &apdata) // work
 /* vector<pair<atom_t, atom_t>> get_atom_pair(const typename atom_mapping<T>::pair_t &apdata) // not work */
 // FIXME: check this: https://en.cppreference.com/w/cpp/language/template_argument_deduction
 {
-    vector<atpair_t> apair;
+    std::vector<atpair_t> apair;
     for (const auto &ap: apdata)
         apair.push_back(ap.first);
     return apair;
@@ -107,9 +102,9 @@ vector<atpair_t> get_atom_pair(const std::unordered_map<atpair_t, T, atpair_hash
 
 //! Get atom pair from number of atoms. The generated paris are in upper half if ordered_pair is false.
 template <typename T>
-vector<atpair_t> generate_atom_pair_from_nat(const T &nat, bool ordered_pair = false)
+std::vector<atpair_t> generate_atom_pair_from_nat(const T &nat, bool ordered_pair = false)
 {
-    vector<atpair_t> apair;
+    std::vector<atpair_t> apair;
     for(T i=0; i!=nat; i++)
         for(T j = ordered_pair? 0 : i; j!=nat; j++)
             apair.push_back({i,j});

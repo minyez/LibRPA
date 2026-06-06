@@ -37,6 +37,10 @@
 
 namespace librpa_int {
 
+using std::map;
+using std::pair;
+using std::vector;
+
 Chi0::Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const AtomicBasis &atbasis_abf_in, const PeriodicBoundaryData &pbc_in,
            const TFGrids &tfg_in, const KPointBlacsParallelContext &kblacs_ctxt_in,

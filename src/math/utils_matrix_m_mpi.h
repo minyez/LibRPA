@@ -151,7 +151,7 @@ void collect_block_from_IJ_storage_tensor(matrix_m<Tdst> &mat_lo, const ArrayDes
         int I_loc, J_loc, i_ab, j_ab;
         int i_gl = ad.indx_l2g_r(ilo);
         atbasis_row.get_local_index(i_gl, I_loc, i_ab);
-        vector<Tdst> tmp_loc_row(ad.n_loc());
+        std::vector<Tdst> tmp_loc_row(ad.n_loc());
         for (int jlo = 0; jlo != ad.n_loc(); jlo++)
         {
             int j_gl = ad.indx_l2g_c(jlo);
@@ -201,7 +201,7 @@ void collect_block_from_IJ_storage_matrix_transform(
         int I_loc, J_loc, i_ab, j_ab;
         int i_gl = ad.indx_l2g_r(ilo);
         atbasis_row.get_local_index(i_gl, I_loc, i_ab);
-        vector<Tdst> tmp_loc_row(ad.n_loc(), 0);
+        std::vector<Tdst> tmp_loc_row(ad.n_loc(), 0);
         for (int jlo = 0; jlo != ad.n_loc(); jlo++)
         {
             int j_gl = ad.indx_l2g_c(jlo);
@@ -258,7 +258,7 @@ void collect_block_from_IJ_storage_tensor_transform(
         int I_loc, J_loc, i_ab, j_ab;
         int i_gl = ad.indx_l2g_r(ilo);
         atbasis_row.get_local_index(i_gl, I_loc, i_ab);
-        vector<Tdst> tmp_loc_row(ad.n_loc(), 0);
+        std::vector<Tdst> tmp_loc_row(ad.n_loc(), 0);
         for (int jlo = 0; jlo != ad.n_loc(); jlo++)
         {
             int j_gl = ad.indx_l2g_c(jlo);
@@ -314,7 +314,7 @@ void collect_block_from_IJ_storage_tensor_transform_triple(
         int I_loc, J_loc, i_ab, j_ab;
         int i_gl = ad.indx_l2g_r(ilo);
         atbasis_row.get_local_index(i_gl, I_loc, i_ab);
-        vector<Tdst> tmp_loc_row(ad.n_loc(), 0);
+        std::vector<Tdst> tmp_loc_row(ad.n_loc(), 0);
         for (int jlo = 0; jlo != ad.n_loc(); jlo++)
         {
             int j_gl = ad.indx_l2g_c(jlo);
@@ -427,7 +427,7 @@ void collect_block_from_ALL_IJ_Tensor(matrix_m<Tdst> &mat_lo, const ArrayDesc &a
         int I_loc, J_loc, i_ab, j_ab;
         int i_gl = ad.indx_l2g_r(ilo);
         atbasis.get_local_index(i_gl, I_loc, i_ab);
-        vector<Tdst> tmp_loc_row(ad.n_loc());
+        std::vector<Tdst> tmp_loc_row(ad.n_loc());
         for (int jlo = 0; jlo != ad.n_loc(); jlo++)
         {
 
@@ -465,7 +465,7 @@ void collect_block_from_ALL_IJ_Tensor(matrix_m<Tdst> &mat_lo, const ArrayDesc &a
 
 //! collect a IJ-pair storage from a 2D block local matrix
 template <typename T>
-void map_block_to_IJ_storage(map<int, map<int, matrix_m<T>>> &IJmap,
+void map_block_to_IJ_storage(std::map<int, std::map<int, matrix_m<T>>> &IJmap,
                              const AtomicBasis &atbasis_row,
                              const AtomicBasis &atbasis_col,
                              const matrix_m<T> &mat_lo,
@@ -491,10 +491,10 @@ void map_block_to_IJ_storage(map<int, map<int, matrix_m<T>>> &IJmap,
 
 
 template <typename T>
-void map_block_to_IJ_storage_new(map<int, map<int, matrix_m<T>>> &IJmap,
+void map_block_to_IJ_storage_new(std::map<int, std::map<int, matrix_m<T>>> &IJmap,
                                  const AtomicBasis &atbasis,
-                                 const map<int, vector<int>> &map_lor_I_is,
-                                 const map<int, vector<int>> &map_loc_J_js,
+                                 const std::map<int, std::vector<int>> &map_lor_I_is,
+                                 const std::map<int, std::vector<int>> &map_loc_J_js,
                                  const matrix_m<T> &mat_lo, const ArrayDesc &desc, MAJOR major_map)
 {
     // map<int, map<int, matrix_m<T>>> IJmap_local;
@@ -1426,7 +1426,7 @@ void fill_local_mat_from_ap_dist_sy(matrix_m<T> &m_loc,
 
     // prepare recv buffer
     // computer recv buffer size and displacements
-    map<int, pair<int, MPI_Count>> pid_recv_disp_count;
+    std::map<int, std::pair<int, MPI_Count>> pid_recv_disp_count;
     std::vector<T> recvbuff(0);
     MPI_Count recvcount = 0;
     for (int pid = 0; pid < ad.nprocs(); pid++)
@@ -1442,7 +1442,7 @@ void fill_local_mat_from_ap_dist_sy(matrix_m<T> &m_loc,
 
     // prepare send buffer
     // first run, compute send buffer size and displacements, allocate the whole buffer
-    map<int, pair<int, MPI_Count>> pid_send_disp_count;
+    std::map<int, std::pair<int, MPI_Count>> pid_send_disp_count;
     std::vector<T> sendbuff(0);
     MPI_Count sendcount = 0;
     for (int pid = 0; pid < ad.nprocs(); pid++)

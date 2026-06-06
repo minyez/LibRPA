@@ -42,6 +42,8 @@ using RI::Communicate_Tensors_Map_Judge::comm_map2_first;
 namespace librpa_int
 {
 
+using std::vector;
+
 G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const PeriodicBoundaryData &pbc_in, const TFGrids &tfg_in,
            const KPointBlacsParallelContext &kblacs_ctxt_in,
@@ -464,10 +466,10 @@ void G0W0::build_spacetime(
     RI::GW<int, int, 3, double> gw_libri;
     RI::GW<int, int, 3, cplxdb> gw_libri_cplx;
 
-    map<int,std::array<double,3>> atoms_pos;
+    std::map<int,std::array<double,3>> atoms_pos;
     // Dummy atoms position
     for (int i = 0; i != natom; i++)
-        atoms_pos.insert(pair<int, std::array<double, 3>>{i, {0, 0, 0}});
+        atoms_pos.insert(std::pair<int, std::array<double, 3>>{i, {0, 0, 0}});
 
     global::profiler.start("g0w0_build_spacetime_2", "Setup LibRI G0W0 object and C data");
     if (use_complex_tensor)
@@ -1054,7 +1056,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                         //       to preserve the [spin][spinor][spinor][freq] key structure,
                         //       otherwise it will lead to map error in the subsequent rotation.
                         sigc_I_JR_local.clear();
-                        ap_p_map<map<Vector3_Order<int>, Matz>> sigc_new;
+                        ap_p_map<std::map<Vector3_Order<int>, Matz>> sigc_new;
                         for (const auto &[I, JRmat]: sigc_I_JR)
                         {
                             const int n_I = this->atbasis_wfc.get_atom_nb(I);
@@ -1109,7 +1111,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
         {
             for (int ispn_ket = 0; ispn_ket < n_spinor; ispn_ket++)
             {
-                map<double, map<atom_t, map<atom_t, map<Vector3_Order<int>, Matz>>>> sigc_isp_local;
+                std::map<double, std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, Matz>>>> sigc_isp_local;
                 global::profiler.start("g0w0_build_sigc_KS_find_bvk");
                 for (const auto& freq: this->tfg.get_freq_nodes())
                 {

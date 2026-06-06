@@ -285,7 +285,7 @@ void Dataset::redistribute_coulomb_blacs2ap()
                 ofs_myid << "Array desc for source         : " << desc << endl;
                 ofs_myid << "Array desc for dest (desc_abf): " << desc_abf.info_desc() << endl;
                 std::vector<double> qs(nq_this * 3);
-                map<int, Matz> mat_q;
+                std::map<int, Matz> mat_q;
                 Matz mat_comm(0, 0, major_comm);
                 if (i_comm_q == comm_coul_inter_q_h.myid)
                 {

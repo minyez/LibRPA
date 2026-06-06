@@ -38,12 +38,12 @@ namespace librpa_int {
 // extern vector<atpair_t> local_atpair;
 
 //! type alias of atom-pair mapping to real matrix indexed by unit-cell vector
-typedef atom_mapping<map<Vector3_Order<int>, std::shared_ptr<matrix>>>::pair_t_old atpair_R_mat_t;
+typedef atom_mapping<std::map<Vector3_Order<int>, std::shared_ptr<matrix>>>::pair_t_old atpair_R_mat_t;
 //! type alias of atom-pair mapping to complex matrix indexed by unit-cell vector
-typedef atom_mapping<map<Vector3_Order<int>, std::shared_ptr<ComplexMatrix>>>::pair_t_old
+typedef atom_mapping<std::map<Vector3_Order<int>, std::shared_ptr<ComplexMatrix>>>::pair_t_old
     atpair_R_cplx_mat_t;
 //! type alias of atom-pair mapping to complex matrix indexed by reciprocal vector
-typedef atom_mapping<map<Vector3_Order<double>, std::shared_ptr<ComplexMatrix>>>::pair_t_old
+typedef atom_mapping<std::map<Vector3_Order<double>, std::shared_ptr<ComplexMatrix>>>::pair_t_old
     atpair_k_cplx_mat_t;
 
 struct Cs_LRI
@@ -88,7 +88,7 @@ extern Cs_LRI Cs_shrinked_data;
 // extern map<Vector3_Order<double>, ComplexMatrix> Vq_block_loc;
 // extern map<Vector3_Order<double>, ComplexMatrix> Vq_cut_block_loc;
 
-void allreduce_2D_coulomb_to_atompair(map<Vector3_Order<double>, ComplexMatrix> &Vq_loc,
+void allreduce_2D_coulomb_to_atompair(std::map<Vector3_Order<double>, ComplexMatrix> &Vq_loc,
                                       atpair_k_cplx_mat_t &coulomb_mat, double threshold);
 void allreduce_atp_coulomb(atpair_k_cplx_mat_t &coulomb_mat);
 
