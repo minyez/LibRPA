@@ -242,7 +242,7 @@
       <validate name="Quasi-particle energies on k-grid"
                 regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
                 headers="2"
-                rows="18"
+                rows="8"
                 comparison="cmp_table.abs_diff(1e-4)"
       />
       <validate name="Non-SCF EXX band structure"

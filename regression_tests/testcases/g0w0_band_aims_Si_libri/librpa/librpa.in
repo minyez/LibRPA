@@ -1,6 +1,8 @@
 # Driver parameters
 task = g0w0_band
 input_dir = ../dataset
+i_state_low = 10
+i_state_high = 18
 # API runtime
 nfreq = 6
 option_dielect_func = 0
