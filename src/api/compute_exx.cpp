@@ -240,7 +240,7 @@ void librpa_get_exx_pot_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, co
     // TODO: make choosing blacs/non-blacs method a run time option
     pexx->reset_kspace();
     pexx->build_KS_band_blacs(pds->mf_band.get_eigenvectors(), pds->kfrac_band_list,
-                              pds->atoms, pds->blacs_h);
+                              pds->bvk_remap, pds->blacs_h);
     const int n_states_calc = i_state_high - i_state_low;
     const bool publish_local_values =
         opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;

@@ -27,6 +27,7 @@ PeriodicBoundaryData::PeriodicBoundaryData():
     this->latvec_array[0] = {this->latvec.e11,this->latvec.e12,this->latvec.e13};
     this->latvec_array[1] = {this->latvec.e21,this->latvec.e22,this->latvec.e23};
     this->latvec_array[2] = {this->latvec.e31,this->latvec.e32,this->latvec.e33};
+    this->set_period(1, 1, 1);
 
     // Gamma-only
     this->set_ibz_mapping({0}, {0});
@@ -76,12 +77,20 @@ void PeriodicBoundaryData::set_latvec_and_G(const std::vector<double> &latt_mat,
     this->G /= TWO_PI;
 }
 
-void PeriodicBoundaryData::set_kgrids_kvec(int nk1, int nk2, int nk3, const std::vector<double> &kvecs)
+void PeriodicBoundaryData::set_period(int nk1, int nk2, int nk3)
 {
+    if (nk1 <= 0 || nk2 <= 0 || nk3 <= 0)
+        throw LIBRPA_RUNTIME_ERROR("Invalid BvK period input");
+
     this->period = {nk1, nk2, nk3};
     this->period_array = {nk1, nk2, nk3};
-
     this->Rlist = construct_R_grid(this->period);
+}
+
+void PeriodicBoundaryData::set_kgrids_kvec(int nk1, int nk2, int nk3, const std::vector<double> &kvecs)
+{
+    this->set_period(nk1, nk2, nk3);
+
     klist.clear();
     kfrac_list.clear();
     int n_k_points = nk1 * nk2 * nk3;

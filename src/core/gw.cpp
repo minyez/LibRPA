@@ -965,14 +965,15 @@ void G0W0::build_spacetime(
 
 void G0W0::build_sigc_matrix_KS(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
                                 const std::vector<Vector3_Order<double>> &kfrac_target,
-                                const Atoms &geometry)
+                                const AtomPairBvKRemap<atom_t> &bvk_remap)
 {
     throw LIBRPA_RUNTIME_ERROR("Not implemented yet");
 }
 
 void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
                                       const std::vector<Vector3_Order<double>> &kfrac_target,
-                                      const Atoms &geometry, const BlacsCtxtHandler &blacs_ctxt_h)
+                                      const AtomPairBvKRemap<atom_t> &bvk_remap,
+                                      const BlacsCtxtHandler &blacs_ctxt_h)
 {
     assert(blacs_ctxt_h.comm() == this->comm_h.comm);
     assert(this->is_rspace_built_);
@@ -987,8 +988,6 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     const int n_bands = mf.get_n_bands();
     const int n_spins = mf.get_n_spins();
     const int n_spinor = mf.get_n_spinor();
-    const auto &period = pbc.period;
-    const auto &coord_frac = geometry.coords_frac;
 
     global::profiler.start("g0w0_build_sigc_KS");
 
@@ -1117,34 +1116,19 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                 {
                     const auto &sigc_IJ_R = sigc_is_f_IJ_R.at(isp).at(ispn_bra).at(ispn_ket).at(freq);
                     sigc_isp_local[freq] = {};
-                    // Convert each <I,<J, R>> pair to the nearest neighbour to speed up later Fourier transform
-                    // while keep the accuracy in further band interpolation.
-                    // Reuse the cleared-up sigc_I_JR_local object
-                    if (geometry.is_frac_set())
+                    // Convert each <I,<J, R>> pair to the configured BvK counterpart
+                    // to speed up later Fourier transform while keeping band interpolation accurate.
+                    // A missing remap entry means that R is already the desired counterpart.
+                    // NOTE: from redistribution, sigc_is_f_IJ_R is ensured to have all [spin][freq] keys,
+                    // but each value (atom-pair map) can be empty.
+                    for (const auto &[IJ, R_sigc]: sigc_IJ_R)
                     {
-                        const auto &coords_frac = geometry.coords_frac;
-                        // NOTE: from redistribution, sigc_is_f_IJ_R is ensured to have all [spin][freq] keys,
-                        // but each value (atom-pair map) can be empty.
-                        for (const auto &[IJ, R_sigc]: sigc_IJ_R)
+                        const auto &I = IJ.first;
+                        const auto &J = IJ.second;
+                        for (auto &[R, sigc]: R_sigc)
                         {
-                            const auto &I = IJ.first;
-                            const auto &J = IJ.second;
-                            const auto &coord_I = coords_frac.at(I);
-                            const auto &coord_J = coords_frac.at(J);
-                            for (auto &[R, sigc]: R_sigc)
-                            {
-                                const auto R_bvk = find_nearest_bvk_cell(coord_I, coord_J, R, period, pbc.latvec);
-                                sigc_isp_local[freq][I][J][R_bvk] = sigc;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        for (const auto &[IJ, R_sigc]: sigc_IJ_R)
-                        {
-                            const auto &I = IJ.first;
-                            const auto &J = IJ.second;
-                            sigc_isp_local[freq][I][J] = R_sigc;
+                            const auto *R_bvk = bvk_remap.find_R_bvk(IJ, R);
+                            sigc_isp_local[freq][I][J][R_bvk == nullptr ? R : *R_bvk] = sigc;
                         }
                     }
                 }
@@ -1322,14 +1306,14 @@ void G0W0::build_sigc_matrix_KS_kgrid()
 
 void G0W0::build_sigc_matrix_KS_band(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc,
                                      const std::vector<Vector3_Order<double>> &kfrac_band,
-                                     const Atoms &geometry)
+                                     const AtomPairBvKRemap<atom_t> &bvk_remap)
 {
     comm_h.barrier();
     if (comm_h.myid == 0)
     {
         librpa_int::global::lib_printf("build_sigc_matrix_KS_kgrid: constructing self-energy matrix for band k-path\n");
     }
-    this->build_sigc_matrix_KS(wfc, kfrac_band, geometry);
+    this->build_sigc_matrix_KS(wfc, kfrac_band, bvk_remap);
 }
 
 void G0W0::build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h)
@@ -1345,7 +1329,8 @@ void G0W0::build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h
 
 void G0W0::build_sigc_matrix_KS_band_blacs(
     const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc,
-    const std::vector<Vector3_Order<double>> &kfrac_band, const Atoms &geometry,
+    const std::vector<Vector3_Order<double>> &kfrac_band,
+    const AtomPairBvKRemap<atom_t> &bvk_remap,
     const BlacsCtxtHandler &blacs_ctxt_h)
 {
     comm_h.barrier();
@@ -1353,7 +1338,7 @@ void G0W0::build_sigc_matrix_KS_band_blacs(
     {
         librpa_int::global::lib_printf("build_sigc_matrix_KS_band: constructing self-energy matrix for band k-path with BLACS\n");
     }
-    this->build_sigc_matrix_KS_blacs(wfc, kfrac_band, geometry, blacs_ctxt_h);
+    this->build_sigc_matrix_KS_blacs(wfc, kfrac_band, bvk_remap, blacs_ctxt_h);
 }
 
 } // namespace librpa_int

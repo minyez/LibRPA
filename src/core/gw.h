@@ -32,11 +32,12 @@ private:
 
     void build_sigc_matrix_KS(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
                               const std::vector<Vector3_Order<double>> &kfrac_target,
-                              const Atoms &geometry);
+                              const AtomPairBvKRemap<atom_t> &bvk_remap);
 
     void build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
                                     const std::vector<Vector3_Order<double>> &kfrac_target,
-                                    const Atoms &geometry, const BlacsCtxtHandler &blacs_ctxt_h);
+                                    const AtomPairBvKRemap<atom_t> &bvk_remap,
+                                    const BlacsCtxtHandler &blacs_ctxt_h);
 
 public:
     const MeanField &mf;
@@ -102,11 +103,12 @@ public:
     void build_sigc_matrix_KS_kgrid();
     void build_sigc_matrix_KS_band(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_band,
                                    const std::vector<Vector3_Order<double>> &kfrac_band,
-                                   const Atoms &geometry);
+                                   const AtomPairBvKRemap<atom_t> &bvk_remap);
     void build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h);
     void build_sigc_matrix_KS_band_blacs(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_band,
                                          const std::vector<Vector3_Order<double>> &kfrac_band,
-                                         const Atoms &geometry, const BlacsCtxtHandler &blacs_ctxt_h);
+                                         const AtomPairBvKRemap<atom_t> &bvk_remap,
+                                         const BlacsCtxtHandler &blacs_ctxt_h);
 };
 
 } /* end of namespace librpa_int */

@@ -564,14 +564,14 @@ void Exx::build(const LibrpaParallelRouting routing,
 
 void Exx::build_KS(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
                    const std::vector<Vector3_Order<double>> &kfrac_target,
-                   const Atoms &geometry)
+                   const AtomPairBvKRemap<atom_t> &bvk_remap)
 {
     throw LIBRPA_RUNTIME_ERROR("not implemented");
 }
 
 void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
                          const std::vector<Vector3_Order<double>> &kfrac_target,
-                         const Atoms &geometry,
+                         const AtomPairBvKRemap<atom_t> &bvk_remap,
                          const BlacsCtxtHandler &blacs_ctxt_h)
 {
     using RI::Communicate_Tensors_Map_Judge::comm_map2_first;
@@ -740,28 +740,22 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
             throw LIBRPA_RUNTIME_ERROR("");
     }
 
-    global::ofs_myid << "coords_frac explicitly set? " << std::boolalpha << geometry.is_frac_set() << std::endl;
     global::ofs_myid << "period:      " << this->pbc.period << std::endl;
-    global::ofs_myid << "coords_frac: " << geometry.coords_frac << std::endl;
+    global::ofs_myid << "bvk_remap size: " << bvk_remap.size() << std::endl;
     global::ofs_myid << "latvec:      " << this->pbc.latvec << std::endl;
 
     auto shift_bvk = [&](const auto &map_orig, auto &map_shift)
     {
-        const auto &coords_frac = geometry.coords_frac;
-        const auto &period = this->pbc.period;
-
         for (const auto &[I, J_Rmat] : map_orig)
         {
-            const auto &coord_I = coords_frac.at(I);
-
             for (const auto &[J, R_mat] : J_Rmat)
             {
-                const auto &coord_J = coords_frac.at(J);
+                const atpair_t IJ{I, J};
 
                 for (const auto &[R, mat] : R_mat)
                 {
-                    const auto R_bvk = find_nearest_bvk_cell(coord_I, coord_J, R, period, pbc.latvec);
-                    map_shift[I][J][R_bvk] = mat;
+                    const auto *R_bvk = bvk_remap.find_R_bvk(IJ, R);
+                    map_shift[I][J][R_bvk == nullptr ? R : *R_bvk] = mat;
                 }
             }
         }
@@ -777,8 +771,8 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
             {
                 std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, Matd>>> exx_is_local;
                 std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, Matz>>> exx_is_local_cplx;
-                // Convert each <I,<J, R>> pair to the nearest neighbour to speed up later Fourier transform
-                // while keep the accuracy in further band interpolation.
+                // Convert each <I,<J, R>> pair to the configured BvK counterpart to speed up later
+                // Fourier transform while keeping the accuracy in further band interpolation.
                 // Reuse the cleared-up exx_I_JR_local object
                 auto orig = find_nested_int_map_3(exx_IJR, isp, ispn_bra, ispn_ket);
                 auto orig_cplx = find_nested_int_map_3(exx_IJR_cplx, isp, ispn_bra, ispn_ket);
@@ -786,20 +780,14 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                 {
                     if (orig_cplx != nullptr)
                     {
-                        if (geometry.is_frac_set())
-                            shift_bvk(*orig_cplx , exx_is_local_cplx);
-                        else
-                            exx_is_local_cplx = *orig_cplx;
+                        shift_bvk(*orig_cplx , exx_is_local_cplx);
                     }
                 }
                 else
                 {
                     if (orig != nullptr)
                     {
-                        if (geometry.is_frac_set())
-                            shift_bvk(*orig, exx_is_local);
-                        else
-                            exx_is_local = *orig;
+                        shift_bvk(*orig, exx_is_local);
                     }
                 }
 
@@ -1006,9 +994,10 @@ void Exx::build_KS_kgrid()
 // }
 
 void Exx::build_KS_band(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_band,
-                        const std::vector<Vector3_Order<double>> &kfrac_band, const Atoms &geometry)
+                        const std::vector<Vector3_Order<double>> &kfrac_band,
+                        const AtomPairBvKRemap<atom_t> &bvk_remap)
 {
-    this->build_KS(wfc_band, kfrac_band, geometry);
+    this->build_KS(wfc_band, kfrac_band, bvk_remap);
 }
 
 void Exx::build_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h)
@@ -1022,10 +1011,11 @@ void Exx::build_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h)
 // }
 
 void Exx::build_KS_band_blacs(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_band,
-                              const std::vector<Vector3_Order<double>> &kfrac_band, const Atoms &geometry,
+                              const std::vector<Vector3_Order<double>> &kfrac_band,
+                              const AtomPairBvKRemap<atom_t> &bvk_remap,
                               const BlacsCtxtHandler &blacs_ctxt_h)
 {
-    this->build_KS_blacs(wfc_band, kfrac_band, geometry, blacs_ctxt_h);
+    this->build_KS_blacs(wfc_band, kfrac_band, bvk_remap, blacs_ctxt_h);
 }
 
 void Exx::reset_rspace()

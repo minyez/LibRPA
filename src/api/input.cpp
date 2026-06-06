@@ -16,6 +16,18 @@
 #include "../utils/profiler.h"
 #include "instance_manager.h"
 
+static void rebuild_bvk_remap_if_ready(librpa_int::Dataset &ds)
+{
+    if (ds.pbc.is_latt_set() && ds.atoms.is_set() && ds.atoms.is_frac_set() && !ds.pbc.Rlist.empty())
+    {
+        ds.bvk_remap.build(ds.atoms.coords_frac, ds.pbc.Rlist, ds.pbc.period, ds.pbc.latvec);
+    }
+    else
+    {
+        ds.bvk_remap.clear();
+    }
+}
+
 // External headers and stubs
 #ifdef LIBRPA_USE_LIBRI
 #include <initializer_list>
@@ -348,8 +360,8 @@ void librpa_set_latvec_and_G(LibrpaHandler* h, const double lat_mat[9], const do
     if (atoms.size() > 0)
     {
         atoms.set({}, {}, pbc.latvec);
-        pds->bvk_remap.build(atoms.coords_frac, pbc.Rlist, pbc.period, pbc.latvec);
     }
+    rebuild_bvk_remap_if_ready(*pds);
 
     profiler.stop(tname);
 }
@@ -396,10 +408,6 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
             }
         }
         pds->comm_h.barrier();
-        if (pds->bvk_remap.empty())
-        {
-            pds->bvk_remap.build(atoms.coords_frac, pbc.Rlist, pbc.period, pbc.latvec);
-        }
     }
     else
     {
@@ -418,6 +426,7 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
         }
         pds->comm_h.barrier();
     }
+    rebuild_bvk_remap_if_ready(*pds);
 
     profiler.stop(tname);
 }
@@ -439,6 +448,7 @@ void librpa_set_kgrids_kvec(LibrpaHandler* h, int nk1, int nk2, int nk3, const d
     std::vector<double> v_kvecs(kvecs, kvecs + 3 * nkpts);
 
     pbc.set_kgrids_kvec(nk1, nk2, nk3, v_kvecs);
+    rebuild_bvk_remap_if_ready(*pds);
 
     pds->comm_h.barrier();
     if (pds->comm_h.is_root())

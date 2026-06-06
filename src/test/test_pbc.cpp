@@ -1,4 +1,5 @@
 #include "../core/pbc.h"
+#include <array>
 #include <cassert>
 #include <cstddef>
 
@@ -30,6 +31,19 @@ static void test_get_R_index()
 static void test_periodic_boundary_data()
 {
     PeriodicBoundaryData pbc;
+    const Vector3_Order<int> gamma_period{1, 1, 1};
+    const std::array<int, 3> gamma_period_array{1, 1, 1};
+    assert(pbc.period == gamma_period);
+    assert(pbc.period_array == gamma_period_array);
+    assert(pbc.Rlist == construct_R_grid(pbc.period));
+
+    pbc.set_period(2, 3, 1);
+    const Vector3_Order<int> period{2, 3, 1};
+    const std::array<int, 3> period_array{2, 3, 1};
+    assert(pbc.period == period);
+    assert(pbc.period_array == period_array);
+    assert(pbc.Rlist == construct_R_grid(pbc.period));
+
     pbc.set_latvec_and_G({1, 2, 3, 4, 5, 6, 7, 8, 9},
                          {1, 2, 3, 4, 5, 6, 7, 8, 9});
 }

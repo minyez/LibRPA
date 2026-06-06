@@ -25,10 +25,11 @@ class Exx
 
         void build_KS(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
                       const std::vector<Vector3_Order<double>> &kfrac_target,
-                      const Atoms &geometry);
+                      const AtomPairBvKRemap<atom_t> &bvk_remap);
         void build_KS_blacs(
             const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
-            const std::vector<Vector3_Order<double>> &kfrac_target, const Atoms &geometry,
+            const std::vector<Vector3_Order<double>> &kfrac_target,
+            const AtomPairBvKRemap<atom_t> &bvk_remap,
             const BlacsCtxtHandler &blacs_ctxt_h);
 
     public:
@@ -69,12 +70,12 @@ class Exx
         // void build_KS0_kgrid();
         void build_KS_band(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_band,
                            const std::vector<Vector3_Order<double>> &kfrac_band,
-                           const Atoms &geometry);
+                           const AtomPairBvKRemap<atom_t> &bvk_remap);
         void build_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h);
         // void build_KS0_kgrid_blacs();
         void build_KS_band_blacs(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_band,
                                  const std::vector<Vector3_Order<double>> &kfrac_band,
-                                 const Atoms &geometry,
+                                 const AtomPairBvKRemap<atom_t> &bvk_remap,
                                  const BlacsCtxtHandler &blacs_ctxt_h);
         void reset_rspace();
         void reset_kspace();

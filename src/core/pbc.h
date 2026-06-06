@@ -57,6 +57,8 @@ public:
     //! Set lattice and reciprocal lattice vectors. The parsed rec_mat should be in Bohr^-1 unit. No consistency check.
     void set_latvec_and_G(const std::vector<double> &latt_mat,
                           const std::vector<double> &recp_mat);
+    //! Set BvK periodicity and rebuild the corresponding R-grid.
+    void set_period(int nk1, int nk2, int nk3);
     //! Set the full k-points list. kvecs should be in Bohr^-1 unit.
     void set_kgrids_kvec(int nk1, int nk2, int nk3, const std::vector<double> &kvecs);
     //! Set the mapping of full k-points to irreducible k-points
@@ -153,6 +155,7 @@ public:
     std::size_t size() const { return remap_.size(); }
     bool empty() const { return remap_.empty(); }
     bool is_empty() const { return remap_.empty(); }
+    void clear() { remap_.clear(); }
     const_iterator begin() const { return remap_.begin(); }
     const_iterator end() const { return remap_.end(); }
 
