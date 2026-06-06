@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <map>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -93,9 +94,9 @@ std::vector<Vector3_Order<int>> find_nearest_bvk_cells(const Vector3<double> &co
                                                        const Vector3_Order<int> &period,
                                                        const Matrix3 &latvec);
 
-// Remap parsed lattice vectors to their nearest BvK counterparts for each atom pair.
-// force_symmetry: (I, J, R) and (J, I, -R) must exist in pair in the returned remapping.
-// Exception: in case I=J, 
+// Remap parsed lattice vectors to their BvK counterparts for each atom pair.
+// remap_convention = 0: choose one nearest BvK cell.
+// remap_convention = 1: keep all nearest BvK cells sharing the same minimal distance.
 template <typename AtomT, typename AtomPairT = std::pair<AtomT, AtomT>>
 class AtomPairBvKRemap
 {
@@ -103,7 +104,8 @@ public:
     using atom_type = AtomT;
     using atom_pair_type = AtomPairT;
     using R_type = Vector3_Order<int>;
-    using remap_type = std::map<atom_pair_type, std::map<R_type, R_type>>;
+    using R_remap_type = std::vector<R_type>;
+    using remap_type = std::map<atom_pair_type, std::map<R_type, R_remap_type>>;
     using const_iterator = typename remap_type::const_iterator;
 
     AtomPairBvKRemap() = default;
@@ -112,34 +114,46 @@ public:
     AtomPairBvKRemap(const std::map<atom_type, CoordT> &coord_fracs,
                      const std::vector<R_type> &Rs,
                      const R_type &period, const Matrix3 &latvec,
-                     bool force_symmetry = false)
+                     int remap_convention = 0)
     {
-        this->build(coord_fracs, Rs, period, latvec, force_symmetry);
+        this->build(coord_fracs, Rs, period, latvec, remap_convention);
     }
 
     template <typename CoordT>
     void build(const std::map<atom_type, CoordT> &coord_fracs,
                const std::vector<R_type> &Rs,
                const R_type &period, const Matrix3 &latvec,
-               bool force_symmetry = false)
+               int remap_convention = 0)
     {
         remap_.clear();
+        if (remap_convention != 0 && remap_convention != 1)
+            throw std::runtime_error("Invalid BvK remap convention");
+
         for (const auto &[I, coord_frac_I]: coord_fracs)
         {
             for (const auto &[J, coord_frac_J]: coord_fracs)
             {
-                auto &remap_IJ = remap_[atom_pair_type{I, J}];
                 for (const auto &R: Rs)
                 {
-                    auto R_bvk = find_nearest_bvk_cell(coord_frac_I, coord_frac_J, R, period, latvec);
-                    if (R_bvk != R) remap_IJ[R] = R_bvk;
+                    R_remap_type R_bvks;
+                    if (remap_convention == 0)
+                    {
+                        R_bvks.push_back(find_nearest_bvk_cell(coord_frac_I, coord_frac_J, R, period, latvec));
+                    }
+                    else
+                    {
+                        R_bvks = find_nearest_bvk_cells(coord_frac_I, coord_frac_J, R, period, latvec);
+                    }
+
+                    if (R_bvks.size() == 1 && R_bvks.front() == R) continue;
+                    remap_[atom_pair_type{I, J}][R] = std::move(R_bvks);
                 }
             }
         }
     }
 
     const remap_type &data() const { return remap_; }
-    const R_type *find_R_bvk(const atom_pair_type &atom_pair, const R_type &R) const
+    const R_remap_type *find_R_bvk(const atom_pair_type &atom_pair, const R_type &R) const
     {
         const auto it_atom_pair = remap_.find(atom_pair);
         if (it_atom_pair == remap_.cend()) return nullptr;
@@ -149,7 +163,7 @@ public:
 
         return &it_R->second;
     }
-    const std::map<R_type, R_type> &at(const atom_pair_type &atom_pair) const { return remap_.at(atom_pair); }
+    const std::map<R_type, R_remap_type> &at(const atom_pair_type &atom_pair) const { return remap_.at(atom_pair); }
     std::size_t size() const { return remap_.size(); }
     bool empty() const { return remap_.empty(); }
     bool is_empty() const { return remap_.empty(); }

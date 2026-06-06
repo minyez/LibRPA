@@ -1,6 +1,8 @@
 #include "pbc.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <numeric>
 #include <stdexcept>
 
@@ -255,7 +257,37 @@ std::vector<Vector3_Order<int>> find_nearest_bvk_cells(const Vector3<double> &co
                                                        const Vector3_Order<int> &period,
                                                        const Matrix3 &latvec)
 {
-    throw LIBRPA_RUNTIME_ERROR("NOT IMPLEMENTED");
+    auto distsq = std::numeric_limits<double>::max();
+    std::vector<Vector3_Order<int>> R_bvks;
+    Vector3<int> R_IJ;
+    const auto &R = bvk_direct;
+    const auto diff_IJ0 = coord_frac_I - coord_frac_J;
+    for (int i = -1; i < 2; i++)
+    {
+        R_IJ.x = i * period.x + R.x;
+        for (int j = -1; j < 2; j++)
+        {
+            R_IJ.y = j * period.y + R.y;
+            for (int k = -1; k < 2; k++)
+            {
+                R_IJ.z = k * period.z + R.z;
+                const auto diff = (diff_IJ0 - Vector3<double>(R_IJ.x, R_IJ.y, R_IJ.z)) * latvec;
+                const auto norm2 = diff.norm2();
+                const auto tol = 1.0e-10 * std::max(1.0, std::max(std::abs(norm2), std::abs(distsq)));
+                if (norm2 + tol < distsq)
+                {
+                    distsq = norm2;
+                    R_bvks.clear();
+                    R_bvks.emplace_back(R_IJ);
+                }
+                else if (std::abs(norm2 - distsq) <= tol)
+                {
+                    R_bvks.emplace_back(R_IJ);
+                }
+            }
+        }
+    }
+    return R_bvks;
 }
 
 // int kv_nmp[3] = {1, 1, 1};

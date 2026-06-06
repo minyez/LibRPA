@@ -746,16 +746,41 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
 
     auto shift_bvk = [&](const auto &map_orig, auto &map_shift)
     {
+        auto add_mat = [](auto &R_mat_shift, const Vector3_Order<int> &R_bvk,
+                          const auto &mat, const double weight)
+        {
+            auto mat_weighted = mat.copy();
+            mat_weighted *= weight;
+            auto [it, inserted] = R_mat_shift.emplace(R_bvk, mat_weighted);
+            if (!inserted) it->second += mat_weighted;
+        };
+
         for (const auto &[I, J_Rmat] : map_orig)
         {
             for (const auto &[J, R_mat] : J_Rmat)
             {
                 const atpair_t IJ{I, J};
+                auto &R_mat_shift = map_shift[I][J];
 
                 for (const auto &[R, mat] : R_mat)
                 {
-                    const auto *R_bvk = bvk_remap.find_R_bvk(IJ, R);
-                    map_shift[I][J][R_bvk == nullptr ? R : *R_bvk] = mat;
+                    const auto *R_bvks = bvk_remap.find_R_bvk(IJ, R);
+                    if (R_bvks == nullptr || R_bvks->empty())
+                    {
+                        R_mat_shift[R] = mat;
+                    }
+                    else if (R_bvks->size() == 1)
+                    {
+                        R_mat_shift[R_bvks->front()] = mat;
+                    }
+                    else
+                    {
+                        const auto weight = 1.0 / static_cast<double>(R_bvks->size());
+                        for (const auto &R_bvk: *R_bvks)
+                        {
+                            add_mat(R_mat_shift, R_bvk, mat, weight);
+                        }
+                    }
                 }
             }
         }

@@ -1,4 +1,5 @@
 #include "../core/pbc.h"
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstddef>
@@ -74,11 +75,22 @@ static void test_atom_pair_bvk_remap()
 
     const auto *R_bvk = remap.find_R_bvk(pair01, R1);
     assert(R_bvk != nullptr);
-    assert(*R_bvk == Rm2);
+    assert(R_bvk->size() == 1);
+    assert(R_bvk->front() == Rm2);
     assert(remap.find_R_bvk(pair00, R1) == nullptr);
     assert(remap.find_R_bvk(pair01, R0) == nullptr);
     assert(remap.find_R_bvk(pair10, R1) == nullptr);
     assert(remap.find_R_bvk({2, 0}, R1) == nullptr);
+
+    const Vector3_Order<int> period_2{2, 2, 2};
+    const Vector3_Order<int> Rm1{-1, 0, 0};
+    const AtomPairBvKRemap<atom_t, atpair_t> remap_ws(coord_fracs, Rs, period_2, latvec, 1);
+    const auto *R_bvks_ws = remap_ws.find_R_bvk(pair00, R1);
+    assert(R_bvks_ws != nullptr);
+    assert(R_bvks_ws->size() == 2);
+    assert(std::find(R_bvks_ws->cbegin(), R_bvks_ws->cend(), R1) != R_bvks_ws->cend());
+    assert(std::find(R_bvks_ws->cbegin(), R_bvks_ws->cend(), Rm1) != R_bvks_ws->cend());
+    assert(remap_ws.find_R_bvk(pair00, R0) == nullptr);
 }
 
 int main (int argc, char *argv[])

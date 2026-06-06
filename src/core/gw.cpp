@@ -1116,6 +1116,15 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                 {
                     const auto &sigc_IJ_R = sigc_is_f_IJ_R.at(isp).at(ispn_bra).at(ispn_ket).at(freq);
                     sigc_isp_local[freq] = {};
+                    auto add_sigc = [](auto &R_sigc_shift, const Vector3_Order<int> &R_bvk,
+                                       const auto &sigc, const double weight)
+                    {
+                        auto sigc_weighted = sigc.copy();
+                        sigc_weighted *= weight;
+                        auto [it, inserted] = R_sigc_shift.emplace(R_bvk, sigc_weighted);
+                        if (!inserted) it->second += sigc_weighted;
+                    };
+
                     // Convert each <I,<J, R>> pair to the configured BvK counterpart
                     // to speed up later Fourier transform while keeping band interpolation accurate.
                     // A missing remap entry means that R is already the desired counterpart.
@@ -1125,10 +1134,26 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                     {
                         const auto &I = IJ.first;
                         const auto &J = IJ.second;
+                        auto &R_sigc_shift = sigc_isp_local[freq][I][J];
                         for (auto &[R, sigc]: R_sigc)
                         {
-                            const auto *R_bvk = bvk_remap.find_R_bvk(IJ, R);
-                            sigc_isp_local[freq][I][J][R_bvk == nullptr ? R : *R_bvk] = sigc;
+                            const auto *R_bvks = bvk_remap.find_R_bvk(IJ, R);
+                            if (R_bvks == nullptr || R_bvks->empty())
+                            {
+                                R_sigc_shift[R] = sigc;
+                            }
+                            else if (R_bvks->size() == 1)
+                            {
+                                R_sigc_shift[R_bvks->front()] = sigc;
+                            }
+                            else
+                            {
+                                const auto weight = 1.0 / static_cast<double>(R_bvks->size());
+                                for (const auto &R_bvk: *R_bvks)
+                                {
+                                    add_sigc(R_sigc_shift, R_bvk, sigc, weight);
+                                }
+                            }
                         }
                     }
                 }
