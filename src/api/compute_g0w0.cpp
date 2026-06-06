@@ -525,9 +525,11 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
 
     profiler.start("g0w0_sigc_rotate_KS", "Correlation self-energy in K-S space");
     pds->p_g0w0->reset_kspace();
+    const auto bvk_remap = librpa_int::api::build_band_bvk_remap(
+        pds->atoms, pds->pbc, opts.option_bvk_remap);
     pds->p_g0w0->build_sigc_matrix_KS_band_blacs(pds->mf_band.get_eigenvectors(),
                                                  pds->kfrac_band_list,
-                                                 pds->bvk_remap, pds->blacs_h);
+                                                 bvk_remap, pds->blacs_h);
     profiler.stop("g0w0_sigc_rotate_KS");
 
     std::vector<int> iks_collect;

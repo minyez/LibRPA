@@ -40,6 +40,7 @@ void librpa_init_options(LibrpaOptions *opts)
 
     opts->n_bands_chi0 = -1;
     opts->n_bands_sigc = -1;
+    opts->option_bvk_remap = 0;
 
     opts->gf_threshold = 0.0e0;
     opts->use_scalapack_ecrpa = LIBRPA_SWITCH_ON;

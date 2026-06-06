@@ -113,6 +113,14 @@ typedef struct
     //! Maximal number of bands for computing correlation self-energy
     int n_bands_sigc;
 
+    //! BvK remapping convention for band interpolation.
+    /*!
+     * Available values:
+     * - 0: map each atom-pair R to one nearest BvK image.
+     * - 1: Wigner-Seitz remapping; split over all nearest BvK images at equal distance.
+     */
+    int option_bvk_remap;
+
     /* ============================================================================= */
     /* RPA specific */
 

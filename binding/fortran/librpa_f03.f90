@@ -152,6 +152,7 @@ module librpa_f03
 
       integer(c_int) :: n_bands_chi0
       integer(c_int) :: n_bands_sigc
+      integer(c_int) :: option_bvk_remap
 
       ! RPA specific
       real(c_double) :: gf_threshold
@@ -243,6 +244,8 @@ module librpa_f03
       integer :: n_bands_chi0
       !> Experimental: maximum number of bands for correlation self-energy construction.
       integer :: n_bands_sigc
+      !> BvK remapping option for band interpolation: 0 single nearest image, 1 Wigner-Seitz.
+      integer :: option_bvk_remap
       !> Real-space Green's function screening threshold for response function.
       real(dp) :: gf_threshold
       !> Use ScaLAPACK to calculate \f$E_\text{c}^{\text{RPA}}\f$.
@@ -961,6 +964,7 @@ contains
       call sync_opt(opts%use_fullcoul_wc,         opts%opts_c%use_fullcoul_wc,         direction)
       call sync_opt(opts%n_bands_chi0,            opts%opts_c%n_bands_chi0,            direction)
       call sync_opt(opts%n_bands_sigc,            opts%opts_c%n_bands_sigc,            direction)
+      call sync_opt(opts%option_bvk_remap,        opts%opts_c%option_bvk_remap,        direction)
       call sync_opt(opts%gf_threshold,            opts%opts_c%gf_threshold,            direction)
       call sync_opt(opts%use_scalapack_ecrpa,     opts%opts_c%use_scalapack_ecrpa,     direction)
       call sync_opt(opts%use_shrink_abfs,         opts%opts_c%use_shrink_abfs,         direction)

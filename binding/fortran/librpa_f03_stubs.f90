@@ -149,6 +149,8 @@ module librpa_f03
       integer :: n_bands_chi0
       !> Experimental: maximum number of bands for correlation self-energy construction.
       integer :: n_bands_sigc
+      !> BvK remapping option for band interpolation: 0 single nearest image, 1 Wigner-Seitz.
+      integer :: option_bvk_remap
       !> Real-space Green's function screening threshold for response function.
       real(dp) :: gf_threshold
       !> Use ScaLAPACK to calculate \f$E_\text{c}^{\text{RPA}}\f$.
