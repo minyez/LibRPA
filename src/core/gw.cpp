@@ -8,8 +8,10 @@
 #include <functional>
 #include <iomanip>
 #include <map>
+#include <numeric>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <vector>
 
 #include "../io/fs.h"
@@ -18,12 +20,14 @@
 #include "../io/stl_io_helper.h"
 // #include "../math/utils_matrix_m.h"
 #include "../math/utils_matrix_m_mpi.h"
+#include "../math/utils_matrix_mpi.h"
 #include "../mpi/global_mpi.h"
 #include "../utils/constants.h"
 #include "../utils/error.h"
 #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
 #include "../utils/utils_mem.h"
+#include "abacus_symmetry.h"
 #include "atom.h"
 #include "atomic_basis.h"
 #include "chi0.h"
@@ -38,6 +42,7 @@
 #ifdef LIBRPA_USE_LIBRI
 #include <RI/global/Tensor.h>
 #include <RI/physics/GW.h>
+#include <RI/physics/symmetry/Symmetry_Filter.h>
 using RI::Tensor;
 using RI::Communicate_Tensors_Map_Judge::comm_map2_first;
 #endif
@@ -122,6 +127,221 @@ std::string make_sigc_ks_imagfreq_band_stem(const std::string &output_dir, const
        << std::setfill('0') << std::setw(5) << index;
     return ss.str();
 }
+
+std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
+{
+    std::map<atom_t, size_t> atom_nw;
+    for (atom_t atom = 0; atom != as_atom(atbasis.n_atoms); ++atom)
+    {
+        atom_nw[atom] = atbasis.get_atom_nb(atom);
+    }
+    return atom_nw;
+}
+
+bool use_abacus_ibz_root_projection(
+    const PeriodicBoundaryData& pbc,
+    const int n_target_kpoints,
+    const int n_meanfield_kpoints)
+{
+    const auto& ctx = LIBRPA::abacus_symmetry_ctx;
+    return ctx.available && !ctx.kstars.empty()
+        && pbc.klist.size() < static_cast<std::size_t>(pbc.get_n_cells_bvk())
+        && ctx.kstars.size() == static_cast<std::size_t>(n_meanfield_kpoints)
+        && n_target_kpoints == n_meanfield_kpoints;
+}
+
+std::map<std::pair<int, int>, std::set<std::array<int, 3>>>
+convert_abacus_irreducible_sector_to_libri_gw(
+    const LIBRPA::abacus_irreducible_sector_t& irreducible_sector,
+    const std::array<int, 3>& period)
+{
+    auto canonicalize_r = [&period](const std::array<int, 3>& r) {
+        auto centered_mod = [](const int value, const int cell_period) {
+            if (cell_period <= 0)
+            {
+                return value;
+            }
+            return (value % cell_period + 3 * cell_period / 2) % cell_period
+                - cell_period / 2;
+        };
+        return std::array<int, 3>{centered_mod(r[0], period[0]),
+                                  centered_mod(r[1], period[1]),
+                                  centered_mod(r[2], period[2])};
+    };
+
+    std::map<std::pair<int, int>, std::set<std::array<int, 3>>> libri_sector;
+    for (const auto& pair_Rs : irreducible_sector)
+    {
+        const std::pair<int, int> atom_pair{
+            static_cast<int>(pair_Rs.first.first),
+            static_cast<int>(pair_Rs.first.second)};
+        for (const auto& r : pair_Rs.second)
+        {
+            libri_sector[atom_pair].insert(canonicalize_r(r));
+        }
+    }
+    return libri_sector;
+}
+
+#ifdef LIBRPA_USE_LIBRI
+template <typename TA, typename TC, typename Tdata>
+class OutputOnlyFilter_GW_Symmetry : public RI::Filter_Atom<TA, std::pair<TA, TC>>
+{
+  public:
+    using TAC = std::pair<TA, TC>;
+
+    OutputOnlyFilter_GW_Symmetry(
+        const TC& period,
+        const std::map<std::pair<TA, TA>, std::set<TC>>& irreducible_sector)
+        : symmetry_(period, irreducible_sector)
+    {
+    }
+
+    bool filter_for32(const RI::Label::ab_ab& label,
+                      const TAC& A1,
+                      const TAC&,
+                      const TAC& A3) const override
+    {
+        switch (label)
+        {
+            case RI::Label::ab_ab::a0b0_a1b1:
+                return !this->symmetry_.in_irreducible_sector(A1, A3);
+            default:
+                return false;
+        }
+    }
+
+    bool filter_for32(const RI::Label::ab_ab& label,
+                      const TAC& A1,
+                      const TA&,
+                      const TAC& A3) const override
+    {
+        switch (label)
+        {
+            case RI::Label::ab_ab::a0b0_a1b2:
+                return !this->symmetry_.in_irreducible_sector(A3, A1);
+            default:
+                return false;
+        }
+    }
+
+    bool filter_for32(const RI::Label::ab_ab& label,
+                      const TA& A1,
+                      const TAC&,
+                      const TAC& A3) const override
+    {
+        switch (label)
+        {
+            case RI::Label::ab_ab::a0b0_a2b1:
+            case RI::Label::ab_ab::a0b0_a2b2:
+                return !this->symmetry_.in_irreducible_sector(A1, A3);
+            default:
+                return false;
+        }
+    }
+
+  private:
+    RI::Symmetry_Filter<TA, TC, Tdata> symmetry_;
+};
+
+template <typename Tdata>
+ComplexMatrix convert_libri_tensor_to_complex_matrix_gw(
+    const RI::Tensor<Tdata>& tensor,
+    const int nrows,
+    const int ncols)
+{
+    ComplexMatrix matrix(nrows, ncols);
+    for (int row = 0; row != nrows; ++row)
+    {
+        for (int col = 0; col != ncols; ++col)
+        {
+            if constexpr (std::is_same<Tdata, std::complex<double>>::value)
+            {
+                matrix(row, col) = tensor(row, col);
+            }
+            else
+            {
+                matrix(row, col) = std::complex<double>(tensor(row, col), 0.0);
+            }
+        }
+    }
+    return matrix;
+}
+
+template <typename Tdata>
+RI::Tensor<Tdata> convert_complex_matrix_to_libri_tensor_gw(
+    const ComplexMatrix& matrix)
+{
+    RI::Tensor<Tdata> tensor(
+        {static_cast<std::size_t>(matrix.nr), static_cast<std::size_t>(matrix.nc)});
+    for (int row = 0; row != matrix.nr; ++row)
+    {
+        for (int col = 0; col != matrix.nc; ++col)
+        {
+            if constexpr (std::is_same<Tdata, std::complex<double>>::value)
+            {
+                tensor(row, col) = matrix(row, col);
+            }
+            else
+            {
+                tensor(row, col) = matrix(row, col).real();
+            }
+        }
+    }
+    return tensor;
+}
+
+template <typename Tdata>
+std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>>
+restore_abacus_ao_rspace_tensor_map_gw(
+    const std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>>& tensors_ir,
+    const LIBRPA::AbacusSymmetryContext& symmetry_ctx,
+    const LIBRPA::abacus_rspace_sector_stars_t& sector_stars,
+    const AtomicBasis& atbasis_wfc)
+{
+    std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> tensors_full;
+    for (const auto& i_entry : tensors_ir)
+    {
+        const auto ir_I = static_cast<atom_t>(i_entry.first);
+        for (const auto& jr_entry : i_entry.second)
+        {
+            const auto ir_J = static_cast<atom_t>(jr_entry.first.first);
+            const Vector3_Order<int> ir_R{
+                jr_entry.first.second[0], jr_entry.first.second[1], jr_entry.first.second[2]};
+            const auto pair_iter = sector_stars.find({ir_I, ir_J});
+            if (pair_iter == sector_stars.end() || pair_iter->second.count(ir_R) == 0)
+            {
+                std::ostringstream oss;
+                oss << "Failed to match a symmetry-filtered GW self-energy block with the"
+                    << " ABACUS irreducible-sector restore map for I=" << ir_I
+                    << " J=" << ir_J << " R=(" << ir_R.x << "," << ir_R.y << ","
+                    << ir_R.z << ")";
+                throw std::runtime_error(oss.str());
+            }
+
+            const auto nao_I = atbasis_wfc.get_atom_nb(ir_I);
+            const auto nao_J = atbasis_wfc.get_atom_nb(ir_J);
+            const ComplexMatrix sigma_ir =
+                convert_libri_tensor_to_complex_matrix_gw(jr_entry.second, nao_I, nao_J);
+            for (const auto& restore_member : pair_iter->second.at(ir_R))
+            {
+                const ComplexMatrix sigma_full = LIBRPA::rotate_abacus_rspace_matrix(
+                    symmetry_ctx, restore_member.isym, ir_I, ir_J, sigma_ir);
+                auto& target = tensors_full[restore_member.full_atom_pair.first][{
+                    static_cast<int>(restore_member.full_atom_pair.second),
+                    {restore_member.full_R.x, restore_member.full_R.y, restore_member.full_R.z}}];
+                if (!target.empty())
+                {
+                    throw std::runtime_error(
+                        "Duplicate full-sector GW self-energy block appears during ABACUS symmetry restore");
+                }
+                target = convert_complex_matrix_to_libri_tensor_gw<Tdata>(sigma_full);
+            }
+        }
+    }
+    return tensors_full;
+}
+#endif
 
 template <typename T>
 bool is_effectively_zero_matrix(const matrix_m<T> &mat,
@@ -290,6 +510,7 @@ static void build_gf_libri_kserial(
     const MeanField &mf,
     const AtomicBasis &atbasis_wfc,
     int ispin, int ispinor_bra, int ispinor_ket,
+    const PeriodicBoundaryData &pbc,
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<double> &taus,
     const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs,
@@ -301,7 +522,18 @@ static void build_gf_libri_kserial(
     {
         Rs_local.insert(IJR.second);
     }
-    auto gf = mf.get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, {Rs_local.cbegin(), Rs_local.cend()});
+    const std::vector<Vector3_Order<int>> Rs_vec{Rs_local.cbegin(), Rs_local.cend()};
+    const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const bool restore_abacus_kstars = can_restore_abacus_kstar_meanfield(
+        mf, kfrac_list, atom_nw, LIBRPA::abacus_symmetry_ctx.input_coord_frac);
+    const auto member_kfrac_targets = restore_abacus_kstars
+        ? build_abacus_kstar_member_kfrac_targets(pbc)
+        : abacus_kstar_member_kfrac_targets_t{};
+    auto gf = restore_abacus_kstars
+        ? get_abacus_restored_gf_cplx_imagtimes_Rs(
+              mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec, atom_nw,
+              LIBRPA::abacus_symmetry_ctx.input_coord_frac, -1, &member_kfrac_targets)
+        : mf.get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec);
     // global::ofs_myid << "gf " << gf << std::endl;
     tau_gf_libri.clear();
     // TODO: enable threading below
@@ -683,6 +915,52 @@ void G0W0::build_spacetime(
         gw_libri.set_parallel(comm_h.comm, atoms_pos, pbc.latvec_array, pbc.period_array);
         gw_libri.set_Cs(LRI_Cs.data_libri, this->libri_threshold_C);
     }
+
+    const auto& symmetry_ctx = LIBRPA::abacus_symmetry_ctx;
+    const bool use_abacus_sigc_symmetry =
+        symmetry_ctx.available
+        && this->pbc.klist.size() < static_cast<std::size_t>(this->pbc.get_n_cells_bvk())
+        && symmetry_ctx.has_ao_shell_layout()
+        && !symmetry_ctx.irreducible_sector.empty()
+        && !symmetry_ctx.rspace_operations.empty()
+        && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(natom)
+        && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(natom);
+    const auto libri_sigc_irreducible_sector =
+        use_abacus_sigc_symmetry
+            ? convert_abacus_irreducible_sector_to_libri_gw(
+                  symmetry_ctx.irreducible_sector, this->pbc.period_array)
+            : std::map<std::pair<int, int>, std::set<std::array<int, 3>>>{};
+    const bool restore_abacus_sigc_output = use_abacus_sigc_symmetry;
+    LIBRPA::abacus_rspace_sector_stars_t abacus_sector_stars;
+    if (use_abacus_sigc_symmetry)
+    {
+        LIBRPA::build_abacus_rspace_sector_stars(
+            symmetry_ctx, symmetry_ctx.input_coord_frac, this->pbc.period, pbc.Rlist,
+            abacus_sector_stars, nullptr);
+        gw_libri.set_symmetry(false, {});
+        gw_libri_cplx.set_symmetry(false, {});
+        if (use_complex_tensor)
+        {
+            global::lib_printf(
+                "Reducing GW real-space self-energy outputs with ABACUS irreducible sectors\n");
+            gw_libri_cplx.lri.filter_atom =
+                std::make_shared<OutputOnlyFilter_GW_Symmetry<int, std::array<int, 3>, cplxdb>>(
+                    gw_libri_cplx.lri.period, libri_sigc_irreducible_sector);
+        }
+        else
+        {
+            global::lib_printf(
+                "Reducing GW real-space self-energy outputs with ABACUS irreducible sectors\n");
+            gw_libri.lri.filter_atom =
+                std::make_shared<OutputOnlyFilter_GW_Symmetry<int, std::array<int, 3>, double>>(
+                    gw_libri.lri.period, libri_sigc_irreducible_sector);
+        }
+    }
+    else
+    {
+        gw_libri.set_symmetry(false, {});
+        gw_libri_cplx.set_symmetry(false, {});
+    }
     profiler.stop("g0w0_build_spacetime_2");
     lib_printf_root("Time for LibRI G0W0 setup (seconds, Wall/CPU): %f %f\n",
             profiler.get_wall_time_last("g0w0_build_spacetime_2"),
@@ -773,7 +1051,8 @@ void G0W0::build_spacetime(
                         }
                         else
                         {
-                            build_gf_libri_kserial(mf, atbasis_wfc, ispin, ispinor_bra, ispinor_ket, this->pbc.kfrac_list,
+                            build_gf_libri_kserial(mf, atbasis_wfc, ispin, ispinor_bra, ispinor_ket, this->pbc,
+                                                this->pbc.kfrac_list,
                                                 taus, IJR_local_gf, tau_gf_libri_cplx);
                         }
                     }
@@ -785,7 +1064,8 @@ void G0W0::build_spacetime(
                                 ispin, ispinor_bra, ispinor_ket, this->pbc.kfrac_list,
                                 taus, Rs_gf, tau_gf_libri);
                         else
-                            build_gf_libri_kserial(mf, atbasis_wfc, ispin, ispinor_bra, ispinor_ket, this->pbc.kfrac_list,
+                            build_gf_libri_kserial(mf, atbasis_wfc, ispin, ispinor_bra, ispinor_ket, this->pbc,
+                                                this->pbc.kfrac_list,
                                                 taus, IJR_local_gf, tau_gf_libri);
                     }
                     // if (itau == 0 && ispin == 0)  // debug
@@ -820,10 +1100,17 @@ void G0W0::build_spacetime(
                             for (const auto &gf: gf_libri)
                                 n_obj_gf_libri += gf.second.size();
 
-                            gw_libri_cplx.set_Gs(gf_libri, this->libri_threshold_G);
-                            global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
-                            gw_libri_cplx.cal_Sigmas();
-                            global::profiler.stop("g0w0_build_spacetime_5");
+	                            gw_libri_cplx.set_Gs(gf_libri, this->libri_threshold_G);
+	                            global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
+	                            gw_libri_cplx.cal_Sigmas();
+	                            if (restore_abacus_sigc_output)
+	                            {
+	                                gw_libri_cplx.Sigmas =
+	                                    restore_abacus_ao_rspace_tensor_map_gw(
+	                                        gw_libri_cplx.Sigmas, symmetry_ctx,
+	                                        abacus_sector_stars, this->atbasis_wfc);
+	                            }
+	                            global::profiler.stop("g0w0_build_spacetime_5");
                             global::profiler.start("g0w0_build_spacetime_5_clean");
                             gw_libri_cplx.free_Gs();
                             global::profiler.stop("g0w0_build_spacetime_5_clean");
@@ -890,10 +1177,17 @@ void G0W0::build_spacetime(
                             //         }
                             //     }
                             // }
-                            gw_libri.set_Gs(gf_libri, this->libri_threshold_G);
-                            global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
-                            gw_libri.cal_Sigmas();
-                            global::profiler.stop("g0w0_build_spacetime_5");
+	                            gw_libri.set_Gs(gf_libri, this->libri_threshold_G);
+	                            global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
+	                            gw_libri.cal_Sigmas();
+	                            if (restore_abacus_sigc_output)
+	                            {
+	                                gw_libri.Sigmas =
+	                                    restore_abacus_ao_rspace_tensor_map_gw(
+	                                        gw_libri.Sigmas, symmetry_ctx,
+	                                        abacus_sector_stars, this->atbasis_wfc);
+	                            }
+	                            global::profiler.stop("g0w0_build_spacetime_5");
                             global::profiler.start("g0w0_build_spacetime_5_clean");
                             gw_libri.free_Gs();
                             global::profiler.stop("g0w0_build_spacetime_5_clean");
@@ -1196,7 +1490,15 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     desc_nband_nband.init_1b1p(n_bands, n_bands, 0, 0);
 
     ArrayDesc desc_nao_nband_fb(blacs_ctxt_h);  // For k-parallel
+    ArrayDesc desc_nao_nao_fb(blacs_ctxt_h);
     ArrayDesc desc_nband_nband_fb(blacs_ctxt_h);
+    const int n_target_kpoints = static_cast<int>(kfrac_target.size());
+    const bool use_root_dense_projection =
+        use_abacus_ibz_root_projection(this->pbc, n_target_kpoints, this->mf.get_n_kpoints());
+    if (use_root_dense_projection)
+    {
+        desc_nao_nao_fb.init(n_aos, n_aos, n_aos, n_aos, 0, 0);
+    }
 
     const auto set_IJ_nao_nao = get_necessary_IJ_from_block_2D(
         this->atbasis_wfc, this->atbasis_wfc, desc_nao_nao);
@@ -1456,8 +1758,58 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
 
                             sigc_nao_nao.zero_out();
                             sigc_nband_nband_fb.zero_out();
-                            collect_block_from_IJ_storage_matrix_transform(sigc_nao_nao, desc_nao_nao,
-                                    this->atbasis_wfc, this->atbasis_wfc, fourier, sigc_isp_local.at(freq));
+                            collect_block_from_IJ_storage_matrix_transform(
+                                sigc_nao_nao, desc_nao_nao,
+                                this->atbasis_wfc, this->atbasis_wfc,
+                                fourier, sigc_isp_local.at(freq));
+                            if (use_root_dense_projection)
+                            {
+                                auto sigc_nao_nao_fb =
+                                    init_local_mat<complex<double>>(desc_nao_nao_fb, MAJOR::COL);
+                                ScalapackConnector::pgemr2d_f(
+                                    n_aos, n_aos,
+                                    sigc_nao_nao.ptr(), 1, 1, desc_nao_nao.desc,
+                                    sigc_nao_nao_fb.ptr(), 1, 1, desc_nao_nao_fb.desc,
+                                    desc_nao_nao_fb.ictxt());
+
+                                ComplexMatrix sigc_nband_nband_dense;
+                                if (comm_h.is_root())
+                                {
+                                    ComplexMatrix sigc_nao_nao_dense(n_aos, n_aos);
+                                    for (int iao = 0; iao != n_aos; ++iao)
+                                    {
+                                        for (int jao = 0; jao != n_aos; ++jao)
+                                        {
+                                            sigc_nao_nao_dense(iao, jao) =
+                                                sigc_nao_nao_fb(iao, jao);
+                                        }
+                                    }
+                                    const auto &wfc_bra =
+                                        wfc_target.at(isp).at(ispn_bra).at(ik);
+                                    const auto &wfc_ket =
+                                        wfc_target.at(isp).at(ispn_ket).at(ik);
+                                    sigc_nband_nband_dense =
+                                        conj(wfc_bra) * sigc_nao_nao_dense
+                                        * transpose(wfc_ket, false);
+                                }
+                                broadcast_ComplexMatrix(
+                                    sigc_nband_nband_dense, 0, comm_h.comm);
+                                auto sigc_freq =
+                                    find_nested_int_map_2(this->sigc_is_ik_f_KS, isp, ik);
+                                if (sigc_freq == nullptr || sigc_freq->count(freq) == 0)
+                                {
+                                    this->sigc_is_ik_f_KS[isp][ik][freq] = Matz(
+                                        n_bands, n_bands, sigc_nband_nband_dense.c,
+                                        MAJOR::ROW, MAJOR::COL);
+                                }
+                                else
+                                {
+                                    sigc_freq->at(freq) += Matz(
+                                        n_bands, n_bands, sigc_nband_nband_dense.c,
+                                        MAJOR::ROW, MAJOR::COL);
+                                }
+                                continue;
+                            }
                             // prepare wave function BLACS
                             // FIXME: check if bra and ket are correct
                             const auto &wfc_bra = wfc_target.at(isp).at(ispn_bra).at(ik);
@@ -1506,7 +1858,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     global::profiler.stop("g0w0_build_sigc_KS");
 }
 
-void G0W0::build_sigc_matrix_KS_kgrid()
+void G0W0::build_sigc_matrix_KS_kgrid(const Atoms &geometry)
 {
     comm_h.barrier();
     librpa_int::global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid" << std::endl;

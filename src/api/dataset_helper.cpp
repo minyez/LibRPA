@@ -117,7 +117,7 @@ void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts) noexcept
 {
     global::profiler.start("initialize_ds_chi0");
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
-    if (opts.use_shrink_abfs && opts.use_shrink_chi)
+    if (opts.use_shrink_abfs == LIBRPA_SWITCH_ON && opts.use_shrink_chi == LIBRPA_SWITCH_ON)
         ds.p_chi0 = std::make_unique<librpa_int::Chi0>(ds.mf, ds.basis_wfc, ds.basis_aux_shrink, ds.pbc,
                                                        ds.tfg, ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
                                                        is_eigvec_k_distributed);

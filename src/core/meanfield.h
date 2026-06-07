@@ -5,13 +5,20 @@
 #ifndef MEANFIELD_H
 #define MEANFIELD_H
 
+#include <array>
 #include <vector>
 #include <map>
+#include "atom.h"
 #include "../math/matrix.h"
 #include "../math/complexmatrix.h"
 #include "../math/vector3_order.h"
 
 namespace librpa_int {
+
+class PeriodicBoundaryData;
+
+using abacus_kstar_member_kfrac_targets_t =
+    std::vector<std::vector<Vector3_Order<double>>>;
 
 //! Object of the meanfield input
 /*!
@@ -136,6 +143,36 @@ public:
 
     // void allredue_wfc_isk();
 };
+
+bool can_restore_abacus_kstar_meanfield(
+    const MeanField& mf,
+    const std::vector<Vector3_Order<double>>& kfrac_list,
+    const std::map<atom_t, size_t>& atom_nw,
+    const std::map<atom_t, std::array<double, 3>>& coord_frac);
+
+abacus_kstar_member_kfrac_targets_t build_abacus_kstar_member_kfrac_targets(
+    const PeriodicBoundaryData& pbc);
+
+ComplexMatrix get_abacus_restored_dmat_cplx_R(
+    const MeanField& mf,
+    int ispin, int ispinor_bra, int ispinor_ket,
+    const std::vector<Vector3_Order<double>>& kfrac_list,
+    const Vector3_Order<int>& R,
+    const std::map<atom_t, size_t>& atom_nw,
+    const std::map<atom_t, std::array<double, 3>>& coord_frac,
+    const abacus_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr);
+
+std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>>
+get_abacus_restored_gf_cplx_imagtimes_Rs(
+    const MeanField& mf,
+    int ispin, int ispinor_bra, int ispinor_ket,
+    const std::vector<Vector3_Order<double>>& kfrac_list,
+    const std::vector<double>& imagtimes,
+    const std::vector<Vector3_Order<int>>& Rs,
+    const std::map<atom_t, size_t>& atom_nw,
+    const std::map<atom_t, std::array<double, 3>>& coord_frac,
+    int nbands_G = -1,
+    const abacus_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr);
 
 }
 

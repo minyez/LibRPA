@@ -1,5 +1,7 @@
 #include "../core/meanfield.h"
+#include "../core/abacus_symmetry.h"
 #include <cassert>
+#include <array>
 #include <map>
 #include <stdexcept>
 
@@ -121,10 +123,156 @@ void test_dmat_cplx_Rs_matches_single_R_accumulation()
     }
 }
 
+void test_abacus_kstar_restored_dmat_uses_full_star_phases()
+{
+    using namespace librpa_int;
+
+    auto saved_ctx = LIBRPA::abacus_symmetry_ctx;
+    LIBRPA::abacus_symmetry_ctx.clear();
+
+    LIBRPA::AbacusSymmetryContext ctx;
+    ctx.available = true;
+    ctx.ao_shell_layout_available = true;
+    ctx.ao_type_layouts.push_back({"X", "X.orb", {1}, 1});
+    ctx.atom_to_type[0] = 0;
+    ctx.input_coord_frac[0] = {0.0, 0.0, 0.0};
+    LIBRPA::AbacusSymmetryOperation identity_operation;
+    identity_operation.isym = 0;
+    identity_operation.rotation = {{{{1.0, 0.0, 0.0}},
+                                    {{0.0, 1.0, 0.0}},
+                                    {{0.0, 0.0, 1.0}}}};
+    identity_operation.translation = {0.0, 0.0, 0.0};
+    identity_operation.shell_rotations[0] = ComplexMatrix(1, 1);
+    identity_operation.shell_rotations[0](0, 0) = {1.0, 0.0};
+    ctx.rspace_operations.push_back(identity_operation);
+
+    LIBRPA::AbacusKAtomRotation atom_rotation;
+    atom_rotation.atom_from = 0;
+    atom_rotation.atom_to = 0;
+    atom_rotation.atom_type = 0;
+    atom_rotation.lmax = 0;
+    atom_rotation.shell_rotations[0] = ComplexMatrix(1, 1);
+    atom_rotation.shell_rotations[0](0, 0) = {1.0, 0.0};
+
+    LIBRPA::AbacusKStar star;
+    star.star_index = 0;
+    star.k_ibz = {0.0, 0.0, 0.0};
+    star.members.resize(2);
+    star.members[0].isym = 0;
+    star.members[0].k_bz = {0.0, 0.0, 0.0};
+    star.members[0].atom_rotations.push_back(atom_rotation);
+    star.members[1].isym = 0;
+    star.members[1].k_bz = {0.5, 0.0, 0.0};
+    star.members[1].atom_rotations.push_back(atom_rotation);
+    ctx.kstars.push_back(star);
+    LIBRPA::abacus_symmetry_ctx = ctx;
+
+    MeanField mf(1, 1, 1, 1);
+    mf.get_eigenvals()[0](0, 0) = -1.0;
+    mf.get_weight()[0](0, 0) = 2.0;
+    mf.get_eigenvectors()[0][0][0].create(1, 1);
+    mf.get_eigenvectors()[0][0][0](0, 0) = {1.0, 0.0};
+
+    const std::vector<Vector3_Order<double>> kfrac_list{{0.0, 0.0, 0.0}};
+    const Vector3_Order<int> R{1, 0, 0};
+    const std::map<atom_t, size_t> atom_nw{{0, 1}};
+    const std::map<atom_t, std::array<double, 3>> coord_frac{{0, {0.0, 0.0, 0.0}}};
+
+    const auto direct_ibz = mf.get_dmat_cplx_R(0, 0, 0, kfrac_list, R);
+    const auto restored = get_abacus_restored_dmat_cplx_R(
+        mf, 0, 0, 0, kfrac_list, R, atom_nw, coord_frac);
+
+    LIBRPA::abacus_symmetry_ctx = saved_ctx;
+
+    if (std::abs(direct_ibz(0, 0)) < 1e-12)
+        throw std::runtime_error("direct IBZ density matrix unexpectedly vanished");
+    if (std::abs(restored(0, 0)) > 1e-12)
+        throw std::runtime_error("ABACUS k-star restored density matrix did not use full-star phases");
+}
+
+void test_abacus_kstar_restored_dmat_uses_target_kpoint_gauge()
+{
+    using namespace librpa_int;
+
+    auto saved_ctx = LIBRPA::abacus_symmetry_ctx;
+
+    LIBRPA::AbacusSymmetryContext ctx;
+    ctx.available = true;
+    ctx.ao_shell_layout_available = true;
+    ctx.ao_lmax = 0;
+    ctx.atom_to_type[0] = 0;
+    ctx.atom_to_type[1] = 0;
+    ctx.ao_type_layouts.push_back({"X", "X.orb", {1}, 1});
+
+    LIBRPA::AbacusSymmetryOperation identity_operation;
+    identity_operation.isym = 0;
+    identity_operation.rotation = {{{{1.0, 0.0, 0.0}},
+                                    {{0.0, 1.0, 0.0}},
+                                    {{0.0, 0.0, 1.0}}}};
+    identity_operation.translation = {0.0, 0.0, 0.0};
+    identity_operation.shell_rotations[0] = ComplexMatrix(1, 1);
+    identity_operation.shell_rotations[0](0, 0) = {1.0, 0.0};
+    ctx.rspace_operations.push_back(identity_operation);
+
+    auto make_atom_rotation = [](const atom_t atom) {
+        LIBRPA::AbacusKAtomRotation atom_rotation;
+        atom_rotation.atom_from = static_cast<int>(atom);
+        atom_rotation.atom_to = static_cast<int>(atom);
+        atom_rotation.atom_type = 0;
+        atom_rotation.lmax = 0;
+        atom_rotation.shell_rotations[0] = ComplexMatrix(1, 1);
+        atom_rotation.shell_rotations[0](0, 0) = {1.0, 0.0};
+        return atom_rotation;
+    };
+
+    LIBRPA::AbacusKStar star;
+    star.star_index = 0;
+    star.k_ibz = {0.0, 0.0, 0.0};
+    star.members.resize(2);
+    star.members[0].isym = 0;
+    star.members[0].k_bz = {0.0, 0.0, 0.0};
+    star.members[0].atom_rotations.push_back(make_atom_rotation(0));
+    star.members[0].atom_rotations.push_back(make_atom_rotation(1));
+    star.members[1].isym = 0;
+    star.members[1].k_bz = {0.5, 0.0, 0.0};
+    star.members[1].atom_rotations.push_back(make_atom_rotation(0));
+    star.members[1].atom_rotations.push_back(make_atom_rotation(1));
+    ctx.kstars.push_back(star);
+    LIBRPA::abacus_symmetry_ctx = ctx;
+
+    MeanField mf(1, 1, 1, 2);
+    mf.get_eigenvals()[0](0, 0) = -1.0;
+    mf.get_weight()[0](0, 0) = 2.0;
+    mf.get_eigenvectors()[0][0][0].create(1, 2);
+    mf.get_eigenvectors()[0][0][0](0, 0) = {std::sqrt(0.5), 0.0};
+    mf.get_eigenvectors()[0][0][0](0, 1) = {std::sqrt(0.5), 0.0};
+
+    const std::vector<Vector3_Order<double>> kfrac_list{{0.0, 0.0, 0.0}};
+    const Vector3_Order<int> R{0, 0, 0};
+    const std::map<atom_t, size_t> atom_nw{{0, 1}, {1, 1}};
+    const std::map<atom_t, std::array<double, 3>> coord_frac{
+        {0, {0.0, 0.0, 0.0}},
+        {1, {0.25, 0.0, 0.0}},
+    };
+    const std::vector<std::vector<Vector3_Order<double>>> target_kfrac_list{
+        {{0.0, 0.0, 0.0}, {1.5, 0.0, 0.0}}};
+
+    const auto restored = get_abacus_restored_dmat_cplx_R(
+        mf, 0, 0, 0, kfrac_list, R, atom_nw, coord_frac, &target_kfrac_list);
+
+    LIBRPA::abacus_symmetry_ctx = saved_ctx;
+
+    const std::complex<double> expected_offdiag{0.25, -0.25};
+    if (std::abs(restored(0, 1) - expected_offdiag) > 1e-12)
+        throw std::runtime_error("ABACUS k-star restored density matrix ignored target k-point gauge");
+}
+
 int main(int argc, char *argv[])
 {
     test_BCC_He_gamma_minimal_basis_aims();
     test_state_index_energy_bounds();
     test_dmat_cplx_Rs_matches_single_R_accumulation();
+    test_abacus_kstar_restored_dmat_uses_full_star_phases();
+    test_abacus_kstar_restored_dmat_uses_target_kpoint_gauge();
     return 0;
 }

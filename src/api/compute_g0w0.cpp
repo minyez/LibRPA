@@ -518,7 +518,7 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
     }
 
     profiler.start("g0w0_sigc_rotate_KS", "Correlation self-energy in K-S space");
-    pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
+    pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h, pds->atoms);
     profiler.stop("g0w0_sigc_rotate_KS");
 
     std::vector<int> iks_collect;

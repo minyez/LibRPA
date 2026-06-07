@@ -24,6 +24,7 @@
 #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
 #include "../utils/utils_mem.h"
+#include "abacus_symmetry.h"
 #include "atom.h"
 #include "atomic_basis.h"
 #include "librpa_enums.h"
@@ -51,6 +52,13 @@ namespace librpa_int {
 
 namespace
 {
+using abf_qspace_complex_block_map_t =
+    atom_mapping<std::map<Vector3_Order<double>, matrix_m<std::complex<double>>>>::pair_t_old;
+using abf_rspace_complex_block_map_t =
+    atom_mapping<std::map<Vector3_Order<int>, matrix_m<std::complex<double>>>>::pair_t_old;
+using abf_rspace_dense_block_map_t =
+    std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, ComplexMatrix>>>;
+
 void dump_blacs_debug_matrix(const bool debug, const std::string &output_dir,
                              const std::string &file_name,
                              const matrix_m<std::complex<double>> &matrix_local,
@@ -59,6 +67,707 @@ void dump_blacs_debug_matrix(const bool debug, const std::string &output_dir,
     if (!debug) return;
     print_matrix_mm_file_parallel(path_as_directory(output_dir) + file_name, matrix_local,
                                   matrix_desc, threshold);
+}
+
+bool are_equivalent_abacus_qpoints(const Vector3_Order<double>& lhs,
+                                   const Vector3_Order<double>& rhs,
+                                   const double tol = 1e-5)
+{
+    const auto same_component = [tol](const double lhs_component, const double rhs_component) {
+        return std::abs((lhs_component - rhs_component) - std::round(lhs_component - rhs_component))
+               < tol;
+    };
+    return same_component(lhs.x, rhs.x) && same_component(lhs.y, rhs.y)
+           && same_component(lhs.z, rhs.z);
+}
+
+template <typename QMap>
+typename QMap::const_iterator find_matching_abacus_qpoint(const QMap& q_map,
+                                                          const Vector3_Order<double>& q_target)
+{
+    const auto exact_iter = q_map.find(q_target);
+    if (exact_iter != q_map.end())
+    {
+        return exact_iter;
+    }
+
+    return std::find_if(q_map.begin(), q_map.end(), [&q_target](const auto& entry) {
+        return are_equivalent_abacus_qpoints(entry.first, q_target);
+    });
+}
+
+template <typename QVector>
+typename QVector::const_iterator find_matching_abacus_qpoint_in_sequence(
+    const QVector& q_sequence,
+    const Vector3_Order<double>& q_target)
+{
+    const auto exact_iter = std::find(q_sequence.begin(), q_sequence.end(), q_target);
+    if (exact_iter != q_sequence.end())
+    {
+        return exact_iter;
+    }
+
+    return std::find_if(q_sequence.begin(), q_sequence.end(), [&q_target](const auto& q_current) {
+        return are_equivalent_abacus_qpoints(q_current, q_target);
+    });
+}
+
+std::map<atom_t, size_t> build_atom_nabf_map(const AtomicBasis& basis_abf)
+{
+    std::map<atom_t, size_t> atom_nabf;
+    for (atom_t atom = 0; atom != static_cast<atom_t>(basis_abf.n_atoms); ++atom)
+    {
+        atom_nabf[atom] = basis_abf[static_cast<int>(atom)];
+    }
+    return atom_nabf;
+}
+
+ComplexMatrix to_complex_matrix(const matrix_m<std::complex<double>>& mat)
+{
+    ComplexMatrix complex_mat(mat.nr(), mat.nc());
+    for (int row = 0; row < mat.nr(); ++row)
+    {
+        for (int col = 0; col < mat.nc(); ++col)
+        {
+            complex_mat(row, col) = mat(row, col);
+        }
+    }
+    return complex_mat;
+}
+
+matrix_m<std::complex<double>> to_row_major_matrix_m(const ComplexMatrix& mat)
+{
+    return matrix_m<std::complex<double>>(mat.nr, mat.nc, mat.c, MAJOR::ROW);
+}
+
+void add_scaled_complex_matrix(ComplexMatrix& matrix_dst,
+                               const ComplexMatrix& matrix_src,
+                               const std::complex<double>& scale)
+{
+    if (matrix_dst.nr != matrix_src.nr || matrix_dst.nc != matrix_src.nc)
+    {
+        throw std::runtime_error("Inconsistent ABACUS W(R) block dimensions");
+    }
+    for (int i = 0; i < matrix_dst.size; ++i)
+    {
+        matrix_dst.c[i] += matrix_src.c[i] * scale;
+    }
+}
+
+LIBRPA::abacus_atom_block_matrix_map_t collect_abacus_abf_ibz_blocks_for_q(
+    const abf_qspace_complex_block_map_t& blocks_by_q,
+    const Vector3_Order<double>& q_ibz_internal)
+{
+    LIBRPA::abacus_atom_block_matrix_map_t blocks_ibz;
+    for (const auto& atom_i_pair : blocks_by_q)
+    {
+        const auto atom_i = atom_i_pair.first;
+        for (const auto& atom_j_pair : atom_i_pair.second)
+        {
+            const auto atom_j = atom_j_pair.first;
+            const auto q_iter = find_matching_abacus_qpoint(atom_j_pair.second, q_ibz_internal);
+            if (q_iter != atom_j_pair.second.end())
+            {
+                blocks_ibz[atom_i][atom_j] = to_complex_matrix(q_iter->second);
+            }
+        }
+    }
+    return blocks_ibz;
+}
+
+LIBRPA::abacus_atom_block_matrix_map_t to_ordered_abacus_blocks(
+    const atom_mapping<ComplexMatrix>::pair_t_old& atom_blocks)
+{
+    LIBRPA::abacus_atom_block_matrix_map_t ordered_blocks;
+    for (const auto& atom_i_pair : atom_blocks)
+    {
+        for (const auto& atom_j_pair : atom_i_pair.second)
+        {
+            ordered_blocks[atom_i_pair.first][atom_j_pair.first] = atom_j_pair.second;
+        }
+    }
+    return ordered_blocks;
+}
+
+atom_mapping<ComplexMatrix>::pair_t_old to_atom_mapping_blocks(
+    const LIBRPA::abacus_atom_block_matrix_map_t& ordered_blocks)
+{
+    atom_mapping<ComplexMatrix>::pair_t_old atom_blocks;
+    for (const auto& atom_i_pair : ordered_blocks)
+    {
+        for (const auto& atom_j_pair : atom_i_pair.second)
+        {
+            atom_blocks[atom_i_pair.first][atom_j_pair.first] = atom_j_pair.second;
+        }
+    }
+    return atom_blocks;
+}
+
+std::set<std::pair<atom_t, atom_t>> collect_abacus_atom_pairs(
+    const LIBRPA::abacus_atom_block_matrix_map_t& atom_blocks)
+{
+    std::set<std::pair<atom_t, atom_t>> atom_pairs;
+    for (const auto& atom_i_pair : atom_blocks)
+    {
+        for (const auto& atom_j_pair : atom_i_pair.second)
+        {
+            atom_pairs.insert({atom_i_pair.first, atom_j_pair.first});
+        }
+    }
+    return atom_pairs;
+}
+
+std::set<std::pair<atom_t, atom_t>> collect_abacus_atom_pairs(
+    const atom_mapping<ComplexMatrix>::pair_t_old& atom_blocks)
+{
+    std::set<std::pair<atom_t, atom_t>> atom_pairs;
+    for (const auto& atom_i_pair : atom_blocks)
+    {
+        for (const auto& atom_j_pair : atom_i_pair.second)
+        {
+            atom_pairs.insert({atom_i_pair.first, atom_j_pair.first});
+        }
+    }
+    return atom_pairs;
+}
+
+std::set<std::pair<atom_t, atom_t>> collect_all_upper_atom_pairs(
+    const std::map<atom_t, size_t>& atom_nabf)
+{
+    std::set<std::pair<atom_t, atom_t>> atom_pairs;
+    for (std::size_t atom_i = 0; atom_i < atom_nabf.size(); ++atom_i)
+    {
+        for (std::size_t atom_j = atom_i; atom_j < atom_nabf.size(); ++atom_j)
+        {
+            atom_pairs.insert({static_cast<atom_t>(atom_i), static_cast<atom_t>(atom_j)});
+        }
+    }
+    return atom_pairs;
+}
+
+std::set<std::pair<atom_t, atom_t>> collect_local_target_atom_pairs_from_qspace(
+    const abf_qspace_complex_block_map_t& blocks_by_q)
+{
+    std::set<std::pair<atom_t, atom_t>> target_atom_pairs;
+    for (const auto& atom_i_pair : blocks_by_q)
+    {
+        for (const auto& atom_j_pair : atom_i_pair.second)
+        {
+            if (!atom_j_pair.second.empty())
+            {
+                target_atom_pairs.insert({atom_i_pair.first, atom_j_pair.first});
+            }
+        }
+    }
+    return target_atom_pairs;
+}
+
+std::vector<int> build_abacus_atom_offsets(const std::map<atom_t, size_t>& atom_nabf)
+{
+    std::vector<int> offsets(atom_nabf.size() + 1, 0);
+    for (std::size_t atom = 0; atom < atom_nabf.size(); ++atom)
+    {
+        offsets[atom + 1] = offsets[atom]
+                            + static_cast<int>(atom_nabf.at(static_cast<atom_t>(atom)));
+    }
+    return offsets;
+}
+
+ComplexMatrix build_dense_abacus_hermitian_matrix_from_local_blocks(
+    const LIBRPA::abacus_atom_block_matrix_map_t& local_blocks,
+    const std::map<atom_t, size_t>& atom_nabf)
+{
+    const auto offsets = build_abacus_atom_offsets(atom_nabf);
+    ComplexMatrix dense(offsets.back(), offsets.back());
+    for (const auto& atom_i_pair : local_blocks)
+    {
+        const int row_offset = offsets.at(static_cast<std::size_t>(atom_i_pair.first));
+        const int expected_nrows = static_cast<int>(atom_nabf.at(atom_i_pair.first));
+        for (const auto& atom_j_pair : atom_i_pair.second)
+        {
+            const int col_offset = offsets.at(static_cast<std::size_t>(atom_j_pair.first));
+            const int expected_ncols = static_cast<int>(atom_nabf.at(atom_j_pair.first));
+            const auto& block = atom_j_pair.second;
+            if (block.nr != expected_nrows || block.nc != expected_ncols)
+            {
+                std::ostringstream oss;
+                oss << "ABACUS dense W(q) restore block dimension mismatch for atom pair ("
+                    << atom_i_pair.first << "," << atom_j_pair.first << "): block=" << block.nr
+                    << "x" << block.nc << ", expected=" << expected_nrows << "x"
+                    << expected_ncols;
+                throw std::runtime_error(oss.str());
+            }
+            for (int row = 0; row < block.nr; ++row)
+            {
+                for (int col = 0; col < block.nc; ++col)
+                {
+                    const auto value = block(row, col);
+                    dense(row_offset + row, col_offset + col) = value;
+                    if (atom_i_pair.first != atom_j_pair.first)
+                    {
+                        dense(col_offset + col, row_offset + row) = std::conj(value);
+                    }
+                }
+            }
+        }
+    }
+    return dense;
+}
+
+LIBRPA::abacus_atom_block_matrix_map_t build_abacus_blocks_from_dense_matrix(
+    const ComplexMatrix& dense_matrix,
+    const std::map<atom_t, size_t>& atom_nabf)
+{
+    const auto offsets = build_abacus_atom_offsets(atom_nabf);
+    LIBRPA::abacus_atom_block_matrix_map_t atom_blocks;
+    for (std::size_t atom_i = 0; atom_i < atom_nabf.size(); ++atom_i)
+    {
+        const int row_offset = offsets.at(atom_i);
+        const int nrows = static_cast<int>(atom_nabf.at(static_cast<atom_t>(atom_i)));
+        for (std::size_t atom_j = atom_i; atom_j < atom_nabf.size(); ++atom_j)
+        {
+            const int col_offset = offsets.at(atom_j);
+            const int ncols = static_cast<int>(atom_nabf.at(static_cast<atom_t>(atom_j)));
+            ComplexMatrix block(nrows, ncols);
+            for (int row = 0; row < nrows; ++row)
+            {
+                for (int col = 0; col < ncols; ++col)
+                {
+                    block(row, col) = dense_matrix(row_offset + row, col_offset + col);
+                }
+            }
+            atom_blocks[static_cast<atom_t>(atom_i)][static_cast<atom_t>(atom_j)] =
+                std::move(block);
+        }
+    }
+    return atom_blocks;
+}
+
+LIBRPA::abacus_atom_block_matrix_map_t gather_abacus_ibz_blocks_collective(
+    const LIBRPA::abacus_atom_block_matrix_map_t& blocks_ibz_local,
+    const std::map<atom_t, size_t>& atom_nabf)
+{
+    if (global::mpi_comm_global_h.nprocs <= 1)
+    {
+        return blocks_ibz_local;
+    }
+
+    const auto dense_ibz_local =
+        build_dense_abacus_hermitian_matrix_from_local_blocks(blocks_ibz_local, atom_nabf);
+    ComplexMatrix dense_ibz_global(dense_ibz_local.nr, dense_ibz_local.nc);
+    allreduce_ComplexMatrix(dense_ibz_local, dense_ibz_global, global::mpi_comm_global_h.comm);
+    return build_abacus_blocks_from_dense_matrix(dense_ibz_global, atom_nabf);
+}
+
+const LIBRPA::AbacusKStarMember& find_matching_abf_kstar_member(
+    const LIBRPA::AbacusKStar& abf_star,
+    const LIBRPA::AbacusKStarMember& ao_member)
+{
+    const auto matched = std::find_if(abf_star.members.begin(), abf_star.members.end(),
+                                      [&ao_member](const LIBRPA::AbacusKStarMember& candidate) {
+                                          return candidate.isym == ao_member.isym
+                                                 && are_equivalent_abacus_qpoints(candidate.k_bz,
+                                                                                  ao_member.k_bz);
+                                      });
+    if (matched == abf_star.members.end())
+    {
+        throw std::runtime_error(
+            "Failed to match an ABF k-star member with the AO-side symmetry member");
+    }
+    return *matched;
+}
+
+LIBRPA::abacus_irreducible_sector_t filter_abacus_irreducible_sector_by_rlist(
+    const LIBRPA::abacus_irreducible_sector_t& irreducible_sector,
+    const std::vector<Vector3_Order<int>>& Rlist)
+{
+    LIBRPA::abacus_irreducible_sector_t filtered_sector;
+    const std::set<Vector3_Order<int>> requested_rset(Rlist.begin(), Rlist.end());
+    for (const auto& pair_Rs : irreducible_sector)
+    {
+        for (const auto& R_array : pair_Rs.second)
+        {
+            const Vector3_Order<int> R{R_array[0], R_array[1], R_array[2]};
+            if (requested_rset.count(R) == 0)
+            {
+                continue;
+            }
+            filtered_sector[pair_Rs.first].insert(R_array);
+        }
+    }
+    return filtered_sector;
+}
+
+std::set<std::pair<atom_t, atom_t>> build_abacus_irreducible_target_atom_pairs(
+    const LIBRPA::abacus_irreducible_sector_t& irreducible_sector)
+{
+    std::set<std::pair<atom_t, atom_t>> target_atom_pairs;
+    for (const auto& pair_Rs : irreducible_sector)
+    {
+        if (!pair_Rs.second.empty())
+        {
+            target_atom_pairs.insert(pair_Rs.first);
+        }
+    }
+    return target_atom_pairs;
+}
+
+struct AbacusIrreducibleWRPlan
+{
+    bool available = false;
+    LIBRPA::abacus_irreducible_sector_t local_irreducible_sector;
+    LIBRPA::abacus_rspace_sector_stars_t local_sector_stars;
+    std::set<std::pair<atom_t, atom_t>> local_irreducible_pairs;
+    std::vector<LIBRPA::AbacusKStarGridMappingEntry> kstar_grid_mapping;
+    int nsym_space = 0;
+};
+
+AbacusIrreducibleWRPlan build_abacus_irreducible_wr_plan(
+    const std::set<std::pair<atom_t, atom_t>>& local_target_pairs,
+    const PeriodicBoundaryData& pbc,
+    const std::vector<Vector3_Order<int>>& Rlist)
+{
+    AbacusIrreducibleWRPlan plan;
+    const auto& ctx = LIBRPA::abacus_symmetry_ctx;
+    const auto filtered_sector =
+        filter_abacus_irreducible_sector_by_rlist(ctx.irreducible_sector, Rlist);
+    if (filtered_sector.empty())
+    {
+        return plan;
+    }
+
+    LIBRPA::abacus_rspace_sector_stars_t sector_stars;
+    LIBRPA::build_abacus_rspace_sector_stars(
+        ctx, ctx.input_coord_frac, pbc.period, Rlist, sector_stars, nullptr);
+
+    for (const auto& pair_star : sector_stars)
+    {
+        const auto& ir_pair = pair_star.first;
+        for (const auto& R_members : pair_star.second)
+        {
+            std::vector<LIBRPA::AbacusRSpaceRestoreMember> local_members;
+            for (const auto& restore_member : R_members.second)
+            {
+                if (local_target_pairs.count(restore_member.full_atom_pair) != 0)
+                {
+                    local_members.push_back(restore_member);
+                }
+            }
+            if (local_members.empty())
+            {
+                continue;
+            }
+
+            plan.local_sector_stars[ir_pair][R_members.first] = std::move(local_members);
+            plan.local_irreducible_sector[ir_pair].insert(
+                {R_members.first.x, R_members.first.y, R_members.first.z});
+        }
+    }
+
+    plan.local_irreducible_pairs =
+        build_abacus_irreducible_target_atom_pairs(plan.local_irreducible_sector);
+    plan.kstar_grid_mapping =
+        LIBRPA::build_abacus_kstar_grid_mapping(ctx, pbc.klist, pbc.kfrac_list, pbc.map_irk_ks);
+    plan.nsym_space = static_cast<int>(ctx.rspace_operations.size());
+    plan.available = true;
+    return plan;
+}
+
+abf_rspace_dense_block_map_t allocate_abacus_irreducible_wr_storage(
+    const LIBRPA::abacus_irreducible_sector_t& irreducible_sector,
+    const std::map<atom_t, size_t>& atom_nabf)
+{
+    abf_rspace_dense_block_map_t blocks_by_R_dense;
+    for (const auto& pair_Rs : irreducible_sector)
+    {
+        const auto atom_i = pair_Rs.first.first;
+        const auto atom_j = pair_Rs.first.second;
+        const int n_i = static_cast<int>(atom_nabf.at(atom_i));
+        const int n_j = static_cast<int>(atom_nabf.at(atom_j));
+        for (const auto& R_array : pair_Rs.second)
+        {
+            const Vector3_Order<int> R{R_array[0], R_array[1], R_array[2]};
+            blocks_by_R_dense[atom_i][atom_j][R] = ComplexMatrix(n_i, n_j);
+        }
+    }
+    return blocks_by_R_dense;
+}
+
+abf_rspace_complex_block_map_t convert_dense_rspace_blocks_to_row_major(
+    const abf_rspace_dense_block_map_t& dense_blocks)
+{
+    abf_rspace_complex_block_map_t row_major_blocks;
+    for (const auto& atom_i_pair : dense_blocks)
+    {
+        for (const auto& atom_j_pair : atom_i_pair.second)
+        {
+            for (const auto& R_block : atom_j_pair.second)
+            {
+                row_major_blocks[atom_i_pair.first][atom_j_pair.first][R_block.first] =
+                    to_row_major_matrix_m(R_block.second);
+            }
+        }
+    }
+    return row_major_blocks;
+}
+
+abf_rspace_dense_block_map_t restore_abacus_abf_rspace_dense_blocks(
+    const abf_rspace_dense_block_map_t& tensors_ir,
+    const LIBRPA::AbacusSymmetryContext& symmetry_ctx,
+    const LIBRPA::abacus_rspace_sector_stars_t& sector_stars)
+{
+    abf_rspace_dense_block_map_t tensors_full;
+    for (const auto& i_entry : tensors_ir)
+    {
+        const auto ir_I = static_cast<atom_t>(i_entry.first);
+        for (const auto& jr_entry : i_entry.second)
+        {
+            const auto ir_J = static_cast<atom_t>(jr_entry.first);
+            const auto pair_iter = sector_stars.find({ir_I, ir_J});
+            if (pair_iter == sector_stars.end())
+            {
+                throw std::runtime_error(
+                    "Failed to match an irreducible W(R) atom pair with the ABACUS restore map");
+            }
+            for (const auto& R_matrix : jr_entry.second)
+            {
+                const auto& ir_R = R_matrix.first;
+                const auto star_iter = pair_iter->second.find(ir_R);
+                if (star_iter == pair_iter->second.end())
+                {
+                    std::ostringstream oss;
+                    oss << "Failed to match an irreducible W(R) block with the ABACUS restore map"
+                        << " for I=" << ir_I << " J=" << ir_J << " R=(" << ir_R.x << ","
+                        << ir_R.y << "," << ir_R.z << ")";
+                    throw std::runtime_error(oss.str());
+                }
+
+                for (const auto& restore_member : star_iter->second)
+                {
+                    ComplexMatrix w_full = LIBRPA::rotate_abacus_abf_rspace_matrix(
+                        symmetry_ctx, restore_member.isym, ir_I, ir_J, R_matrix.second);
+                    auto& target =
+                        tensors_full[restore_member.full_atom_pair.first]
+                                    [restore_member.full_atom_pair.second][restore_member.full_R];
+                    if (target.c == nullptr)
+                    {
+                        target = std::move(w_full);
+                    }
+                    else
+                    {
+                        throw std::runtime_error(
+                            "Duplicate full-sector W(R) block appears during ABACUS symmetry restore");
+                    }
+                }
+            }
+        }
+    }
+    return tensors_full;
+}
+
+std::complex<double> build_ft_wq_phase(const PeriodicBoundaryData& pbc,
+                                       const Vector3_Order<double>& q_internal,
+                                       const Vector3_Order<int>& R)
+{
+    const auto q_frac = pbc.latvec * q_internal;
+    const double ang = -(q_frac * R) * TWO_PI;
+    return std::complex<double>(std::cos(ang), std::sin(ang))
+           / static_cast<double>(pbc.get_n_cells_bvk());
+}
+
+bool can_use_abacus_irreducible_sector_wr_restore(
+    const std::map<atom_t, size_t>& atom_nabf,
+    const PeriodicBoundaryData& pbc)
+{
+    const auto& ctx = LIBRPA::abacus_symmetry_ctx;
+    return ctx.available
+           && ctx.has_abf_shell_layout()
+           && ctx.has_ao_shell_layout()
+           && !ctx.kstars.empty()
+           && ctx.kstars.size() == pbc.kfrac_list.size()
+           && !pbc.map_irk_ks.empty()
+           && ctx.atom_to_type.size() == atom_nabf.size()
+           && ctx.input_coord_frac.size() == atom_nabf.size()
+           && pbc.klist.size() < static_cast<std::size_t>(pbc.get_n_cells_bvk())
+           && !ctx.irreducible_sector.empty()
+           && !ctx.rspace_operations.empty();
+}
+
+bool can_symmetrize_abacus_chi0_ibz_blocks(
+    const std::map<atom_t, size_t>& atom_nabf,
+    const PeriodicBoundaryData& pbc)
+{
+    const auto& ctx = LIBRPA::abacus_symmetry_ctx;
+    return ctx.available
+           && ctx.has_abf_shell_layout()
+           && !ctx.kstars.empty()
+           && ctx.kstars.size() == pbc.kfrac_list.size()
+           && ctx.atom_to_type.size() == atom_nabf.size()
+           && ctx.input_coord_frac.size() == atom_nabf.size();
+}
+
+atom_mapping<ComplexMatrix>::pair_t_old symmetrize_abacus_chi0_ibz_blocks_if_needed(
+    const atom_mapping<ComplexMatrix>::pair_t_old& blocks_ibz,
+    const Vector3_Order<double>& q_ibz_internal,
+    const PeriodicBoundaryData& pbc,
+    const std::map<atom_t, size_t>& atom_nabf)
+{
+    if (!can_symmetrize_abacus_chi0_ibz_blocks(atom_nabf, pbc))
+    {
+        return blocks_ibz;
+    }
+
+    const auto q_iter = find_matching_abacus_qpoint_in_sequence(pbc.klist, q_ibz_internal);
+    if (q_iter == pbc.klist.end())
+    {
+        return blocks_ibz;
+    }
+    const auto iq_ibz = static_cast<std::size_t>(std::distance(pbc.klist.cbegin(), q_iter));
+    if (iq_ibz >= pbc.kfrac_list.size())
+    {
+        return blocks_ibz;
+    }
+
+    const auto& ctx = LIBRPA::abacus_symmetry_ctx;
+    const auto& q_ibz_frac = pbc.kfrac_list.at(iq_ibz);
+    const auto& star = LIBRPA::find_abacus_kstar_for_ibz_kpoint(ctx, q_ibz_frac);
+    const LIBRPA::AbacusKStar* abf_star = nullptr;
+    if (!ctx.abf_kstars.empty())
+    {
+        if (ctx.abf_kstars.size() != ctx.kstars.size())
+        {
+            throw std::runtime_error(
+                "ABF k-space symmetry sidecar count is inconsistent with symrot_k.txt");
+        }
+        abf_star =
+            &LIBRPA::find_abacus_kstar_for_kpoint(ctx.abf_kstars, q_ibz_frac, "ABF k-stars");
+    }
+
+    auto blocks_for_symmetrization = to_ordered_abacus_blocks(blocks_ibz);
+    auto output_atom_pairs = collect_abacus_atom_pairs(blocks_for_symmetrization);
+    if (global::mpi_comm_global_h.nprocs > 1)
+    {
+        blocks_for_symmetrization =
+            gather_abacus_ibz_blocks_collective(blocks_for_symmetrization, atom_nabf);
+        output_atom_pairs = collect_all_upper_atom_pairs(atom_nabf);
+    }
+
+    if (output_atom_pairs.empty())
+    {
+        return blocks_ibz;
+    }
+
+    const auto symmetrized_blocks = LIBRPA::symmetrize_abacus_abf_ibz_kspace_operator_blocks(
+        ctx, q_ibz_frac, blocks_for_symmetrization, atom_nabf, ctx.input_coord_frac, abf_star,
+        &output_atom_pairs);
+    return to_atom_mapping_blocks(symmetrized_blocks);
+}
+
+abf_rspace_complex_block_map_t accumulate_abacus_full_wr_from_ibz_q(
+    const abf_qspace_complex_block_map_t& Wc_q,
+    const PeriodicBoundaryData& pbc,
+    const std::vector<Vector3_Order<int>>& Rlist,
+    const std::map<atom_t, size_t>& atom_nabf)
+{
+    const auto local_target_pairs = collect_local_target_atom_pairs_from_qspace(Wc_q);
+    const auto plan = build_abacus_irreducible_wr_plan(local_target_pairs, pbc, Rlist);
+    if (!plan.available)
+    {
+        return {};
+    }
+
+    const auto& ctx = LIBRPA::abacus_symmetry_ctx;
+    auto blocks_by_R_ir =
+        allocate_abacus_irreducible_wr_storage(plan.local_irreducible_sector, atom_nabf);
+
+    for (const auto& star_mapping : plan.kstar_grid_mapping)
+    {
+        const auto& star = ctx.kstars.at(static_cast<std::size_t>(star_mapping.star_list_index));
+        const LIBRPA::AbacusKStar* abf_star = nullptr;
+        if (!ctx.abf_kstars.empty())
+        {
+            if (ctx.abf_kstars.size() != ctx.kstars.size())
+            {
+                throw std::runtime_error(
+                    "ABF k-space symmetry sidecar count is inconsistent with symrot_k.txt");
+            }
+            abf_star = &ctx.abf_kstars.at(static_cast<std::size_t>(star_mapping.star_list_index));
+        }
+
+        const auto q_ibz_internal = pbc.klist.at(static_cast<std::size_t>(star_mapping.iq_ibz));
+        const auto q_ibz_frac = pbc.kfrac_list.at(static_cast<std::size_t>(star_mapping.iq_ibz));
+        const auto blocks_ibz_local =
+            collect_abacus_abf_ibz_blocks_for_q(Wc_q, q_ibz_internal);
+        auto blocks_ibz = gather_abacus_ibz_blocks_collective(blocks_ibz_local, atom_nabf);
+        if (blocks_ibz.empty())
+        {
+            continue;
+        }
+        const auto rotation_atom_pairs =
+            LIBRPA::build_abacus_upper_atom_pair_closure(star, plan.local_irreducible_pairs);
+        blocks_ibz = LIBRPA::symmetrize_abacus_abf_ibz_kspace_operator_blocks(
+            ctx, q_ibz_frac, blocks_ibz, atom_nabf, ctx.input_coord_frac, abf_star,
+            &rotation_atom_pairs);
+        if (star.members.size() != star_mapping.member_q_bz_keys.size())
+        {
+            throw std::runtime_error(
+                "ABACUS q-star mapping is inconsistent with the loaded full-q keys");
+        }
+
+        for (std::size_t imember = 0; imember < star.members.size(); ++imember)
+        {
+            const auto& member = star.members[imember];
+            const auto& abf_member =
+                (abf_star == nullptr) ? member : find_matching_abf_kstar_member(*abf_star, member);
+            const bool use_time_reversal = member.isym >= plan.nsym_space;
+            const auto q_bz_target_frac_vec =
+                pbc.latvec * star_mapping.member_q_bz_keys[imember];
+            const Vector3_Order<double> q_bz_target_frac{
+                q_bz_target_frac_vec.x, q_bz_target_frac_vec.y, q_bz_target_frac_vec.z};
+            LIBRPA::abacus_atom_block_matrix_map_t rotated_blocks;
+            try
+            {
+                rotated_blocks = LIBRPA::rotate_abacus_abf_kspace_operator_blocks(
+                    ctx, abf_member, blocks_ibz, atom_nabf, star.k_ibz, ctx.input_coord_frac,
+                    use_time_reversal, &rotation_atom_pairs, &q_bz_target_frac);
+            }
+            catch (const std::exception& ex)
+            {
+                std::ostringstream oss;
+                oss << "ABACUS irreducible-sector W(q)->W(R) accumulation failed for star="
+                    << star.star_index << ", member=" << imember << ", isym=" << member.isym
+                    << ": " << ex.what();
+                throw std::runtime_error(oss.str());
+            }
+
+            const auto& q_internal = star_mapping.member_q_bz_keys[imember];
+            for (const auto& atom_i_pair : rotated_blocks)
+            {
+                for (const auto& atom_j_pair : atom_i_pair.second)
+                {
+                    const auto sector_iter =
+                        plan.local_irreducible_sector.find({atom_i_pair.first, atom_j_pair.first});
+                    if (sector_iter == plan.local_irreducible_sector.end())
+                    {
+                        continue;
+                    }
+
+                    for (const auto& R_array : sector_iter->second)
+                    {
+                        const Vector3_Order<int> R{R_array[0], R_array[1], R_array[2]};
+                        const auto phase = build_ft_wq_phase(pbc, q_internal, R);
+                        add_scaled_complex_matrix(
+                            blocks_by_R_ir.at(atom_i_pair.first).at(atom_j_pair.first).at(R),
+                            atom_j_pair.second, phase);
+                    }
+                }
+            }
+        }
+    }
+
+    const auto blocks_by_R_full =
+        restore_abacus_abf_rspace_dense_blocks(blocks_by_R_ir, ctx, plan.local_sector_stars);
+    return convert_dense_rspace_blocks_to_row_major(blocks_by_R_full);
 }
 }
 
@@ -2043,6 +2752,10 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         qpts.push_back(q_weight.first);
     const auto &klist = chi0.pbc.klist;
     const auto &kfrac_list = chi0.pbc.kfrac_list;
+    const auto atom_nabf = build_atom_nabf_map(chi0.atbasis_abf);
+    const bool use_abacus_symmetry_dense_chi0_collect =
+        global::mpi_comm_global_h.nprocs > 1
+        && can_symmetrize_abacus_chi0_ibz_blocks(atom_nabf, chi0.pbc);
 
     vec<double> eigenvalues(n_abf);
     global::profiler.stop("compute_Wc_freq_q_blacs_init");
@@ -2270,9 +2983,40 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 std::map<int, std::map<std::pair<int, std::array<double, 3>>,
                                        RI::Tensor<complex<double>>>>
                     chi0_libri;
-                if (chi0.get_chi0_q().count(freq) > 0 && chi0.get_chi0_q().at(freq).count(q) > 0)
+                const bool has_local_chi0_q =
+                    chi0.get_chi0_q().count(freq) > 0 && chi0.get_chi0_q().at(freq).count(q) > 0;
+                atom_mapping<ComplexMatrix>::pair_t_old chi0_wq;
+                if (has_local_chi0_q)
                 {
-                    const auto &chi0_wq = chi0.get_chi0_q().at(freq).at(q);
+                    chi0_wq = symmetrize_abacus_chi0_ibz_blocks_if_needed(
+                        chi0.get_chi0_q().at(freq).at(q), q, chi0.pbc, atom_nabf);
+                }
+                else if (use_abacus_symmetry_dense_chi0_collect)
+                {
+                    chi0_wq = symmetrize_abacus_chi0_ibz_blocks_if_needed(
+                        chi0_wq, q, chi0.pbc, atom_nabf);
+                }
+
+                if (use_abacus_symmetry_dense_chi0_collect)
+                {
+                    const auto chi0_dense = build_dense_abacus_hermitian_matrix_from_local_blocks(
+                        to_ordered_abacus_blocks(chi0_wq), atom_nabf);
+                    temp_block.zero_out();
+                    for (int i_lo = 0; i_lo != desc_nabf_nabf.m_loc(); ++i_lo)
+                    {
+                        const int i_glo = desc_nabf_nabf.indx_l2g_r(i_lo);
+                        for (int j_lo = 0; j_lo != desc_nabf_nabf.n_loc(); ++j_lo)
+                        {
+                            const int j_glo = desc_nabf_nabf.indx_l2g_c(j_lo);
+                            temp_block(i_lo, j_lo) = chi0_dense(i_glo, j_glo);
+                        }
+                    }
+                    ScalapackConnector::pgemr2d_f(n_abf, n_abf, temp_block.ptr(), 1, 1,
+                                                  desc_nabf_nabf.desc, chi0_block.ptr(), 1, 1,
+                                                  desc_nabf_nabf_opt.desc, blacs_h.ictxt);
+                }
+                else
+                {
                     for (const auto &M_Nchi : chi0_wq)
                     {
                         const auto &M = M_Nchi.first;
@@ -2289,30 +3033,34 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                                 RI::Tensor<complex<double>>({n_mu, n_nu}, pchi);
                         }
                     }
-                    // Release the chi0 block for this frequency and q to reduce memory load,
-                    // as they will not be used again
+                    // ofs_myid << "chi0_libri" << endl << chi0_libri;
+                    global::profiler.start("epsilon_prepare_chi0_2d_comm_map2");
+                    const auto IJq_chi0 = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+                        comm_h.comm, chi0_libri, s0_s1.first, s0_s1.second);
+                    global::profiler.stop("epsilon_prepare_chi0_2d_comm_map2");
+                    // ofs_myid << "IJq_chi0" << endl << IJq_chi0;
+                    // for (const auto &IJ: set_IJ_nabf_nabf)
+                    // {
+                    //     const auto &I = IJ.first;
+                    //     const auto &J = IJ.second;
+                    //     collect_block_from_IJ_storage_syhe(
+                    //         chi0_block, desc_nabf_nabf, chi0.atbasis_abf, IJ.first,
+                    //         IJ.second, true, CONE, IJq_chi0.at(I).at({J, qa}).ptr(), MAJOR::ROW);
+                    // }
+                    global::profiler.start("epsilon_prepare_chi0_2d_collect_block");
+                    collect_block_from_ALL_IJ_Tensor(temp_block, desc_nabf_nabf, chi0.atbasis_abf,
+                                                     qa, true, C_ONE, IJq_chi0, MAJOR::ROW);
+                    ScalapackConnector::pgemr2d_f(n_abf, n_abf, temp_block.ptr(), 1, 1,
+                                                  desc_nabf_nabf.desc, chi0_block.ptr(), 1, 1,
+                                                  desc_nabf_nabf_opt.desc, blacs_h.ictxt);
+                    global::profiler.stop("epsilon_prepare_chi0_2d_collect_block");
+                }
+                // Release the chi0 block for this frequency and q to reduce memory load,
+                // as they will not be used again.
+                if (has_local_chi0_q)
+                {
                     chi0.free_chi0_q(freq, q);
                 }
-                // ofs_myid << "chi0_libri" << endl << chi0_libri;
-                global::profiler.start("epsilon_prepare_chi0_2d_comm_map2");
-                const auto IJq_chi0 = RI::Communicate_Tensors_Map_Judge::comm_map2_first(comm_h.comm, chi0_libri, s0_s1.first, s0_s1.second);
-                global::profiler.stop("epsilon_prepare_chi0_2d_comm_map2");
-                // ofs_myid << "IJq_chi0" << endl << IJq_chi0;
-                // for (const auto &IJ: set_IJ_nabf_nabf)
-                // {
-                //     const auto &I = IJ.first;
-                //     const auto &J = IJ.second;
-                //     collect_block_from_IJ_storage_syhe(
-                //         chi0_block, desc_nabf_nabf, chi0.atbasis_abf, IJ.first,
-                //         IJ.second, true, CONE, IJq_chi0.at(I).at({J, qa}).ptr(), MAJOR::ROW);
-                // }
-                global::profiler.start("epsilon_prepare_chi0_2d_collect_block");
-                collect_block_from_ALL_IJ_Tensor(temp_block, desc_nabf_nabf, chi0.atbasis_abf, qa,
-                                                 true, C_ONE, IJq_chi0, MAJOR::ROW);
-                ScalapackConnector::pgemr2d_f(n_abf, n_abf, temp_block.ptr(), 1, 1,
-                                              desc_nabf_nabf.desc, chi0_block.ptr(), 1, 1,
-                                              desc_nabf_nabf_opt.desc, blacs_h.ictxt);
-                global::profiler.stop("epsilon_prepare_chi0_2d_collect_block");
                 std::ostringstream chi0_debug_name;
                 chi0_debug_name << std::fixed << std::setprecision(10)
                                 << "chi0_block_qx_" << q.x << "_qy_" << q.y << "_qz_"
@@ -3399,6 +4147,17 @@ atom_mapping<std::map<Vector3_Order<int>, matrix_m<complex<double>>>>::pair_t_ol
 
     lib_printf_root("Converting Wc(q) -> W(R)\n");
     comm_h.barrier();
+
+    const auto atom_nabf = build_atom_nabf_map(atbasis_abf);
+    if (can_use_abacus_irreducible_sector_wr_restore(atom_nabf, pbc))
+    {
+        lib_printf_root(
+            "ABACUS GW symmetry accumulates irreducible-sector `W(R)` directly from IBZ q-stars\n");
+        Wc_R = accumulate_abacus_full_wr_from_ibz_q(Wc_q, pbc, Rlist, atom_nabf);
+        comm_h.barrier();
+        lib_printf_root("Done converting Wc q -> R\n");
+        return Wc_R;
+    }
 
     set<pair<atom_t, atom_t>> atpairs_unique;
     for (const auto &MuNuqWc : Wc_q)

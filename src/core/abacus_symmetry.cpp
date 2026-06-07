@@ -1596,6 +1596,84 @@ ParsedAbacusStru parse_abacus_stru_file(const std::string& stru_file)
     return parsed;
 }
 
+ParsedAbacusStru parse_abacus_stru_out_file(const std::string& stru_file)
+{
+    std::ifstream ifs(stru_file);
+    if (!ifs.good())
+    {
+        throw std::runtime_error("Failed to open " + stru_file);
+    }
+
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(ifs, line))
+    {
+        const std::string cleaned = strip_comment(line);
+        if (!cleaned.empty())
+        {
+            lines.push_back(cleaned);
+        }
+    }
+    if (lines.size() < 7)
+    {
+        throw std::runtime_error("Incomplete ABACUS stru_out file " + stru_file);
+    }
+
+    std::array<std::array<double, 3>, 3> lattice_rows{{{{0.0, 0.0, 0.0}},
+                                                        {{0.0, 0.0, 0.0}},
+                                                        {{0.0, 0.0, 0.0}}}};
+    for (int row = 0; row < 3; ++row)
+    {
+        const auto values = extract_doubles(lines[static_cast<std::size_t>(row)]);
+        if (values.size() != 3)
+        {
+            throw std::runtime_error("Failed to parse lattice row in " + stru_file);
+        }
+        for (int col = 0; col < 3; ++col)
+        {
+            lattice_rows[static_cast<std::size_t>(row)][static_cast<std::size_t>(col)] =
+                values[static_cast<std::size_t>(col)];
+        }
+    }
+    const Matrix3 lattice_vectors = build_matrix3_from_array(lattice_rows);
+
+    const auto natom_fields = split_fields(lines[6]);
+    if (natom_fields.empty())
+    {
+        throw std::runtime_error("Failed to parse atom count in " + stru_file);
+    }
+    const int natoms = std::stoi(natom_fields.front());
+    if (natoms < 0 || static_cast<std::size_t>(7 + natoms) > lines.size())
+    {
+        throw std::runtime_error("Incomplete atomic coordinate block in " + stru_file);
+    }
+
+    ParsedAbacusStru parsed;
+    for (int iatom = 0; iatom != natoms; ++iatom)
+    {
+        const auto fields = split_fields(lines[static_cast<std::size_t>(7 + iatom)]);
+        if (fields.size() < 3)
+        {
+            throw std::runtime_error("Failed to parse atomic coordinate row in " + stru_file);
+        }
+        const Vector3<double> coord_cart{
+            std::stod(fields[0]), std::stod(fields[1]), std::stod(fields[2])};
+        const Vector3<double> coord_frac_vec = coord_cart * lattice_vectors.Inverse();
+        parsed.coord_frac[static_cast<atom_t>(iatom)] =
+            {coord_frac_vec.x, coord_frac_vec.y, coord_frac_vec.z};
+    }
+    return parsed;
+}
+
+ParsedAbacusStru parse_abacus_coord_source_file(const std::string& file_path)
+{
+    if (base_name(file_path) == "stru_out")
+    {
+        return parse_abacus_stru_out_file(file_path);
+    }
+    return parse_abacus_stru_file(file_path);
+}
+
 void try_load_abacus_input_coord_frac(const std::string& dir_path,
                                       AbacusSymmetryContext& ctx,
                                       std::ostream* log)
@@ -1605,51 +1683,67 @@ void try_load_abacus_input_coord_frac(const std::string& dir_path,
     for (const auto& dir : candidate_dirs)
     {
         stru_candidates.push_back(join_path(dir, "STRU"));
+        stru_candidates.push_back(join_path(dir, "stru_out"));
     }
 
-    const std::string stru_file = find_first_existing_file(stru_candidates);
-    if (stru_file.empty())
+    std::vector<std::string> existing_candidates;
+    for (const auto& candidate : stru_candidates)
+    {
+        if (!candidate.empty() && file_exists(candidate))
+        {
+            existing_candidates.push_back(candidate);
+        }
+    }
+    if (existing_candidates.empty())
     {
         if (log != nullptr)
         {
-            (*log) << "| Input fractional coords: unavailable (STRU not found)\n";
+            (*log) << "| Input fractional coords: unavailable (STRU/stru_out not found)\n";
         }
         return;
     }
 
-    try
+    std::string last_error;
+    for (const auto& stru_file : existing_candidates)
     {
-        const ParsedAbacusStru parsed = parse_abacus_stru_file(stru_file);
-        if (parsed.coord_frac.empty())
+        try
         {
-            throw std::runtime_error("ATOMIC_POSITIONS not found in " + stru_file);
-        }
-        if (!ctx.atom_to_type.empty() && parsed.atom_to_type.size() != ctx.atom_to_type.size())
-        {
-            throw std::runtime_error("STRU atom count does not match symrot_k.txt in " + stru_file);
-        }
-        for (const auto& atom_type : parsed.atom_to_type)
-        {
-            const auto iter = ctx.atom_to_type.find(atom_type.first);
-            if (iter != ctx.atom_to_type.end() && iter->second != atom_type.second)
+            const ParsedAbacusStru parsed = parse_abacus_coord_source_file(stru_file);
+            if (parsed.coord_frac.empty())
             {
-                throw std::runtime_error("STRU atom ordering/type mapping is inconsistent with "
-                                         "symrot_k.txt in " + stru_file);
+                throw std::runtime_error("atomic coordinates not found in " + stru_file);
             }
+            if (!parsed.atom_to_type.empty() && !ctx.atom_to_type.empty()
+                && parsed.atom_to_type.size() != ctx.atom_to_type.size())
+            {
+                throw std::runtime_error("atom count does not match symrot_k.txt in " + stru_file);
+            }
+            for (const auto& atom_type : parsed.atom_to_type)
+            {
+                const auto iter = ctx.atom_to_type.find(atom_type.first);
+                if (iter != ctx.atom_to_type.end() && iter->second != atom_type.second)
+                {
+                    throw std::runtime_error("atom ordering/type mapping is inconsistent with "
+                                             "symrot_k.txt in " + stru_file);
+                }
+            }
+            ctx.input_coord_frac = parsed.coord_frac;
+            if (log != nullptr)
+            {
+                (*log) << "| Input fractional coords: loaded from " << base_name(stru_file)
+                       << " for " << ctx.input_coord_frac.size() << " atoms\n";
+            }
+            return;
         }
-        ctx.input_coord_frac = parsed.coord_frac;
-        if (log != nullptr)
+        catch (const std::exception& ex)
         {
-            (*log) << "| Input fractional coords: loaded from " << base_name(stru_file)
-                   << " for " << ctx.input_coord_frac.size() << " atoms\n";
+            last_error = ex.what();
         }
     }
-    catch (const std::exception& ex)
+
+    if (log != nullptr)
     {
-        if (log != nullptr)
-        {
-            (*log) << "| Input fractional coords: unavailable (" << ex.what() << ")\n";
-        }
+        (*log) << "| Input fractional coords: unavailable (" << last_error << ")\n";
     }
 }
 

@@ -27,6 +27,7 @@
 #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
 #include "../utils/utils_mem.h"
+#include "abacus_symmetry.h"
 #include "atomic_basis.h"
 #include "meanfield_mpi.h"
 #include "pbc.h"
@@ -44,6 +45,21 @@ namespace librpa_int {
 using std::map;
 using std::pair;
 using std::vector;
+
+namespace
+{
+
+std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
+{
+    std::map<atom_t, size_t> atom_nw;
+    for (atom_t atom = 0; atom != as_atom(atbasis.n_atoms); ++atom)
+    {
+        atom_nw[atom] = atbasis.get_atom_nb(atom);
+    }
+    return atom_nw;
+}
+
+} // namespace
 
 Chi0::Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const AtomicBasis &atbasis_abf_in, const PeriodicBoundaryData &pbc_in,
@@ -317,6 +333,7 @@ static void build_gf_Rt_libri_serial(
     const MeanField &mf, const int nbands_G,
     const AtomicBasis &atbasis_wfc,
     int ispin, int isoc1, int isoc2,
+    const PeriodicBoundaryData &pbc,
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs,
     double tau,
@@ -340,6 +357,60 @@ static void build_gf_Rt_libri_serial(
         map_R_IJs[R].push_back(IJR.first);
     }
     global::ofs_myid << "map_R_IJs " << map_R_IJs << std::endl;
+
+    const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    if (can_restore_abacus_kstar_meanfield(
+            mf, kfrac_list, atom_nw, LIBRPA::abacus_symmetry_ctx.input_coord_frac))
+    {
+        const auto member_kfrac_targets = build_abacus_kstar_member_kfrac_targets(pbc);
+        std::vector<Vector3_Order<int>> Rs_this;
+        Rs_this.reserve(map_R_IJs.size());
+        for (const auto &R_IJs : map_R_IJs)
+        {
+            Rs_this.push_back(R_IJs.first);
+        }
+        const auto gf_cplx_R = get_abacus_restored_gf_cplx_imagtimes_Rs(
+            mf, ispin, isoc1, isoc2, kfrac_list, {tau}, Rs_this, atom_nw,
+            LIBRPA::abacus_symmetry_ctx.input_coord_frac, nbands_G, &member_kfrac_targets).at(tau);
+
+        for (const auto &R_IJs : map_R_IJs)
+        {
+            const auto &R = R_IJs.first;
+            const auto IJs = R_IJs.second;
+            const std::array<int,3> Ra{R.x,R.y,R.z};
+            const auto &gf_cplx = gf_cplx_R.at(R);
+            omp_lock_t gf_lock;
+            omp_init_lock(&gf_lock);
+#pragma omp parallel for schedule(dynamic)
+            for (const auto &IJ : IJs)
+            {
+                const auto &I = IJ.first;
+                const auto &J = IJ.second;
+                const auto nI = atbasis_wfc[I];
+                const auto nJ = atbasis_wfc[J];
+                auto ptr = std::make_shared<std::valarray<Tdata>>(nI * nJ);
+                for (size_t i = 0; i != nI; i++)
+                {
+                    size_t i_glo = atbasis_wfc.get_global_index(I, i);
+                    for (size_t j = 0; j != nJ; j++)
+                    {
+                        size_t j_glo = atbasis_wfc.get_global_index(J, j);
+                        if constexpr (std::is_same<Tdata, std::complex<double>>::value)
+                            (*ptr)[i*nJ+j] = gf_cplx(i_glo, j_glo);
+                        else
+                            (*ptr)[i*nJ+j] = gf_cplx(i_glo, j_glo).real();
+                    }
+                }
+                omp_set_lock(&gf_lock);
+                gf_libri[I][{J, Ra}] = RI::Tensor<Tdata>({nI, nJ}, ptr);
+                omp_unset_lock(&gf_lock);
+            }
+            omp_destroy_lock(&gf_lock);
+        }
+
+        global::profiler.stop("build_gf_Rt_libri_serial");
+        return;
+    }
 
     auto wg = mf.get_weight()[ispin];
     if (tau > 0)
@@ -1137,9 +1208,11 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                     else
                     {
                         build_gf_Rt_libri_serial(this->mf, this->nbands_G, this->atbasis_wfc, isp, is1, is2,
+                                                 this->pbc,
                                                  this->pbc.kfrac_list, this->IJRs_gf_local, tau,
                                                  gf_po_libri);
                         build_gf_Rt_libri_serial(this->mf, this->nbands_G, this->atbasis_wfc, isp, is2, is1,
+                                                 this->pbc,
                                                  this->pbc.kfrac_list, this->IJRs_gf_local, -tau,
                                                  gf_ne_libri);
                     }

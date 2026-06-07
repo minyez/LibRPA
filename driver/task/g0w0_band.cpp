@@ -6,6 +6,7 @@
 #include "../../src/io/global_io.h"
 #include "../../src/io/fs.h"
 #include "../../src/io/stl_io_helper.h"
+#include "../../src/core/abacus_symmetry.h"
 #include "../../src/utils/profiler.h"
 #include "../../src/api/instance_manager.h"
 #include "../../src/utils/constants.h"
@@ -163,6 +164,19 @@ void driver::task_g0w0_band()
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &kfrac_list = pds->pbc.kfrac_list;
     const auto &mf = pds->mf;
+    std::vector<LIBRPA::AbacusFullKpointMemberEntry> full_k_members;
+    if (LIBRPA::abacus_symmetry_ctx.available && !LIBRPA::abacus_symmetry_ctx.kstars.empty())
+    {
+        full_k_members = LIBRPA::build_abacus_full_kpoint_member_list(
+            LIBRPA::abacus_symmetry_ctx, kfrac_list);
+    }
+    const bool output_abacus_full_kgrid = full_k_members.size() > kfrac_list.size();
+    const int n_kpoints_output = output_abacus_full_kgrid
+        ? as_int(full_k_members.size())
+        : n_kpoints;
+    const double occupation_output_scale = output_abacus_full_kgrid
+        ? static_cast<double>(full_k_members.size())
+        : static_cast<double>(mf.get_n_kpoints());
 
     if (flag_read_vxc == 0)
     {
@@ -189,21 +203,26 @@ void driver::task_g0w0_band()
             lib_printf("Printing quasi-particle energy [unit: eV]\n\n");
             for (int i_spin = 0; i_spin < n_spins; i_spin++)
             {
-                for (int i_kpoint = 0; i_kpoint < n_kpoints; i_kpoint++)
+                for (int i_kpoint = 0; i_kpoint < n_kpoints_output; i_kpoint++)
                 {
-                    const auto &k = kfrac_list[i_kpoint];
+                    const int i_kpoint_ibz = output_abacus_full_kgrid
+                        ? full_k_members[as_size(i_kpoint)].ik_ibz
+                        : i_kpoint;
+                    const auto &k = output_abacus_full_kgrid
+                        ? full_k_members[as_size(i_kpoint)].k_bz
+                        : kfrac_list[i_kpoint_ibz];
                     lib_printf("spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n",
                                i_spin+1, i_kpoint+1, k.x, k.y, k.z);
                     lib_printf("%124s\n", banner.c_str());
                     lib_printf("%5s %16s %16s %16s %16s %16s %16s %16s\n", "State", "occ", "e_mf", "v_xc", "v_exx", "ReSigc", "ImSigc", "e_qp");
                     lib_printf("%124s\n", banner.c_str());
-                    const size_t start_k = (i_spin * n_kpoints + i_kpoint) * n_states_calc;
+                    const size_t start_k = (i_spin * n_kpoints + i_kpoint_ibz) * n_states_calc;
                     for (int i = 0; i < n_states_calc; i++)
                     {
                         const int i_state = i + i_state_low;
-                        const auto &occ_state = mf.get_weight()[i_spin](i_kpoint, i_state) * mf.get_n_kpoints();
-                        const auto &eks_state = mf.get_eigenvals()[i_spin](i_kpoint, i_state) * HA2EV;
-                        const auto &vxc_state = vxc[i_spin](i_kpoint, i_state) * HA2EV;
+                        const auto &occ_state = mf.get_weight()[i_spin](i_kpoint_ibz, i_state) * occupation_output_scale;
+                        const auto &eks_state = mf.get_eigenvals()[i_spin](i_kpoint_ibz, i_state) * HA2EV;
+                        const auto &vxc_state = vxc[i_spin](i_kpoint_ibz, i_state) * HA2EV;
                         const auto &exx_state = vexx_all[start_k+i] * HA2EV;
                         const auto &resigc = sigc_all[start_k+i].real() * HA2EV;
                         const auto &imsigc = sigc_all[start_k+i].imag() * HA2EV;

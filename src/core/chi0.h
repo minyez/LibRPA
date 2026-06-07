@@ -131,9 +131,9 @@ public:
         const std::vector<Vector3_Order<double>> &qlist, const AtomicBasis &abf_unfold,
         const BlacsCtxtHandler &blacs_ctxt_h);
     void unfold_abfs_Wc_q(
-        map<Vector3_Order<double>, ComplexMatrix> &sinvS,
+        std::map<Vector3_Order<double>, ComplexMatrix> &sinvS,
         atom_mapping<std::map<Vector3_Order<double>, matrix_m<complex<double>>>>::pair_t_old &Wc_q,
-        const vector<Vector3_Order<double>> &qlist, const AtomicBasis &abf_unfold,
+        const std::vector<Vector3_Order<double>> &qlist, const AtomicBasis &abf_unfold,
         const BlacsCtxtHandler &blacs_ctxt_h);
 };
 
