@@ -52,6 +52,8 @@ public:
     ArrayDesc desc_wfc_kb_full; // For communication from k-distributed eigenvectors
     //! Array descriptor for matrices of auxiliary basis set size (using blacs_h)
     ArrayDesc desc_abf;
+    //! Array descriptor for compressed auxiliary basis set size (using blacs_h)
+    ArrayDesc desc_abf_shrink;
     //! Atom pairs on current process for atomic-basis matrix data
     std::vector<atpair_t> atpairs_local;
     //! Distribution of unique atom-pairs on all processes for atomic-basis matrix data
@@ -79,6 +81,8 @@ public:
     // Input data.
     //! Mean-field starting point
     MeanField mf;
+    //! Mean-field used only for analytic head/wing construction
+    MeanField mf_headwing;
     //! Mean-field object for band calculation
     MeanField mf_band;
     //! Time-frequency grids

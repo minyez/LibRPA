@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <complex>
+#include <utility>
 
 // Internal headers
 #include "../utils/error.h"
@@ -325,20 +326,38 @@ std::vector<std::complex<double>> Handler::get_g0w0_sigc_kgrid(
     const Options& opts, const int n_spins, const std::vector<int>& iks_local, int i_state_low,
     int i_state_high, const std::vector<double>& vxc, const std::vector<double>& vexx)
 {
+    return get_g0w0_qpe_kgrid(opts, n_spins, iks_local, i_state_low, i_state_high,
+                              vxc, vexx).sigc;
+}
+
+G0W0QpeResult Handler::get_g0w0_qpe_kgrid(
+    const Options& opts, const int n_spins, const std::vector<int>& iks_local, int i_state_low,
+    int i_state_high, const std::vector<double>& vxc, const std::vector<double>& vexx)
+{
     const int n_kpoints_local = iks_local.size();
     const int n_states_calc = i_state_high - i_state_low;
     const size_t n = n_spins * n_kpoints_local * n_states_calc;
     std::vector<double> sigc_re(n);
     std::vector<double> sigc_im(n);
-    ::librpa_get_g0w0_sigc_kgrid(this->h_, &opts, n_spins, n_kpoints_local, iks_local.data(),
-                                 i_state_low, i_state_high, vxc.data(), vexx.data(), sigc_re.data(), sigc_im.data());
+    std::vector<double> eqp(n);
+    ::librpa_get_g0w0_qpe_kgrid(this->h_, &opts, n_spins, n_kpoints_local, iks_local.data(),
+                                i_state_low, i_state_high, vxc.data(), vexx.data(),
+                                sigc_re.data(), sigc_im.data(), eqp.data());
     std::vector<std::complex<double>> sigc(n);
     for (size_t i = 0; i < n; i++)
         sigc[i] = std::complex<double>{sigc_re[i], sigc_im[i]};
-    return sigc;
+    return G0W0QpeResult{std::move(sigc), std::move(eqp)};
 }
 
 std::vector<std::complex<double>> Handler::get_g0w0_sigc_band_k(
+    const Options& opts, const int n_spins, const std::vector<int>& iks_band_this, int i_state_low,
+    int i_state_high, const std::vector<double>& vxc_band, const std::vector<double>& vexx_band)
+{
+    return get_g0w0_qpe_band_k(opts, n_spins, iks_band_this, i_state_low, i_state_high,
+                               vxc_band, vexx_band).sigc;
+}
+
+G0W0QpeResult Handler::get_g0w0_qpe_band_k(
     const Options& opts, const int n_spins, const std::vector<int>& iks_band_this, int i_state_low,
     int i_state_high, const std::vector<double>& vxc_band, const std::vector<double>& vexx_band)
 {
@@ -347,13 +366,15 @@ std::vector<std::complex<double>> Handler::get_g0w0_sigc_band_k(
     const size_t n = n_spins * n_kpts_band_this * n_states_calc;
     std::vector<double> sigc_band_re(n);
     std::vector<double> sigc_band_im(n);
-    ::librpa_get_g0w0_sigc_band_k(this->h_, &opts, n_spins, n_kpts_band_this, iks_band_this.data(),
-                                  i_state_low, i_state_high, vxc_band.data(), vexx_band.data(),
-                                  sigc_band_re.data(), sigc_band_im.data());
+    std::vector<double> eqp_band(n);
+    ::librpa_get_g0w0_qpe_band_k(this->h_, &opts, n_spins, n_kpts_band_this,
+                                 iks_band_this.data(), i_state_low, i_state_high,
+                                 vxc_band.data(), vexx_band.data(), sigc_band_re.data(),
+                                 sigc_band_im.data(), eqp_band.data());
     std::vector<std::complex<double>> sigc_band(n);
     for (size_t i = 0; i < n; i++)
         sigc_band[i] = std::complex<double>{sigc_band_re[i], sigc_band_im[i]};
-    return sigc_band;
+    return G0W0QpeResult{std::move(sigc_band), std::move(eqp_band)};
 }
 
 }

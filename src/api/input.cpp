@@ -899,8 +899,9 @@ void librpa_set_band_occ_eigval(LibrpaHandler* h, int n_spins, int n_kpts_band, 
     const double efermi = pds->mf.get_efermi();
 
     auto &mfb = pds->mf_band;
-    pds->mf_band.get_efermi() = efermi;
-    pds->mf_band.set(n_spins, n_kpts_band, n_states, n_basis, n_spinor);
+    mfb.set(n_spins, n_kpts_band, n_states, n_basis, n_spinor);
+    // Band-path QPE uses the same reference Fermi level as the SCF k-grid.
+    mfb.get_efermi() = efermi;
     auto& eskb = mfb.get_eigenvals();
     auto& swg = mfb.get_weight();
     int length_kb = n_kpts_band * n_states;

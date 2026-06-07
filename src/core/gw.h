@@ -100,7 +100,15 @@ public:
         const AtomicBasis &atbasis_abf,
         const Cs_LRI &LRI_Cs,
         std::map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
-        const ArrayDesc &ad_Wc);
+        const ArrayDesc &ad_Wc,
+        std::map<double,
+                 atom_mapping<std::map<Vector3_Order<double>, Matz>>::pair_t_old>
+            *Wc_freq_q_atom_pair = nullptr,
+        std::map<Vector3_Order<double>, ComplexMatrix> *sinvS = nullptr,
+        const AtomicBasis *basis_aux_compressed = nullptr,
+        const AtomicBasis *basis_aux_unfold = nullptr,
+        const BlacsCtxtHandler *blacs_ctxt_h = nullptr,
+        const ArrayDesc *desc_wfc_in = nullptr);
 
     void build_sigc_matrix_KS_kgrid();
     void build_sigc_matrix_KS_band(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_band,

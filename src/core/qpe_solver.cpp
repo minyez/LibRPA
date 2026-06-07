@@ -120,6 +120,39 @@ int qpe_solver_pade_self_consistent(
         const double damp_fac,
         const bool use_adaptive_damp)
 {
+    if (!use_adaptive_damp)
+    {
+        int info = 0;
+        int n_iter = 0;
+        e_qp = e_mf;
+        double diff = diff_init;
+        sigc = pade.get(static_cast<cplxdb>(e_qp - e_fermi));
+
+        while (n_iter++ < n_iter_max)
+        {
+            if (std::abs(diff) > 10.0 * thres)
+            {
+                e_qp = e_qp + damp_fac * diff;
+            }
+            else
+            {
+                e_qp = e_qp + damp_fac * diff * 0.1;
+            }
+            sigc = pade.get(static_cast<cplxdb>(e_qp - e_fermi));
+            diff = e_mf - vxc + sigma_x + sigc.real() - e_qp;
+            if (std::abs(diff) < thres || n_iter == n_iter_max - 1)
+            {
+                break;
+            }
+        }
+
+        if (n_iter > n_iter_max)
+        {
+            info = 1;
+        }
+        return info;
+    }
+
     int info = 0;
     int n_iter = 0;
     bool converged = false;

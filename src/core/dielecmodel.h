@@ -24,6 +24,20 @@ std::vector<double> interpolate_dielec_func(int option, const std::vector<double
                                             const std::vector<double> &df_in,
                                             const std::vector<double> &frequencies_target);
 
+struct RpaHeadwingSettings
+{
+    bool enabled = false;
+    int option_dielect_func = 0;
+    bool use_2d_dielectric = false;
+    bool use_soc = false;
+    int rpa_headwing_body_start = 0;
+    double sqrt_coulomb_threshold = 0.0;
+};
+
+double headwing_transition_weight(double occupied_weight, double unoccupied_weight, int n_spin,
+                                  bool spin_orbit_coupled);
+double headwing_spin_prefactor(int n_spin, bool spin_orbit_coupled);
+
 // All calculation in unit: Bohr and Ha.
 class diele_func
 {
@@ -62,8 +76,8 @@ private:
     // Cs_LRI Cs_IJR;
 
     MeanField &meanfield_df;
-    const std::vector<double> &omega;
-    const std::vector<Vector3_Order<double>> &kfrac_band;
+    std::vector<double> omega;
+    std::vector<Vector3_Order<double>> kfrac_band;
     int n_basis, n_states, n_spin, n_abf, nk;
     const PeriodicBoundaryData &pbc_;
     const AtomicBasis &atomic_basis_wfc_;
@@ -80,6 +94,7 @@ private:
 
 public:
     bool use_2d_dielectric = false;
+    bool use_soc = false;
     bool debug = false;
 
 public:
@@ -103,8 +118,8 @@ public:
           blacs_h(blacs_h_in)
     {};
     ~diele_func() {};
-    void init(double vq_threshold, const atpair_k_cplx_mat_t &Vq);
-    void init_wing(double vq_threshold, const atpair_k_cplx_mat_t &Vq);
+    void init(double coulomb_eigen_threshold, const atpair_k_cplx_mat_t &Vq);
+    void init_wing(double coulomb_eigen_threshold, const atpair_k_cplx_mat_t &Vq);
     void set(MeanField &mf, std::vector<Vector3_Order<double>> &kfrac,
              std::vector<double> frequencies_target, int nbasis, int nstates, int nspin);
 
@@ -113,12 +128,12 @@ public:
     void test_head();
     std::vector<double> get_head_vec();
 
-    void cal_wing(const Cs_LRI &Cs_data, double vq_threshold, const atpair_k_cplx_mat_t &Vq);  // atpair_k_cplx_mat_t &Vq, Cs_LRI &Cs_data
+    void cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold, const atpair_k_cplx_mat_t &Vq);  // atpair_k_cplx_mat_t &Vq, Cs_LRI &Cs_data
     // tranform Cs_ij(R) to Cs_ij(k)
     // void FT_R2k(const librpa_int::Cs_LRI &Cs_data);
     // void Cs_ij2mn();
     // diagonalize Vq(q=0)
-    void get_Xv(double vq_threshold,
+    void get_Xv(double coulomb_eigen_threshold,
                 const librpa_int::atpair_k_cplx_mat_t &Vq);  // diagonalize Vq(q=0)
     std::complex<double> compute_wing(const int alpha, const int iomega, const int mu, const int ik,
                                       const int ispin, const ArrayDesc &desc_nband_nband,
@@ -132,7 +147,7 @@ public:
     // diagonalize real Vq_cut(q=0)
     // void get_Xv_real(double vq_threshold, const librpa_int::atpair_k_cplx_mat_t &Vq);
     // diagonalize complex Vq_cut(q=0)
-    void get_Xv_cpl(double vq_threshold, const atpair_k_cplx_mat_t &Vq);
+    void get_Xv_cpl(double coulomb_eigen_threshold, const atpair_k_cplx_mat_t &Vq);
     std::pair<ArrayDesc, matrix_m<complex<double>>> transform_Cs2mnk(
         const int ik, const int mu,
         std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ);
@@ -147,9 +162,14 @@ public:
     // set wing=0 for debug
     void set_0_wing();
 
+    matrix_m<std::complex<double>> get_rpa_chi0v_head(const int ifreq) const;
+    matrix_m<std::complex<double>> get_rpa_chi0v_wing(const int ifreq) const;
+
     ArrayDesc get_body_inv(matrix_m<std::complex<double>> &chi0_block,
                             ArrayDesc &desc_nabf_nabf_opt);
     void construct_L(const int ifreq, ArrayDesc &desc_body);
+    void construct_rpa_trace_log_schur(const int ifreq, ArrayDesc &desc_body,
+                                       int wing_row_offset = 0);
 
     // Lebedev-Laikov quadrature
     void get_Leb_points();
@@ -170,7 +190,33 @@ public:
     // std::complex<double> compute_chi0_inv_ij(const int ifreq, int i, int j);
     void rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
                      ArrayDesc &desc_nabf_nabf_opt);
+    std::complex<double> compute_rpa_trace_log_average(
+        matrix_m<std::complex<double>> &response_block, const int ifreq,
+        ArrayDesc &desc_response, const RpaHeadwingSettings &settings);
+    void rewrite_rpa_response(matrix_m<std::complex<double>> &eps_minus_identity_block,
+                              const int ifreq, ArrayDesc &desc_nabf_nabf_opt);
     void assign_chi0(matrix_m<std::complex<double>> &chi0_block, ArrayDesc &desc_nabf_nabf_opt);
 };
+
+int rpa_headwing_regular_body_start_channel(const RpaHeadwingSettings &settings);
+
+std::complex<double> compute_rpa_chi0v_headwing_trace_log_average(
+    const matrix_m<std::complex<double>> &head,
+    const matrix_m<std::complex<double>> &schur_l,
+    const std::complex<double> &trace_body,
+    const std::complex<double> &logdet_body,
+    const std::vector<double> &qx,
+    const std::vector<double> &qy,
+    const std::vector<double> &qz,
+    const std::vector<double> &weights,
+    double *weight_sum_out = nullptr,
+    std::complex<double> *averaged_body_out = nullptr,
+    std::complex<double> *averaged_head_out = nullptr,
+    std::complex<double> *averaged_schur_log_out = nullptr);
+
+void replace_rpa_response_headwing(matrix_m<std::complex<double>> &response_block,
+                                   const matrix_m<std::complex<double>> &head,
+                                   const matrix_m<std::complex<double>> &wing,
+                                   const ArrayDesc &desc_response);
 
 }

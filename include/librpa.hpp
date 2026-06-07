@@ -42,6 +42,12 @@ typedef LibrpaKind Kind;  ///< DFT code kind type (C++ alias, reserved)
 
 typedef LibrpaVerbose Verbose;  ///< Verbosity level type (C++ alias)
 
+struct G0W0QpeResult
+{
+    std::vector<std::complex<double>> sigc;
+    std::vector<double> eqp;
+};
+
 
 /* Options */
 /**
@@ -379,6 +385,11 @@ public:
     get_g0w0_sigc_kgrid(const Options &opts, const int n_spins, const std::vector<int> &iks_this,
                         int i_state_low, int i_state_high, const std::vector<double> &vxc, const std::vector<double> &vexx);
 
+    G0W0QpeResult
+    get_g0w0_qpe_kgrid(const Options &opts, const int n_spins, const std::vector<int> &iks_this,
+                       int i_state_low, int i_state_high, const std::vector<double> &vxc,
+                       const std::vector<double> &vexx);
+
     /** @brief Get G0W0 correlation self-energy for band k-points.
      *
      * @param[in] opts            Runtime options.
@@ -394,6 +405,12 @@ public:
     std::vector<std::complex<double>>
     get_g0w0_sigc_band_k(const Options &opts, const int n_spins, const std::vector<int> &iks_band_this,
                          int i_state_low, int i_state_high, const std::vector<double> &vxc_band, const std::vector<double> &vexx_band);
+
+    G0W0QpeResult
+    get_g0w0_qpe_band_k(const Options &opts, const int n_spins,
+                        const std::vector<int> &iks_band_this, int i_state_low,
+                        int i_state_high, const std::vector<double> &vxc_band,
+                        const std::vector<double> &vexx_band);
 
     /* Utility functions */
 };

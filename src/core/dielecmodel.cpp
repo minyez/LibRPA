@@ -1,7 +1,9 @@
 #include "dielecmodel.h"
 
 #include <cassert>
+#include <algorithm>
 #include <cmath>
+#include <sstream>
 #include <utility>
 
 #include "../math/fitting.h"
@@ -30,6 +32,9 @@ namespace librpa_int {
 
 using RI::Tensor;
 using RI::Communicate_Tensors_Map_Judge::comm_map2_first;
+
+std::complex<double> compute_pi_det_blacs_2d(Matz &loc_piT, const ArrayDesc &arrdesc_pi,
+                                             int *ipiv, int &info);
 
 const int DoubleHavriliakNegami::d_npar = 8;
 
@@ -61,6 +66,20 @@ const std::function<void(std::vector<double> &, double, const std::vector<double
     grads[7] = (pars[4] - 1.0) * (-pars[6]) / pow(1.0 + pow(u * pars[7], pars[5]), pars[6] + 1) *
                pars[5] / pars[7] * pow(u * pars[7], pars[5]);
 };
+
+double headwing_transition_weight(const double occupied_weight, const double unoccupied_weight,
+                                  const int n_spin, const bool spin_orbit_coupled)
+{
+    const double occupation_difference = occupied_weight - unoccupied_weight;
+    if (spin_orbit_coupled) return occupation_difference;
+    return occupation_difference * static_cast<double>(n_spin) / 2.0;
+}
+
+double headwing_spin_prefactor(const int n_spin, const bool spin_orbit_coupled)
+{
+    if (spin_orbit_coupled) return 1.0;
+    return 2.0 / static_cast<double>(n_spin);
+}
 
 std::vector<double> interpolate_dielec_func(int option, const std::vector<double> &frequencies_in,
                                             const std::vector<double> &df_in,
@@ -115,12 +134,12 @@ std::vector<double> interpolate_dielec_func(int option, const std::vector<double
 //     init();
 // };
 
-void diele_func::init(double vq_threshold, const librpa_int::atpair_k_cplx_mat_t &Vq)
+void diele_func::init(double coulomb_eigen_threshold, const librpa_int::atpair_k_cplx_mat_t &Vq)
 {
     this->n_abf = atomic_basis_abf_.nb_total;
     this->nk = this->kfrac_band.size();
     int n_omega = this->omega.size();
-    get_Xv_cpl(vq_threshold, Vq);
+    get_Xv_cpl(coulomb_eigen_threshold, Vq);
 
     this->head.clear();
     this->head.resize(n_omega);
@@ -130,11 +149,11 @@ void diele_func::init(double vq_threshold, const librpa_int::atpair_k_cplx_mat_t
     }
 };
 
-void diele_func::init_wing(double vq_threshold, const atpair_k_cplx_mat_t &Vq)
+void diele_func::init_wing(double coulomb_eigen_threshold, const atpair_k_cplx_mat_t &Vq)
 {
     int n_omega = this->omega.size();
     this->n_abf = atomic_basis_abf_.nb_total;
-    get_Xv_cpl(vq_threshold, Vq);
+    get_Xv_cpl(coulomb_eigen_threshold, Vq);
     this->wing_mu.clear();
     this->wing_mu.resize(n_omega);
     this->wing.clear();
@@ -168,8 +187,6 @@ void diele_func::cal_head()
 {
     using global::profiler;
 
-    const bool use_soc = false;
-
     profiler.start("cal_head");
 
     std::complex<double> tmp;
@@ -191,11 +208,8 @@ void diele_func::cal_head()
                     {
                         double egap =
                             (eigenvalues(ik, iocc) - eigenvalues(ik, iunocc));  // * HA2EV;
-                        double factor;
-                        if (use_soc)
-                            factor = wg.c[iocc] - wg.c[iunocc];
-                        else
-                            factor = (wg.c[iocc] - wg.c[iunocc]) / 2 * n_spin;
+                        const double factor = headwing_transition_weight(
+                            wg.c[iocc], wg.c[iunocc], n_spin, use_soc);
                         if (factor > 1.e-8)
                         {
                             for (int alpha = 0; alpha != 3; alpha++)
@@ -224,10 +238,8 @@ void diele_func::cal_head()
         {
             for (size_t iomega = 0; iomega != this->omega.size(); iomega++)
             {
-                if (use_soc)
-                    this->head.at(iomega)(alpha, beta) *= dielectric_unit;
-                else
-                    this->head.at(iomega)(alpha, beta) *= dielectric_unit * 2.0 / n_spin;
+                this->head.at(iomega)(alpha, beta) *=
+                    dielectric_unit * headwing_spin_prefactor(n_spin, use_soc);
                 if (alpha == beta)
                 {
                     this->head.at(iomega)(alpha, beta) += std::complex<double>(1.0, 0.0);
@@ -244,7 +256,6 @@ double diele_func::cal_factor(std::string name)
     using librpa_int::TWO_PI;
     using librpa_int::BOHR2ANG;
 
-    const bool use_2d_dielectric = false;
     double dielectric_unit;
     const auto &latvec = pbc_.latvec;
     double primitive_cell_volume;
@@ -294,14 +305,41 @@ void diele_func::set_0_wing()
     }
 };
 
-void diele_func::cal_wing(const Cs_LRI &Cs_data, double vq_threshold, const atpair_k_cplx_mat_t &Vq)
+matrix_m<std::complex<double>> diele_func::get_rpa_chi0v_head(const int ifreq) const
+{
+    if (ifreq < 0 || static_cast<std::size_t>(ifreq) >= head.size())
+    {
+        throw std::runtime_error("RPA chi0*v head requested before dielectric head is available");
+    }
+
+    auto chi0v_head = head.at(ifreq).copy();
+    chi0v_head *= -1.0;
+    for (int alpha = 0; alpha != 3; ++alpha)
+    {
+        chi0v_head(alpha, alpha) += 1.0;
+    }
+    return chi0v_head;
+}
+
+matrix_m<std::complex<double>> diele_func::get_rpa_chi0v_wing(const int ifreq) const
+{
+    if (ifreq < 0 || static_cast<std::size_t>(ifreq) >= wing.size())
+    {
+        throw std::runtime_error("RPA chi0*v wing requested before dielectric wing is available");
+    }
+
+    auto chi0v_wing = wing.at(ifreq).copy();
+    chi0v_wing *= -1.0;
+    return chi0v_wing;
+}
+
+void diele_func::cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
+                          const atpair_k_cplx_mat_t &Vq)
 {
     using global::profiler;
 
-    const bool use_soc = false;
-
     profiler.start("cal_wing_mu");
-    init_wing(vq_threshold, Vq);
+    init_wing(coulomb_eigen_threshold, Vq);
     int n_lambda = this->n_nonsingular - 1;
     std::vector<std::complex<double>> local_wing_mu;
     local_wing_mu.resize(this->omega.size() * 3 * n_abf, 0.0);
@@ -366,10 +404,8 @@ void diele_func::cal_wing(const Cs_LRI &Cs_data, double vq_threshold, const atpa
             {
                 const std::size_t index = as_size(mu) * this->omega.size() * 3 + iomega * 3 + as_size(alpha);
                 this->wing_mu.at(iomega)(mu, alpha) = local_wing_mu[index];
-                if (use_soc)
-                    this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit;
-                else
-                    this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit * 2.0 / n_spin;
+                this->wing_mu.at(iomega)(mu, alpha) *=
+                    -dielectric_unit * headwing_spin_prefactor(n_spin, use_soc);
             }
         }
     }
@@ -423,7 +459,6 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(
     C_nband_nband.zero_out();
     collect_block_from_IJ_storage_tensor_transform_triple(
         C_nao_nao, desc_nao_nao, atomic_basis_wfc_, atomic_basis_wfc_, fourier, Cs_IJ, Mu, mu_local);
-    // ghj debug
     // if (ik == 1 && mu == 4)
     // {
     //     for (const auto IJRc : Cs_IJ)
@@ -722,7 +757,7 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
 //         std::cout << "* Success: diagonalize Coulomb matrix in the ABFs repre." << std::endl;
 // };
 
-void diele_func::get_Xv_cpl(double vq_threshold, const librpa_int::atpair_k_cplx_mat_t &Vq)
+void diele_func::get_Xv_cpl(double coulomb_eigen_threshold, const librpa_int::atpair_k_cplx_mat_t &Vq)
 {
     using global::profiler;
 
@@ -733,13 +768,9 @@ void diele_func::get_Xv_cpl(double vq_threshold, const librpa_int::atpair_k_cplx
     size_t n_singular;
     librpa_int::vec<double> eigenvalues(n_abf);
 
-    const MpiCommHandler &comm_h = global::mpi_comm_global_h;  // TODO: replace with the actual comm
-
     comm_h.barrier();
 
-    BlacsCtxtHandler blacs_ctxt_global_h;
-
-    ArrayDesc desc_nabf_nabf(blacs_ctxt_global_h);
+    ArrayDesc desc_nabf_nabf(blacs_h);
     desc_nabf_nabf.init_square_blk(n_abf, n_abf, 0, 0);
     const auto set_IJ_nabf_nabf =
         get_necessary_IJ_from_block_2D_sy('U', atomic_basis_abf_, desc_nabf_nabf);
@@ -751,8 +782,7 @@ void diele_func::get_Xv_cpl(double vq_threshold, const librpa_int::atpair_k_cplx
         couleps_libri;
     const int natom = atomic_basis_abf_.n_atoms;
     const auto atpair_local = dispatch_upper_triangular_tasks(
-        natom, blacs_ctxt_global_h.myid, blacs_ctxt_global_h.nprows, blacs_ctxt_global_h.npcols,
-        blacs_ctxt_global_h.myprow, blacs_ctxt_global_h.mypcol);
+        natom, blacs_h.myid, blacs_h.nprows, blacs_h.npcols, blacs_h.myprow, blacs_h.mypcol);
     for (const auto &Mu_Nu : atpair_local)
     {
         const auto Mu = Mu_Nu.first;
@@ -774,7 +804,7 @@ void diele_func::get_Xv_cpl(double vq_threshold, const librpa_int::atpair_k_cplx
     collect_block_from_ALL_IJ_Tensor(coulwc_block, desc_nabf_nabf, atomic_basis_abf_, qa,
                                      true, CONE, IJq_coul, MAJOR::ROW);
     power_hemat_blacs_desc(coulwc_block, desc_nabf_nabf, coul_eigen_block, desc_nabf_nabf,
-                           n_singular, eigenvalues.c, 1.0, vq_threshold);
+                           n_singular, eigenvalues.c, 0.5, coulomb_eigen_threshold);
     this->n_nonsingular = n_abf - n_singular;
 
     // for (int iv = 1; iv != n_nonsingular; iv++)
@@ -890,15 +920,13 @@ ArrayDesc diele_func::get_body_inv(matrix_m<std::complex<double>> &chi0_block,
                                     ArrayDesc &desc_nabf_nabf_opt)
 {
     using global::profiler;
-    using global::mpi_comm_global_h;
 
-    mpi_comm_global_h.barrier();
-    BlacsCtxtHandler blacs_h(mpi_comm_global_h.comm);
+    comm_h.barrier();
     ArrayDesc desc_nabf_nabf(blacs_h);
     desc_nabf_nabf.init_square_blk(n_nonsingular - 1, n_nonsingular - 1, 0, 0);
     this->body_inv = init_local_mat<complex<double>>(desc_nabf_nabf, MAJOR::COL);
     profiler.start("get_inverse_body_of_chi0");
-    mpi_comm_global_h.barrier();
+    comm_h.barrier();
 
     ArrayDesc desc_body(blacs_h);
     desc_body.init_square_blk(n_nonsingular - 1, n_nonsingular - 1, 0, 0);
@@ -999,6 +1027,105 @@ void diele_func::construct_L(const int ifreq, ArrayDesc &desc_body)
 
     profiler.stop("cal_L");
 };
+
+void diele_func::construct_rpa_trace_log_schur(
+    const int ifreq, ArrayDesc &desc_body, const int wing_row_offset)
+{
+    using global::profiler;
+
+    profiler.start("cal_rpa_chi0v_schur");
+    if (ifreq < 0 || static_cast<std::size_t>(ifreq) >= head.size()
+        || static_cast<std::size_t>(ifreq) >= wing.size())
+    {
+        std::ostringstream oss;
+        oss << "RPA chi0*v head/wing data unavailable for ifreq=" << ifreq
+            << " (head_size=" << head.size() << ", wing_size=" << wing.size() << ")";
+        throw std::runtime_error(oss.str());
+    }
+
+    const auto chi0v_head = get_rpa_chi0v_head(ifreq);
+    const auto chi0v_wing = get_rpa_chi0v_wing(ifreq);
+    const int n_body = desc_body.m();
+    if (n_body <= 0 || wing_row_offset < 0 || wing_row_offset + n_body > chi0v_wing.nr())
+    {
+        std::ostringstream oss;
+        oss << "RPA chi0*v Schur wing/body mismatch: n_body=" << n_body
+            << ", wing_row_offset=" << wing_row_offset << ", wing_rows=" << chi0v_wing.nr();
+        throw std::logic_error(oss.str());
+    }
+
+    this->Lind.resize(3, 3, MAJOR::COL);
+    this->bw.resize(n_body, 3, MAJOR::COL);
+    this->wb.resize(3, n_body, MAJOR::COL);
+
+    ArrayDesc desc_wing(blacs_h);
+    desc_wing.init_square_blk(chi0v_wing.nr(), 3, 0, 0);
+    ArrayDesc desc_wing_opt(blacs_h);
+    desc_wing_opt.init(chi0v_wing.nr(), 3, desc_body.mb(), desc_wing.nb(), 0, 0);
+
+    ArrayDesc desc_lam_3(blacs_h);
+    desc_lam_3.init_square_blk(n_body, 3, 0, 0);
+
+    ArrayDesc desc_3_lam(blacs_h);
+    desc_3_lam.init_square_blk(3, n_body, 0, 0);
+
+    ArrayDesc desc_3_3(blacs_h);
+    desc_3_3.init_square_blk(3, 3, 0, 0);
+
+    auto lam_3 = init_local_mat<complex<double>>(desc_lam_3, MAJOR::COL);
+    auto _3_lam = init_local_mat<complex<double>>(desc_3_lam, MAJOR::COL);
+    auto schur_correction = init_local_mat<complex<double>>(desc_3_3, MAJOR::COL);
+
+    ScalapackConnector::pgemm_f('N', 'N', n_body, 3, n_body, 1.0, body_inv.ptr(), 1, 1,
+                                desc_body.desc, chi0v_wing.ptr(), 1 + wing_row_offset, 1,
+                                desc_wing_opt.desc, 0.0, lam_3.ptr(), 1, 1, desc_lam_3.desc);
+    ScalapackConnector::pgemm_f('C', 'N', 3, 3, n_body, 1.0, chi0v_wing.ptr(),
+                                1 + wing_row_offset, 1, desc_wing_opt.desc, lam_3.ptr(), 1, 1,
+                                desc_lam_3.desc, 0.0, schur_correction.ptr(), 1, 1,
+                                desc_3_3.desc);
+    ScalapackConnector::pgemm_f('C', 'N', 3, n_body, n_body, 1.0, chi0v_wing.ptr(),
+                                1 + wing_row_offset, 1, desc_wing_opt.desc, body_inv.ptr(), 1, 1,
+                                desc_body.desc, 0.0, _3_lam.ptr(), 1, 1, desc_3_lam.desc);
+
+    for (int i = 0; i != 3; ++i)
+    {
+        const int loc_i = desc_3_3.indx_g2l_r(i);
+        for (int ilambda = 0; ilambda < n_body; ++ilambda)
+        {
+            int loc_ilambda = desc_lam_3.indx_g2l_r(ilambda);
+            const int loc_ibw = desc_lam_3.indx_g2l_c(i);
+            if (loc_ibw >= 0 && loc_ilambda >= 0)
+                this->bw(ilambda, i) = lam_3(loc_ilambda, loc_ibw);
+
+            loc_ilambda = desc_3_lam.indx_g2l_c(ilambda);
+            const int loc_iwb = desc_3_lam.indx_g2l_r(i);
+            if (loc_iwb >= 0 && loc_ilambda >= 0)
+                this->wb(i, ilambda) = _3_lam(loc_iwb, loc_ilambda);
+
+            MPI_Allreduce(MPI_IN_PLACE, &bw(ilambda, i), 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
+                          comm_h.comm);
+            MPI_Allreduce(MPI_IN_PLACE, &wb(i, ilambda), 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
+                          comm_h.comm);
+        }
+
+        for (int j = 0; j != 3; ++j)
+        {
+            const int loc_j = desc_3_3.indx_g2l_c(j);
+            std::complex<double> correction = 0.0;
+            if (loc_i >= 0 && loc_j >= 0)
+            {
+                correction = schur_correction(loc_i, loc_j);
+            }
+            MPI_Allreduce(MPI_IN_PLACE, &correction, 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
+                          comm_h.comm);
+
+            this->Lind(i, j) = -chi0v_head(i, j) - correction;
+            if (i == j) this->Lind(i, j) += 1.0;
+        }
+    }
+
+    profiler.stop("cal_rpa_chi0v_schur");
+}
 
 void diele_func::get_Leb_points()
 {
@@ -1240,7 +1367,6 @@ void diele_func::cal_eps(const int ifreq, ArrayDesc &desc_nabf_nabf_opt, ArrayDe
     using global::mpi_comm_global_h;
     using global::profiler;
 
-    const bool use_2d_dielectric = false;
     profiler.start("cal_inverse_dielectric_matrix");
     this->chi0 = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
     double k_volume;
@@ -1503,6 +1629,132 @@ void diele_func::assign_chi0(matrix_m<std::complex<double>> &chi0_block,
     profiler.stop("assign_chi0");
 }
 
+int rpa_headwing_regular_body_start_channel(const RpaHeadwingSettings &settings)
+{
+    if (settings.rpa_headwing_body_start < 0)
+    {
+        throw std::logic_error("rpa_headwing_body_start must be non-negative");
+    }
+    if (settings.rpa_headwing_body_start > 0)
+    {
+        return settings.rpa_headwing_body_start;
+    }
+    return 1;
+}
+
+std::complex<double> compute_rpa_chi0v_headwing_trace_log_average(
+    const matrix_m<std::complex<double>> &head,
+    const matrix_m<std::complex<double>> &schur_l,
+    const std::complex<double> &trace_body,
+    const std::complex<double> &logdet_body,
+    const std::vector<double> &qx,
+    const std::vector<double> &qy,
+    const std::vector<double> &qz,
+    const std::vector<double> &weights,
+    double *weight_sum_out,
+    std::complex<double> *averaged_body_out,
+    std::complex<double> *averaged_head_out,
+    std::complex<double> *averaged_schur_log_out)
+{
+    if (head.nr() != 3 || head.nc() != 3 || schur_l.nr() != 3 || schur_l.nc() != 3)
+    {
+        throw std::logic_error(
+            "RPA chi0*v head/wing trace-log average expects 3x3 head and Schur matrices");
+    }
+    if (qx.size() != qy.size() || qx.size() != qz.size() || qx.size() != weights.size())
+    {
+        throw std::logic_error("RPA head/wing trace-log average direction grids are inconsistent");
+    }
+
+    double weight_sum = 0.0;
+    std::complex<double> averaged_head = 0.0;
+    std::complex<double> averaged_schur_log = 0.0;
+    for (std::size_t i = 0; i != weights.size(); ++i)
+    {
+        weight_sum += weights[i];
+        const double nx = qx[i];
+        const double ny = qy[i];
+        const double nz = qz[i];
+        const auto directional_head =
+            nx * (nx * head(0, 0) + ny * head(0, 1) + nz * head(0, 2))
+            + ny * (nx * head(1, 0) + ny * head(1, 1) + nz * head(1, 2))
+            + nz * (nx * head(2, 0) + ny * head(2, 1) + nz * head(2, 2));
+        const auto directional_schur =
+            nx * (nx * schur_l(0, 0) + ny * schur_l(0, 1) + nz * schur_l(0, 2))
+            + ny * (nx * schur_l(1, 0) + ny * schur_l(1, 1) + nz * schur_l(1, 2))
+            + nz * (nx * schur_l(2, 0) + ny * schur_l(2, 1) + nz * schur_l(2, 2));
+        averaged_head += weights[i] * directional_head;
+        averaged_schur_log += weights[i] * std::log(directional_schur);
+    }
+
+    const auto averaged_body = weight_sum * (trace_body + logdet_body);
+    if (weight_sum_out != nullptr) *weight_sum_out = weight_sum;
+    if (averaged_body_out != nullptr) *averaged_body_out = averaged_body;
+    if (averaged_head_out != nullptr) *averaged_head_out = averaged_head;
+    if (averaged_schur_log_out != nullptr) *averaged_schur_log_out = averaged_schur_log;
+    return averaged_body + averaged_head + averaged_schur_log;
+}
+
+void replace_rpa_response_headwing(matrix_m<std::complex<double>> &response_block,
+                                   const matrix_m<std::complex<double>> &head,
+                                   const matrix_m<std::complex<double>> &wing,
+                                   const ArrayDesc &desc_response)
+{
+    if (head.nr() != 3 || head.nc() != 3)
+    {
+        throw std::logic_error("RPA head/wing replacement expects a 3x3 chi0*v head");
+    }
+    if (wing.nc() != 3)
+    {
+        throw std::logic_error("RPA head/wing replacement expects wing columns for x/y/z");
+    }
+    if (desc_response.m() < 1 || desc_response.n() < 1)
+    {
+        throw std::logic_error("RPA head/wing replacement expects a non-empty response matrix");
+    }
+    if (wing.nr() > desc_response.m() - 1)
+    {
+        throw std::logic_error(
+            "RPA head/wing replacement wing size does not match the Coulomb body dimension");
+    }
+
+    std::complex<double> head_average = 0.0;
+    for (int alpha = 0; alpha != 3; ++alpha)
+    {
+        head_average += head(alpha, alpha);
+    }
+    head_average /= 3.0;
+
+    const int ilo_head = desc_response.indx_g2l_r(0);
+    const int jlo_head = desc_response.indx_g2l_c(0);
+    if (ilo_head >= 0 && jlo_head >= 0)
+    {
+        response_block(ilo_head, jlo_head) = head_average;
+    }
+
+    for (int ilambda = 0; ilambda != wing.nr(); ++ilambda)
+    {
+        std::complex<double> wing_average = 0.0;
+        for (int alpha = 0; alpha != 3; ++alpha)
+        {
+            wing_average += wing(ilambda, alpha);
+        }
+        wing_average /= 3.0;
+
+        const int global_body = ilambda + 1;
+        const int ilo_body = desc_response.indx_g2l_r(global_body);
+        const int jlo_body = desc_response.indx_g2l_c(global_body);
+        if (ilo_body >= 0 && jlo_head >= 0)
+        {
+            response_block(ilo_body, jlo_head) = wing_average;
+        }
+        if (ilo_head >= 0 && jlo_body >= 0)
+        {
+            response_block(ilo_head, jlo_body) = std::conj(wing_average);
+        }
+    }
+}
+
 void diele_func::rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
                              ArrayDesc &desc_nabf_nabf_opt)
 {
@@ -1513,5 +1765,139 @@ void diele_func::rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const i
     this->Lind.clear();
     this->body_inv.clear();
 };
+
+std::complex<double> diele_func::compute_rpa_trace_log_average(
+    matrix_m<std::complex<double>> &response_block, const int ifreq,
+    ArrayDesc &desc_response, const RpaHeadwingSettings &settings)
+{
+    if (ifreq < 0 || static_cast<std::size_t>(ifreq) >= head.size()
+        || static_cast<std::size_t>(ifreq) >= wing.size())
+    {
+        std::ostringstream oss;
+        oss << "RPA chi0*v head/wing data unavailable for trace-log average for ifreq=" << ifreq
+            << " (head_size=" << head.size() << ", wing_size=" << wing.size() << ")";
+        throw std::runtime_error(oss.str());
+    }
+    if (desc_response.m() < 2 || desc_response.n() < 2)
+    {
+        throw std::logic_error("RPA head/wing trace-log average needs at least one body channel");
+    }
+    if (static_cast<std::size_t>(desc_response.m()) != n_nonsingular
+        || static_cast<std::size_t>(desc_response.n()) != n_nonsingular)
+    {
+        std::ostringstream oss;
+        oss << "RPA head/wing trace-log subspace mismatch: response=" << desc_response.m()
+            << "x" << desc_response.n() << ", headwing n_nonsingular=" << n_nonsingular;
+        throw std::logic_error(oss.str());
+    }
+
+    const int body_start = rpa_headwing_regular_body_start_channel(settings);
+    const int wing_row_offset = body_start - 1;
+    if (desc_response.m() <= body_start || wing_row_offset >= wing.at(ifreq).nr())
+    {
+        std::ostringstream oss;
+        oss << "RPA head/wing regular-body split is inconsistent: response_size="
+            << desc_response.m() << ", body_start=" << body_start
+            << ", wing_rows=" << wing.at(ifreq).nr();
+        throw std::logic_error(oss.str());
+    }
+
+    ArrayDesc desc_body(blacs_h);
+    desc_body.init_square_blk(desc_response.m() - body_start, desc_response.n() - body_start, 0, 0);
+    auto body = init_local_mat<std::complex<double>>(desc_body, MAJOR::COL);
+    ScalapackConnector::pgemr2d_f(desc_response.m() - body_start, desc_response.n() - body_start,
+                                  response_block.ptr(), body_start + 1, body_start + 1,
+                                  desc_response.desc, body.ptr(), 1, 1, desc_body.desc,
+                                  blacs_h.ictxt);
+
+    std::complex<double> trace_body_loc = 0.0;
+    for (int i = 0; i != desc_body.m(); ++i)
+    {
+        const int ilo = desc_body.indx_g2l_r(i);
+        const int jlo = desc_body.indx_g2l_c(i);
+        if (ilo >= 0 && jlo >= 0) trace_body_loc += body(ilo, jlo);
+    }
+    std::complex<double> trace_body = 0.0;
+    MPI_Allreduce(&trace_body_loc, &trace_body, 1, MPI_DOUBLE_COMPLEX, MPI_SUM, comm_h.comm);
+
+    auto identity_minus_body = body.copy();
+    identity_minus_body *= -1.0;
+    for (int i = 0; i != desc_body.m(); ++i)
+    {
+        const int ilo = desc_body.indx_g2l_r(i);
+        const int jlo = desc_body.indx_g2l_c(i);
+        if (ilo >= 0 && jlo >= 0) identity_minus_body(ilo, jlo) += 1.0;
+    }
+
+    auto identity_minus_body_for_logdet = identity_minus_body.copy();
+    int info = 0;
+    std::vector<int> ipiv(std::max(1, desc_body.m_loc() * 10));
+    std::complex<double> logdet_body =
+        compute_pi_det_blacs_2d(identity_minus_body_for_logdet, desc_body, ipiv.data(), info);
+
+    this->body_inv = identity_minus_body.copy();
+    invert_scalapack(this->body_inv, desc_body);
+    construct_rpa_trace_log_schur(ifreq, desc_body, wing_row_offset);
+
+    double k_volume;
+    if (settings.use_2d_dielectric)
+        k_volume = std::abs(pbc_.latvec.e11 * pbc_.latvec.e22 - pbc_.latvec.e12 * pbc_.latvec.e21);
+    else
+        k_volume = std::abs(pbc_.latvec.Det());
+    this->vol_gamma = k_volume / nk;
+
+    std::vector<double> weights(qw_leb.size());
+    for (std::size_t ileb = 0; ileb != qw_leb.size(); ++ileb)
+    {
+        if (settings.use_2d_dielectric)
+            weights[ileb] = qw_leb[ileb] * std::pow(q_gamma[ileb], 2) / (2.0 * vol_gamma);
+        else
+            weights[ileb] = qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / (3.0 * vol_gamma);
+    }
+
+    double weight_sum = 0.0;
+    std::complex<double> averaged_body = 0.0;
+    std::complex<double> averaged_head = 0.0;
+    std::complex<double> averaged_schur_log = 0.0;
+    const auto result =
+        compute_rpa_chi0v_headwing_trace_log_average(get_rpa_chi0v_head(ifreq), Lind, trace_body,
+                                                     logdet_body, qx_leb, qy_leb, qz_leb, weights,
+                                                     &weight_sum, &averaged_body,
+                                                     &averaged_head, &averaged_schur_log);
+
+    if (debug && comm_h.is_root())
+    {
+        global::lib_printf(
+            "RPA HW avg ifreq=%d trace_body=(%.12e,%.12e) logdet_body=(%.12e,%.12e) "
+            "weight_sum=%.12e averaged_body=(%.12e,%.12e) "
+            "averaged_head=(%.12e,%.12e) averaged_schur_log=(%.12e,%.12e) "
+            "total=(%.12e,%.12e)\n",
+            ifreq,
+            trace_body.real(), trace_body.imag(), logdet_body.real(), logdet_body.imag(),
+            weight_sum, averaged_body.real(), averaged_body.imag(), averaged_head.real(),
+            averaged_head.imag(), averaged_schur_log.real(), averaged_schur_log.imag(),
+            result.real(), result.imag());
+    }
+
+    this->Lind.clear();
+    this->body_inv.clear();
+    return result;
+}
+
+void diele_func::rewrite_rpa_response(matrix_m<std::complex<double>> &eps_minus_identity_block,
+                                      const int ifreq, ArrayDesc &desc_nabf_nabf_opt)
+{
+    if (ifreq < 0 || static_cast<std::size_t>(ifreq) >= head.size()
+        || static_cast<std::size_t>(ifreq) >= wing.size())
+    {
+        std::ostringstream oss;
+        oss << "RPA chi0*v head/wing data unavailable for response replacement for ifreq="
+            << ifreq << " (head_size=" << head.size() << ", wing_size=" << wing.size() << ")";
+        throw std::runtime_error(oss.str());
+    }
+
+    replace_rpa_response_headwing(eps_minus_identity_block, get_rpa_chi0v_head(ifreq),
+                                  get_rpa_chi0v_wing(ifreq), desc_nabf_nabf_opt);
+}
 
 }

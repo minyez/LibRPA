@@ -119,6 +119,19 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts,
                                 const int *iks_this, int i_state_low, int i_state_high,
                                 const double *vxc, const double *vexx, double *sigc_re, double *sigc_im);
 
+//! Obtain correlation self-energies and QP energies for selected states.
+/**
+ * Same inputs and SigC outputs as librpa_get_g0w0_sigc_kgrid.
+ *
+ * @param[out] eqp              Quasi-particle energy solved by the selected QPE solver.
+ *                              It should be at least as long as sigc_re/sigc_im.
+ */
+void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts,
+                               const int n_spins, const int n_kpts_this,
+                               const int *iks_this, int i_state_low, int i_state_high,
+                               const double *vxc, const double *vexx, double *sigc_re,
+                               double *sigc_im, double *eqp);
+
 //! Obtain correlation self-energies for selected states at band k-points.
 /**
  * @param[in]  h                Pointer to LibRPA handler.
@@ -144,6 +157,20 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts,
                                  const int n_spins, const int n_kpts_band_this,
                                  const int *iks_band_this, int i_state_low, int i_state_high,
                                  const double *vxc_band, const double *vexx_band, double *sigc_band_re, double *sigc_band_im);
+
+//! Obtain correlation self-energies and QP energies for selected band-k states.
+/**
+ * Same inputs and SigC outputs as librpa_get_g0w0_sigc_band_k.
+ *
+ * @param[out] eqp_band         Quasi-particle energy solved by the selected QPE solver.
+ *                              It should be at least as long as sigc_band_re/sigc_band_im.
+ */
+void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts,
+                                const int n_spins, const int n_kpts_band_this,
+                                const int *iks_band_this, int i_state_low, int i_state_high,
+                                const double *vxc_band, const double *vexx_band,
+                                double *sigc_band_re, double *sigc_band_im,
+                                double *eqp_band);
 
 #ifdef __cplusplus
 }

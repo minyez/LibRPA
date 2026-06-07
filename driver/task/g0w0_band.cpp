@@ -1,3 +1,5 @@
+#include <cmath>
+
 #include "../task.h"
 #include "../driver.h"
 #include "../read_data.h"
@@ -34,18 +36,27 @@ void driver::task_g0w0_band()
     if (routing == LIBRPA_ROUTING_RTAU)
     {
         read_Vq_full(driver_params.input_dir, driver_params.prefix_coul_cut, true,
-                     driver_params.version_coul_reader);
+                     driver_params.version_coul_reader,
+                     driver::get_bool(driver::opts.use_shrink_abfs));
     }
     else
     {
         // NOTE: local_atpair set during read_data::read_ri.
         read_Vq_row(driver_params.input_dir, driver_params.prefix_coul_cut, opts.vq_threshold,
-                    local_atpair, true, driver_params.version_coul_reader);
+                    local_atpair, true, driver_params.version_coul_reader,
+                    driver::get_bool(driver::opts.use_shrink_abfs));
     }
     profiler.stop("read_vq_cut");
 
     const auto file_df = driver_params.input_dir + driver_params.fn_dielfunc;
-    if (driver::get_bool(opts.replace_w_head) && librpa_int::path_exists(file_df.c_str()))
+    const bool compute_headwing =
+        driver::get_bool(opts.replace_w_head) &&
+        (opts.option_dielect_func == 3 || opts.option_dielect_func == 4);
+    if (compute_headwing)
+    {
+        read_headwing_input(driver_params.input_dir, opts.option_dielect_func == 3);
+    }
+    else if (driver::get_bool(opts.replace_w_head) && librpa_int::path_exists(file_df.c_str()))
     {
         if (mpi_comm_global_h.is_root())
             std::cout << "Reading dielectric function for head correction" << std::endl;
@@ -78,6 +89,7 @@ void driver::task_g0w0_band()
     const int n_states_calc = i_state_high - i_state_low;
     std::vector<double> vexx_all;
     std::vector<cplxdb> sigc_all;
+    std::vector<double> eqp_all;
     {
         const size_t n_local = n_states_calc * n_spins * iks_eigvec_this.size();
         const auto vexx = h.get_exx_pot_kgrid(opts, n_spins, iks_eigvec_this, i_state_low, i_state_high);
@@ -99,7 +111,8 @@ void driver::task_g0w0_band()
             }
         }
 
-        const auto sigc = h.get_g0w0_sigc_kgrid(opts, n_spins, iks_eigvec_this, i_state_low, i_state_high, vxc_flat, vexx);
+        const auto qpe = h.get_g0w0_qpe_kgrid(opts, n_spins, iks_eigvec_this,
+                                              i_state_low, i_state_high, vxc_flat, vexx);
 
         if (!opts.use_kpara_scf_eigvec)
         {
@@ -107,7 +120,8 @@ void driver::task_g0w0_band()
             if (myid_global == 0)
             {
                 vexx_all = vexx;
-                sigc_all = sigc;
+                sigc_all = qpe.sigc;
+                eqp_all = qpe.eqp;
             }
         }
         else
@@ -116,6 +130,7 @@ void driver::task_g0w0_band()
             const size_t n_all = n_states_calc * n_spins * n_kpoints;
             vexx_all.resize(n_all);
             sigc_all.resize(n_all);
+            eqp_all.resize(n_all);
             for (int isp = 0; isp != n_spins; isp++)
             {
                 const auto st_isp_local = isp * iks_eigvec_this.size() * n_states_calc;
@@ -125,16 +140,21 @@ void driver::task_g0w0_band()
                     const auto ik = iks_eigvec_this[ik_local];
                     const auto st_local = st_isp_local + ik_local * n_states_calc;
                     const auto st = st_isp + ik * n_states_calc;
-                    memcpy(sigc_all.data() + st, sigc.data() + st_local, n_states_calc * sizeof(cplxdb));
+                    memcpy(sigc_all.data() + st, qpe.sigc.data() + st_local,
+                           n_states_calc * sizeof(cplxdb));
+                    memcpy(eqp_all.data() + st, qpe.eqp.data() + st_local,
+                           n_states_calc * sizeof(double));
                     memcpy(vexx_all.data() + st, vexx.data() + st_local, n_states_calc * sizeof(double));
                 }
             }
             mpi_comm_global_h.reduce(MPI_IN_PLACE, vexx_all.data(), n_all, 0, MPI_SUM);
             mpi_comm_global_h.reduce(MPI_IN_PLACE, sigc_all.data(), n_all, 0, MPI_SUM);
+            mpi_comm_global_h.reduce(MPI_IN_PLACE, eqp_all.data(), n_all, 0, MPI_SUM);
             if (myid_global != 0)
             {
                 vexx_all.clear();
                 sigc_all.clear();
+                eqp_all.clear();
             }
         }
     }
@@ -156,7 +176,7 @@ void driver::task_g0w0_band()
                     for (int i = 0; i < n_states_calc; i++)
                     {
                         const int i_state = i + i_state_low;
-                        if (sigc_all[start_k+i].real() == std::numeric_limits<double>::quiet_NaN())
+                        if (std::isnan(sigc_all[start_k+i].real()))
                         {
                             lib_printf("Warning! QPE solver failed for spin %d, kpoint %d, state %d\n",
                                        i_spin+1, i_kpoint+1, i_state+1);
@@ -187,7 +207,7 @@ void driver::task_g0w0_band()
                         const auto &exx_state = vexx_all[start_k+i] * HA2EV;
                         const auto &resigc = sigc_all[start_k+i].real() * HA2EV;
                         const auto &imsigc = sigc_all[start_k+i].imag() * HA2EV;
-                        const auto &eqp = eks_state - vxc_state + exx_state + resigc;
+                        const auto &eqp = eqp_all[start_k+i] * HA2EV;
                         lib_printf("%5d %16.5f %16.5f %16.5f %16.5f %16.5f %16.5f %16.5f\n",
                                    i_state+1, occ_state, eks_state, vxc_state, exx_state, resigc, imsigc, eqp);
                     }
@@ -200,7 +220,17 @@ void driver::task_g0w0_band()
     /* Below we handle the band k-points data
      * First load the information of k-points along the k-path */
     profiler.start("g0w0_band_load_band_mf", "Read eigen solutions at band kpoints");
-    read_band_kpath_info(driver_params.input_dir + driver_params.fn_band_kpath_info);
+    const std::string band_kpath_file = driver_params.input_dir + driver_params.fn_band_kpath_info;
+    if (!librpa_int::path_exists(band_kpath_file.c_str()))
+    {
+        if (mpi_comm_global_h.is_root())
+            std::cout << "Warning! Failed to read " << band_kpath_file
+                      << " , skip band structure" << std::endl;
+        profiler.stop("g0w0_band_load_band_mf");
+        profiler.stop("g0w0_band");
+        return;
+    }
+    read_band_kpath_info(band_kpath_file);
     const int nkpts_band = kfrac_band.size();
 
     if (mpi_comm_global_h.is_root())
@@ -231,6 +261,7 @@ void driver::task_g0w0_band()
     // then collect them to the master process
     std::vector<double> vexx_band_all;
     std::vector<cplxdb> sigc_band_all;
+    std::vector<double> eqp_band_all;
     {
         const auto &iks_this = iks_band_eigvec_this;
         const size_t n_local = n_states_band_calc * n_spins * iks_this.size();
@@ -251,9 +282,9 @@ void driver::task_g0w0_band()
                 }
             }
         }
-        const auto sigc_band =
-            h.get_g0w0_sigc_band_k(opts, n_spins, iks_this, i_state_low_band,
-                                   i_state_high_band, vxc_this, vexx_band);
+        const auto qpe_band =
+            h.get_g0w0_qpe_band_k(opts, n_spins, iks_this, i_state_low_band,
+                                  i_state_high_band, vxc_this, vexx_band);
 
         profiler.start("collect_exx_sigc_band");
         if (!opts.use_kpara_scf_eigvec)
@@ -262,7 +293,8 @@ void driver::task_g0w0_band()
             if (myid_global == 0)
             {
                 vexx_band_all = vexx_band;
-                sigc_band_all = sigc_band;
+                sigc_band_all = qpe_band.sigc;
+                eqp_band_all = qpe_band.eqp;
             }
         }
         else
@@ -272,6 +304,7 @@ void driver::task_g0w0_band()
             const size_t n_all = n_states_band_calc * n_spins * n_kpts;
             vexx_band_all.resize(n_all);
             sigc_band_all.resize(n_all);
+            eqp_band_all.resize(n_all);
             for (int isp = 0; isp != n_spins; isp++)
             {
                 const auto st_isp_local = isp * iks_this.size() * n_states_band_calc;
@@ -281,18 +314,22 @@ void driver::task_g0w0_band()
                     const auto ik = iks_this[ik_this];
                     const auto st_local = st_isp_local + ik_this * n_states_band_calc;
                     const auto st = st_isp + ik * n_states_band_calc;
-                    memcpy(sigc_band_all.data() + st, sigc_band.data() + st_local,
+                    memcpy(sigc_band_all.data() + st, qpe_band.sigc.data() + st_local,
                            n_states_band_calc * sizeof(cplxdb));
+                    memcpy(eqp_band_all.data() + st, qpe_band.eqp.data() + st_local,
+                           n_states_band_calc * sizeof(double));
                     memcpy(vexx_band_all.data() + st, vexx_band.data() + st_local,
                            n_states_band_calc * sizeof(double));
                 }
             }
             mpi_comm_global_h.reduce(MPI_IN_PLACE, vexx_band_all.data(), n_all, 0, MPI_SUM);
             mpi_comm_global_h.reduce(MPI_IN_PLACE, sigc_band_all.data(), n_all, 0, MPI_SUM);
+            mpi_comm_global_h.reduce(MPI_IN_PLACE, eqp_band_all.data(), n_all, 0, MPI_SUM);
             if (myid_global != 0)
             {
                 vexx_band_all.clear();
                 sigc_band_all.clear();
+                eqp_band_all.clear();
             }
         }
         profiler.stop("collect_exx_sigc_band");
@@ -312,7 +349,7 @@ void driver::task_g0w0_band()
                     for (int i = 0; i < n_states_band_calc; i++)
                     {
                         const int i_state = i + i_state_low_band;
-                        if (sigc_band_all[start_k+i].real() == std::numeric_limits<double>::quiet_NaN())
+                        if (std::isnan(sigc_band_all[start_k+i].real()))
                         {
                             lib_printf("Warning! QPE solver failed for spin %d, kpoint %d, state %d\n",
                                        i_spin+1, i_kpoint+1, i_state+1);
@@ -355,7 +392,7 @@ void driver::task_g0w0_band()
                         const auto exx_state = vexx_band_all[start_k+i] * HA2EV;
                         const auto resigc = sigc_band_all[start_k+i].real() * HA2EV;
                         // const auto &imsigc = sigc_band_all[start_k+i].imag() * HA2EV;
-                        const auto eqp = eks_state - vxc_state + exx_state + resigc;
+                        const auto eqp = eqp_band_all[start_k+i] * HA2EV;
                         ofs_ks << setw(15) << std::setprecision(5) << occ_state << setw(15) << setprecision(5) << eks_state;
                         ofs_gw << setw(15) << std::setprecision(5) << occ_state << setw(15) << setprecision(5) << eqp;
                         ofs_hf << setw(15) << std::setprecision(5) << occ_state << setw(15) << setprecision(5) << eks_state - vxc_state + exx_state;

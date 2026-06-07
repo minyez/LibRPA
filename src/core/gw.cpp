@@ -8,6 +8,7 @@
 #include <functional>
 #include <iomanip>
 #include <map>
+#include <set>
 #include <sstream>
 #include <vector>
 
@@ -25,6 +26,7 @@
 #include "../utils/utils_mem.h"
 #include "atom.h"
 #include "atomic_basis.h"
+#include "chi0.h"
 #include "epsilon.h"
 #include "geometry.h"
 #include "meanfield_mpi.h"
@@ -121,7 +123,53 @@ std::string make_sigc_ks_imagfreq_band_stem(const std::string &output_dir, const
     return ss.str();
 }
 
-} // namespace
+template <typename T>
+bool is_effectively_zero_matrix(const matrix_m<T> &mat,
+                                const typename matrix_m<T>::real_t threshold = 1e-15)
+{
+    const auto data = mat.sptr();
+    if (!data) return true;
+    for (size_t i = 0; i != mat.size(); ++i)
+    {
+        if (std::abs((*data)[i]) > threshold) return false;
+    }
+    return true;
+}
+
+void complete_hermitian_Wc_q_blocks(
+    atom_mapping<std::map<Vector3_Order<double>, Matz>>::pair_t_old &Wc_q)
+{
+    std::vector<atom_t> atoms_row;
+    for (const auto &atom_i_pair : Wc_q) atoms_row.push_back(atom_i_pair.first);
+
+    for (const auto atom_i : atoms_row)
+    {
+        std::vector<atom_t> atoms_col;
+        for (const auto &atom_j_pair : Wc_q.at(atom_i))
+            atoms_col.push_back(atom_j_pair.first);
+
+        for (const auto atom_j : atoms_col)
+        {
+            for (const auto &q_block : Wc_q.at(atom_i).at(atom_j))
+            {
+                assert(q_block.second.major() == MAJOR::ROW);
+                if (atom_i != atom_j)
+                {
+                    Wc_q[atom_j][atom_i][q_block.first] = q_block.second.get_transpose(true);
+                }
+                else
+                {
+                    auto hermitian_block = q_block.second;
+                    hermitian_block =
+                        (hermitian_block + hermitian_block.get_transpose(true)) * 0.5;
+                    Wc_q[atom_i][atom_i][q_block.first] = hermitian_block;
+                }
+            }
+        }
+    }
+}
+
+}  // namespace
 
 G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const PeriodicBoundaryData &pbc_in, const TFGrids &tfg_in,
@@ -366,7 +414,14 @@ void G0W0::build_spacetime(
     const AtomicBasis& atbasis_abf,
     const Cs_LRI &LRI_Cs,
     std::map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
-    const ArrayDesc &ad_Wc)
+    const ArrayDesc &ad_Wc,
+    std::map<double, atom_mapping<std::map<Vector3_Order<double>, Matz>>::pair_t_old>
+        *Wc_freq_q_atom_pair,
+    std::map<Vector3_Order<double>, ComplexMatrix> *sinvS,
+    const AtomicBasis *basis_aux_compressed,
+    const AtomicBasis *basis_aux_unfold,
+    const BlacsCtxtHandler *blacs_ctxt_h,
+    const ArrayDesc *desc_wfc_in)
 {
     using global::profiler;
     using global::lib_printf_root;
@@ -410,135 +465,187 @@ void G0W0::build_spacetime(
     comm_h.barrier();
     throw LIBRPA_RUNTIME_ERROR("compilation");
 #else
-    // Transform from frequency/reciprocal to time/real-space
-    profiler.start("g0w0_build_spacetime_ct_ft_wc", "Tranform Wc (q,w) -> (R,t)");
-    profiler.start("g0w0_build_spacetime_ct_ft_real_work", "Perform transformation");
-    // global::ofs_myid << Wc_freq_q.at(tfg.get_freq_nodes()[0]) << endl;
-    // for (const auto &[freq, qWc]: Wc_freq_q)
-    // {
-    //     int iomega = tfg.get_freq_index(freq);
-    //     for (const auto &[q, Wc]: qWc)
-    //     {
-    //         std::stringstream ss;
-    //         ss << "Wc_omega_q"
-    //             << "_iw_" << std::setfill('0') << std::setw(5) << iomega
-    //             << "_iq_" << std::setfill('0') << std::setw(5) << pbc.get_k_index_full(q) << ".csc";
-    //         write_matrix_elsi_csc_parallel(ss.str(), Wc, ad_Wc);
-    //     }
-    // }
-    auto Wc_tau_R_blacs = CT_FT_Wc_freq_q(comm_h, Wc_freq_q, pbc, tfg, true);
-    release_free_mem();
-    profiler.stop("g0w0_build_spacetime_ct_ft_real_work");
+    const bool use_atom_pair_Wc = Wc_freq_q_atom_pair != nullptr;
 
-    // Build the Wc LibRI object by redistributing the BLACS submatrices
     typedef std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<double>>> dtensor_map;
     typedef std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<cplxdb>>> ztensor_map;
     std::map<double, dtensor_map> tau_Wc_libri;
     std::map<double, ztensor_map> tau_Wc_libri_cplx;
 
-    // NOTE: for case of a few atoms, some process may have much more memory load than others
-    profiler.start("g0w0_build_spacetime_get_ap", "Compute balance atom-pairs distribution");
-    const auto map_atpairs_balanced = get_balanced_ap_distribution_for_consec_descriptor(
-        atbasis_abf, atbasis_abf, ad_Wc);
-    const auto it_ap_myid = map_atpairs_balanced.find(ad_Wc.myid());
-    if (it_ap_myid != map_atpairs_balanced.cend())
-        ofs_myid << it_ap_myid->second << std::endl;
-    else
-        ofs_myid << "No atom pairs for Wc on this process" << std::endl;
-    profiler.stop("g0w0_build_spacetime_get_ap");
-
-    int wc_major_mask = 0;
-    for (const auto &[tau, map_R_mat]: Wc_tau_R_blacs)
+    if (use_atom_pair_Wc)
     {
-        for (const auto &[R, mat_blacs]: map_R_mat)
+        if (sinvS == nullptr || basis_aux_compressed == nullptr || basis_aux_unfold == nullptr ||
+            blacs_ctxt_h == nullptr || desc_wfc_in == nullptr)
+            throw LIBRPA_RUNTIME_ERROR(
+                "shrink Wc build_spacetime requires sinvS, compressed/full ABF bases, BLACS context, and WFC descriptor");
+
+        Chi0 unfold_helper(mf, atbasis_wfc, *basis_aux_compressed, pbc, tfg, kblacs_ctxt,
+                           *desc_wfc_in, is_mf_eigvec_k_distributed_);
+
+        profiler.start("g0w0_build_spacetime_wt_ft_wc", "Tranform Wc (q,w) -> (q,t)");
+        auto Wc_tau_q = CT_Wc_freq2time_q(
+            comm_h, *basis_aux_compressed, *Wc_freq_q_atom_pair, tfg, pbc.get_n_cells_bvk(),
+            pbc.Rlist, pbc.klist_ibz);
+        Wc_freq_q_atom_pair->clear();
+        release_free_mem();
+        profiler.stop("g0w0_build_spacetime_wt_ft_wc");
+
+        lib_printf_root("Time for Fourier transform of Wc in GW (seconds, Wall/CPU): %f %f\n",
+                        profiler.get_wall_time_last("g0w0_build_spacetime_wt_ft_wc"),
+                        profiler.get_cpu_time_last("g0w0_build_spacetime_wt_ft_wc"));
+
+        profiler.start("g0w0_build_spacetime_ct_ft_wc", "Tranform Wc (q,t) -> (R,t)");
+        for (auto itau = 0; itau != tfg.get_n_grids(); ++itau)
         {
-            if (mat_blacs.major() == MAJOR::ROW)
-                wc_major_mask |= 1;
-            else if (mat_blacs.major() == MAJOR::COL)
-                wc_major_mask |= 2;
-            else
-                wc_major_mask |= 4;
-        }
-    }
-    MPI_Allreduce(MPI_IN_PLACE, &wc_major_mask, 1, mpi_datatype<int>::value, MPI_BOR, ad_Wc.comm());
+            const auto tau = tfg.get_time_nodes()[itau];
+            auto &Wc_q = Wc_tau_q[tau];
 
-    MAJOR wc_major = MAJOR::AUTO;
-    if (wc_major_mask == 1)
-        wc_major = MAJOR::ROW;
-    else if (wc_major_mask == 2)
-        wc_major = MAJOR::COL;
-    else if (wc_major_mask == 0)
-    {
-        throw LIBRPA_RUNTIME_ERROR("Wc(R,t) is empty");
-    }
-    else
-    {
-        throw LIBRPA_RUNTIME_ERROR("Inconsistent storage order among Wc(R,t) blocks");
-    }
+            profiler.start("unfold_Wc_abfs", "Do shrink transformation");
+            unfold_helper.unfold_abfs_Wc_q(*sinvS, Wc_q, pbc.klist_ibz,
+                                           *basis_aux_unfold, *blacs_ctxt_h);
+            profiler.stop("unfold_Wc_abfs");
 
-    ofs_myid << "wc_major == MAJOR::ROW ? " << std::boolalpha << (wc_major == MAJOR::ROW) << std::endl;
+            profiler.start("construct_Wc_tau_lower_half", "Construct Lower Half of Wc(q,t)");
+            complete_hermitian_Wc_q_blocks(Wc_q);
+            profiler.stop("construct_Wc_tau_lower_half");
 
-    IndexScheduler sched;
-    // The scheduler indexes the existing BLACS buffers, so this must match Wc_tau_R_blacs.
-    // LibRI's row-major requirement is handled below when each atom-pair block is wrapped.
-    sched.init(map_atpairs_balanced, atbasis_abf, atbasis_abf, ad_Wc, wc_major == MAJOR::ROW);
-    for (auto &[tau, map_R_mat]: Wc_tau_R_blacs)
-    {
-        for (auto &[R, mat_blacs]: map_R_mat)
-        {
-            auto pair_mat = get_ap_map_from_blacs_dist_scheduler(mat_blacs, sched, atbasis_abf, atbasis_abf, ad_Wc);
-            auto itau = tfg.get_time_index(tau);
-            // if (itau == 0)
-            // {
-            //     librpa_int::global::ofs_myid << "R: " << R << " tau: " << tau << std::endl;
-            //     librpa_int::global::ofs_myid << "BLACS: " << std::endl << mat_blacs << std::endl;
-            //     librpa_int::global::ofs_myid << "pair: " << std::endl << pair_mat << std::endl;
-            //     std::stringstream ss;
-            //     ss << "Wc_tau_R"
-            //         << "_itau_" << std::setfill('0') << std::setw(5) << itau
-            //         << "_iR_" << std::setfill('0') << std::setw(5) << get_R_index(pbc.Rlist, R) << ".csc";
-            //     write_matrix_elsi_csc_parallel(ss.str(), mat_blacs, ad_Wc);
-            // }
-            // if (Params::debug)
-            // {
-            //     std::stringstream ss;
-            //     ss << Params::output_dir << "Wc_tau_R"
-            //         << "_itau_" << std::setfill('0') << std::setw(5) << tfg.get_time_index(tau)
-            //         << "_iR_" << std::setfill('0') << std::setw(5) << get_R_index(Rlist, R) << ".csc";
-            //     utils::write_matrix_elsi_csc_parallel(ss.str(), mat_blacs, envs::array_desc_abf_global);
-            // }
+            profiler.start("g0w0_build_spacetime_Rq_ft_wc", "Tranform Wc (q,t) -> (R,t)");
+            auto Wc_R = FT_Wc_q2R(comm_h, *basis_aux_unfold, Wc_q, tfg, pbc, pbc.Rlist,
+                                  false, output_dir);
+            profiler.stop("g0w0_build_spacetime_Rq_ft_wc");
+            Wc_q.clear();
+
             profiler.start("g0w0_build_spacetime_prep_Wc_all", "Prepare LibRI Wc object");
-            for (auto &[pair, mat_ap]: pair_mat)
+            for (auto &[I, J_RWc] : Wc_R)
             {
-                const auto &I = as_int(pair.first);
-                const auto &J = as_int(pair.second);
-                const auto &nabf_I = atbasis_abf.get_atom_nb(I);
-                const auto &nabf_J = atbasis_abf.get_atom_nb(J);
-                // LibRI Tensor is fixed to row major
-                if (mat_ap.is_col_major()) mat_ap.swap_to_row_major();
-                if (use_complex_tensor)
-                    tau_Wc_libri_cplx[tau][I][{J, {R.x, R.y, R.z}}] = RI::Tensor<cplxdb>({nabf_I, nabf_J}, mat_ap.sptr());
-                else
-                    tau_Wc_libri[tau][I][{J, {R.x, R.y, R.z}}] = RI::Tensor<double>({nabf_I, nabf_J}, mat_ap.get_real().sptr());
-                // std::stringstream ss;
-                // ss << "tau_Wc_libri_"
-                //     << "_itau_" << std::setfill('0') << std::setw(5) << itau
-                //     << "_I_" << std::setfill('0') << std::setw(5) << I
-                //     << "_J_" << std::setfill('0') << std::setw(5) << J
-                //     << "_iR_" << std::setfill('0') << std::setw(5) << get_R_index(pbc.Rlist, R) << ".dat";
-                // librpa_int::global::ofs_myid << "Writing to " << ss.str() << " " << tau << " " << I << " " << J << " " << R << std::endl;
-                // std::ofstream ofs(ss.str());
-                // // ofs << tau_Wc_libri[tau][I][{J, {R.x, R.y, R.z}}] << std::endl;
-                // global::ofs_myid << "mat_ap row major? " << std::boolalpha << mat_ap.is_row_major() << std::endl;
-                // ofs << mat_ap.get_real() << std::endl;
-                // ofs.close();
+                const auto n_I = atbasis_abf.get_atom_nb(I);
+                for (auto &[J, R_Wc] : J_RWc)
+                {
+                    const auto n_J = atbasis_abf.get_atom_nb(J);
+                    for (auto &[R, Wc_block] : R_Wc)
+                    {
+                        if (is_effectively_zero_matrix(Wc_block)) continue;
+                        if (Wc_block.is_col_major()) Wc_block.swap_to_row_major();
+                        if (use_complex_tensor)
+                        {
+                            tau_Wc_libri_cplx[tau][as_int(I)][{as_int(J), {R.x, R.y, R.z}}] =
+                                RI::Tensor<cplxdb>({n_I, n_J}, Wc_block.sptr());
+                        }
+                        else
+                        {
+                            tau_Wc_libri[tau][as_int(I)][{as_int(J), {R.x, R.y, R.z}}] =
+                                RI::Tensor<double>({n_I, n_J}, Wc_block.get_real().sptr());
+                        }
+
+                        if (I == J) continue;
+
+                        const auto minus_R = (-R) % pbc.period;
+                        const auto minus_R_iter = R_Wc.find(minus_R);
+                        if (minus_R_iter == R_Wc.end()) continue;
+                        if (is_effectively_zero_matrix(minus_R_iter->second)) continue;
+
+                        if (use_complex_tensor)
+                        {
+                            const auto Wc_IJ_minus_R =
+                                minus_R_iter->second.get_transpose(true);
+                            tau_Wc_libri_cplx[tau][as_int(J)][{as_int(I), {R.x, R.y, R.z}}] =
+                                RI::Tensor<cplxdb>({n_J, n_I}, Wc_IJ_minus_R.sptr());
+                        }
+                        else
+                        {
+                            const auto Wc_IJ_minus_R =
+                                minus_R_iter->second.get_real().get_transpose();
+                            tau_Wc_libri[tau][as_int(J)][{as_int(I), {R.x, R.y, R.z}}] =
+                                RI::Tensor<double>({n_J, n_I}, Wc_IJ_minus_R.sptr());
+                        }
+                    }
+                }
             }
-            // global::ofs_myid << "tau " << tau << endl << tau_Wc_libri[tau] << endl;
-            mat_blacs.clear();
             profiler.stop("g0w0_build_spacetime_prep_Wc_all");
         }
+        Wc_tau_q.clear();
+        profiler.stop("g0w0_build_spacetime_ct_ft_wc");
     }
-    profiler.stop("g0w0_build_spacetime_ct_ft_wc");
+    else
+    {
+        // Transform from frequency/reciprocal to time/real-space
+        profiler.start("g0w0_build_spacetime_ct_ft_wc", "Tranform Wc (q,w) -> (R,t)");
+        profiler.start("g0w0_build_spacetime_ct_ft_real_work", "Perform transformation");
+        auto Wc_tau_R_blacs = CT_FT_Wc_freq_q(comm_h, Wc_freq_q, pbc, tfg, true);
+        release_free_mem();
+        profiler.stop("g0w0_build_spacetime_ct_ft_real_work");
+
+        // NOTE: for case of a few atoms, some process may have much more memory load than others
+        profiler.start("g0w0_build_spacetime_get_ap", "Compute balance atom-pairs distribution");
+        const auto map_atpairs_balanced = get_balanced_ap_distribution_for_consec_descriptor(
+            atbasis_abf, atbasis_abf, ad_Wc);
+        const auto it_ap_myid = map_atpairs_balanced.find(ad_Wc.myid());
+        if (it_ap_myid != map_atpairs_balanced.cend())
+            ofs_myid << it_ap_myid->second << std::endl;
+        else
+            ofs_myid << "No atom pairs for Wc on this process" << std::endl;
+        profiler.stop("g0w0_build_spacetime_get_ap");
+
+        int wc_major_mask = 0;
+        for (const auto &[tau, map_R_mat]: Wc_tau_R_blacs)
+        {
+            for (const auto &[R, mat_blacs]: map_R_mat)
+            {
+                if (mat_blacs.major() == MAJOR::ROW)
+                    wc_major_mask |= 1;
+                else if (mat_blacs.major() == MAJOR::COL)
+                    wc_major_mask |= 2;
+                else
+                    wc_major_mask |= 4;
+            }
+        }
+        MPI_Allreduce(MPI_IN_PLACE, &wc_major_mask, 1, mpi_datatype<int>::value, MPI_BOR, ad_Wc.comm());
+
+        MAJOR wc_major = MAJOR::AUTO;
+        if (wc_major_mask == 1)
+            wc_major = MAJOR::ROW;
+        else if (wc_major_mask == 2)
+            wc_major = MAJOR::COL;
+        else if (wc_major_mask == 0)
+        {
+            throw LIBRPA_RUNTIME_ERROR("Wc(R,t) is empty");
+        }
+        else
+        {
+            throw LIBRPA_RUNTIME_ERROR("Inconsistent storage order among Wc(R,t) blocks");
+        }
+
+        ofs_myid << "wc_major == MAJOR::ROW ? " << std::boolalpha << (wc_major == MAJOR::ROW) << std::endl;
+
+        IndexScheduler sched;
+        // The scheduler indexes the existing BLACS buffers, so this must match Wc_tau_R_blacs.
+        // LibRI's row-major requirement is handled below when each atom-pair block is wrapped.
+        sched.init(map_atpairs_balanced, atbasis_abf, atbasis_abf, ad_Wc, wc_major == MAJOR::ROW);
+        for (auto &[tau, map_R_mat]: Wc_tau_R_blacs)
+        {
+            for (auto &[R, mat_blacs]: map_R_mat)
+            {
+                auto pair_mat = get_ap_map_from_blacs_dist_scheduler(mat_blacs, sched, atbasis_abf, atbasis_abf, ad_Wc);
+                profiler.start("g0w0_build_spacetime_prep_Wc_all", "Prepare LibRI Wc object");
+                for (auto &[pair, mat_ap]: pair_mat)
+                {
+                    const auto &I = as_int(pair.first);
+                    const auto &J = as_int(pair.second);
+                    const auto &nabf_I = atbasis_abf.get_atom_nb(I);
+                    const auto &nabf_J = atbasis_abf.get_atom_nb(J);
+                    // LibRI Tensor is fixed to row major
+                    if (mat_ap.is_col_major()) mat_ap.swap_to_row_major();
+                    if (use_complex_tensor)
+                        tau_Wc_libri_cplx[tau][I][{J, {R.x, R.y, R.z}}] = RI::Tensor<cplxdb>({nabf_I, nabf_J}, mat_ap.sptr());
+                    else
+                        tau_Wc_libri[tau][I][{J, {R.x, R.y, R.z}}] = RI::Tensor<double>({nabf_I, nabf_J}, mat_ap.get_real().sptr());
+                }
+                mat_blacs.clear();
+                profiler.stop("g0w0_build_spacetime_prep_Wc_all");
+            }
+        }
+        profiler.stop("g0w0_build_spacetime_ct_ft_wc");
+    }
 
     lib_printf_root("Time for Fourier transform of Wc in GW (seconds, Wall/CPU): %f %f\n",
             profiler.get_wall_time_last("g0w0_build_spacetime_ct_ft_wc"),

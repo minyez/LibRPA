@@ -7,6 +7,7 @@
 #include <limits>
 #include <map>
 #include <ostream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -25,8 +26,13 @@
 #include "../math/complexmatrix.h"
 #include "../math/utils_matrix_m_mpi.h"
 #include "../utils/error.h"
+#include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
 // #include "../utils/utils_mem.h"
+
+#ifdef LIBRPA_USE_LIBRI
+#include <RI/comm/mix/Communicate_Tensors_Map_Judge.h>
+#endif
 
 namespace
 {
@@ -48,6 +54,85 @@ int sigc_diag_index(const int isp, const int ik_collect, const int ifreq, const 
                     const int nk_collect, const int nfreq, const int n_states_calc)
 {
     return (((isp * nk_collect + ik_collect) * nfreq + ifreq) * n_states_calc + i_state);
+}
+
+std::map<double, librpa_int::atom_mapping<std::map<librpa_int::Vector3_Order<double>,
+                                                   librpa_int::Matz>>::pair_t_old>
+collect_w_blacs_to_atom_pairs(
+    const std::map<double, std::map<librpa_int::Vector3_Order<double>, librpa_int::Matz>>
+        &Wc_freq_q,
+    const librpa_int::AtomicBasis &basis_aux,
+    const librpa_int::ArrayDesc &desc_abf,
+    const librpa_int::MpiCommHandler &comm_h)
+{
+    using namespace librpa_int;
+
+    if (!desc_abf.initialized())
+        throw LIBRPA_RUNTIME_ERROR("Cannot collect Wc to atom pairs: ABF descriptor is not initialized");
+
+    const auto atpairs_local = dispatch_upper_triangular_tasks(
+        basis_aux.n_atoms, desc_abf.myid(), desc_abf.nprows(), desc_abf.npcols(),
+        desc_abf.myprow(), desc_abf.mypcol());
+
+    std::pair<std::set<int>, std::set<int>> target_atoms;
+    for (const auto &atom_pair : atpairs_local)
+    {
+        target_atoms.first.insert(atom_pair.first);
+        target_atoms.second.insert(atom_pair.second);
+    }
+
+    std::map<int, std::vector<int>> local_rows_by_atom;
+    std::map<int, std::vector<int>> local_cols_by_atom;
+    int atom = 0;
+    int orbital = 0;
+    for (int iloc = 0; iloc != desc_abf.m_loc(); ++iloc)
+    {
+        basis_aux.get_local_index(desc_abf.indx_l2g_r(iloc), atom, orbital);
+        local_rows_by_atom[atom].push_back(orbital);
+    }
+    for (int iloc = 0; iloc != desc_abf.n_loc(); ++iloc)
+    {
+        basis_aux.get_local_index(desc_abf.indx_l2g_c(iloc), atom, orbital);
+        local_cols_by_atom[atom].push_back(orbital);
+    }
+
+    std::map<double, atom_mapping<std::map<Vector3_Order<double>, Matz>>::pair_t_old>
+        Wc_freq_q_atom_pair;
+    for (const auto &[freq, q_Wc] : Wc_freq_q)
+    {
+        for (const auto &[q, Wc_blacs] : q_Wc)
+        {
+            const std::array<double, 3> qa{q.x, q.y, q.z};
+            std::map<int, std::map<int, Matz>> Wc_blocks;
+            map_block_to_IJ_storage_new(Wc_blocks, basis_aux, local_rows_by_atom,
+                                        local_cols_by_atom, Wc_blacs, desc_abf, MAJOR::ROW);
+
+            std::map<int, std::map<std::pair<int, std::array<double, 3>>, RI::Tensor<cplxdb>>>
+                Wc_tensors;
+            for (const auto &[iatom, jatom_Wc] : Wc_blocks)
+            {
+                const auto ni = basis_aux.get_atom_nb(iatom);
+                for (const auto &[jatom, Wc_block] : jatom_Wc)
+                {
+                    const auto nj = basis_aux.get_atom_nb(jatom);
+                    Wc_tensors[iatom][{jatom, qa}] =
+                        RI::Tensor<cplxdb>({ni, nj}, Wc_block.sptr());
+                }
+            }
+
+            const auto Wc_collected = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+                comm_h.comm, Wc_tensors, target_atoms.first, target_atoms.second);
+            for (const auto &[iatom, jatom] : atpairs_local)
+            {
+                const auto ni = basis_aux.get_atom_nb(iatom);
+                const auto nj = basis_aux.get_atom_nb(jatom);
+                Wc_freq_q_atom_pair[freq][iatom][jatom][q] =
+                    Matz(ni, nj, Wc_collected.at(iatom).at({jatom, qa}).data, MAJOR::ROW);
+            }
+        }
+    }
+
+    return Wc_freq_q_atom_pair;
 }
 
 int solve_qpe_with_option(const int option_qpe_solver,
@@ -247,10 +332,8 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     auto &chi0 = *(pds->p_chi0);
 
     profiler.start("chi0_build", "Build response function chi0");
-    if (opts.use_shrink_abfs)
-        chi0.build(routing, pds->cs_data_shrink, pds->atpairs_local, pds->basis_aux_shrink, pds->sinvS, pds->blacs_h);
-    else
-        chi0.build(routing, pds->cs_data, pds->atpairs_local, pds->basis_aux, pds->sinvS, pds->blacs_h);
+    chi0.build(routing, pds->cs_data, pds->atpairs_local, pds->basis_aux, pds->sinvS,
+               pds->blacs_h);
     profiler.stop("chi0_build");
     pds->comm_h.barrier();
 
@@ -280,13 +363,16 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     {
         profiler.start("g0w0_exx", "Build exchange self-energy");
         initialize_ds_exx(*pds, opts);
+        const bool use_shrink_abfs = opts.use_shrink_abfs == LIBRPA_SWITCH_ON;
+        const auto &basis_aux_exx = use_shrink_abfs ? pds->basis_aux_shrink : pds->basis_aux;
+        const auto &cs_data_exx = use_shrink_abfs ? pds->cs_data_shrink : pds->cs_data;
         const auto &coul = opts.use_fullcoul_exx ? pds->vq : pds->vq_cut;
         profiler.start("ft_vq_cut", "Fourier transform truncated Coulomb");
-        const auto VR = librpa_int::FT_Vq(pds->basis_aux, coul, pds->pbc, true);
+        const auto VR = librpa_int::FT_Vq(basis_aux_exx, coul, pds->pbc, true);
         profiler.stop("ft_vq_cut");
 
         profiler.start("g0w0_exx_real_work");
-        pds->p_exx->build(routing, pds->basis_aux, pds->cs_data, VR);
+        pds->p_exx->build(routing, basis_aux_exx, cs_data_exx, VR);
         // pds->p_exx->build_KS_kgrid_blacs(pds->blacs_h);
         profiler.stop("g0w0_exx_real_work");
         profiler.stop("g0w0_exx");
@@ -298,8 +384,19 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     std::vector<double> epsmac_LF_imagfreq_re;
     if (opts.replace_w_head == LIBRPA_SWITCH_ON && pds->epsmacs_imagfreq.size() > 0)
     {
-        epsmac_LF_imagfreq_re = interpolate_dielec_func(opts.option_dielect_func, pds->omegas_imagfreq,
-                                                        pds->epsmacs_imagfreq, chi0.tfg.get_freq_nodes());
+        if (opts.option_dielect_func == 3 || opts.option_dielect_func == 4)
+        {
+            if (pds->epsmacs_imagfreq.size() != chi0.tfg.get_freq_nodes().size())
+                throw LIBRPA_RUNTIME_ERROR("analytic head/wing dielectric data must match chi0 frequency grid");
+            epsmac_LF_imagfreq_re = pds->epsmacs_imagfreq;
+        }
+        else
+        {
+            epsmac_LF_imagfreq_re = interpolate_dielec_func(opts.option_dielect_func,
+                                                            pds->omegas_imagfreq,
+                                                            pds->epsmacs_imagfreq,
+                                                            chi0.tfg.get_freq_nodes());
+        }
         if (debug)
         {
             if (pds->comm_h.is_root())
@@ -314,6 +411,9 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     std::vector<std::complex<double>> epsmac_LF_imagfreq(epsmac_LF_imagfreq_re.cbegin(), epsmac_LF_imagfreq_re.cend());
 
     std::map<double, std::map<Vector3_Order<double>, librpa_int::matrix_m<std::complex<double>>>> Wc_freq_q;
+    const bool use_shrink_chi =
+        opts.use_shrink_abfs == LIBRPA_SWITCH_ON && opts.use_shrink_chi == LIBRPA_SWITCH_ON;
+    const auto &wc_desc_abf = use_shrink_chi ? pds->desc_abf_shrink : pds->desc_abf;
     const auto &coul_eps = opts.use_fullcoul_eps ? pds->vq : pds->vq_cut;
     auto &coul_wc = opts.use_fullcoul_wc ? pds->vq : pds->vq_cut;
     if (opts.use_scalapack_gw_wc == LIBRPA_SWITCH_ON)
@@ -327,13 +427,27 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
 #endif
         Wc_freq_q = compute_Wc_freq_q_blacs(chi0, coul_eps, coul_wc, opts.sqrt_coulomb_threshold,
                                             replace_w_head, opts.option_dielect_func,
-                                            epsmac_LF_imagfreq, *(pds->p_headwing), pds->blacs_h, pds->desc_abf,
+                                            epsmac_LF_imagfreq, pds->p_headwing.get(), pds->blacs_h, wc_desc_abf,
                                             debug, opts.output_dir, opts.use_cholesky_gw_wc, opts.use_gpu_gw_wc, opts.use_elpa_sqrt_coulomb);
     }
     else
     {
         Wc_freq_q = compute_Wc_freq_q(chi0, coul_eps, coul_wc, opts.sqrt_coulomb_threshold,
                                       epsmac_LF_imagfreq, debug, opts.output_dir);
+    }
+
+    std::map<double, atom_mapping<std::map<Vector3_Order<double>, Matz>>::pair_t_old>
+        Wc_freq_q_atom_pair;
+    if (use_shrink_chi)
+    {
+        profiler.start("collect_Wc_blacs_to_atom_pairs",
+                       "Collect compressed Wc from BLACS to atom pairs");
+        Wc_freq_q_atom_pair =
+            collect_w_blacs_to_atom_pairs(Wc_freq_q, pds->basis_aux_shrink,
+                                          pds->desc_abf_shrink, pds->comm_h);
+        profiler.stop("collect_Wc_blacs_to_atom_pairs");
+
+        Wc_freq_q.clear();
     }
     profiler.stop("g0w0_wc");
 
@@ -356,16 +470,23 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     initialize_ds_g0w0(*pds, opts);
     profiler.start("g0w0_sigc_IJ", "Build real-space correlation self-energy");
     // HACK: choice of space-time is hard-coded. May need to change when more approaches are implemented
-    pds->p_g0w0->build_spacetime(routing, pds->basis_aux, pds->cs_data, Wc_freq_q, pds->desc_abf);
+    pds->p_g0w0->build_spacetime(
+        routing, pds->basis_aux, pds->cs_data, Wc_freq_q, pds->desc_abf,
+        use_shrink_chi ? &Wc_freq_q_atom_pair : nullptr,
+        use_shrink_chi ? &pds->sinvS : nullptr,
+        use_shrink_chi ? &pds->basis_aux_shrink : nullptr,
+        use_shrink_chi ? &pds->basis_aux : nullptr,
+        use_shrink_chi ? &pds->blacs_h : nullptr,
+        use_shrink_chi ? &pds->desc_wfc_kb_full : nullptr);
     profiler.stop("g0w0_sigc_IJ");
 
     profiler.stop("api_build_g0w0_sigma");
 }
 
-void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, const int n_spins,
-                                const int n_kpts_this, const int *iks_this, int i_state_low,
-                                int i_state_high, const double *vxc, const double *vexx,
-                                double *sigc_re, double *sigc_im)
+void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, const int n_spins,
+                               const int n_kpts_this, const int *iks_this, int i_state_low,
+                               int i_state_high, const double *vxc, const double *vexx,
+                               double *sigc_re, double *sigc_im, double *eqp)
 {
     using namespace librpa_int;
     using librpa_int::global::profiler;
@@ -420,11 +541,11 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
         imagfreqs.push_back(cplxdb{0.0, freq});
     }
 
-    const double diff_init = 1.0e-3;
     const auto thres_qpe = opts.qpe_solver_thres;
     const auto n_iter_max = opts.qpe_solver_n_iter_max;
     const auto damp_fac = opts.qpe_solver_damp_factor;
     const auto option_qpe_solver = opts.option_qpe_solver;
+    const double diff_init = option_qpe_solver == 0 ? 1.0 : 0.0;
     const bool use_adaptive_damp = opts.use_qpe_adaptive_damp == LIBRPA_SWITCH_ON;
     const bool override_qpe_solver_nan = opts.override_qpe_solver_nan == LIBRPA_SWITCH_ON;
 
@@ -456,6 +577,7 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                 cplxdb sigc;
                 sigc_re[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 sigc_im[start_k+i] = std::numeric_limits<double>::quiet_NaN();
+                eqp[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
                 int flag_qpe_solver = solve_qpe_with_option(
                     option_qpe_solver, pade, eks_state, efermi, vxc_state, exx_state, e_qp,
@@ -478,6 +600,7 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                 {
                     sigc_re[start_k+i] = sigc.real();
                     sigc_im[start_k+i] = sigc.imag();
+                    eqp[start_k+i] = e_qp;
                 }
             }
         }
@@ -487,11 +610,22 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
     profiler.stop("api_get_g0w0_sigc_kgrid");
 }
 
-void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, const int n_spins,
-                                 const int n_kpts_band_this, const int *iks_band_this,
-                                 int i_state_low, int i_state_high, const double *vxc_band,
-                                 const double *vexx_band, double *sigc_band_re,
-                                 double *sigc_band_im)
+void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, const int n_spins,
+                                const int n_kpts_this, const int *iks_this, int i_state_low,
+                                int i_state_high, const double *vxc, const double *vexx,
+                                double *sigc_re, double *sigc_im)
+{
+    const int n_states_calc = std::max(0, i_state_high - i_state_low);
+    std::vector<double> eqp(n_spins * n_kpts_this * n_states_calc);
+    librpa_get_g0w0_qpe_kgrid(h, p_opts, n_spins, n_kpts_this, iks_this, i_state_low,
+                              i_state_high, vxc, vexx, sigc_re, sigc_im, eqp.data());
+}
+
+void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, const int n_spins,
+                                const int n_kpts_band_this, const int *iks_band_this,
+                                int i_state_low, int i_state_high, const double *vxc_band,
+                                const double *vexx_band, double *sigc_band_re,
+                                double *sigc_band_im, double *eqp_band)
 {
     using namespace librpa_int;
     using librpa_int::global::profiler;
@@ -557,11 +691,11 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
         imagfreqs.push_back(cplxdb{0.0, freq});
     }
 
-    const double diff_init = 1.0e-3;
     const auto thres_qpe = opts.qpe_solver_thres;
     const auto n_iter_max = opts.qpe_solver_n_iter_max;
     const auto damp_fac = opts.qpe_solver_damp_factor;
     const auto option_qpe_solver = opts.option_qpe_solver;
+    const double diff_init = option_qpe_solver == 0 ? 1.0 : 0.0;
     const bool use_adaptive_damp = opts.use_qpe_adaptive_damp == LIBRPA_SWITCH_ON;
     const bool override_qpe_solver_nan = opts.override_qpe_solver_nan == LIBRPA_SWITCH_ON;
 
@@ -593,6 +727,7 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
                 cplxdb sigc;
                 sigc_band_re[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 sigc_band_im[start_k+i] = std::numeric_limits<double>::quiet_NaN();
+                eqp_band[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
                 int flag_qpe_solver = solve_qpe_with_option(
                     option_qpe_solver, pade, eks_state, efermi, vxc_state, exx_state, e_qp,
@@ -615,6 +750,7 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
                 {
                     sigc_band_re[start_k+i] = sigc.real();
                     sigc_band_im[start_k+i] = sigc.imag();
+                    eqp_band[start_k+i] = e_qp;
                 }
             }
         }
@@ -622,4 +758,17 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
     profiler.stop("g0w0_solve_qpe");
 
     profiler.stop("api_get_g0w0_sigc_band_k");
+}
+
+void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, const int n_spins,
+                                 const int n_kpts_band_this, const int *iks_band_this,
+                                 int i_state_low, int i_state_high, const double *vxc_band,
+                                 const double *vexx_band, double *sigc_band_re,
+                                 double *sigc_band_im)
+{
+    const int n_states_calc = std::max(0, i_state_high - i_state_low);
+    std::vector<double> eqp_band(n_spins * n_kpts_band_this * n_states_calc);
+    librpa_get_g0w0_qpe_band_k(h, p_opts, n_spins, n_kpts_band_this, iks_band_this,
+                               i_state_low, i_state_high, vxc_band, vexx_band, sigc_band_re,
+                               sigc_band_im, eqp_band.data());
 }

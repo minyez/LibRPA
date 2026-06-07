@@ -31,9 +31,9 @@ int qpe_solver_pade_self_consistent(
         const double &sigma_x,
         double &e_qp,
         cplxdb &sigc,
-        const double diff_init = 1.0e-3,
+        const double diff_init = 1.0,
         const double thres = 1.0e-5,
-        const int n_iter_max = 200,
+        const int n_iter_max = 10000,
         const double damp_fac = 0.1,
         const bool use_adaptive_damp = false
         );

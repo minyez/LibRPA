@@ -30,7 +30,9 @@ CorrEnergy compute_RPA_correlation_blacs(const Chi0 &chi0, const atpair_k_cplx_m
                                          const BlacsCtxtHandler &blacs_h);
 CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &coulmat,
                                             const std::vector<atpair_t> &local_atpair,
-                                            const BlacsCtxtHandler &blacs_h);
+                                            const BlacsCtxtHandler &blacs_h,
+                                            const RpaHeadwingSettings &headwing_settings = {},
+                                            diele_func *df_headwing = nullptr);
 CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx_mat_t &coulmat,
                                                        const std::vector<atpair_t> &local_atpair,
                                                        const BlacsCtxtHandler &blacs_h, bool use_gpu_gw_wc = false);
@@ -54,10 +56,18 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q(
 std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat_eps, atpair_k_cplx_mat_t &coulmat_wc,
     double sqrt_coulomb_threshold, const bool replace_w_head, int option_dielect_func,
-    const std::vector<std::complex<double>> &epsmac_LF_imagfreq, diele_func &df_headwing,
+    const std::vector<std::complex<double>> &epsmac_LF_imagfreq, diele_func *df_headwing,
     const BlacsCtxtHandler &blacs_h, const librpa_int::ArrayDesc &ad, bool debug = false,
     const char *output_dir = ".", bool use_cholesky_gw_wc = false, 
     bool use_gpu_gw_wc = false, bool use_elpa_sqrt_coulomb = false);
+
+void unfold_Wc_freq_q_blacs(
+    std::map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
+    std::map<Vector3_Order<double>, ComplexMatrix> &sinvS,
+    const std::vector<Vector3_Order<double>> &qlist,
+    const BlacsCtxtHandler &blacs_h,
+    const librpa_int::ArrayDesc &desc_small,
+    const librpa_int::ArrayDesc &desc_full);
 
 //! Fourier transform screened Coulomb in q-space to R-space, but still in frequency domain
 std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
@@ -75,17 +85,21 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
 // @attention CT_FT_Wc_freq_q only return upper atom-pair, but final Wc_libri should be same
 std::map<double, atom_mapping<std::map<Vector3_Order<int>, matrix_m<std::complex<double>>>>::pair_t_old>
 CT_FT_Wc_q2R_freq2time(
+    const MpiCommHandler &comm_h,
+    const AtomicBasis &atbasis_abf,
     std::map<double,
-        atom_mapping<std::map<Vector3_Order<double>, matrix_m<std::complex<double>>>>::pair_t_old>
+        atom_mapping<std::map<Vector3_Order<double>, matrix_m<cplxdb>>>::pair_t_old>
         &Wc_freq_q,  // upper atom-pair input
-    const TFGrids &tfg, const int &n_kpoints, const std::vector<Vector3_Order<int>> &Rlist,
+    const TFGrids &tfg, const PeriodicBoundaryData &pbc, const std::vector<Vector3_Order<int>> &Rlist,
     const std::string &output_dir);
 
 /// @brief Wc(q,w) -> Wc(q,t)
 std::map<double, atom_mapping<std::map<Vector3_Order<double>, matrix_m<std::complex<double>>>>::pair_t_old>
 CT_Wc_freq2time_q(
+    const MpiCommHandler &comm_h,
+    const AtomicBasis &atbasis_abf,
     const std::map<double,
-              atom_mapping<std::map<Vector3_Order<double>, matrix_m<std::complex<double>>>>::pair_t_old>
+              atom_mapping<std::map<Vector3_Order<double>, matrix_m<cplxdb>>>::pair_t_old>
         &Wc_freq_q,
     const TFGrids &tfg, const int &n_kpoints, const std::vector<Vector3_Order<int>> &Rlist,
     const std::vector<Vector3_Order<double>> &qlist);

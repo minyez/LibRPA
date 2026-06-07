@@ -30,6 +30,7 @@ using librpa_int::ComplexMatrix;
  * @brief Read occupation numbers and eigenvalues of SCF calculation
  */
 void read_scf_occ_eigenvalues(const string &file_path);
+void read_scf_occ_eigenvalues(const string &file_path, MeanField &mf, bool use_spinor_wfc);
 
 /*!
  * @brief Read exchange-correlation potential
@@ -40,12 +41,15 @@ void read_scf_occ_eigenvalues(const string &file_path);
 int read_vxc(const string &file_path, std::vector<matrix> &vxc);
 
 int read_eigenvector(const string &dir_path);
+int read_eigenvector(const string &dir_path, MeanField &mf, bool use_spinor_wfc,
+                     const std::vector<int> *iks_selected = nullptr);
 
 // high-level reader for RI coefficients and bare Coulomb interactions
 void read_ri(const string &dir_path, librpa::ParallelRouting &routing);
 
 void read_velocity(const string &file_path, MeanField &mf);
 void read_velocity_aims(MeanField &mf, const std::string &file_path);
+void read_headwing_input(const string &dir_path, bool need_wing);
 
 void read_ri_shrink(const string &dir_path);
 
