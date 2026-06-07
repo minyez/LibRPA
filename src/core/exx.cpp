@@ -504,7 +504,7 @@ void Exx::build(const LibrpaParallelRouting routing,
         exx_libri.set_parallel(comm_h.comm, atoms_pos, this->pbc.latvec_array, this->pbc.period_array);
 
     const auto& symmetry_ctx = LIBRPA::abacus_symmetry_ctx;
-    const bool use_abacus_exx_symmetry =
+    const bool use_input_exx_symmetry =
         symmetry_ctx.available
         && this->pbc.klist.size() < static_cast<std::size_t>(this->pbc.get_n_cells_bvk())
         && symmetry_ctx.has_ao_shell_layout()
@@ -513,13 +513,13 @@ void Exx::build(const LibrpaParallelRouting routing,
         && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(n_atoms)
         && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(n_atoms);
     const auto libri_irreducible_sector =
-        use_abacus_exx_symmetry
+        use_input_exx_symmetry
             ? convert_abacus_irreducible_sector_to_libri(
                   symmetry_ctx.irreducible_sector, this->pbc.period_array)
             : std::map<std::pair<int, int>, std::set<std::array<int, 3>>>{};
-    const bool use_libri_exx_symmetry_filter = use_abacus_exx_symmetry;
+    const bool use_libri_exx_symmetry_filter = use_input_exx_symmetry;
     LIBRPA::abacus_rspace_sector_stars_t abacus_sector_stars;
-    if (use_abacus_exx_symmetry)
+    if (use_input_exx_symmetry)
     {
         global::lib_printf(
             "Reducing EXX real-space contractions with ABACUS irreducible sectors\n");
@@ -590,10 +590,10 @@ void Exx::build(const LibrpaParallelRouting routing,
 
     atpair_R_mat_t exx_coul_mat_restored;
     const atpair_R_mat_t* exx_coul_mat_ptr = &coul_mat;
-    const bool use_abacus_exx_coulomb_restore =
-        use_abacus_exx_symmetry
+    const bool use_input_exx_coulomb_restore =
+        use_input_exx_symmetry
         && exx_coulomb_uses_abacus_irreducible_sector_layout(coul_mat, symmetry_ctx);
-    if (use_abacus_exx_coulomb_restore)
+    if (use_input_exx_coulomb_restore)
     {
         global::lib_printf(
             "Restoring the ABACUS EXX auxiliary Coulomb blocks from the irreducible sector to the full real-space sector before LibRI contraction\n");
@@ -647,7 +647,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     }
     const auto& exx_coul_mat = *exx_coul_mat_ptr;
     const bool use_replicated_abacus_exx_coulomb =
-        use_abacus_exx_coulomb_restore && comm_h.nprocs > 1;
+        use_input_exx_coulomb_restore && comm_h.nprocs > 1;
 
     std::map<int, std::map<std::pair<int,std::array<int,3>>, RI::Tensor<double>>> V_libri;
     std::map<int, std::map<std::pair<int,std::array<int,3>>, RI::Tensor<cplxdb>>> V_libri_cplx;

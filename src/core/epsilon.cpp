@@ -2753,7 +2753,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     const auto &klist = chi0.pbc.klist;
     const auto &kfrac_list = chi0.pbc.kfrac_list;
     const auto atom_nabf = build_atom_nabf_map(chi0.atbasis_abf);
-    const bool use_abacus_symmetry_dense_chi0_collect =
+    const bool use_input_symmetry_dense_chi0_collect =
         global::mpi_comm_global_h.nprocs > 1
         && can_symmetrize_abacus_chi0_ibz_blocks(atom_nabf, chi0.pbc);
 
@@ -2993,13 +2993,13 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     chi0_wq = symmetrize_abacus_chi0_ibz_blocks_if_needed(
                         chi0.get_chi0_q().at(freq).at(q), q, chi0.pbc, atom_nabf);
                 }
-                else if (use_abacus_symmetry_dense_chi0_collect)
+                else if (use_input_symmetry_dense_chi0_collect)
                 {
                     chi0_wq = symmetrize_abacus_chi0_ibz_blocks_if_needed(
                         chi0_wq, q, chi0.pbc, atom_nabf);
                 }
 
-                if (use_abacus_symmetry_dense_chi0_collect)
+                if (use_input_symmetry_dense_chi0_collect)
                 {
                     const auto chi0_dense = build_dense_abacus_hermitian_matrix_from_local_blocks(
                         to_ordered_abacus_blocks(chi0_wq), atom_nabf);

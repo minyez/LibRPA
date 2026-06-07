@@ -305,6 +305,33 @@ void librpa_set_dielect_func_imagfreq(LibrpaHandler* h, int nfreq, const double*
                                       const double* dielect_func);
 
 /**
+ * @brief Set velocity/momentum matrix for analytic head/wing correction.
+ *
+ * The flattened matrix order is [spin][k][cartesian][row band][column band].
+ * Values are used as-is in LibRPA's internal analytic head/wing convention; code-specific
+ * conversions from ABACUS or FHI-aims file formats are intentionally not applied here.
+ *
+ * @param[in] h              Handler.
+ * @param[in] n_spins        Number of spin channels.
+ * @param[in] n_kpts         Number of k-points used by analytic head/wing.
+ * @param[in] n_states       Number of bands.
+ * @param[in] velocity_real  Real parts of the flattened velocity matrices.
+ * @param[in] velocity_imag  Imaginary parts of the flattened velocity matrices.
+ */
+void librpa_set_headwing_velocity_matrix(LibrpaHandler* h, int n_spins, int n_kpts,
+                                         int n_states, const double* velocity_real,
+                                         const double* velocity_imag);
+
+/**
+ * @brief Set velocity/momentum matrix for analytic head/wing correction.
+ *
+ * The flattened matrix order is [spin][k][cartesian][row band][column band], with
+ * interleaved real/imaginary values.
+ */
+void librpa_set_headwing_velocity_matrix_packed(LibrpaHandler* h, int n_spins, int n_kpts,
+                                                int n_states, const double* velocity_ri);
+
+/**
  * @brief Set k-points for band structure calculations.
  *
  * @param[in] h              Handler.

@@ -917,7 +917,7 @@ void G0W0::build_spacetime(
     }
 
     const auto& symmetry_ctx = LIBRPA::abacus_symmetry_ctx;
-    const bool use_abacus_sigc_symmetry =
+    const bool use_input_sigc_symmetry =
         symmetry_ctx.available
         && this->pbc.klist.size() < static_cast<std::size_t>(this->pbc.get_n_cells_bvk())
         && symmetry_ctx.has_ao_shell_layout()
@@ -926,13 +926,13 @@ void G0W0::build_spacetime(
         && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(natom)
         && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(natom);
     const auto libri_sigc_irreducible_sector =
-        use_abacus_sigc_symmetry
+        use_input_sigc_symmetry
             ? convert_abacus_irreducible_sector_to_libri_gw(
                   symmetry_ctx.irreducible_sector, this->pbc.period_array)
             : std::map<std::pair<int, int>, std::set<std::array<int, 3>>>{};
-    const bool restore_abacus_sigc_output = use_abacus_sigc_symmetry;
+    const bool restore_input_sigc_output = use_input_sigc_symmetry;
     LIBRPA::abacus_rspace_sector_stars_t abacus_sector_stars;
-    if (use_abacus_sigc_symmetry)
+    if (use_input_sigc_symmetry)
     {
         LIBRPA::build_abacus_rspace_sector_stars(
             symmetry_ctx, symmetry_ctx.input_coord_frac, this->pbc.period, pbc.Rlist,
@@ -1103,7 +1103,7 @@ void G0W0::build_spacetime(
 	                            gw_libri_cplx.set_Gs(gf_libri, this->libri_threshold_G);
 	                            global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
 	                            gw_libri_cplx.cal_Sigmas();
-	                            if (restore_abacus_sigc_output)
+	                            if (restore_input_sigc_output)
 	                            {
 	                                gw_libri_cplx.Sigmas =
 	                                    restore_abacus_ao_rspace_tensor_map_gw(
@@ -1180,7 +1180,7 @@ void G0W0::build_spacetime(
 	                            gw_libri.set_Gs(gf_libri, this->libri_threshold_G);
 	                            global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
 	                            gw_libri.cal_Sigmas();
-	                            if (restore_abacus_sigc_output)
+	                            if (restore_input_sigc_output)
 	                            {
 	                                gw_libri.Sigmas =
 	                                    restore_abacus_ao_rspace_tensor_map_gw(

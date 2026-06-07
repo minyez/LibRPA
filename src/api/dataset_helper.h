@@ -24,4 +24,7 @@ void initialize_ds_exx(Dataset &ds, const LibrpaOptions &opts) noexcept;
 // Initialize G0W0 component
 void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts) noexcept;
 
+// Initialize analytic dielectric head/wing component from Dataset::headwing_velocity.
+void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, bool need_wing);
+
 }

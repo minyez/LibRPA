@@ -81,6 +81,25 @@ double headwing_spin_prefactor(const int n_spin, const bool spin_orbit_coupled)
     return 2.0 / static_cast<double>(n_spin);
 }
 
+void initialize_headwing_velocity(headwing_velocity_t &velocity, const int n_spins,
+                                  const int n_kpoints, const int n_states)
+{
+    velocity.clear();
+    velocity.resize(n_spins);
+    for (int ispin = 0; ispin != n_spins; ++ispin)
+    {
+        velocity[ispin].resize(n_kpoints);
+        for (int ik = 0; ik != n_kpoints; ++ik)
+        {
+            velocity[ispin][ik].resize(3);
+            for (int alpha = 0; alpha != 3; ++alpha)
+            {
+                velocity[ispin][ik][alpha].create(n_states, n_states);
+            }
+        }
+    }
+}
+
 std::vector<double> interpolate_dielec_func(int option, const std::vector<double> &frequencies_in,
                                             const std::vector<double> &df_in,
                                             const std::vector<double> &frequencies_target)
@@ -122,22 +141,28 @@ std::vector<double> interpolate_dielec_func(int option, const std::vector<double
     return df_target;
 }
 
-// void diele_func::set(MeanField &mf, std::vector<Vector3_Order<double>> &kfrac,
-//                      std::vector<double> frequencies_target, int nbasis, int nstates, int nspin)
-// {
-//     meanfield_df = mf;
-//     kfrac_band = kfrac;
-//     omega = frequencies_target;
-//     n_basis = nbasis;
-//     n_states = nstates;
-//     n_spin = nspin;
-//     init();
-// };
-
 void diele_func::init(double coulomb_eigen_threshold, const librpa_int::atpair_k_cplx_mat_t &Vq)
 {
     this->n_abf = atomic_basis_abf_.nb_total;
     this->nk = this->kfrac_band.size();
+    if (static_cast<int>(velocity_.size()) != n_spin)
+        throw LIBRPA_RUNTIME_ERROR("head/wing velocity spin dimension is inconsistent with meanfield");
+    for (int ispin = 0; ispin != n_spin; ++ispin)
+    {
+        if (static_cast<int>(velocity_[ispin].size()) != nk)
+            throw LIBRPA_RUNTIME_ERROR("head/wing velocity k-point dimension is inconsistent with k path");
+        for (int ik = 0; ik != nk; ++ik)
+        {
+            if (velocity_[ispin][ik].size() != 3)
+                throw LIBRPA_RUNTIME_ERROR("head/wing velocity must contain three Cartesian components");
+            for (int alpha = 0; alpha != 3; ++alpha)
+            {
+                const auto &vmat = velocity_[ispin][ik][alpha];
+                if (vmat.nr != n_states || vmat.nc != n_states)
+                    throw LIBRPA_RUNTIME_ERROR("head/wing velocity matrix size is inconsistent with bands");
+            }
+        }
+    }
     int n_omega = this->omega.size();
     get_Xv_cpl(coulomb_eigen_threshold, Vq);
 
@@ -197,7 +222,7 @@ void diele_func::cal_head()
     {
         auto &wg = this->meanfield_df.get_weight()[ispin];
         auto &eigenvalues = this->meanfield_df.get_eigenvals()[ispin];
-        auto &velocity = this->meanfield_df.get_velocity()[ispin];
+        const auto &velocity = this->velocity_[ispin];
         for (int ik = 0; ik != nk; ik++)
         {
             for (int iocc = 0; iocc != n_states; iocc++)
@@ -364,15 +389,6 @@ void diele_func::cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
             // profiler.stop("transform_Cs2mnk");
             auto &desc_nband_nband = desc_C_mnk.first;
             auto &C_mnk = desc_C_mnk.second;
-            // if (mu == 0 && mpi_comm_global_h.is_root())
-            // {
-            //     auto &velocity = this->meanfield_df.get_velocity();
-            //     auto i_3 = desc_nband_nband.indx_g2l_r(3);
-            //     auto j_4 = desc_nband_nband.indx_g2l_c(4);
-
-            //     std::cout << "C,p: " << C_mnk(i_3, j_4) << "," << velocity[isp][ik][0](4, 3)
-            //               << std::endl;
-            // }
             // profiler.start("compute_wing");
             for (std::size_t iomega = 0; iomega != this->omega.size(); iomega++)
             {
@@ -413,7 +429,6 @@ void diele_func::cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
     if (comm_h.is_root()) std::cout << "* Success: calculate wing term." << std::endl;
 
     // this->wing_mu.clear();
-    this->meanfield_df.get_velocity().clear();
     release_free_mem();
     profiler.stop("cal_wing_mu");
 };
@@ -530,7 +545,7 @@ std::complex<double> diele_func::compute_wing(const int alpha, const int iomega,
                                               const ArrayDesc &desc_nband_nband,
                                               const matrix_m<complex<double>> &C_nband_nband)
 {
-    auto &velocity = this->meanfield_df.get_velocity();
+    const auto &velocity = this->velocity_;
     auto &eigenvalues = this->meanfield_df.get_eigenvals();
 
     double omega_ev = this->omega[iomega];  // * HA2EV;

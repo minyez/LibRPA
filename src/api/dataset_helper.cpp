@@ -2,6 +2,7 @@
 #include "librpa_enums.h"
 
 // Internal headers
+#include "../utils/error.h"
 #include "../utils/profiler.h"
 #include "dataset_helper.h"
 
@@ -151,6 +152,79 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts) noexcept
     ds.p_g0w0->output_sigc_mat_rt = opts.output_gw_sigc_mat_rt == LIBRPA_SWITCH_ON;
     ds.p_g0w0->output_sigc_mat_rf = opts.output_gw_sigc_mat_rf == LIBRPA_SWITCH_ON;
     global::profiler.stop("initialize_ds_g0w0");
+}
+
+void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool need_wing)
+{
+    if (opts.replace_w_head != LIBRPA_SWITCH_ON ||
+        (opts.option_dielect_func != 3 && opts.option_dielect_func != 4))
+    {
+        return;
+    }
+
+    global::profiler.start("initialize_ds_headwing");
+
+    if (ds.p_headwing && (!need_wing || ds.p_headwing->has_wing()))
+    {
+        global::profiler.stop("initialize_ds_headwing");
+        return;
+    }
+
+    if (ds.p_headwing && need_wing)
+    {
+        const auto &headwing_cs =
+            opts.use_shrink_abfs == LIBRPA_SWITCH_ON ? ds.cs_data_shrink : ds.cs_data;
+        ds.p_headwing->cal_wing(headwing_cs, opts.sqrt_coulomb_threshold, ds.vq);
+        if (opts.output_level >= LIBRPA_VERBOSE_DEBUG)
+            ds.p_headwing->test_wing();
+        global::profiler.stop("initialize_ds_headwing");
+        return;
+    }
+
+    if (ds.headwing_velocity.empty())
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "analytic head/wing requested but headwing velocity matrix is not set");
+    }
+
+    MeanField &mf_headwing = ds.mf_headwing.initialized() ? ds.mf_headwing : ds.mf;
+    if (!mf_headwing.initialized())
+        throw LIBRPA_RUNTIME_ERROR("analytic head/wing meanfield is not initialized");
+
+    if (ds.kfrac_headwing_list.empty())
+        ds.kfrac_headwing_list = ds.pbc.kfrac_list;
+    if (static_cast<int>(ds.kfrac_headwing_list.size()) != mf_headwing.get_n_kpoints())
+        throw LIBRPA_RUNTIME_ERROR("analytic head/wing k-point list is inconsistent with meanfield");
+
+    const auto &headwing_basis_aux =
+        opts.use_shrink_abfs == LIBRPA_SWITCH_ON ? ds.basis_aux_shrink : ds.basis_aux;
+    if (!headwing_basis_aux.initialized())
+        throw LIBRPA_RUNTIME_ERROR("analytic head/wing auxiliary basis is not initialized");
+
+    const auto &freqs = ds.tfg.get_freq_nodes();
+    ds.p_headwing = std::make_unique<diele_func>(
+        mf_headwing, ds.headwing_velocity, ds.kfrac_headwing_list, ds.basis_wfc,
+        headwing_basis_aux, freqs, mf_headwing.get_n_aos(), mf_headwing.get_n_states(),
+        mf_headwing.get_n_spins(), headwing_basis_aux.nb_total, ds.pbc, ds.comm_h, ds.blacs_h);
+    ds.p_headwing->use_2d_dielectric = opts.use_2d_dielectric == LIBRPA_SWITCH_ON;
+    ds.p_headwing->use_soc = mf_headwing.get_n_spinor() > 1;
+    ds.p_headwing->debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
+    ds.p_headwing->init(opts.sqrt_coulomb_threshold, ds.vq);
+    ds.p_headwing->cal_head();
+    ds.epsmacs_imagfreq = ds.p_headwing->get_head_vec();
+    ds.omegas_imagfreq = freqs;
+    ds.p_headwing->test_head();
+
+    if (need_wing)
+    {
+        const auto &headwing_cs =
+            opts.use_shrink_abfs == LIBRPA_SWITCH_ON ? ds.cs_data_shrink : ds.cs_data;
+        ds.p_headwing->cal_wing(headwing_cs, opts.sqrt_coulomb_threshold, ds.vq);
+        if (opts.output_level >= LIBRPA_VERBOSE_DEBUG)
+            ds.p_headwing->test_wing();
+    }
+
+    global::profiler.stop("initialize_ds_headwing");
 }
 
 }

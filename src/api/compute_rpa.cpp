@@ -85,6 +85,8 @@ double librpa_get_rpa_correlation_energy(LibrpaHandler *h, const LibrpaOptions *
     // Redistribute 2D Coulomb matrices to atom-pair blocks if they are parsed
     pds->redistribute_coulomb_blacs2ap();
 
+    initialize_ds_headwing(*pds, opts, opts.option_dielect_func == 3);
+
     // Initialize response function object
     initialize_ds_chi0(*pds, opts);
     auto &chi0 = *(pds->p_chi0);

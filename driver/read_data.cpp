@@ -57,9 +57,9 @@ bool use_loaded_abacus_symmetry_sidecars()
 {
     return LIBRPA::abacus_symmetry_ctx.available
            && !LIBRPA::abacus_symmetry_ctx.kstars.empty()
-           && (driver::get_bool(driver::opts.use_abacus_gw_symmetry)
-               || driver::get_bool(driver::opts.use_abacus_rpa_symmetry)
-               || driver::get_bool(driver::opts.use_abacus_exx_symmetry));
+           && (driver::get_bool(driver::opts.use_input_gw_symmetry)
+               || driver::get_bool(driver::opts.use_input_rpa_symmetry)
+               || driver::get_bool(driver::opts.use_input_exx_symmetry));
 }
 
 bool nearly_same_kpoint(const librpa_int::Vector3_Order<double> &lhs,
@@ -757,7 +757,7 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
     mpi_comm_global_h.barrier();
 }
 
-void read_velocity(const string &file_path, MeanField &mf)
+void read_velocity(const string &file_path, const MeanField &mf, headwing_velocity_t &velocity)
 {
     using librpa_int::global::mpi_comm_global_h;
     using librpa_int::ANG2BOHR;
@@ -783,8 +783,7 @@ void read_velocity(const string &file_path, MeanField &mf)
         throw std::logic_error(ss.str());
     }
 
-    auto &velocity = mf.get_velocity();
-    if (velocity.empty()) mf.initialize_velocity();
+    initialize_headwing_velocity(velocity, n_spins, n_kpoints, n_bands);
     for (int is = 0; is != n_spins; is++)
     {
         for (int ik = 0; ik != n_kpoints; ik++)
@@ -814,7 +813,8 @@ void read_velocity(const string &file_path, MeanField &mf)
         std::cout << "* Success: read velocity from pyatb_librpa_df(ABACUS)." << std::endl;
 }
 
-void read_velocity_aims(MeanField &mf, const string &file_path)
+void read_velocity_aims(const MeanField &mf, const string &file_path,
+                        headwing_velocity_t &velocity)
 {
     using std::complex;
     using std::vector;
@@ -825,8 +825,7 @@ void read_velocity_aims(MeanField &mf, const string &file_path)
     int nk = mf.get_n_kpoints();
     int n_spins = mf.get_n_spins();
     int nbands = mf.get_n_bands();
-    auto &velocity = mf.get_velocity();
-    if (velocity.empty()) mf.initialize_velocity();
+    initialize_headwing_velocity(velocity, n_spins, nk, nbands);
 
     for (int ik = 0; ik < nk; ik++)
     {
@@ -917,6 +916,9 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     auto pds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
     auto &mf_headwing = pds->mf_headwing;
     mf_headwing = MeanField();
+    auto &headwing_velocity = pds->headwing_velocity;
+    headwing_velocity.clear();
+    pds->kfrac_headwing_list.clear();
 
     const bool use_spinor_wfc = driver::driver_params.use_spinor_wfc;
     const string pyatb_dir = path_as_directory(dir_path) + "pyatb_librpa_df/";
@@ -929,6 +931,10 @@ void read_headwing_input(const string &dir_path, bool need_wing)
 
     if (path_exists(pyatb_velocity.c_str()))
     {
+        // Some head/wing workflows provide a separate band path.  Keep that
+        // path-specific mean field in Dataset::mf_headwing and keep the
+        // velocity/momentum matrices in Dataset::headwing_velocity; the
+        // latter is not a MeanField property.
         if (mpi_comm_global_h.is_root())
         {
             std::cout << "Reading head/wing input from " << pyatb_dir << std::endl;
@@ -940,7 +946,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         {
             throw std::runtime_error("Failed to read pyatb head/wing eigenvectors from " + pyatb_dir);
         }
-        read_velocity(pyatb_velocity, mf_headwing);
+        read_velocity(pyatb_velocity, mf_headwing, headwing_velocity);
         kfrac_headwing = read_headwing_k_path_info(pyatb_dir + "k_path_info",
                                                    n_basis, n_states, n_spin);
         if (use_spinor_wfc)
@@ -957,6 +963,8 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     }
     else
     {
+        // ABACUS/FHI-aims package outputs use the SCF k grid for head/wing.
+        // Only the velocity/momentum matrix is head/wing-specific here.
         mf_headwing = pds->mf;
         kfrac_headwing = pds->pbc.kfrac_list;
         n_basis = mf_headwing.get_n_aos();
@@ -967,17 +975,19 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         const string file_aims = path_as_directory(dir_path) + "mommat_ks_kpt_000001.dat";
         if (path_exists(file_abacus.c_str()))
         {
-            read_velocity(file_abacus, mf_headwing);
+            read_velocity(file_abacus, mf_headwing, headwing_velocity);
         }
         else if (path_exists(file_aims.c_str()))
         {
-            read_velocity_aims(mf_headwing, path_as_directory(dir_path));
+            read_velocity_aims(mf_headwing, path_as_directory(dir_path), headwing_velocity);
         }
         else
         {
             throw std::runtime_error("Cannot find moment files for head/wing calculation");
         }
     }
+
+    pds->kfrac_headwing_list = kfrac_headwing;
 
     std::vector<double> freq_weights;
     driver::h.get_imaginary_frequency_grids(driver::opts, pds->omegas_imagfreq, freq_weights);
@@ -987,7 +997,8 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     if (!headwing_basis_aux.initialized())
         throw std::runtime_error("Head/wing auxiliary basis is not initialized");
     pds->p_headwing = std::make_unique<diele_func>(
-        mf_headwing, kfrac_headwing, pds->basis_wfc, headwing_basis_aux, freqs,
+        mf_headwing, headwing_velocity, pds->kfrac_headwing_list, pds->basis_wfc,
+        headwing_basis_aux, freqs,
         n_basis, n_states, n_spin, headwing_basis_aux.nb_total, pds->pbc, pds->comm_h, pds->blacs_h);
     pds->p_headwing->use_2d_dielectric = driver::get_bool(driver::opts.use_2d_dielectric);
     pds->p_headwing->use_soc = mf_headwing.get_n_spinor() > 1;
@@ -1006,61 +1017,6 @@ void read_headwing_input(const string &dir_path, bool need_wing)
             pds->p_headwing->test_wing();
     }
 }
-
-/* void read_velocity_aims(MeanField &mf, const string &file_path)
-{
-    int nk = mf.get_n_kpoints();
-    int n_spins = mf.get_n_spins();
-    int nbands = mf.get_n_bands();
-    auto &velocity = mf.get_velocity();
-
-    ifstream infile;
-    for (int ik = 0; ik != nk; ik++)
-    {
-        vector<complex<double>> px(n_spins * nbands * nbands), py(n_spins * nbands * nbands),
-            pz(n_spins * nbands * nbands);
-        // Load momentum matrix
-        std::stringstream ss;
-        ss << file_path << "mommat_ks_kpt_" << std::setfill('0') << std::setw(6) << ik + 1
-           << ".dat";
-        infile.open(ss.str());
-        if (!infile.is_open())
-        {
-            cerr << "Failed to open file: " << ss.str() << endl;
-            continue;
-        }
-        std::string px_re, px_im, py_re, py_im, pz_re, pz_im;
-        int line = 0;
-        while (infile.peek() != EOF)
-        {
-            infile >> px_re >> px_im >> py_re >> py_im >> pz_re >> pz_im;
-            px[line] = complex<double>(stod(px_re), stod(px_im));
-            py[line] = complex<double>(stod(py_re), stod(py_im));
-            pz[line] = complex<double>(stod(pz_re), stod(pz_im));
-            line++;
-        }
-        infile.close();
-        int iline = 0;
-        for (int im = 0; im != nbands; im++)
-        {
-            for (int in = im; in != nbands; in++)
-            {
-                for (int is = 0; is != n_spins; is++)
-                {
-                    velocity.at(is).at(ik).at(0)(in, im) = px[iline];
-                    velocity.at(is).at(ik).at(1)(in, im) = py[iline];
-                    velocity.at(is).at(ik).at(2)(in, im) = pz[iline];
-                    velocity.at(is).at(ik).at(0)(im, in) = conj(px[iline]);
-                    velocity.at(is).at(ik).at(1)(im, in) = conj(py[iline]);
-                    velocity.at(is).at(ik).at(2)(im, in) = conj(pz[iline]);
-                    iline++;
-                }
-            }
-        }
-    }
-    if (LIBRPA::envs::mpi_comm_global_h.is_root())
-        std::cout << "* Success: read moment from mommat_ks_kpt_*.dat(FHI-aims)." << std::endl;
-} */
 
 void read_dielec_func(const string &file_path, std::vector<double> &omegas,
                       std::vector<double> &dielec_func_imagfreq)
@@ -1269,7 +1225,7 @@ void read_bz_sampling_from_stru(const std::string &file_path)
         {
             throw LIBRPA_RUNTIME_ERROR(
                 "Fail to read k-point rows from " + file_path
-                + ". ABACUS symmetry sidecars are required when stru_out stores only IBZ k-points.");
+                + ". Input symmetry sidecars are required when stru_out stores only IBZ k-points.");
         }
         kvecs[i] = stod(x);
     }

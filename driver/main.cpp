@@ -120,12 +120,12 @@ int main(int argc, char **argv)
     const string path_basis = driver_params.input_dir + driver_params.fn_basis;
     const string path_eigocc_scf = driver_params.input_dir + driver_params.fn_eigocc_scf;
 
-    profiler.start("driver_abacus_symmetry", "Driver Read ABACUS symmetry sidecars");
-    const bool may_use_abacus_symmetry =
-        get_bool(opts.use_abacus_exx_symmetry)
-        || get_bool(opts.use_abacus_gw_symmetry)
-        || get_bool(opts.use_abacus_rpa_symmetry);
-    if (may_use_abacus_symmetry)
+    profiler.start("driver_input_symmetry", "Driver Read input symmetry sidecars");
+    const bool may_use_input_symmetry =
+        get_bool(opts.use_input_exx_symmetry)
+        || get_bool(opts.use_input_gw_symmetry)
+        || get_bool(opts.use_input_rpa_symmetry);
+    if (may_use_input_symmetry)
     {
         LIBRPA::load_global_abacus_symmetry_context(
             driver_params.input_dir,
@@ -135,7 +135,7 @@ int main(int argc, char **argv)
     {
         LIBRPA::abacus_symmetry_ctx.clear();
     }
-    profiler.stop("driver_abacus_symmetry");
+    profiler.stop("driver_input_symmetry");
 
     profiler.start("driver_read_common_input_data", "Driver Read Task-Common Input Data");
     profiler.start("driver_band_out", "DFT SCF eigenvalues/occupations");

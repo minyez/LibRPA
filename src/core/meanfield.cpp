@@ -371,24 +371,6 @@ void MeanField::resize(int ns, int nk, int nb, int nao, int nspinor, int st_ib, 
     }
 }
 
-void MeanField::initialize_velocity()
-{
-    velocity.clear();
-    velocity.resize(n_spins);
-    for (int is = 0; is < n_spins; ++is)
-    {
-        velocity[is].resize(n_kpoints);
-        for (int ik = 0; ik < n_kpoints; ++ik)
-        {
-            velocity[is][ik].resize(3);
-            for (int ia = 0; ia < 3; ++ia)
-            {
-                velocity[is][ik][ia].create(n_states, n_states);
-            }
-        }
-    }
-}
-
 std::vector<int> MeanField::get_iks_local() const
 {
     std::vector<int> iks_local;

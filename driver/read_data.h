@@ -17,6 +17,7 @@
 // TODO: remove this include and internal datatypes in signature.
 // Data objects of internal types should be accessed in the implementation.
 #include "../src/core/meanfield.h"
+#include "../src/core/dielecmodel.h"
 
 using std::string;
 using librpa_int::matrix;
@@ -25,6 +26,7 @@ using librpa_int::Vector3_Order;
 using librpa_int::atpair_R_mat_t;
 using librpa_int::MeanField;
 using librpa_int::ComplexMatrix;
+using librpa_int::headwing_velocity_t;
 
 /*!
  * @brief Read occupation numbers and eigenvalues of SCF calculation
@@ -47,8 +49,9 @@ int read_eigenvector(const string &dir_path, MeanField &mf, bool use_spinor_wfc,
 // high-level reader for RI coefficients and bare Coulomb interactions
 void read_ri(const string &dir_path, librpa::ParallelRouting &routing);
 
-void read_velocity(const string &file_path, MeanField &mf);
-void read_velocity_aims(MeanField &mf, const std::string &file_path);
+void read_velocity(const string &file_path, const MeanField &mf, headwing_velocity_t &velocity);
+void read_velocity_aims(const MeanField &mf, const std::string &file_path,
+                        headwing_velocity_t &velocity);
 void read_headwing_input(const string &dir_path, bool need_wing);
 
 void read_ri_shrink(const string &dir_path);

@@ -74,6 +74,8 @@ public:
     PeriodicBoundaryData pbc;
     //! Fractional coordiantes of k-points for band calculation
     std::vector<Vector3_Order<double>> kfrac_band_list;
+    //! Fractional coordinates of k-points used for analytic head/wing construction
+    std::vector<Vector3_Order<double>> kfrac_headwing_list;
 
     //! Overlap matrix between normal and shrinked ABFs
     std::map<Vector3_Order<double>, ComplexMatrix> sinvS;
@@ -83,6 +85,10 @@ public:
     MeanField mf;
     //! Mean-field used only for analytic head/wing construction
     MeanField mf_headwing;
+    //! Internal velocity matrix used only for analytic head/wing construction.
+    //! File readers may convert producer-specific momentum/velocity files before
+    //! storing them here; public API setters store values as provided.
+    headwing_velocity_t headwing_velocity;
     //! Mean-field object for band calculation
     MeanField mf_band;
     //! Time-frequency grids

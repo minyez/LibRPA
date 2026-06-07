@@ -270,11 +270,11 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_switch(opts, use_fullcoul_eps);
     _parse_switch(opts, use_fullcoul_exx);
     _parse_switch(opts, use_fullcoul_wc);
-    _parse_switch(opts, use_abacus_exx_symmetry);
-    _parse_switch(opts, use_abacus_gw_symmetry);
-    parser.parse_bool("use_abacus_rpa_symmetry", btmp,
-                      driver::get_bool(opts.use_abacus_gw_symmetry), flag);
-    if (flag == 0) opts.use_abacus_rpa_symmetry = get_switch(btmp);
+    _parse_switch(opts, use_input_exx_symmetry);
+    _parse_switch(opts, use_input_gw_symmetry);
+    parser.parse_bool("use_input_rpa_symmetry", btmp,
+                      driver::get_bool(opts.use_input_gw_symmetry), flag);
+    if (flag == 0) opts.use_input_rpa_symmetry = get_switch(btmp);
     _parse_switch(opts, output_abacus_gw_gf);
 
     _parse_int(opts, n_bands_chi0);

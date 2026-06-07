@@ -34,6 +34,12 @@ struct RpaHeadwingSettings
     double sqrt_coulomb_threshold = 0.0;
 };
 
+//! Velocity/momentum matrix for analytic head/wing, indexed as [spin][k][cartesian].
+using headwing_velocity_t = std::vector<std::vector<std::vector<ComplexMatrix>>>;
+
+void initialize_headwing_velocity(headwing_velocity_t &velocity, int n_spins, int n_kpoints,
+                                  int n_states);
+
 double headwing_transition_weight(double occupied_weight, double unoccupied_weight, int n_spin,
                                   bool spin_orbit_coupled);
 double headwing_spin_prefactor(int n_spin, bool spin_orbit_coupled);
@@ -82,6 +88,7 @@ private:
     const PeriodicBoundaryData &pbc_;
     const AtomicBasis &atomic_basis_wfc_;
     const AtomicBasis &atomic_basis_abf_;
+    const headwing_velocity_t &velocity_;
     const MpiCommHandler &comm_h;
     const BlacsCtxtHandler &blacs_h;
     size_t n_nonsingular;
@@ -98,7 +105,8 @@ public:
     bool debug = false;
 
 public:
-    diele_func(MeanField &mf, const std::vector<Vector3_Order<double>> &kfrac,
+    diele_func(MeanField &mf, const headwing_velocity_t &velocity,
+               const std::vector<Vector3_Order<double>> &kfrac,
                const AtomicBasis &atomic_basis_wfc,
                const AtomicBasis &atomic_basis_abf,
                const std::vector<double> &frequencies_target, const int nbasis, const int nstates,
@@ -114,19 +122,19 @@ public:
           pbc_(pbc),
           atomic_basis_wfc_(atomic_basis_wfc),
           atomic_basis_abf_(atomic_basis_abf),
+          velocity_(velocity),
           comm_h(comm_h_in),
           blacs_h(blacs_h_in)
     {};
     ~diele_func() {};
     void init(double coulomb_eigen_threshold, const atpair_k_cplx_mat_t &Vq);
     void init_wing(double coulomb_eigen_threshold, const atpair_k_cplx_mat_t &Vq);
-    void set(MeanField &mf, std::vector<Vector3_Order<double>> &kfrac,
-             std::vector<double> frequencies_target, int nbasis, int nstates, int nspin);
 
     void cal_head();
     double cal_factor(std::string name);
     void test_head();
     std::vector<double> get_head_vec();
+    bool has_wing() const { return !wing.empty(); }
 
     void cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold, const atpair_k_cplx_mat_t &Vq);  // atpair_k_cplx_mat_t &Vq, Cs_LRI &Cs_data
     // tranform Cs_ij(R) to Cs_ij(k)

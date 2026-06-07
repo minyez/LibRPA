@@ -104,14 +104,14 @@ typedef struct
     //! Switch of using full Coulomb interaction in \f$W^c = (\varepsilon^{-1} - 1) v\f$.
     LibrpaSwitch use_fullcoul_wc;
 
-    //! Switch of using ABACUS symmetry sidecars in exact-exchange paths.
-    LibrpaSwitch use_abacus_exx_symmetry;
+    //! Switch of using input symmetry sidecars in exact-exchange paths.
+    LibrpaSwitch use_input_exx_symmetry;
 
-    //! Switch of using ABACUS symmetry sidecars in GW paths.
-    LibrpaSwitch use_abacus_gw_symmetry;
+    //! Switch of using input symmetry sidecars in GW paths.
+    LibrpaSwitch use_input_gw_symmetry;
 
-    //! Switch of using ABACUS symmetry sidecars in RPA/chi0 paths.
-    LibrpaSwitch use_abacus_rpa_symmetry;
+    //! Switch of using input symmetry sidecars in RPA/chi0 paths.
+    LibrpaSwitch use_input_rpa_symmetry;
 
     //! Switch of outputting ABACUS-compatible GW Green's-function data.
     LibrpaSwitch output_abacus_gw_gf;
