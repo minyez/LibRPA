@@ -149,6 +149,10 @@ module librpa_f03
       integer(c_int) :: use_fullcoul_exx
       integer(c_int) :: use_fullcoul_eps
       integer(c_int) :: use_fullcoul_wc
+      integer(c_int) :: use_abacus_exx_symmetry
+      integer(c_int) :: use_abacus_gw_symmetry
+      integer(c_int) :: use_abacus_rpa_symmetry
+      integer(c_int) :: output_abacus_gw_gf
 
       integer(c_int) :: n_bands_chi0
       integer(c_int) :: n_bands_sigc
@@ -176,6 +180,7 @@ module librpa_f03
       integer(c_int) :: replace_w_head
       integer(c_int) :: option_dielect_func
       integer(c_int) :: use_2d_dielectric
+      integer(c_int) :: rpa_headwing_body_start
       integer(c_int) :: load_sigc_from_file
       real(c_double) :: sqrt_coulomb_threshold
       real(c_double) :: libri_chi0_threshold_C
@@ -241,6 +246,14 @@ module librpa_f03
       logical :: use_fullcoul_exx
       !> Experimental: use full Coulomb interaction in \f$W^c = (\varepsilon^{-1} - 1) v\f$.
       logical :: use_fullcoul_wc
+      !> Experimental: use ABACUS symmetry sidecars in exact-exchange paths.
+      logical :: use_abacus_exx_symmetry
+      !> Experimental: use ABACUS symmetry sidecars in GW paths.
+      logical :: use_abacus_gw_symmetry
+      !> Experimental: use ABACUS symmetry sidecars in RPA/chi0 paths.
+      logical :: use_abacus_rpa_symmetry
+      !> Experimental: output ABACUS-compatible GW Green's-function data.
+      logical :: output_abacus_gw_gf
       !> Experimental: maximum number of bands for response-function construction.
       integer :: n_bands_chi0
       !> Experimental: maximum number of bands for correlation self-energy construction.
@@ -284,6 +297,8 @@ module librpa_f03
       integer :: option_dielect_func
       !> Experimental: use the 2D dielectric-function branch where supported.
       logical :: use_2d_dielectric
+      !> First regular Coulomb-eigenbasis channel used by RPA head/wing correction.
+      integer :: rpa_headwing_body_start
       !> Experimental: load correlation self-energy matrix from file where supported.
       logical :: load_sigc_from_file
       !> Threshold for eigenvalues when taking the square root of Coulomb matrices.
@@ -965,6 +980,10 @@ contains
       call sync_opt(opts%use_fullcoul_eps,        opts%opts_c%use_fullcoul_eps,        direction)
       call sync_opt(opts%use_fullcoul_exx,        opts%opts_c%use_fullcoul_exx,        direction)
       call sync_opt(opts%use_fullcoul_wc,         opts%opts_c%use_fullcoul_wc,         direction)
+      call sync_opt(opts%use_abacus_exx_symmetry, opts%opts_c%use_abacus_exx_symmetry, direction)
+      call sync_opt(opts%use_abacus_gw_symmetry,  opts%opts_c%use_abacus_gw_symmetry,  direction)
+      call sync_opt(opts%use_abacus_rpa_symmetry, opts%opts_c%use_abacus_rpa_symmetry, direction)
+      call sync_opt(opts%output_abacus_gw_gf,     opts%opts_c%output_abacus_gw_gf,     direction)
       call sync_opt(opts%n_bands_chi0,            opts%opts_c%n_bands_chi0,            direction)
       call sync_opt(opts%n_bands_sigc,            opts%opts_c%n_bands_sigc,            direction)
       call sync_opt(opts%option_bvk_remap,        opts%opts_c%option_bvk_remap,        direction)
@@ -981,6 +1000,7 @@ contains
       call sync_opt(opts%override_qpe_solver_nan, opts%opts_c%override_qpe_solver_nan, direction)
       call sync_opt(opts%option_dielect_func,     opts%opts_c%option_dielect_func,     direction)
       call sync_opt(opts%use_2d_dielectric,       opts%opts_c%use_2d_dielectric,       direction)
+      call sync_opt(opts%rpa_headwing_body_start, opts%opts_c%rpa_headwing_body_start, direction)
       call sync_opt(opts%load_sigc_from_file,     opts%opts_c%load_sigc_from_file,     direction)
       call sync_opt(opts%use_scalapack_gw_wc,     opts%opts_c%use_scalapack_gw_wc,     direction)
       call sync_opt(opts%use_cholesky_gw_wc,      opts%opts_c%use_cholesky_gw_wc,      direction)

@@ -37,6 +37,10 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->use_fullcoul_eps = LIBRPA_SWITCH_ON;
     opts->use_fullcoul_exx = LIBRPA_SWITCH_OFF;
     opts->use_fullcoul_wc = LIBRPA_SWITCH_OFF;
+    opts->use_abacus_exx_symmetry = LIBRPA_SWITCH_ON;
+    opts->use_abacus_gw_symmetry = LIBRPA_SWITCH_ON;
+    opts->use_abacus_rpa_symmetry = LIBRPA_SWITCH_ON;
+    opts->output_abacus_gw_gf = LIBRPA_SWITCH_OFF;
 
     opts->n_bands_chi0 = -1;
     opts->n_bands_sigc = -1;
@@ -46,12 +50,12 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->use_scalapack_ecrpa = LIBRPA_SWITCH_ON;
 
     opts->use_shrink_abfs = LIBRPA_SWITCH_OFF;
-    opts->use_shrink_chi = LIBRPA_SWITCH_OFF;
+    opts->use_shrink_chi = LIBRPA_SWITCH_ON;
 
     opts->n_params_anacon = -1;
     opts->option_qpe_solver = 0;
     opts->qpe_solver_thres = 1.0e-5;
-    opts->qpe_solver_n_iter_max = 200;
+    opts->qpe_solver_n_iter_max = 10000;
     opts->qpe_solver_damp_factor = 0.1;
     opts->use_qpe_adaptive_damp = LIBRPA_SWITCH_OFF;
     opts->override_qpe_solver_nan = LIBRPA_SWITCH_OFF;
@@ -75,6 +79,7 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->replace_w_head = LIBRPA_SWITCH_OFF;
     opts->option_dielect_func = 0;
     opts->use_2d_dielectric = LIBRPA_SWITCH_OFF;
+    opts->rpa_headwing_body_start = 0;
     opts->sqrt_coulomb_threshold = 0.0e0;
     opts->load_sigc_from_file = LIBRPA_SWITCH_OFF;
 

@@ -269,6 +269,12 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_switch(opts, use_fullcoul_eps);
     _parse_switch(opts, use_fullcoul_exx);
     _parse_switch(opts, use_fullcoul_wc);
+    _parse_switch(opts, use_abacus_exx_symmetry);
+    _parse_switch(opts, use_abacus_gw_symmetry);
+    parser.parse_bool("use_abacus_rpa_symmetry", btmp,
+                      driver::get_bool(opts.use_abacus_gw_symmetry), flag);
+    if (flag == 0) opts.use_abacus_rpa_symmetry = get_switch(btmp);
+    _parse_switch(opts, output_abacus_gw_gf);
 
     _parse_int(opts, n_bands_chi0);
     _parse_int(opts, n_bands_sigc);
@@ -305,6 +311,9 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_int(opts, option_dielect_func);
     _parse_switch(opts, use_2d_dielectric);
     _parse_switch(opts, output_gw_sigc_ks_if);
+    _parse_int(opts, rpa_headwing_body_start);
+    if (opts.rpa_headwing_body_start < 0)
+        throw std::runtime_error("rpa_headwing_body_start must be non-negative");
     _parse_switch(opts, output_gw_sigc_mat);
     _parse_switch(opts, output_gw_sigc_mat_rt);
     _parse_switch(opts, output_gw_sigc_mat_rf);

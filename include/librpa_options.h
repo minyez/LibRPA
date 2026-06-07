@@ -104,6 +104,18 @@ typedef struct
     //! Switch of using full Coulomb interaction in \f$W^c = (\varepsilon^{-1} - 1) v\f$.
     LibrpaSwitch use_fullcoul_wc;
 
+    //! Switch of using ABACUS symmetry sidecars in exact-exchange paths.
+    LibrpaSwitch use_abacus_exx_symmetry;
+
+    //! Switch of using ABACUS symmetry sidecars in GW paths.
+    LibrpaSwitch use_abacus_gw_symmetry;
+
+    //! Switch of using ABACUS symmetry sidecars in RPA/chi0 paths.
+    LibrpaSwitch use_abacus_rpa_symmetry;
+
+    //! Switch of outputting ABACUS-compatible GW Green's-function data.
+    LibrpaSwitch output_abacus_gw_gf;
+
     /* ============================================================================= */
     /* Sum of states */
 
@@ -196,6 +208,10 @@ typedef struct
 
     //! Switch of using 2D dielectric function
     LibrpaSwitch use_2d_dielectric;
+
+    //! First regular Coulomb-eigenbasis channel used by RPA head/wing correction.
+    //! Zero uses channel 1 in the current analytic 3D/2D head/wing path.
+    int rpa_headwing_body_start;
 
     //! Flag of loading correlation self-energy matrix (real-space, imaginary frequency) from file
     LibrpaSwitch load_sigc_from_file;

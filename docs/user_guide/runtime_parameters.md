@@ -142,7 +142,7 @@ Regular k-grid calculations are not affected by BvK remapping.
 | Parameter Name    | Description                                                                  | Type | Default Value (Options) | Status       |
 |-------------------|------------------------------------------------------------------------------|------|-------------------------|--------------|
 | `use_shrink_abfs` | Use a compressed auxiliary basis                                             | bool | `false`                 | Experimental |
-| `use_shrink_chi`  | Build response matrices directly in the compressed auxiliary basis           | bool | `false`                 | Experimental |
+| `use_shrink_chi`  | Build response matrices directly in the compressed auxiliary basis           | bool | `true`                  | Experimental |
 
 ## GW-specific Parameters
 
@@ -152,13 +152,14 @@ Regular k-grid calculations are not affected by BvK remapping.
 | `use_scalapack_gw_wc`    | Use ScaLAPACK for computing $W^c$ from $\chi^0$                              | bool   | `true`                                |              |
 | `use_cholesky_gw_wc`     | Use Cholesky factorization for computing $W^c$ from $\chi^0$                 | bool   | `false`                               | Experimental |
 | `replace_w_head`         | Replace the dielectric matrix head by the macroscopic dielectric function    | bool   | `false`                               |              |
-| `option_dielect_func`    | Option for dielectric function on the imaginary axis                         | int    | 0 (0=direct, 1=spline, 2=model fit)   |              |
+| `option_dielect_func`    | Option for dielectric function on the imaginary axis                         | int    | 0 (0=direct, 1=spline, 2=model fit, 3=analytic head+wing, 4=analytic head) |              |
 | `use_2d_dielectric`      | Use the 2D dielectric-function branch where supported                        | bool   | `false`                               | Experimental |
+| `rpa_headwing_body_start` | First regular Coulomb-eigenbasis channel used by RPA head/wing correction; 0 uses channel 1 | int | 0 | Experimental |
 | `load_sigc_from_file`    | Load correlation self-energy matrix from file where supported                | bool   | `false`                               | Experimental |
 | `sqrt_coulomb_threshold` | Threshold for eigenvalues when taking the square root of Coulomb matrices    | double | 0.0                                   |              |
 | `option_qpe_solver`      | QP equation solver: 0=fixed-point self-consistent, 1=quasi-Newton self-consistent, 2=perturbative | int | 0 |              |
 | `qpe_solver_thres`       | Convergence threshold for the QP equation residual, in Hartree               | double | 1.0e-5                                |              |
-| `qpe_solver_n_iter_max`  | Maximum number of self-consistent QP equation iterations                     | int    | 200                                   |              |
+| `qpe_solver_n_iter_max`  | Maximum number of self-consistent QP equation iterations                     | int    | 10000                                 |              |
 | `qpe_solver_damp_factor` | Damping factor for QP equation updates; used as the initial and maximum factor when adaptive damping is enabled | double | 0.1  |              |
 | `use_qpe_adaptive_damp`  | Adapt the quasi-particle equation damping factor during the solve              | bool   | `false`                               |              |
 | `override_qpe_solver_nan` | Keep the final unconverged QPE iterate instead of outputting NaN            | bool   | `false`                               | Diagnostic   |

@@ -93,10 +93,8 @@ double librpa_get_rpa_correlation_energy(LibrpaHandler *h, const LibrpaOptions *
     // std::cout << "n_abf * " << pds->p_chi0->atbasis_abf.nb_total;
 
     profiler.start("chi0_build", "Build response function chi0");
-    if (opts.use_shrink_abfs)
-        chi0.build(routing, pds->cs_data_shrink, pds->atpairs_local, pds->basis_aux_shrink, pds->sinvS, pds->blacs_h);
-    else
-        chi0.build(routing, pds->cs_data, pds->atpairs_local, pds->basis_aux, pds->sinvS, pds->blacs_h);
+    chi0.build(routing, pds->cs_data, pds->atpairs_local, pds->basis_aux, pds->sinvS,
+               pds->blacs_h);
     profiler.stop("chi0_build");
 
     if (debug)
@@ -132,17 +130,31 @@ double librpa_get_rpa_correlation_energy(LibrpaHandler *h, const LibrpaOptions *
 
     const bool use_blacs = opts.use_scalapack_ecrpa && (routing == LIBRPA_ROUTING_ATOMPAIR || routing == LIBRPA_ROUTING_LIBRI);
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-        if (opts.use_gpu_gw_wc)
-        {
-            pds->blacs_h.init_ddla_handle();
-        }
+    if (opts.use_gpu_gw_wc)
+    {
+        pds->blacs_h.init_ddla_handle();
+    }
 #endif
+    const bool use_rpa_headwing =
+        opts.replace_w_head == LIBRPA_SWITCH_ON && opts.option_dielect_func == 3 &&
+        pds->p_headwing != nullptr;
+
     if (use_blacs)
     {
-        if(pds->mf.get_n_kpoints() == 1)
+        if(pds->mf.get_n_kpoints() == 1 && !use_rpa_headwing)
             corr = compute_RPA_correlation_blacs_2d_gamma_only(chi0, pds->vq, pds->atpairs_local, pds->blacs_h, opts.use_gpu_gw_wc);
         else
-            corr = compute_RPA_correlation_blacs_2d(chi0, pds->vq, pds->atpairs_local, pds->blacs_h);
+        {
+            RpaHeadwingSettings headwing_settings;
+            headwing_settings.enabled = use_rpa_headwing;
+            headwing_settings.option_dielect_func = opts.option_dielect_func;
+            headwing_settings.use_2d_dielectric = opts.use_2d_dielectric == LIBRPA_SWITCH_ON;
+            headwing_settings.rpa_headwing_body_start = opts.rpa_headwing_body_start;
+            headwing_settings.sqrt_coulomb_threshold = opts.sqrt_coulomb_threshold;
+            corr = compute_RPA_correlation_blacs_2d(chi0, pds->vq, pds->atpairs_local,
+                                                    pds->blacs_h, headwing_settings,
+                                                    pds->p_headwing.get());
+        }
     }
     else
         corr = compute_RPA_correlation(routing, *(pds->p_chi0), pds->vq);

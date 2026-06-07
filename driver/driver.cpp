@@ -165,6 +165,7 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             normal_pair(option_qpe_solver),
             normal_pair(option_dielect_func),
             normal_pair(option_bvk_remap),
+            normal_pair(rpa_headwing_body_start),
             normal_pair(qpe_solver_n_iter_max),
         };
 
@@ -183,6 +184,10 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             bool_pair(use_fullcoul_eps),
             bool_pair(use_fullcoul_exx),
             bool_pair(use_fullcoul_wc),
+            bool_pair(use_abacus_exx_symmetry),
+            bool_pair(use_abacus_gw_symmetry),
+            bool_pair(use_abacus_rpa_symmetry),
+            bool_pair(output_abacus_gw_gf),
             bool_pair(use_shrink_abfs),
             bool_pair(use_shrink_chi),
             bool_pair(use_scalapack_ecrpa),

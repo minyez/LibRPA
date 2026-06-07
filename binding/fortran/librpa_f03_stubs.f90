@@ -145,6 +145,14 @@ module librpa_f03
       logical :: use_fullcoul_exx
       !> Experimental: use full Coulomb interaction in \f$W^c = (\varepsilon^{-1} - 1) v\f$.
       logical :: use_fullcoul_wc
+      !> Experimental: use ABACUS symmetry sidecars in exact-exchange paths.
+      logical :: use_abacus_exx_symmetry
+      !> Experimental: use ABACUS symmetry sidecars in GW paths.
+      logical :: use_abacus_gw_symmetry
+      !> Experimental: use ABACUS symmetry sidecars in RPA/chi0 paths.
+      logical :: use_abacus_rpa_symmetry
+      !> Experimental: output ABACUS-compatible GW Green's-function data.
+      logical :: output_abacus_gw_gf
       !> Experimental: maximum number of bands for response-function construction.
       integer :: n_bands_chi0
       !> Experimental: maximum number of bands for correlation self-energy construction.
@@ -188,6 +196,8 @@ module librpa_f03
       integer :: option_dielect_func
       !> Experimental: use the 2D dielectric-function branch where supported.
       logical :: use_2d_dielectric
+      !> First regular Coulomb-eigenbasis channel used by RPA head/wing correction.
+      integer :: rpa_headwing_body_start
       !> Experimental: load correlation self-energy matrix from file where supported.
       logical :: load_sigc_from_file
       !> Threshold for eigenvalues when taking the square root of Coulomb matrices.

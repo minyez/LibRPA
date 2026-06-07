@@ -4,6 +4,7 @@
 
 #include "../task.h"
 #include "../driver.h"
+#include "../read_data.h"
 #include "../../src/mpi/global_mpi.h"
 #include "../../src/io/global_io.h"
 
@@ -26,6 +27,14 @@ void driver::task_rpa()
     // Using the internal work function, avoid copying between vector and double*
     double corr = 0.0;
     std::vector<std::complex<double>> corr_irk(n_ibz_kpoints);
+
+    const bool compute_headwing =
+        driver::get_bool(driver::opts.replace_w_head) &&
+        (driver::opts.option_dielect_func == 3 || driver::opts.option_dielect_func == 4);
+    if (compute_headwing)
+    {
+        read_headwing_input(driver_params.input_dir, driver::opts.option_dielect_func == 3);
+    }
 
     corr = h.get_rpa_correlation_energy(driver::opts, corr_irk);
 
