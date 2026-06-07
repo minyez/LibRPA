@@ -3,6 +3,8 @@
 #include <ostream>
 #include <set>
 #include <array>
+#include <map>
+#include <vector>
 #include "../core/atom.h"
 #include "../math/vector3_order.h"
 #ifdef LIBRPA_USE_LIBRI
@@ -44,11 +46,38 @@ get_s0_s1_for_comm_map2(const std::vector<std::pair<TA, TA>>& atpairs,
     std::set<typename libri_types<TAout, Tcellout>::TAC> set_s1;
     for (const auto& atpair: atpairs)
     {
-        set_s0.insert(atpair.first);
+        set_s0.insert(static_cast<TAout>(atpair.first));
         for (const auto& cell: cells)
         {
-            typename libri_types<TA, Tcell>::TC c {cell.x, cell.y, cell.z};
-            set_s1.insert({atpair.second, c});
+            typename libri_types<TAout, Tcellout>::TC c {
+                static_cast<Tcellout>(cell.x),
+                static_cast<Tcellout>(cell.y),
+                static_cast<Tcellout>(cell.z)
+            };
+            set_s1.insert({static_cast<TAout>(atpair.second), c});
+        }
+    }
+    return {set_s0, set_s1};
+}
+
+template <typename TA, typename Tcell, typename TAout = TA, typename Tcellout = Tcell>
+std::pair<std::set<TAout>, std::set<typename libri_types<TAout, Tcellout>::TAC>>
+get_s0_s1_for_comm_map2(const std::set<std::pair<TA, TA>>& atpairs,
+                        const std::vector<Vector3_Order<Tcell>>& cells)
+{
+    std::set<TAout> set_s0;
+    std::set<typename libri_types<TAout, Tcellout>::TAC> set_s1;
+    for (const auto& atpair: atpairs)
+    {
+        set_s0.insert(static_cast<TAout>(atpair.first));
+        for (const auto& cell: cells)
+        {
+            typename libri_types<TAout, Tcellout>::TC c {
+                static_cast<Tcellout>(cell.x),
+                static_cast<Tcellout>(cell.y),
+                static_cast<Tcellout>(cell.z)
+            };
+            set_s1.insert({static_cast<TAout>(atpair.second), c});
         }
     }
     return {set_s0, set_s1};

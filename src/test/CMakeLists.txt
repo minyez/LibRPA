@@ -46,6 +46,7 @@ foreach(target
     test_io
     test_geometry
     test_lebedev_laikov
+    test_libri_utils
     # test_librpa
     test_matrix
     test_matrix_m
