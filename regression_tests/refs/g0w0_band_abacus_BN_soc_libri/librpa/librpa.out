@@ -59,8 +59,8 @@ use_shrink_abfs = F
 use_shrink_chi = T
 use_soc = T
 use_fullcoul_exx = F
-use_abacus_exx_symmetry = T
-use_abacus_gw_symmetry = T
+use_input_exx_symmetry = T
+use_input_gw_symmetry = T
 output_abacus_gw_gf = F
 use_fullcoul_wc = F
 output_hamgnn = F
@@ -460,7 +460,7 @@ Entry                                             #calls       CPU time (s)     
 Total                                             1            4.6384             0.5239            
   Driver Read Input Parameters                    1              0.0049             0.0199          
   Driver Read Meanfield band                      1              0.0005             0.0005          
-  Driver Read ABACUS symmetry sidecars            1              0.0001             0.0001          
+  Driver Read input symmetry sidecars             1              0.0001             0.0001
   Driver Read Task-Common Input Data              1              0.0506             0.0508          
     driver_read_eigenvector                       1                0.0037             0.0037        
     driver_read_Cs_Vq                             1                0.0466             0.0468        

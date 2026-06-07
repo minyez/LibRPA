@@ -51,15 +51,8 @@ def _prepare_librpa_workspace(src: pathlib.Path, dst: pathlib.Path):
             tar.extractall(path=dst)
         return dst_librpa
 
-    if (src / "librpa.in").is_file() and (src / "input_librpa.tar.gz").is_file():
-        shutil.copy2(src / "librpa.in", dst)
-        with tarfile.open(src / "input_librpa.tar.gz", "r:gz") as tar:
-            tar.extractall(path=dst)
-        return dst
-
     raise FileNotFoundError(
-        "unsupported test input layout in {}; expected either "
-        "librpa/librpa.in + dataset.tar.gz or librpa.in + input_librpa.tar.gz"
+        "unsupported test input layout in {}; expected librpa/librpa.in + dataset.tar.gz"
         .format(src)
     )
 
@@ -272,12 +265,8 @@ class TestDriver:
             src = self._dir_input / dname
             dst = self._dir_testcase / dname
             run_dir = _prepare_librpa_workspace(src, dst)
-            if run_dir == dst / "librpa":
-                out = pathlib.Path("librpa.out")
-                err = pathlib.Path("librpa.err")
-            else:
-                out = pathlib.Path("librpa") / "librpa.out"
-                err = pathlib.Path("librpa") / "librpa.err"
+            out = pathlib.Path("librpa.out")
+            err = pathlib.Path("librpa.err")
             print("Running {} [{}]".format(tc["name"], dname))
             if verbose:
                 print("Command: {}".format(_format_command(args)))
