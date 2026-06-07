@@ -242,6 +242,36 @@ void test_kpoint_distribution()
     }
 }
 
+void test_auxiliary_index_distribution()
+{
+    using namespace librpa_int;
+
+    KPointBlacsParallelContext context({2, 2}, MPI_COMM_WORLD, 3);
+
+    const auto local_R_indices = context.local_R_indices(6);
+    if (context.kpoint_group_id() == 0)
+    {
+        const std::vector<int> ref{0, 1};
+        assert(equal_vector(local_R_indices, ref));
+    }
+    else
+    {
+        const std::vector<int> ref{2, 3, 4, 5};
+        assert(equal_vector(local_R_indices, ref));
+    }
+
+    for (int iR = 0; iR != 6; ++iR)
+    {
+        const int expected_owner = iR < 2 ? 0 : 1;
+        assert(context.R_owner(iR, 6) == expected_owner);
+    }
+
+    assert(context.R_owner(0, 6) == context.kpoint_owner(0));
+
+    context.finalize();
+    assert(!context.is_initialized());
+}
+
 void test_two_level_communicators(librpa_int::KPointBlacsRankLayout rank_layout)
 {
     using namespace librpa_int;
@@ -334,6 +364,7 @@ int main(int argc, char *argv[])
     test_kpoint_blacs_parallel_context();
     test_kpoint_contiguous_rank_layout();
     test_kpoint_distribution();
+    test_auxiliary_index_distribution();
     test_two_level_communicators(librpa_int::KPointBlacsRankLayout::CONTIGUOUS_BLACS);
     test_two_level_communicators(librpa_int::KPointBlacsRankLayout::CONTIGUOUS_KPOINT);
     test_square_blacs_grid_preference();

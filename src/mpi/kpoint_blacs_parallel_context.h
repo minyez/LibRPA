@@ -167,6 +167,14 @@ public:
 
     bool owns_kpoint(int ik) const;
     int kpoint_owner(int ik) const;
+    //! Indices of an auxiliary real-space/vector list owned by this k-point group.
+    std::vector<int> local_aux_indices(int n_items) const;
+    //! Owner k-point group of an auxiliary real-space/vector-list index.
+    int aux_index_owner(int item_index, int n_items) const;
+    //! R-list indices owned by this k-point group.
+    std::vector<int> local_R_indices(int n_R) const;
+    //! Owner k-point group of an R-list index.
+    int R_owner(int iR, int n_R) const;
     //! Global rank of the root process in the BLACS communicator that owns k-point ik.
     int kpoint_blacs_root_global_rank(int ik) const;
     ArrayDesc create_array_desc(int matrix_nrows, int matrix_ncols,

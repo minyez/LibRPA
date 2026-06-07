@@ -415,6 +415,50 @@ int KPointBlacsParallelContext::kpoint_owner(int ik) const
     throw LIBRPA_RUNTIME_ERROR("failed to find k-point owner");
 }
 
+std::vector<int> KPointBlacsParallelContext::local_aux_indices(int n_items) const
+{
+    if (!initialized_) throw LIBRPA_RUNTIME_ERROR("KPointBlacsParallelContext not initialized");
+    if (n_items < 0) throw LIBRPA_RUNTIME_ERROR("number of auxiliary indices must be non-negative");
+    if (n_items == 0) return {};
+
+    // The auxiliary list is distributed along comm_kpoint_h.  Groups that own
+    // more k/q-points receive fewer auxiliary items, keeping the product of
+    // local q-work and local R-work roughly balanced.
+    return dispatcher_balanced(0, n_items, static_cast<int>(kpoints_local_.size()), true,
+                               comm_kpoint_h.comm);
+}
+
+int KPointBlacsParallelContext::aux_index_owner(int item_index, int n_items) const
+{
+    if (!initialized_) throw LIBRPA_RUNTIME_ERROR("KPointBlacsParallelContext not initialized");
+    if (n_items < 0) throw LIBRPA_RUNTIME_ERROR("number of auxiliary indices must be non-negative");
+    if (item_index < 0 || item_index >= n_items)
+        throw LIBRPA_RUNTIME_ERROR("auxiliary index out of range");
+
+    std::vector<int> weights(process_shape_.nprocs_kpoint, 0);
+    const int weight_this = static_cast<int>(kpoints_local_.size());
+    MPI_Allgather(&weight_this, 1, mpi_datatype<int>::value, weights.data(), 1,
+                  mpi_datatype<int>::value, comm_kpoint_h.comm);
+
+    for (int group_id = 0; group_id != process_shape_.nprocs_kpoint; ++group_id)
+    {
+        const auto indices = dispatcher_balanced(0, n_items, weights, group_id, true);
+        if (std::find(indices.cbegin(), indices.cend(), item_index) != indices.cend())
+            return group_id;
+    }
+    throw LIBRPA_RUNTIME_ERROR("failed to find auxiliary index owner");
+}
+
+std::vector<int> KPointBlacsParallelContext::local_R_indices(int n_R) const
+{
+    return local_aux_indices(n_R);
+}
+
+int KPointBlacsParallelContext::R_owner(int iR, int n_R) const
+{
+    return aux_index_owner(iR, n_R);
+}
+
 int KPointBlacsParallelContext::kpoint_blacs_root_global_rank(int ik) const
 {
     if (!initialized_) throw LIBRPA_RUNTIME_ERROR("KPointBlacsParallelContext not initialized");
