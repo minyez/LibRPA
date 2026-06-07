@@ -139,6 +139,12 @@ typedef struct
     //! Threshold for real-space Green's function in response function calculation
     double gf_threshold;
 
+    //! Number of first-index atoms per LibRI chi0 collection chunk; 0 keeps one-shot collection.
+    int libri_chi0_collect_s0_chunk;
+
+    //! Maximum estimated local chi0 tensor bytes per LibRI collection chunk; 0 keeps one-shot collection.
+    long long libri_chi0_collect_max_bytes;
+
     //! Flag to control whether to use ScaLAPACK to compute RPA correlation energy
     LibrpaSwitch use_scalapack_ecrpa;
 

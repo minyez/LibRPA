@@ -47,6 +47,8 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->option_bvk_remap = 1;
 
     opts->gf_threshold = 0.0e0;
+    opts->libri_chi0_collect_s0_chunk = 0;
+    opts->libri_chi0_collect_max_bytes = 0;
     opts->use_scalapack_ecrpa = LIBRPA_SWITCH_ON;
 
     opts->use_shrink_abfs = LIBRPA_SWITCH_OFF;

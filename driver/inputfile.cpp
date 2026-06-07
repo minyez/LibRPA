@@ -11,6 +11,7 @@
 #include "../src/utils/constants.h"
 #include <regex>
 #include <sstream>
+#include <limits>
 
 #include "driver.h"
 
@@ -287,6 +288,24 @@ void parse_inputfile_to_params(const std::string &fn)
     // RPA specific
     parser.parse_double("gf_R_threshold", opts.gf_threshold, flag); // backward compatible
     _parse_double(opts, gf_threshold);
+    _parse_int(opts, libri_chi0_collect_s0_chunk);
+    if (opts.libri_chi0_collect_s0_chunk < 0)
+        throw std::runtime_error("libri_chi0_collect_s0_chunk must be non-negative");
+    {
+        double bytes_tmp = 0.0;
+        parser.parse_double("libri_chi0_collect_max_bytes", bytes_tmp, flag);
+        if (flag == 0)
+        {
+            if (bytes_tmp < 0.0 ||
+                bytes_tmp > static_cast<double>(std::numeric_limits<long long>::max()))
+            {
+                throw std::runtime_error("libri_chi0_collect_max_bytes must be a non-negative integer byte count");
+            }
+            opts.libri_chi0_collect_max_bytes = static_cast<long long>(bytes_tmp);
+        }
+    }
+    if (opts.libri_chi0_collect_max_bytes < 0)
+        throw std::runtime_error("libri_chi0_collect_max_bytes must be non-negative");
     _parse_double(opts, libri_chi0_threshold_C);
     _parse_double(opts, libri_chi0_threshold_G);
     _parse_switch(opts, use_scalapack_ecrpa);

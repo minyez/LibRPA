@@ -126,6 +126,8 @@ void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts) noexcept
                                                        ds.tfg, ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
                                                        is_eigvec_k_distributed);
     ds.p_chi0->gf_threshold = opts.gf_threshold;
+    ds.p_chi0->libri_collect_s0_chunk = opts.libri_chi0_collect_s0_chunk;
+    ds.p_chi0->libri_collect_max_bytes = opts.libri_chi0_collect_max_bytes;
     ds.p_chi0->nbands_G = opts.n_bands_chi0;
     ds.p_chi0->libri_threshold_C = opts.libri_chi0_threshold_C;
     ds.p_chi0->libri_threshold_G = opts.libri_chi0_threshold_G;

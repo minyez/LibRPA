@@ -107,6 +107,8 @@ public:
     double libri_threshold_C;
     double libri_threshold_G;
     double gf_threshold;
+    int libri_collect_s0_chunk;
+    long long libri_collect_max_bytes;
 
     int nbands_G;
 

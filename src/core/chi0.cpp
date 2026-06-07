@@ -8,7 +8,9 @@
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <stdexcept>
+#include <utility>
 #include <valarray>
 
 #include "../io/global_io.h"
@@ -59,6 +61,235 @@ std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
     return atom_nw;
 }
 
+template <typename Tdata>
+using Chi0BlockKey = std::pair<int, std::array<int, 3>>;
+
+template <typename Tdata>
+using Chi0CollectMap = std::map<int, std::map<Chi0BlockKey<Tdata>, RI::Tensor<Tdata>>>;
+
+using Chi0CollectRequest = std::pair<std::set<int>, std::set<int>>;
+
+static std::size_t estimate_chi0_block_bytes(
+    const AtomicBasis &atbasis_abf, const int I, const int J, const std::size_t scalar_bytes)
+{
+    return atbasis_abf.get_pair_matrix_size(I, J) * scalar_bytes;
+}
+
+struct Chi0CollectPlan
+{
+    std::size_t n_atoms = 0;
+    std::size_t n_R = 0;
+    std::size_t max_bytes = 0;
+    std::size_t total_bytes = 0;
+    std::vector<std::size_t> pair_offsets;
+    std::vector<std::size_t> chunk_offsets;
+    std::map<std::array<int, 3>, std::size_t> R_index;
+
+    std::size_t nchunks() const noexcept { return chunk_offsets.size(); }
+};
+
+static std::size_t upper_pair_index(const std::size_t n_atoms, const int I_in, const int J_in)
+{
+    const int I_norm = std::min(I_in, J_in);
+    const int J_norm = std::max(I_in, J_in);
+    if (I_norm < 0 || J_norm < 0 ||
+        static_cast<std::size_t>(I_norm) >= n_atoms ||
+        static_cast<std::size_t>(J_norm) >= n_atoms)
+        return 0;
+    const std::size_t I = static_cast<std::size_t>(I_norm);
+    const std::size_t J = static_cast<std::size_t>(J_norm);
+    return I * n_atoms - I * (I - 1) / 2 + (J - I);
+}
+
+static std::pair<int, int> upper_pair_from_index(const std::size_t n_atoms, const std::size_t pair_index)
+{
+    std::size_t offset = 0;
+    for (std::size_t I = 0; I != n_atoms; ++I)
+    {
+        const std::size_t count = n_atoms - I;
+        if (pair_index < offset + count)
+            return {static_cast<int>(I), static_cast<int>(I + pair_index - offset)};
+        offset += count;
+    }
+    return {0, 0};
+}
+
+template <typename Tdata>
+static Chi0CollectPlan make_chi0_collect_plan_by_bytes(
+    const std::size_t n_atoms,
+    const std::vector<Vector3_Order<int>> &Rlist_gf,
+    const AtomicBasis &atbasis_abf,
+    const std::size_t max_bytes)
+{
+    Chi0CollectPlan plan;
+    plan.n_atoms = n_atoms;
+    plan.n_R = Rlist_gf.size();
+    plan.max_bytes = max_bytes;
+    if (max_bytes == 0 || n_atoms == 0 || Rlist_gf.empty())
+        return plan;
+
+    for (std::size_t iR = 0; iR != Rlist_gf.size(); ++iR)
+        plan.R_index[{Rlist_gf[iR].x, Rlist_gf[iR].y, Rlist_gf[iR].z}] = iR;
+
+    plan.chunk_offsets.push_back(0);
+    std::size_t total = 0;
+    std::size_t chunk_bytes = 0;
+    for (std::size_t I = 0; I != n_atoms; ++I)
+    {
+        for (std::size_t J = I; J != n_atoms; ++J)
+        {
+            plan.pair_offsets.push_back(total);
+            const auto block_bytes = estimate_chi0_block_bytes(
+                atbasis_abf, static_cast<int>(I), static_cast<int>(J), sizeof(Tdata));
+            for (std::size_t iR = 0; iR != Rlist_gf.size(); ++iR)
+            {
+                if (chunk_bytes > 0 && chunk_bytes + block_bytes > max_bytes)
+                {
+                    plan.chunk_offsets.push_back(total);
+                    chunk_bytes = 0;
+                }
+                total += block_bytes;
+                chunk_bytes += block_bytes;
+                if (chunk_bytes >= max_bytes)
+                {
+                    plan.chunk_offsets.push_back(total);
+                    chunk_bytes = 0;
+                }
+            }
+        }
+    }
+    plan.pair_offsets.push_back(total);
+    if (!plan.chunk_offsets.empty() && plan.chunk_offsets.back() == total)
+        plan.chunk_offsets.pop_back();
+    plan.total_bytes = total;
+    return plan;
+}
+
+static std::size_t chunk_index_for_chi0_key(
+    const Chi0CollectPlan &plan,
+    const int I,
+    const int J,
+    const std::array<int, 3> &R)
+{
+    if (plan.nchunks() == 0)
+        return 0;
+    const auto it_R = plan.R_index.find(R);
+    if (it_R == plan.R_index.end())
+        return 0;
+    const auto pair_idx = upper_pair_index(plan.n_atoms, I, J);
+    if (pair_idx + 1 >= plan.pair_offsets.size())
+        return 0;
+    const auto pair_offset = plan.pair_offsets[pair_idx];
+    const auto pair_bytes = plan.pair_offsets[pair_idx + 1] - pair_offset;
+    const auto block_bytes = plan.n_R == 0 ? 0 : pair_bytes / plan.n_R;
+    const auto byte_offset = pair_offset + it_R->second * block_bytes;
+    auto it = std::upper_bound(plan.chunk_offsets.begin(), plan.chunk_offsets.end(), byte_offset);
+    if (it == plan.chunk_offsets.begin())
+        return 0;
+    const auto idx = static_cast<std::size_t>((it - plan.chunk_offsets.begin()) - 1);
+    return std::min(idx, plan.nchunks() - 1);
+}
+
+template <typename Tdata>
+static std::vector<Chi0CollectRequest> make_local_chi0_request_chunks(
+    const Chi0CollectPlan &plan,
+    const std::vector<atpair_t> &atpairs_ABF,
+    const std::vector<Vector3_Order<int>> &Rlist_gf)
+{
+    std::vector<Chi0CollectRequest> chunks(plan.nchunks());
+    if (plan.nchunks() == 0)
+        return chunks;
+    for (const auto &atpair : atpairs_ABF)
+    {
+        const int I = static_cast<int>(atpair.first);
+        const int J = static_cast<int>(atpair.second);
+        for (const auto &Rvec : Rlist_gf)
+        {
+            const std::array<int, 3> R{Rvec.x, Rvec.y, Rvec.z};
+            const auto ichunk = chunk_index_for_chi0_key(plan, I, J, R);
+            chunks[ichunk].first.insert(I);
+            chunks[ichunk].second.insert(J);
+        }
+    }
+    return chunks;
+}
+
+template <typename Tdata>
+static std::vector<Chi0CollectMap<Tdata>> split_chi0_map_by_collect_plan(
+    const Chi0CollectPlan &plan,
+    Chi0CollectMap<Tdata> &chi0s)
+{
+    std::vector<Chi0CollectMap<Tdata>> chunks(plan.nchunks());
+    if (plan.nchunks() == 0)
+        return chunks;
+    for (auto &I_JRs : chi0s)
+    {
+        const int I = I_JRs.first;
+        for (auto &JR_tensor : I_JRs.second)
+        {
+            const int J = JR_tensor.first.first;
+            const auto &R = JR_tensor.first.second;
+            const auto ichunk = chunk_index_for_chi0_key(plan, I, J, R);
+            chunks[ichunk][I][JR_tensor.first] = std::move(JR_tensor.second);
+        }
+    }
+    chi0s.clear();
+    return chunks;
+}
+
+static Chi0CollectRequest padding_s0_s1_for_plan_chunk(
+    const Chi0CollectPlan &plan, const std::size_t ichunk)
+{
+    if (plan.nchunks() == 0 || plan.n_R == 0)
+        return {{}, {}};
+    const auto offset = plan.chunk_offsets[std::min(ichunk, plan.nchunks() - 1)];
+    auto it = std::upper_bound(plan.pair_offsets.begin(), plan.pair_offsets.end(), offset);
+    if (it == plan.pair_offsets.begin())
+        return {{0}, {0}};
+    const auto pair_idx = static_cast<std::size_t>((it - plan.pair_offsets.begin()) - 1);
+    const auto IJ = upper_pair_from_index(plan.n_atoms, pair_idx);
+    return {{IJ.first}, {IJ.second}};
+}
+
+template <typename Tdata>
+static Chi0CollectMap<Tdata> take_chi0_collect_s0_chunk(
+    Chi0CollectMap<Tdata> &chi0s, const std::set<int> &s0_chunk)
+{
+    Chi0CollectMap<Tdata> selected;
+    for (auto it_I = chi0s.begin(); it_I != chi0s.end(); )
+    {
+        if (s0_chunk.count(it_I->first) == 0)
+        {
+            ++it_I;
+            continue;
+        }
+        selected[it_I->first] = std::move(it_I->second);
+        it_I = chi0s.erase(it_I);
+    }
+    return selected;
+}
+
+template <typename Tdata>
+static void accumulate_chi0_collect_map(
+    Chi0CollectMap<Tdata> &dst, const Chi0CollectMap<Tdata> &src)
+{
+    for (const auto &IJRc : src)
+    {
+        const auto I = IJRc.first;
+        for (const auto &JRc : IJRc.second)
+        {
+            const auto J = JRc.first.first;
+            const auto R = JRc.first.second;
+            const auto &chi0 = JRc.second;
+            if (dst[I][{J, R}].empty())
+            {
+                dst[I][{J, R}] = RI::Tensor<Tdata>({chi0.shape[0], chi0.shape[1]});
+            }
+            dst[I][{J, R}] += chi0;
+        }
+    }
+}
+
 } // namespace
 
 Chi0::Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
@@ -80,6 +311,8 @@ Chi0::Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
     gf_threshold = 1e-9;
     libri_threshold_C = 0.0;
     libri_threshold_G = 0.0;
+    libri_collect_s0_chunk = 0;
+    libri_collect_max_bytes = 0;
 }
 
 void Chi0::build(LibrpaParallelRouting routing,
@@ -1164,6 +1397,36 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     }
 
     const int n_soc = mf.get_n_spinor();
+    const std::size_t collect_max_bytes = libri_collect_max_bytes > 0
+        ? static_cast<std::size_t>(libri_collect_max_bytes)
+        : 0;
+    const auto byte_collect_plan = collect_max_bytes > 0
+        ? make_chi0_collect_plan_by_bytes<Tdata>(
+              atbasis_abf.n_atoms, Rlist_gf, atbasis_abf, collect_max_bytes)
+        : Chi0CollectPlan{};
+    const bool use_byte_collect_chunks = comm_h.nprocs > 1 && byte_collect_plan.nchunks() > 0;
+    const auto local_request_chunks = use_byte_collect_chunks
+        ? make_local_chi0_request_chunks<Tdata>(byte_collect_plan, atpairs_ABF, Rlist_gf)
+        : std::vector<Chi0CollectRequest>{};
+    const std::size_t s0_chunk = libri_collect_s0_chunk > 0
+        ? static_cast<std::size_t>(libri_collect_s0_chunk)
+        : 0;
+    const bool use_s0_collect_chunks =
+        comm_h.nprocs > 1 && !use_byte_collect_chunks &&
+        s0_chunk > 0 && s0_chunk < atbasis_abf.n_atoms;
+    if (use_byte_collect_chunks)
+    {
+        global::ofs_myid << "chi0_libri_routing_collect_Rs byte_chunks = "
+                         << byte_collect_plan.nchunks()
+                         << ", max_bytes = " << byte_collect_plan.max_bytes
+                         << ", estimated_total_bytes = " << byte_collect_plan.total_bytes << "\n";
+    }
+    else if (use_s0_collect_chunks)
+    {
+        global::ofs_myid << "chi0_libri_routing_collect_Rs s0_chunk = "
+                         << s0_chunk << ", global_s0_total = "
+                         << atbasis_abf.n_atoms << "\n";
+    }
 
     // omp_lock_t lock_chi0_fourier_cosine;
     // omp_init_lock(&lock_chi0_fourier_cosine);
@@ -1233,33 +1496,91 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
 
                     // collect chi0 on selected atpairs of all R
                     global::profiler.start("chi0_libri_routing_collect_Rs", "Collect all R blocks");
-                    std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> tmp_chi0;
+                    using Chi0Map = std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>>;
                     if (comm_h.nprocs > 1)
                     {
-                        tmp_chi0 = RI::Communicate_Tensors_Map_Judge::comm_map2_first(comm_h.comm, rpa.chi0s, s0_s1.first, s0_s1.second);
-                        rpa.chi0s.clear(); // release chi0s at this tau
+                        if (use_byte_collect_chunks)
+                        {
+                            auto selected_chunks =
+                                split_chi0_map_by_collect_plan<Tdata>(byte_collect_plan, rpa.chi0s);
+                            const auto nchunks = byte_collect_plan.nchunks();
+                            for (std::size_t ichunk = 0; ichunk != nchunks; ++ichunk)
+                            {
+                                auto chunk_s0_s1 = local_request_chunks[ichunk];
+                                const bool padding_request =
+                                    chunk_s0_s1.first.empty() || chunk_s0_s1.second.empty();
+                                if (padding_request)
+                                    chunk_s0_s1 = padding_s0_s1_for_plan_chunk(byte_collect_plan, ichunk);
+                                if (chunk_s0_s1.first.empty() || chunk_s0_s1.second.empty())
+                                    chunk_s0_s1 = s0_s1;
+
+                                const bool log_chunk =
+                                    ichunk < 3 || ichunk + 1 == nchunks || (ichunk + 1) % 100 == 0;
+                                if (log_chunk)
+                                {
+                                    global::ofs_myid << "chi0_libri_routing_collect_Rs byte_chunk "
+                                                     << (ichunk + 1) << "/" << nchunks
+                                                     << " selected_blocks = "
+                                                     << get_num_keys(selected_chunks[ichunk])
+                                                     << ", request_s0 = " << chunk_s0_s1.first.size()
+                                                     << ", request_s1 = " << chunk_s0_s1.second.size()
+                                                     << ", padding_request = " << padding_request << "\n";
+                                }
+
+                                const Chi0Map tmp_chi0 =
+                                    RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+                                        comm_h.comm, selected_chunks[ichunk],
+                                        chunk_s0_s1.first, chunk_s0_s1.second);
+                                selected_chunks[ichunk].clear();
+                                if (!padding_request)
+                                    accumulate_chi0_collect_map(chi0s_IJR, tmp_chi0);
+                            }
+                        }
+                        else if (use_s0_collect_chunks)
+                        {
+                            std::vector<int> s0_all(atbasis_abf.n_atoms);
+                            for (std::size_t iat = 0; iat != atbasis_abf.n_atoms; ++iat)
+                                s0_all[iat] = static_cast<int>(iat);
+                            for (std::size_t begin = 0, ichunk = 0;
+                                 begin != s0_all.size(); begin += s0_chunk, ++ichunk)
+                            {
+                                std::set<int> chunk_s0;
+                                const auto end = std::min(begin + s0_chunk, s0_all.size());
+                                for (auto i = begin; i != end; ++i)
+                                    chunk_s0.insert(s0_all[i]);
+                                auto selected = take_chi0_collect_s0_chunk<Tdata>(rpa.chi0s, chunk_s0);
+                                global::ofs_myid << "chi0_libri_routing_collect_Rs s0_chunk "
+                                                 << (ichunk + 1) << " selected_blocks = "
+                                 << get_num_keys(selected)
+                                 << ", request_s0 = " << chunk_s0.size()
+                                 << ", request_s1 = " << s0_s1.second.size() << "\n";
+                                auto chunk_s0_s1 = std::make_pair(chunk_s0, s0_s1.second);
+                                if (chunk_s0_s1.second.empty())
+                                    chunk_s0_s1.second.insert(0);
+                                const Chi0Map tmp_chi0 =
+                                    RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+                                        comm_h.comm, selected, chunk_s0_s1.first, chunk_s0_s1.second);
+                                selected.clear();
+                                accumulate_chi0_collect_map(chi0s_IJR, tmp_chi0);
+                            }
+                            rpa.chi0s.clear();
+                        }
+                        else
+                        {
+                            const Chi0Map tmp_chi0 =
+                                RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+                                    comm_h.comm, rpa.chi0s, s0_s1.first, s0_s1.second);
+                            accumulate_chi0_collect_map(chi0s_IJR, tmp_chi0);
+                            rpa.chi0s.clear();
+                        }
                     }
                     else
                     {
-                        // Single MPI task, no need to perform communication
-                        tmp_chi0 = std::move(rpa.chi0s);
+                        // Single MPI task, no need to perform communication.
+                        accumulate_chi0_collect_map(chi0s_IJR, rpa.chi0s);
+                        rpa.chi0s.clear();
                     }
                     global::profiler.stop("chi0_libri_routing_collect_Rs");
-                    for (const auto &IJRc : tmp_chi0)
-                    {
-                        auto I = IJRc.first;
-                        for (const auto &JRc : IJRc.second)
-                        {
-                            auto J = JRc.first.first;
-                            auto R = JRc.first.second;
-                            auto &chi0 = JRc.second;
-                            if (chi0s_IJR[I][{J, R}].empty())
-                            {
-                                chi0s_IJR[I][{J, R}] = RI::Tensor<Tdata>({chi0.shape[0], chi0.shape[1]});
-                            }
-                            chi0s_IJR[I][{J, R}] += chi0;
-                        }
-                    }
                 }
             }
 

@@ -12,6 +12,7 @@
 #include "../../src/utils/constants.h"
 #include "librpa_enums.h"
 
+#include <exception>
 // #include <fstream>
 // #include <sstream>
 
@@ -240,16 +241,22 @@ void driver::task_g0w0_band()
      * First load the information of k-points along the k-path */
     profiler.start("g0w0_band_load_band_mf", "Read eigen solutions at band kpoints");
     const std::string band_kpath_file = driver_params.input_dir + driver_params.fn_band_kpath_info;
-    if (!librpa_int::path_exists(band_kpath_file.c_str()))
+    try
+    {
+        read_band_kpath_info(band_kpath_file);
+    }
+    catch (const std::exception& err)
     {
         if (mpi_comm_global_h.is_root())
-            std::cout << "Warning! Failed to read " << band_kpath_file
-                      << " , skip band structure" << std::endl;
+        {
+            std::cout << "Warning! Failed to read " << band_kpath_file << " (" << err.what()
+                      << ") , skip band structure" << std::endl << std::endl;
+        }
+        mpi_comm_global_h.barrier();
         profiler.stop("g0w0_band_load_band_mf");
         profiler.stop("g0w0_band");
         return;
     }
-    read_band_kpath_info(band_kpath_file);
     const int nkpts_band = kfrac_band.size();
 
     if (mpi_comm_global_h.is_root())
