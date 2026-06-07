@@ -13,6 +13,7 @@
 #include "../src/utils/profiler.h"
 #include "../src/utils/utils_mem.h"
 #include "../src/io/fs.h"
+#include "../src/core/abacus_symmetry.h"
 // #include "task_qsgw.h"
 // #include "task_qsgwA.h"
 // #include "task_qsgw_band.h"
@@ -119,6 +120,23 @@ int main(int argc, char **argv)
     const string path_basis = driver_params.input_dir + driver_params.fn_basis;
     const string path_eigocc_scf = driver_params.input_dir + driver_params.fn_eigocc_scf;
 
+    profiler.start("driver_abacus_symmetry", "Driver Read ABACUS symmetry sidecars");
+    const bool may_use_abacus_symmetry =
+        get_bool(opts.use_abacus_exx_symmetry)
+        || get_bool(opts.use_abacus_gw_symmetry)
+        || get_bool(opts.use_abacus_rpa_symmetry);
+    if (may_use_abacus_symmetry)
+    {
+        LIBRPA::load_global_abacus_symmetry_context(
+            driver_params.input_dir,
+            mpi_comm_global_h.is_root() ? &std::cout : nullptr);
+    }
+    else
+    {
+        LIBRPA::abacus_symmetry_ctx.clear();
+    }
+    profiler.stop("driver_abacus_symmetry");
+
     profiler.start("driver_read_common_input_data", "Driver Read Task-Common Input Data");
     profiler.start("driver_band_out", "DFT SCF eigenvalues/occupations");
     read_scf_occ_eigenvalues(path_eigocc_scf);
@@ -178,12 +196,6 @@ int main(int argc, char **argv)
         lib_printf_root("Actual parallel routing used: %s\n", get_routing_string(driver::opts.parallel_routing).c_str());
         profiler.stop("driver_read_ri");
 
-        const bool use_shrink_abfs = opts.use_shrink_abfs;
-        // TODO: need to include the shrinked basis information in another AtomicBasis object
-        if (use_shrink_abfs)
-        {
-            read_ri_shrink(driver_params.input_dir);
-        }
         // Vq distributed using the same strategy
         // There should be no duplicate for V
     }

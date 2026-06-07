@@ -79,6 +79,7 @@ public:
         set(ns, nk, nb, nao, 1, st_ib, nb_local, st_iao, nao_local);
     }
     MeanField(const MeanField&) = default;
+    bool initialized() const { return n_spins > 0 && n_kpoints > 0 && n_states > 0 && n_aos > 0; }
     inline int get_n_bands() const { return n_states; }
     inline int get_n_states() const { return n_states; } // alias
     inline int get_n_spins() const { return n_spins; }
@@ -97,6 +98,7 @@ public:
     const ComplexMatrix* find_wfc(int ispin, int ispinor, int ikpt) const noexcept;
     std::vector<std::vector<std::vector<ComplexMatrix>>>& get_velocity() { return velocity; }
     const std::vector<std::vector<std::vector<ComplexMatrix>>>& get_velocity() const { return velocity; }
+    void initialize_velocity();
     double get_E_min_max(double& emin, double& emax) const;
     double get_band_gap() const;
     //! Largest state index whose state and all lower-indexed states are below energy.

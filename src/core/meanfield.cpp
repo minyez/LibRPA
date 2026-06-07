@@ -41,6 +41,24 @@ void MeanField::resize(int ns, int nk, int nb, int nao, int nspinor, int st_ib, 
     }
 }
 
+void MeanField::initialize_velocity()
+{
+    velocity.clear();
+    velocity.resize(n_spins);
+    for (int is = 0; is < n_spins; ++is)
+    {
+        velocity[is].resize(n_kpoints);
+        for (int ik = 0; ik < n_kpoints; ++ik)
+        {
+            velocity[is][ik].resize(3);
+            for (int ia = 0; ia < 3; ++ia)
+            {
+                velocity[is][ik][ia].create(n_states, n_states);
+            }
+        }
+    }
+}
+
 std::vector<int> MeanField::get_iks_local() const
 {
     std::vector<int> iks_local;
@@ -168,27 +186,27 @@ double MeanField::get_E_min_max(double &emin, double &emax) const
 
 double MeanField::get_band_gap() const
 {
+    constexpr double occupation_tol = 1e-8;
     double homo = -1e6, lumo = 1e6;
     double gap = lumo - homo;
     for (int is = 0; is != n_spins; is++)
     {
-        // FIXME: should be nspins/nkpoints?
-        const double midpoint = 1.0 / (n_spins * n_kpoints * n_spinor);
         //print_matrix("mf.eskb: ",this->eskb[is]);
         for (int ik = 0; ik != n_kpoints; ik++)
         {
             int homo_level = -1;
             for (int n = 0; n != n_states; n++)
             {
-                if (wg[is](ik, n) >= midpoint)
+                if (wg[is](ik, n) > occupation_tol)
                 {
                     homo_level = n;
                 }
             }
             //cout<<"|is ik: "<<is<<" "<<ik<<"  homo_level: "<<homo_level<<"   eskb0: "<<eskb[is](ik, homo_level)<<"  eskb1: "<<eskb[is](ik, homo_level + 1)<<endl;
-            lumo = eskb[is](ik, homo_level + 1) < lumo ?  eskb[is](ik, homo_level + 1) : lumo;
             if(homo_level != -1)
                 homo = eskb[is](ik, homo_level) > homo ? eskb[is](ik, homo_level) : homo;
+            if (homo_level + 1 < n_states)
+                lumo = eskb[is](ik, homo_level + 1) < lumo ?  eskb[is](ik, homo_level + 1) : lumo;
             
             //cout<<"   homo: "<<homo<<"  lumo: "<<lumo<<endl;
         }

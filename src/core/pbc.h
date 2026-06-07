@@ -39,6 +39,10 @@ public:
     std::vector<Vector3_Order<double>> klist;
     //! Full K-points in fractional coordinates
     std::vector<Vector3_Order<double>> kfrac_list;
+    //! Full-BZ K-points expanded from symmetry metadata. For no-symmetry input this equals klist.
+    std::vector<Vector3_Order<double>> klist_full;
+    //! Full-BZ K-points in fractional coordinates. For no-symmetry input this equals kfrac_list.
+    std::vector<Vector3_Order<double>> kfrac_list_full;
 
     //! Irreducible k-points in Cartesian coordinates
     std::vector<Vector3_Order<double>> klist_ibz;
@@ -62,6 +66,11 @@ public:
     void set_period(int nk1, int nk2, int nk3);
     //! Set the full k-points list. kvecs should be in Bohr^-1 unit.
     void set_kgrids_kvec(int nk1, int nk2, int nk3, const std::vector<double> &kvecs);
+    //! Set an irreducible loaded k-point list plus full-BZ star members in internal units.
+    void set_irreducible_kgrids_kvec(
+        int nk1, int nk2, int nk3,
+        const std::vector<double> &kvecs_ibz,
+        const std::vector<std::vector<Vector3_Order<double>>> &full_kstars);
     //! Set the mapping of full k-points to irreducible k-points
     void set_ibz_mapping(const std::vector<int> &irk_point_id_mapping_in,
                          const std::vector<int> &isymops_in = {});

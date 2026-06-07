@@ -24,7 +24,9 @@ PeriodicBoundaryData::PeriodicBoundaryData():
     period_array({1, 1, 1}),
     Rlist({{0, 0, 0}}),
     klist({{0, 0, 0}}),
-    kfrac_list({{0, 0, 0}})
+    kfrac_list({{0, 0, 0}}),
+    klist_full({{0, 0, 0}}),
+    kfrac_list_full({{0, 0, 0}})
 {
     this->latvec_array[0] = {this->latvec.e11,this->latvec.e12,this->latvec.e13};
     this->latvec_array[1] = {this->latvec.e21,this->latvec.e22,this->latvec.e23};
@@ -95,6 +97,8 @@ void PeriodicBoundaryData::set_kgrids_kvec(int nk1, int nk2, int nk3, const std:
 
     klist.clear();
     kfrac_list.clear();
+    klist_full.clear();
+    kfrac_list_full.clear();
     int n_k_points = nk1 * nk2 * nk3;
     for (int ik = 0; ik < n_k_points; ik++)
     {
@@ -111,11 +115,103 @@ void PeriodicBoundaryData::set_kgrids_kvec(int nk1, int nk2, int nk3, const std:
         if (std::abs(kfrac.z) < 1e-8) kfrac.z = 0.0e0;
         kfrac_list.emplace_back(kfrac);
     }
+    klist_full = klist;
+    kfrac_list_full = kfrac_list;
 
     // Initialize the irreducible k points: same as the full ones
     std::vector<int> irk_point_id_mapping_in(n_k_points);
     std::iota(irk_point_id_mapping_in.begin(), irk_point_id_mapping_in.end(), 0);
     this->set_ibz_mapping(irk_point_id_mapping_in);
+}
+
+void PeriodicBoundaryData::set_irreducible_kgrids_kvec(
+    int nk1, int nk2, int nk3,
+    const std::vector<double> &kvecs_ibz,
+    const std::vector<std::vector<Vector3_Order<double>>> &full_kstars)
+{
+    this->period = {nk1, nk2, nk3};
+    this->period_array = {nk1, nk2, nk3};
+    this->Rlist = construct_R_grid(this->period);
+
+    const int n_ibz = static_cast<int>(kvecs_ibz.size() / 3);
+    if (kvecs_ibz.size() != static_cast<std::size_t>(3 * n_ibz))
+    {
+        throw LIBRPA_RUNTIME_ERROR("invalid irreducible k-point vector buffer size");
+    }
+    if (full_kstars.size() != static_cast<std::size_t>(n_ibz))
+    {
+        throw LIBRPA_RUNTIME_ERROR("ABACUS full-BZ k-star count does not match IBZ k-point count");
+    }
+
+    klist.clear();
+    kfrac_list.clear();
+    klist_full.clear();
+    kfrac_list_full.clear();
+    klist_ibz.clear();
+    kweight_ibz.clear();
+    map_ibzk_weight.clear();
+    map_irk_ks.clear();
+    irk_point_id_mapping.clear();
+    isymops.clear();
+
+    const auto append_k = [this](const Vector3_Order<double> &kvec,
+                                 std::vector<Vector3_Order<double>> &ks,
+                                 std::vector<Vector3_Order<double>> &kfracs) {
+        ks.emplace_back(kvec);
+        auto kfrac = this->latvec * kvec;
+        if (std::abs(kfrac.x) < 1e-8) kfrac.x = 0.0e0;
+        if (std::abs(kfrac.y) < 1e-8) kfrac.y = 0.0e0;
+        if (std::abs(kfrac.z) < 1e-8) kfrac.z = 0.0e0;
+        kfracs.emplace_back(kfrac);
+    };
+
+    for (int ik = 0; ik != n_ibz; ++ik)
+    {
+        Vector3_Order<double> kvec{kvecs_ibz[ik * 3],
+                                   kvecs_ibz[ik * 3 + 1],
+                                   kvecs_ibz[ik * 3 + 2]};
+        kvec /= TWO_PI;
+        append_k(kvec, klist, kfrac_list);
+    }
+
+    klist_ibz = klist;
+    const double full_count = static_cast<double>(this->get_n_cells_bvk());
+    int n_full_members = 0;
+    for (int ik_ibz = 0; ik_ibz != n_ibz; ++ik_ibz)
+    {
+        const auto &k_ibz = klist_ibz[ik_ibz];
+        auto &members = map_irk_ks[k_ibz];
+        for (const auto &k_member : full_kstars[ik_ibz])
+        {
+            if (std::find(members.begin(), members.end(), k_member) != members.end())
+            {
+                continue;
+            }
+            members.emplace_back(k_member);
+            append_k(k_member, klist_full, kfrac_list_full);
+            ++n_full_members;
+        }
+        if (members.empty())
+        {
+            members.emplace_back(k_ibz);
+            append_k(k_ibz, klist_full, kfrac_list_full);
+            ++n_full_members;
+        }
+
+        const double weight = static_cast<double>(members.size()) / full_count;
+        map_ibzk_weight[k_ibz] = weight;
+        kweight_ibz.emplace_back(weight);
+        irk_point_id_mapping.emplace_back(ik_ibz);
+    }
+
+    if (n_full_members != this->get_n_cells_bvk())
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "ABACUS symmetry k-star members do not cover the full BZ grid: "
+            + std::to_string(n_full_members) + " != " + std::to_string(this->get_n_cells_bvk()));
+    }
+
+    kgrid_no_symmetry_ = klist_ibz.size() == klist_full.size();
 }
 
 void PeriodicBoundaryData::set_ibz_mapping(const std::vector<int> &irk_point_id_mapping_in,
@@ -134,6 +230,8 @@ void PeriodicBoundaryData::set_ibz_mapping(const std::vector<int> &irk_point_id_
     irk_point_id_mapping = irk_point_id_mapping_in;
 
     klist_ibz.clear();
+    klist_full = klist;
+    kfrac_list_full = kfrac_list;
     map_ibzk_weight.clear();
     map_irk_ks.clear();
     for (size_t ik = 0; ik < n_k_points; ik++)
@@ -177,7 +275,7 @@ static int get_k_index_(const std::vector<Vector3_Order<double>> &klist, const V
 
 int PeriodicBoundaryData::get_k_index_full(const Vector3_Order<double> &k) const
 {
-    return get_k_index_(this->klist, k);
+    return get_k_index_(this->klist_full, k);
 }
 
 int PeriodicBoundaryData::get_k_index_ibz(const Vector3_Order<double> &k) const
