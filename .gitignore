@@ -90,3 +90,22 @@ utilities/*
 regression_tests/workspace*/
 regression_tests/regression.log
 sync_to_hpc3.sh
+
+# CodeGraph data files
+# These are local to each machine and should not be committed
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Cache
+cache/
+
+# Logs
+*.log
+
+# Hook markers
+.dirty
+
+.codegraph/
