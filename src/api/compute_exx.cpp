@@ -139,13 +139,16 @@ void librpa_build_exx(LibrpaHandler* h, const LibrpaOptions *p_opts)
     pds->redistribute_coulomb_blacs2ap();
 
     initialize_ds_exx(*pds, opts);
+    const bool use_shrink_abfs = opts.use_shrink_abfs == LIBRPA_SWITCH_ON;
+    const auto &basis_aux_exx = use_shrink_abfs ? pds->basis_aux_shrink : pds->basis_aux;
+    const auto &cs_data_exx = use_shrink_abfs ? pds->cs_data_shrink : pds->cs_data;
     const auto &coul = opts.use_fullcoul_exx ? pds->vq : pds->vq_cut;
     profiler.start("ft_vq_cut", "Fourier transform truncated Coulomb");
-    const auto VR = librpa_int::FT_Vq(pds->basis_aux, coul, pds->pbc, true);
+    const auto VR = librpa_int::FT_Vq(basis_aux_exx, coul, pds->pbc, true);
     profiler.stop("ft_vq_cut");
 
     profiler.start("exx_real_work");
-    pds->p_exx->build(routing, pds->basis_aux, pds->cs_data, VR);
+    pds->p_exx->build(routing, basis_aux_exx, cs_data_exx, VR);
     // pds->p_exx->build_KS_kgrid_blacs(pds->blacs_h);
     profiler.stop("exx_real_work");
     // global::ofs_myid << pds->p_exx->exx_IJR << std::endl;

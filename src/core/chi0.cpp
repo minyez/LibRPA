@@ -2,10 +2,14 @@
 
 #include <omp.h>
 
+#include <algorithm>
 #include <cstring>
 #include <ctime>
+#include <cmath>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
+#include <valarray>
 
 #include "../io/global_io.h"
 #include "../io/stl_io_helper.h"
@@ -1128,14 +1132,14 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                             isp, is1, is2, this->pbc.kfrac_list, Rs_gf, tau, gf_po_libri);
                         build_gf_Rt_libri_kblacs_para(
                             this->mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, this->atbasis_wfc,
-                            isp, is1, is2, this->pbc.kfrac_list, Rs_gf, -tau, gf_ne_libri);
+                            isp, is2, is1, this->pbc.kfrac_list, Rs_gf, -tau, gf_ne_libri);
                     }
                     else
                     {
                         build_gf_Rt_libri_serial(this->mf, this->nbands_G, this->atbasis_wfc, isp, is1, is2,
                                                  this->pbc.kfrac_list, this->IJRs_gf_local, tau,
                                                  gf_po_libri);
-                        build_gf_Rt_libri_serial(this->mf, this->nbands_G, this->atbasis_wfc, isp, is1, is2,
+                        build_gf_Rt_libri_serial(this->mf, this->nbands_G, this->atbasis_wfc, isp, is2, is1,
                                                  this->pbc.kfrac_list, this->IJRs_gf_local, -tau,
                                                  gf_ne_libri);
                     }
@@ -2002,10 +2006,72 @@ void Chi0::free_chi0_q(const double freq, const Vector3_Order<double> q)
     ap_n_map<ComplexMatrix>().swap(chi0_for_free);
 }
 
+namespace
+{
+
+bool nearly_same_qpoint(const Vector3_Order<double> &lhs,
+                        const Vector3_Order<double> &rhs,
+                        const double tol = 1e-5)
+{
+    const auto same_component = [tol](const double lhs_component,
+                                      const double rhs_component) {
+        return std::abs((lhs_component - rhs_component) -
+                        std::round(lhs_component - rhs_component)) < tol;
+    };
+    return same_component(lhs.x, rhs.x) && same_component(lhs.y, rhs.y) &&
+           same_component(lhs.z, rhs.z);
+}
+
+template <typename QMap>
+typename QMap::iterator find_matching_qpoint(QMap &q_map,
+                                             const Vector3_Order<double> &q_target)
+{
+    const auto exact_iter = q_map.find(q_target);
+    if (exact_iter != q_map.end())
+    {
+        return exact_iter;
+    }
+
+    return std::find_if(q_map.begin(), q_map.end(), [&q_target](const auto &entry) {
+        return nearly_same_qpoint(entry.first, q_target);
+    });
+}
+
+template <typename QMap>
+typename QMap::const_iterator find_matching_qpoint(const QMap &q_map,
+                                                   const Vector3_Order<double> &q_target)
+{
+    const auto exact_iter = q_map.find(q_target);
+    if (exact_iter != q_map.end())
+    {
+        return exact_iter;
+    }
+
+    return std::find_if(q_map.begin(), q_map.end(), [&q_target](const auto &entry) {
+        return nearly_same_qpoint(entry.first, q_target);
+    });
+}
+
+}  // namespace
+
 void Chi0::unfold_abfs_Wc(
     map<Vector3_Order<double>, ComplexMatrix> &sinvS,
     map<double,
         atom_mapping<std::map<Vector3_Order<double>, matrix_m<complex<double>>>>::pair_t_old> &Wc,
+    const vector<Vector3_Order<double>> &qlist,
+    const AtomicBasis &abf_unfold,
+    const BlacsCtxtHandler &blacs_ctxt_h)
+{
+    for (auto &[freq, Wc_q] : Wc)
+    {
+        (void)freq;
+        unfold_abfs_Wc_q(sinvS, Wc_q, qlist, abf_unfold, blacs_ctxt_h);
+    }
+}
+
+void Chi0::unfold_abfs_Wc_q(
+    map<Vector3_Order<double>, ComplexMatrix> &sinvS,
+    atom_mapping<std::map<Vector3_Order<double>, matrix_m<complex<double>>>>::pair_t_old &Wc_q,
     const vector<Vector3_Order<double>> &qlist,
     const AtomicBasis &abf_unfold,
     const BlacsCtxtHandler &blacs_ctxt_h)
@@ -2019,7 +2085,7 @@ void Chi0::unfold_abfs_Wc(
     const int natom = abf_unfold.n_atoms;
     const auto comm_h = blacs_ctxt_h.comm_h();
 
-    assert (natom == as_int(atbasis_abf.n_atoms));
+    assert(natom == as_int(atbasis_abf.n_atoms));
 
     const complex<double> CONE{1.0, 0.0};
     ArrayDesc desc_nabf_nabf_ll(blacs_ctxt_h);
@@ -2035,7 +2101,7 @@ void Chi0::unfold_abfs_Wc(
     auto Wcll_block = init_local_mat<complex<double>>(desc_nabf_nabf_ll, MAJOR::COL);
     auto u_block = init_local_mat<complex<double>>(desc_nabf_nabf_sl, MAJOR::COL);
     auto Wc_u = init_local_mat<complex<double>>(desc_nabf_nabf_sl, MAJOR::COL);
-    // for 2D->IJ
+
     int I, iI;
     map<int, vector<int>> map_lor_v;
     map<int, vector<int>> map_loc_v;
@@ -2052,7 +2118,6 @@ void Chi0::unfold_abfs_Wc(
         map_loc_v[I].push_back(iI);
     }
 
-    // IJ pair of shrinked chi0 to be returned
     std::pair<std::set<int>, std::set<int>> Iset_Jset_c;
     const auto atpair_local = dispatch_upper_triangular_tasks(
         natom, blacs_ctxt_h.myid, blacs_ctxt_h.nprows, blacs_ctxt_h.npcols,
@@ -2063,165 +2128,169 @@ void Chi0::unfold_abfs_Wc(
         Iset_Jset_c.second.insert(ap.second);
     }
 
-    for (std::size_t ifreq = 0; ifreq < this->tfg.get_n_grids(); ++ifreq)
+    for (std::size_t iq = 0; iq < qlist.size(); iq++)
     {
-        for (std::size_t iq = 0; iq < qlist.size(); iq++)
+        const auto &q = qlist[iq];
+        std::array<double, 3> qa = {q.x, q.y, q.z};
+        const auto sinv_iter = find_matching_qpoint(sinvS, q);
+        if (sinv_iter == sinvS.end())
         {
-            const auto &q = qlist[iq];
-            std::array<double, 3> qa = {q.x, q.y, q.z};
-            const double freq = this->tfg.get_freq_nodes().at(ifreq);
-            const auto &U = sinvS.at(q);
-            profiler.start("unfold_prepare_Wc_2d", "Prepare Wc 2D block for unfold");
-            Wc_block.zero_out();
-            Wcll_block.zero_out();
-            u_block.zero_out();
-            Wc_u.zero_out();
+            throw LIBRPA_RUNTIME_ERROR("Cannot unfold Wc: missing shrink sinvS for q point");
+        }
+        const auto &U = sinv_iter->second;
+
+        profiler.start("unfold_prepare_Wc_2d", "Prepare Wc 2D block for unfold");
+        Wc_block.zero_out();
+        Wcll_block.zero_out();
+        u_block.zero_out();
+        Wc_u.zero_out();
+        {
+            std::map<int, std::map<std::pair<int, std::array<double, 3>>,
+                                   RI::Tensor<complex<double>>>>
+                wc_libri;
+            atom_mapping<ComplexMatrix>::pair_t_old Wc_IJ;
+            for (const auto &IJqc : Wc_q)
             {
-                std::map<int, std::map<std::pair<int, std::array<double, 3>>,
-                                       RI::Tensor<complex<double>>>>
-                    wc_libri;
-                atom_mapping<ComplexMatrix>::pair_t_old Wc_IJ;
-                if (Wc.count(freq) > 0)
+                const auto &atom_i = IJqc.first;
+                for (const auto &Jqc : IJqc.second)
                 {
-                    for (const auto &IJqc : Wc.at(freq))
+                    const auto &atom_j = Jqc.first;
+                    if (!Wc_IJ[atom_i].count(atom_j))
                     {
-                        const auto &I = IJqc.first;
-                        for (const auto &Jqc : IJqc.second)
+                        Wc_IJ[atom_i][atom_j].create(atbasis_abf[atom_i], atbasis_abf[atom_j]);
+                    }
+                    for (const auto &qc : Jqc.second)
+                    {
+                        if (nearly_same_qpoint(qc.first, q))
                         {
-                            const auto &J = Jqc.first;
-                            if (!Wc_IJ[I].count(J))
+                            const auto &c = qc.second;
+                            for (int ir = 0; ir < c.nr(); ir++)
                             {
-                                Wc_IJ[I][J].create(atbasis_abf[I], atbasis_abf[J]);
-                            }
-                            for (const auto &qc : Jqc.second)
-                            {
-                                const auto &qq = qc.first;
-                                if (qq == q)
+                                for (int ic = 0; ic < c.nc(); ic++)
                                 {
-                                    const auto &c = qc.second;
-                                    for (int ir = 0; ir < c.nr(); ir++)
-                                    {
-                                        for (int ic = 0; ic < c.nc(); ic++)
-                                        {
-                                            Wc_IJ[I][J](ir, ic) = c(ir, ic);
-                                        }
-                                    }
+                                    Wc_IJ[atom_i][atom_j](ir, ic) = c(ir, ic);
                                 }
                             }
                         }
                     }
+                }
+            }
 
-                    for (const auto &M_Nchi : Wc_IJ)
+            for (const auto &M_Nchi : Wc_IJ)
+            {
+                const auto &atom_i = M_Nchi.first;
+                const auto n_mu = atbasis_abf.get_atom_nb(atom_i);
+                for (const auto &N_chi : M_Nchi.second)
+                {
+                    const auto &atom_j = N_chi.first;
+                    const auto n_nu = atbasis_abf.get_atom_nb(atom_j);
+                    const auto &chi = N_chi.second;
+                    std::valarray<complex<double>> chi_va(chi.c, chi.size);
+                    auto pchi = std::make_shared<std::valarray<complex<double>>>();
+                    *pchi = chi_va;
+                    wc_libri[atom_i][{atom_j, qa}] = RI::Tensor<complex<double>>({n_mu, n_nu}, pchi);
+                }
+            }
+            comm_h.barrier();
+            profiler.start("unfold_prepare_Wc_2d_comm_map2");
+            const auto IJq_wc = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+                comm_h.comm, wc_libri, s0_s1.first, s0_s1.second);
+            profiler.stop("unfold_prepare_Wc_2d_comm_map2");
+            profiler.start("unfold_prepare_Wc_2d_collect_block");
+            collect_block_from_ALL_IJ_Tensor(Wc_block, desc_nabf_nabf_ss,
+                                             atbasis_abf, qa, true, CONE, IJq_wc,
+                                             MAJOR::ROW);
+            profiler.stop("unfold_prepare_Wc_2d_collect_block");
+        }
+        profiler.stop("unfold_prepare_Wc_2d");
+
+        for (int ir = 0; ir < U.nr; ir++)
+        {
+            const int ilo = desc_nabf_nabf_sl.indx_g2l_r(ir);
+            if (ilo < 0) continue;
+            for (int ic = 0; ic < U.nc; ic++)
+            {
+                const int jlo = desc_nabf_nabf_sl.indx_g2l_c(ic);
+                if (jlo < 0) continue;
+                u_block(ilo, jlo) = U(ir, ic);
+            }
+        }
+
+        ScalapackConnector::pgemm_f('N', 'N', all_mu_s, all_mu, all_mu_s, 1.0,
+                                    Wc_block.ptr(), 1, 1, desc_nabf_nabf_ss.desc,
+                                    u_block.ptr(), 1, 1, desc_nabf_nabf_sl.desc,
+                                    0.0, Wc_u.ptr(), 1, 1, desc_nabf_nabf_sl.desc);
+        ScalapackConnector::pgemm_f('C', 'N', all_mu, all_mu, all_mu_s, 1.0,
+                                    u_block.ptr(), 1, 1, desc_nabf_nabf_sl.desc,
+                                    Wc_u.ptr(), 1, 1, desc_nabf_nabf_sl.desc,
+                                    0.0, Wcll_block.ptr(), 1, 1, desc_nabf_nabf_ll.desc);
+
+        map<int, map<int, matrix_m<complex<double>>>> chi0s_MNmap;
+        map_block_to_IJ_storage_new(chi0s_MNmap, abf_unfold, map_lor_v, map_loc_v,
+                                    Wcll_block, desc_nabf_nabf_ll, MAJOR::ROW);
+
+        std::map<int,
+                 std::map<std::pair<int, std::array<double, 3>>, RI::Tensor<complex<double>>>>
+            unfold_Wc_libri;
+        for (const auto &M_Nc : chi0s_MNmap)
+        {
+            const auto &atom_i = M_Nc.first;
+            const auto n_mu = abf_unfold[atom_i];
+            for (const auto &N_c : M_Nc.second)
+            {
+                const auto &atom_j = N_c.first;
+                const auto n_nu = abf_unfold[atom_j];
+                const auto &c = N_c.second;
+                unfold_Wc_libri[atom_i][{atom_j, qa}] =
+                    RI::Tensor<complex<double>>({n_mu, n_nu}, c.sptr());
+            }
+        }
+        const auto IJq_chi = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+            comm_h.comm, unfold_Wc_libri, Iset_Jset_c.first, Iset_Jset_c.second);
+        if (debug)
+        {
+            for (auto &IJqc : IJq_chi)
+            {
+                auto &atom_i = IJqc.first;
+                for (auto &Jqc : IJqc.second)
+                {
+                    auto &atom_j = Jqc.first.first;
+                    ofs_myid << "Wcll I " << atom_i << " J " << atom_j << std::endl;
+                }
+            }
+        }
+
+        for (auto &IJqc : Wc_q)
+        {
+            const auto atom_i = IJqc.first;
+            for (auto &Jqc : IJqc.second)
+            {
+                const auto atom_j = Jqc.first;
+                for (auto &qc : Jqc.second)
+                {
+                    if (!nearly_same_qpoint(qc.first, q)) continue;
+                    const auto I_iter = IJq_chi.find(atom_i);
+                    if (I_iter == IJq_chi.end())
                     {
-                        const auto &M = M_Nchi.first;
-                        const auto n_mu = atbasis_abf.get_atom_nb(M);
-                        for (const auto &N_chi : M_Nchi.second)
+                        throw LIBRPA_RUNTIME_ERROR("Cannot unfold Wc: missing output atom block");
+                    }
+                    const auto block_iter = I_iter->second.find({atom_j, qa});
+                    if (block_iter == I_iter->second.end())
+                    {
+                        throw LIBRPA_RUNTIME_ERROR("Cannot unfold Wc: missing output atom-pair block");
+                    }
+
+                    Matz matz_Wc(abf_unfold[atom_i], abf_unfold[atom_j]);
+                    const int nr = as_int(abf_unfold[atom_i]);
+                    const int nc = as_int(abf_unfold[atom_j]);
+                    for (int ir = 0; ir < nr; ir++)
+                    {
+                        for (int ic = 0; ic < nc; ic++)
                         {
-                            const auto &N = N_chi.first;
-                            const auto n_nu = atbasis_abf.get_atom_nb(N);
-                            const auto &chi = N_chi.second;
-                            std::valarray<complex<double>> chi_va(chi.c, chi.size);
-                            auto pchi = std::make_shared<std::valarray<complex<double>>>();
-                            *pchi = chi_va;
-                            wc_libri[M][{N, qa}] = RI::Tensor<complex<double>>({n_mu, n_nu}, pchi);
+                            matz_Wc(ir, ic) = block_iter->second(ir, ic);
                         }
                     }
-                }
-                // wait for all mpi to calculate chi0_libri
-                // then collect chi0_libri to chi0_block
-                comm_h.barrier();
-                profiler.start("unfold_prepare_Wc_2d_comm_map2");
-                const auto IJq_wc = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
-                    comm_h.comm, wc_libri, s0_s1.first, s0_s1.second);
-                profiler.stop("unfold_prepare_Wc_2d_comm_map2");
-                profiler.start("unfold_prepare_Wc_2d_collect_block");
-                collect_block_from_ALL_IJ_Tensor(Wc_block, desc_nabf_nabf_ss,
-                                                 atbasis_abf, qa, true, CONE, IJq_wc,
-                                                 MAJOR::ROW);
-                profiler.stop("unfold_prepare_Wc_2d_collect_block");
-            }
-            profiler.stop("unfold_prepare_Wc_2d");
-            for (int ir = 0; ir < U.nr; ir++)
-            {
-                const int ilo = desc_nabf_nabf_sl.indx_g2l_r(ir);
-                if (ilo < 0) continue;
-                for (int ic = 0; ic < U.nc; ic++)
-                {
-                    const int jlo = desc_nabf_nabf_sl.indx_g2l_c(ic);
-                    if (jlo < 0) continue;
-                    u_block(ilo, jlo) = U(ir, ic);
-                }
-            }
-            // Shape of u_block is N_small x N_large
-            ScalapackConnector::pgemm_f('N', 'N', all_mu_s, all_mu, all_mu_s, 1.0, Wc_block.ptr(),
-                                        1, 1, desc_nabf_nabf_ss.desc, u_block.ptr(), 1, 1,
-                                        desc_nabf_nabf_sl.desc, 0.0, Wc_u.ptr(), 1, 1,
-                                        desc_nabf_nabf_sl.desc);
-            ScalapackConnector::pgemm_f('C', 'N', all_mu, all_mu, all_mu_s, 1.0, u_block.ptr(), 1,
-                                        1, desc_nabf_nabf_sl.desc, Wc_u.ptr(), 1, 1,
-                                        desc_nabf_nabf_sl.desc, 0.0, Wcll_block.ptr(), 1, 1,
-                                        desc_nabf_nabf_ll.desc);
-
-            map<int, map<int, matrix_m<complex<double>>>> chi0s_MNmap;
-            map_block_to_IJ_storage_new(chi0s_MNmap, abf_unfold, map_lor_v, map_loc_v,
-                                        Wcll_block, desc_nabf_nabf_ll, MAJOR::ROW);
-
-            std::map<int,
-                     std::map<std::pair<int, std::array<double, 3>>, RI::Tensor<complex<double>>>>
-                unfold_Wc_libri;
-            for (const auto &M_Nc : chi0s_MNmap)
-            {
-                const auto &M = M_Nc.first;
-                const auto n_mu = abf_unfold[M];
-                for (const auto &N_c : M_Nc.second)
-                {
-                    const auto &N = N_c.first;
-                    const auto n_nu = abf_unfold[N];
-                    const auto &c = N_c.second;
-                    unfold_Wc_libri[M][{N, qa}] =
-                        RI::Tensor<complex<double>>({n_mu, n_nu}, c.sptr());
-                }
-            }
-            const auto IJq_chi = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
-                comm_h.comm, unfold_Wc_libri, Iset_Jset_c.first, Iset_Jset_c.second);
-            if (debug)
-            {
-                for (auto &IJqc : IJq_chi)
-                {
-                    auto &I = IJqc.first;
-                    for (auto &Jqc : IJqc.second)
-                    {
-                        auto &J = Jqc.first.first;
-                        auto &c = Jqc.second;
-                        ofs_myid << "Wcll I " << I << " J " << J << std::endl;
-                    }
-                }
-            }
-            if (Wc.count(freq) > 0)
-            {
-                for (auto &IJqc : Wc.at(freq))
-                {
-                    auto I = IJqc.first;
-                    for (auto &Jqc : IJqc.second)
-                    {
-                        auto J = Jqc.first;
-                        for (auto &qc : Jqc.second)
-                        {
-                            auto qq = qc.first;
-                            if (qq != q) continue;
-                            Matz matz_Wc(abf_unfold[I], abf_unfold[J]);
-                            const int nr = as_int(abf_unfold[I]);
-                            const int nc = as_int(abf_unfold[J]);
-                            for (int ir = 0; ir < nr; ir++)
-                            {
-                                for (int ic = 0; ic < nc; ic++)
-                                {
-                                    matz_Wc(ir, ic) = IJq_chi.at(I).at({J, qa})(ir, ic);
-                                }
-                            }
-                            qc.second = matz_Wc;
-                        }
-                    }
+                    qc.second = matz_Wc.copy();
                 }
             }
         }

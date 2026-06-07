@@ -39,6 +39,12 @@ using std::string;
 using librpa_int::atpair_t;
 using librpa_int::matrix;
 
+static const librpa_int::AtomicBasis &target_coulomb_basis(const bool use_shrink_basis)
+{
+    auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
+    return use_shrink_basis ? ds->basis_aux_shrink : ds->basis_aux;
+}
+
 //! Check if Coulomb matrix data file is in ASCII text or unformatted binary format
 bool check_coulomb_file_binary(const string &file_path)
 {
@@ -793,13 +799,12 @@ bool is_legacy_coulomb_filename(const string &filename, const string &prefix)
 }
 
 size_t read_Vq_full_v1(const string &dir_path, const string &vq_fprefix,
-                       bool is_cut_coulomb)
+                       bool is_cut_coulomb, const bool use_shrink_basis)
 {
     using namespace librpa_int::global;
 
     profiler.start(__FUNCTION__);
-    auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
-    const auto &basis_aux = ds->basis_aux;
+    const auto &basis_aux = target_coulomb_basis(use_shrink_basis);
     const auto files = librpa_int::discover_files_with_prefix(dir_path, vq_fprefix);
     if (files.empty())
     {
@@ -840,13 +845,12 @@ size_t read_Vq_full_v1(const string &dir_path, const string &vq_fprefix,
 
 size_t read_Vq_row_v1(const string &dir_path, const string &vq_fprefix, double threshold,
                       const std::vector<atpair_t> &local_atpair,
-                      bool is_cut_coulomb)
+                      bool is_cut_coulomb, const bool use_shrink_basis)
 {
     using namespace librpa_int::global;
 
     profiler.start(__FUNCTION__);
-    auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
-    const auto &basis_aux = ds->basis_aux;
+    const auto &basis_aux = target_coulomb_basis(use_shrink_basis);
     const auto files = librpa_int::discover_files_with_prefix(dir_path, vq_fprefix);
     if (files.empty())
     {
@@ -918,7 +922,7 @@ int detect_coulomb_reader_version(const string &dir_path, const string &vq_fpref
 }
 
 size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cut_coulomb,
-                    int reader_version)
+                    int reader_version, const bool use_shrink_basis)
 {
     using std::cout;
     using std::endl;
@@ -932,7 +936,7 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
 
     if (reader_version == 1)
     {
-        return read_Vq_full_v1(dir_path, vq_fprefix, is_cut_coulomb);
+        return read_Vq_full_v1(dir_path, vq_fprefix, is_cut_coulomb, use_shrink_basis);
     }
     if (reader_version != 0)
     {
@@ -940,8 +944,7 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
                                std::to_string(reader_version));
     }
 
-    auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
-    const auto &basis_aux = ds->basis_aux;
+    const auto &basis_aux = target_coulomb_basis(use_shrink_basis);
     const auto atom_mu_part_range = basis_aux.get_part_range();
 
     size_t vq_save = 0;
@@ -1066,7 +1069,8 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
 
 static int handle_Vq_row_file(const string &file_path, double threshold,
         librpa_int::atom_mapping<std::map<int, std::shared_ptr<librpa_int::ComplexMatrix>>>::pair_t_old &coulomb,
-        const std::vector<atpair_t> &local_atpair, bool binary)
+        const std::vector<atpair_t> &local_atpair, bool binary,
+        const librpa_int::AtomicBasis &basis_aux)
 {
     using librpa_int::ComplexMatrix;
     // cout << "Begin to read aims vq_real from " << file_path << endl;
@@ -1074,8 +1078,6 @@ static int handle_Vq_row_file(const string &file_path, double threshold,
     int n_irk_points_local;
     int n_irk_points;
 
-    auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
-    const auto &basis_aux = ds->basis_aux;
     const auto atom_mu_part_range = basis_aux.get_part_range();
 
     if (binary)
@@ -1263,7 +1265,7 @@ static int handle_Vq_row_file(const string &file_path, double threshold,
 
 size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double threshold,
                    const std::vector<atpair_t> &local_atpair, bool is_cut_coulomb,
-                   int reader_version)
+                   int reader_version, const bool use_shrink_basis)
 {
     using std::cout;
     using std::endl;
@@ -1279,7 +1281,8 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
     if (reader_version == 1)
     {
         return read_Vq_row_v1(
-            dir_path, vq_fprefix, threshold, local_atpair, is_cut_coulomb);
+            dir_path, vq_fprefix, threshold, local_atpair, is_cut_coulomb,
+            use_shrink_basis);
     }
     if (reader_version != 0)
     {
@@ -1288,6 +1291,7 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
     }
 
     cout << "Begin READ_Vq_Row" << endl;
+    const auto &basis_aux = target_coulomb_basis(use_shrink_basis);
     std::set<int> local_I_set;
     for(auto &lap:local_atpair)
     {
@@ -1329,7 +1333,7 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
                     }
                 }
             }
-            handle_Vq_row_file(file_path, threshold, coulomb, local_atpair, binary);
+            handle_Vq_row_file(file_path, threshold, coulomb, local_atpair, binary, basis_aux);
         }
     }
     profiler.stop("handle_Vq_row_file");

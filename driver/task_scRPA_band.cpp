@@ -387,7 +387,7 @@ void task_scRPA_band()
         if (LIBRPA::parallel_routing == LIBRPA::ParallelRouting::R_TAU)
         {
             read_Vq_full(driver_params.input_dir, "coulomb_cut_", true,
-                         driver_params.version_coul_reader);
+                         driver_params.version_coul_reader, Params::use_shrink_abfs);
         }
         else
         {
@@ -396,7 +396,8 @@ void task_scRPA_band()
             //       Setup of local_atpair may be better to extracted as some util function,
             //       instead of in the main driver.
             read_Vq_row(driver_params.input_dir, "coulomb_cut_", Params::vq_threshold,
-                        local_atpair, true, driver_params.version_coul_reader);
+                        local_atpair, true, driver_params.version_coul_reader,
+                        Params::use_shrink_abfs);
         }
         Profiler::cease("read_vq_cut");
 
@@ -833,4 +834,3 @@ void task_scRPA_band()
     }
         Profiler::stop("scRPA_band");
 }
-

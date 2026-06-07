@@ -542,7 +542,7 @@ void task_qsgwA()
         // 读取库伦相互作用
         Profiler::start("read_vq_cut", "Load truncated Coulomb");
         read_Vq_full(driver_params.input_dir, "coulomb_cut_", true,
-                     driver_params.version_coul_reader);
+                     driver_params.version_coul_reader, Params::use_shrink_abfs);
         Profiler::stop("read_vq_cut");
 
         // 读取和处理介电函数

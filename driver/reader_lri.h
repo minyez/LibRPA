@@ -21,5 +21,8 @@ size_t read_Cs_evenly_distribute(const std::string &dir_path, double threshold, 
 void get_natom_ncell_from_first_Cs_file(int &n_atom, int &n_cell,
                                         const std::string &dir_path);
 
+std::vector<size_t> read_aux_basis_from_Cs(const std::string &dir_path,
+                                           const std::string &keyword);
+
 // Fallback method to read basis dimensions from Cs files, for early dataset versions
 void read_basis_from_Cs(const std::string &dir_path);
