@@ -2837,8 +2837,9 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             //         coulwc_block, desc_nabf_nabf, chi0.atbasis_abf, IJ.first,
             //         IJ.second, true, CONE, IJq_coul.at(I).at({J, qa}).ptr(), MAJOR::ROW);
             // }
-            collect_block_from_ALL_IJ_Tensor(temp_block, desc_nabf_nabf, chi0.atbasis_abf,
-                                             qa, true, C_ONE, IJq_coul, MAJOR::ROW);
+            collect_block_from_ALL_IJ_Tensor_sparse_zero_missing(
+                temp_block, desc_nabf_nabf, chi0.atbasis_abf, qa, true, C_ONE, IJq_coul,
+                MAJOR::ROW);
             ScalapackConnector::pgemr2d_f(n_abf, n_abf, temp_block.ptr(), 1, 1, desc_nabf_nabf.desc,
                                           coulwc_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
                                           blacs_h.ictxt);
@@ -2915,8 +2916,9 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             ofs_myid << get_timestamp() << " Done collect couleps_libri, collected blocks" << endl;
 
             ofs_myid << get_timestamp() << " Start construct couleps 2D block" << endl;
-            collect_block_from_ALL_IJ_Tensor(temp_block, desc_nabf_nabf, chi0.atbasis_abf,
-                                             qa, true, C_ONE, IJq_coul, MAJOR::ROW);
+            collect_block_from_ALL_IJ_Tensor_sparse_zero_missing(
+                temp_block, desc_nabf_nabf, chi0.atbasis_abf, qa, true, C_ONE, IJq_coul,
+                MAJOR::ROW);
             ScalapackConnector::pgemr2d_f(n_abf, n_abf, temp_block.ptr(), 1, 1, desc_nabf_nabf.desc,
                                           coul_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
                                           blacs_h.ictxt);
@@ -3048,8 +3050,9 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     //         IJ.second, true, CONE, IJq_chi0.at(I).at({J, qa}).ptr(), MAJOR::ROW);
                     // }
                     global::profiler.start("epsilon_prepare_chi0_2d_collect_block");
-                    collect_block_from_ALL_IJ_Tensor(temp_block, desc_nabf_nabf, chi0.atbasis_abf,
-                                                     qa, true, C_ONE, IJq_chi0, MAJOR::ROW);
+                    collect_block_from_ALL_IJ_Tensor_sparse_zero_missing(
+                        temp_block, desc_nabf_nabf, chi0.atbasis_abf, qa, true, C_ONE,
+                        IJq_chi0, MAJOR::ROW);
                     ScalapackConnector::pgemr2d_f(n_abf, n_abf, temp_block.ptr(), 1, 1,
                                                   desc_nabf_nabf.desc, chi0_block.ptr(), 1, 1,
                                                   desc_nabf_nabf_opt.desc, blacs_h.ictxt);

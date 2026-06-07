@@ -321,6 +321,36 @@ void test_collect_block_from_IJ_storage()
 }
 
 template <typename T>
+void test_collect_block_from_ALL_IJ_Tensor_sparse_zero_missing()
+{
+    blacs_ctxt_h.set_square_grid();
+
+    AtomicBasis ab(std::vector<size_t>{1, 1});
+    std::array<double, 3> cell{0.0, 0.0, 0.0};
+    std::map<int, std::map<std::pair<int, std::array<double, 3>>, RI::Tensor<T>>> tmap;
+
+    auto data = std::make_shared<std::valarray<T>>(T(7), 1);
+    tmap[0][{0, cell}] = RI::Tensor<T>({1, 1}, data);
+
+    ArrayDesc desc_fb(blacs_ctxt_h);
+    desc_fb.init(ab.nb_total, ab.nb_total, ab.nb_total, ab.nb_total, 0, 0);
+    auto mat_loc = init_local_mat<T>(desc_fb, MAJOR::ROW);
+
+    collect_block_from_ALL_IJ_Tensor_sparse_zero_missing(
+        mat_loc, desc_fb, ab, cell, true, T(1), tmap, MAJOR::ROW);
+
+    if (blacs_ctxt_h.myid == 0)
+    {
+        assert(mat_loc(0, 0) == T(7));
+        assert(mat_loc(0, 1) == T(0));
+        assert(mat_loc(1, 0) == T(0));
+        assert(mat_loc(1, 1) == T(0));
+    }
+
+    blacs_ctxt_h.exit();
+}
+
+template <typename T>
 void test_local_mat_from_ap_dist()
 {
     blacs_ctxt_h.set_square_grid(true, librpa_int::CTXT_LAYOUT::R);
@@ -1072,6 +1102,8 @@ int main (int argc, char *argv[])
 
     // test_collect_block_from_IJ_storage<double>();
     // test_collect_block_from_IJ_storage<complex<double>>();
+    test_collect_block_from_ALL_IJ_Tensor_sparse_zero_missing<double>();
+    test_collect_block_from_ALL_IJ_Tensor_sparse_zero_missing<complex<double>>();
 
     test_local_mat_from_ap_dist<double>();
     test_local_mat_from_ap_dist<complex<double>>();
@@ -1135,4 +1167,3 @@ int main (int argc, char *argv[])
     MPI_Finalize();
     return 0;
 }
-
