@@ -1,6 +1,7 @@
 #include "../core/meanfield.h"
 #include <cassert>
 #include <map>
+#include <stdexcept>
 
 #include "testutils.h"
 
@@ -85,9 +86,45 @@ void test_state_index_energy_bounds()
     assert(mf.get_min_state_above_energy(-4.0) == 0);
 }
 
+void test_dmat_cplx_Rs_matches_single_R_accumulation()
+{
+    using namespace librpa_int;
+
+    const int nk = 2;
+    MeanField mf(1, nk, 1, 1);
+    mf.get_eigenvals()[0](0, 0) = -1.0;
+    mf.get_eigenvals()[0](1, 0) = -1.0;
+    mf.get_weight()[0](0, 0) = 2.0 / nk;
+    mf.get_weight()[0](1, 0) = 2.0 / nk;
+    mf.get_eigenvectors()[0][0][0].create(1, 1);
+    mf.get_eigenvectors()[0][0][1].create(1, 1);
+    mf.get_eigenvectors()[0][0][0](0, 0) = {1.0, 0.0};
+    mf.get_eigenvectors()[0][0][1](0, 0) = {1.0, 0.0};
+
+    const std::vector<Vector3_Order<double>> kfrac_list {
+        {0.0, 0.0, 0.0},
+        {0.5, 0.0, 0.0},
+    };
+    const std::vector<Vector3_Order<int>> Rs {
+        {0, 0, 0},
+        {1, 0, 0},
+    };
+
+    const auto dmat_Rs = mf.get_dmat_cplx_Rs(0, 0, 0, kfrac_list, Rs);
+    if (dmat_Rs.size() != Rs.size())
+        throw std::runtime_error("get_dmat_cplx_Rs returned an unexpected number of R blocks");
+    for (const auto &R : Rs)
+    {
+        const auto dmat_R = mf.get_dmat_cplx_R(0, 0, 0, kfrac_list, R);
+        if (!fequal(dmat_Rs.at(R)(0, 0), dmat_R(0, 0), {1e-12, 0.0}))
+            throw std::runtime_error("get_dmat_cplx_Rs differs from get_dmat_cplx_R");
+    }
+}
+
 int main(int argc, char *argv[])
 {
     test_BCC_He_gamma_minimal_basis_aims();
     test_state_index_energy_bounds();
+    test_dmat_cplx_Rs_matches_single_R_accumulation();
     return 0;
 }

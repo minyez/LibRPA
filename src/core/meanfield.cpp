@@ -325,7 +325,7 @@ std::map<Vector3_Order<int>, ComplexMatrix> MeanField::get_dmat_cplx_Rs(
         {
             auto ang = - (kfrac_list[ik] * R) * TWO_PI;
             complex<double> kphase = complex<double>(cos(ang), sin(ang));
-            rmat += kphase * rmat;
+            rmat += kphase * kmat;
         }
     }
     return dmat_cplx_all;
