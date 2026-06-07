@@ -38,6 +38,7 @@
 
 !> @brief Fortran 2003 module for LibRPA API
 module librpa_f03
+   use iso_c_binding, only: c_long_long
    implicit none
 
    private
@@ -145,12 +146,12 @@ module librpa_f03
       logical :: use_fullcoul_exx
       !> Experimental: use full Coulomb interaction in \f$W^c = (\varepsilon^{-1} - 1) v\f$.
       logical :: use_fullcoul_wc
-      !> Experimental: use ABACUS symmetry sidecars in exact-exchange paths.
-      logical :: use_abacus_exx_symmetry
-      !> Experimental: use ABACUS symmetry sidecars in GW paths.
-      logical :: use_abacus_gw_symmetry
-      !> Experimental: use ABACUS symmetry sidecars in RPA/chi0 paths.
-      logical :: use_abacus_rpa_symmetry
+      !> Experimental: use input symmetry sidecars in exact-exchange paths.
+      logical :: use_input_exx_symmetry
+      !> Experimental: use input symmetry sidecars in GW paths.
+      logical :: use_input_gw_symmetry
+      !> Experimental: use input symmetry sidecars in RPA/chi0 paths.
+      logical :: use_input_rpa_symmetry
       !> Experimental: output ABACUS-compatible GW Green's-function data.
       logical :: output_abacus_gw_gf
       !> Experimental: maximum number of bands for response-function construction.
@@ -161,6 +162,10 @@ module librpa_f03
       integer :: option_bvk_remap
       !> Real-space Green's function screening threshold for response function.
       real(dp) :: gf_threshold
+      !> Number of first-index atoms per LibRI chi0 collection chunk.
+      integer :: libri_chi0_collect_s0_chunk
+      !> Maximum estimated local chi0 tensor bytes per LibRI collection chunk.
+      integer(c_long_long) :: libri_chi0_collect_max_bytes
       !> Use ScaLAPACK to calculate \f$E_\text{c}^{\text{RPA}}\f$.
       logical :: use_scalapack_ecrpa
       !> Experimental: use a compressed auxiliary basis.

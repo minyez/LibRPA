@@ -1404,7 +1404,14 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         ? make_chi0_collect_plan_by_bytes<Tdata>(
               atbasis_abf.n_atoms, Rlist_gf, atbasis_abf, collect_max_bytes)
         : Chi0CollectPlan{};
+    // LibRI's comm_map2_first collects a sparse nested map according to requested first/second
+    // atom sets.  A full one-shot collect can briefly duplicate every local chi0s tensor on every
+    // rank, so large ABACUS cases split the global (I,J,R) key space into chunks capped by an
+    // estimated tensor byte count.
     const bool use_byte_collect_chunks = comm_h.nprocs > 1 && byte_collect_plan.nchunks() > 0;
+    // Each rank only requests the atoms that can contribute to its local atom-pair work after
+    // collection.  This keeps communication bounded by the final ownership instead of the full
+    // tensor map.
     const auto local_request_chunks = use_byte_collect_chunks
         ? make_local_chi0_request_chunks<Tdata>(byte_collect_plan, atpairs_ABF, Rlist_gf)
         : std::vector<Chi0CollectRequest>{};
@@ -1501,16 +1508,27 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                     {
                         if (use_byte_collect_chunks)
                         {
+                            // Move, not copy, the freshly computed rpa.chi0s blocks into the
+                            // byte-budget chunks.  selected_chunks[ichunk] is cleared immediately
+                            // after communication, so peak memory is roughly one communication
+                            // chunk plus the accumulated locally owned result.
                             auto selected_chunks =
                                 split_chi0_map_by_collect_plan<Tdata>(byte_collect_plan, rpa.chi0s);
                             const auto nchunks = byte_collect_plan.nchunks();
                             for (std::size_t ichunk = 0; ichunk != nchunks; ++ichunk)
                             {
                                 auto chunk_s0_s1 = local_request_chunks[ichunk];
+                                // Some chunks contain no atom pairs needed by this rank.  LibRI's
+                                // collective still has to be entered by every rank with non-empty
+                                // request sets, so use a tiny valid request as padding and discard
+                                // the returned data on those ranks.
                                 const bool padding_request =
                                     chunk_s0_s1.first.empty() || chunk_s0_s1.second.empty();
                                 if (padding_request)
                                     chunk_s0_s1 = padding_s0_s1_for_plan_chunk(byte_collect_plan, ichunk);
+                                // Defensive fallback for pathological empty plans; it preserves the
+                                // old all-at-once request semantics rather than letting the collective
+                                // see an empty atom set.
                                 if (chunk_s0_s1.first.empty() || chunk_s0_s1.second.empty())
                                     chunk_s0_s1 = s0_s1;
 
@@ -1532,6 +1550,9 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                                         comm_h.comm, selected_chunks[ichunk],
                                         chunk_s0_s1.first, chunk_s0_s1.second);
                                 selected_chunks[ichunk].clear();
+                                // Padding requests only exist to keep all ranks synchronized in the
+                                // collective.  Accumulating them would import blocks this rank does
+                                // not own, so only real request chunks contribute to chi0s_IJR.
                                 if (!padding_request)
                                     accumulate_chi0_collect_map(chi0s_IJR, tmp_chi0);
                             }

@@ -39,7 +39,7 @@
 !> @brief Fortran 2003 module for LibRPA API
 module librpa_f03
 
-   use iso_c_binding, only: c_char, c_ptr, c_int, c_double, c_null_ptr, c_size_t
+   use iso_c_binding, only: c_char, c_ptr, c_int, c_double, c_long_long, c_null_ptr, c_size_t
    implicit none
 
    private
@@ -149,9 +149,9 @@ module librpa_f03
       integer(c_int) :: use_fullcoul_exx
       integer(c_int) :: use_fullcoul_eps
       integer(c_int) :: use_fullcoul_wc
-      integer(c_int) :: use_abacus_exx_symmetry
-      integer(c_int) :: use_abacus_gw_symmetry
-      integer(c_int) :: use_abacus_rpa_symmetry
+      integer(c_int) :: use_input_exx_symmetry
+      integer(c_int) :: use_input_gw_symmetry
+      integer(c_int) :: use_input_rpa_symmetry
       integer(c_int) :: output_abacus_gw_gf
 
       integer(c_int) :: n_bands_chi0
@@ -160,6 +160,8 @@ module librpa_f03
 
       ! RPA specific
       real(c_double) :: gf_threshold
+      integer(c_int) :: libri_chi0_collect_s0_chunk
+      integer(c_long_long) :: libri_chi0_collect_max_bytes
       integer(c_int) :: use_scalapack_ecrpa
 
       integer(c_int) :: use_shrink_abfs
@@ -246,12 +248,12 @@ module librpa_f03
       logical :: use_fullcoul_exx
       !> Experimental: use full Coulomb interaction in \f$W^c = (\varepsilon^{-1} - 1) v\f$.
       logical :: use_fullcoul_wc
-      !> Experimental: use ABACUS symmetry sidecars in exact-exchange paths.
-      logical :: use_abacus_exx_symmetry
-      !> Experimental: use ABACUS symmetry sidecars in GW paths.
-      logical :: use_abacus_gw_symmetry
-      !> Experimental: use ABACUS symmetry sidecars in RPA/chi0 paths.
-      logical :: use_abacus_rpa_symmetry
+      !> Experimental: use input symmetry sidecars in exact-exchange paths.
+      logical :: use_input_exx_symmetry
+      !> Experimental: use input symmetry sidecars in GW paths.
+      logical :: use_input_gw_symmetry
+      !> Experimental: use input symmetry sidecars in RPA/chi0 paths.
+      logical :: use_input_rpa_symmetry
       !> Experimental: output ABACUS-compatible GW Green's-function data.
       logical :: output_abacus_gw_gf
       !> Experimental: maximum number of bands for response-function construction.
@@ -262,6 +264,10 @@ module librpa_f03
       integer :: option_bvk_remap
       !> Real-space Green's function screening threshold for response function.
       real(dp) :: gf_threshold
+      !> Number of first-index atoms per LibRI chi0 collection chunk.
+      integer :: libri_chi0_collect_s0_chunk
+      !> Maximum estimated local chi0 tensor bytes per LibRI collection chunk.
+      integer(c_long_long) :: libri_chi0_collect_max_bytes
       !> Use ScaLAPACK to calculate \f$E_\text{c}^{\text{RPA}}\f$.
       logical :: use_scalapack_ecrpa
       !> Experimental: use a compressed auxiliary basis.
@@ -805,6 +811,7 @@ module librpa_f03
       module procedure sync_opt_string
       module procedure sync_opt_switch
       module procedure sync_opt_int
+      module procedure sync_opt_long_long
       module procedure sync_opt_dp
    end interface
    !> \endcond
@@ -812,6 +819,7 @@ module librpa_f03
    private :: sync_opt_string
    private :: sync_opt_switch
    private :: sync_opt_int
+   private :: sync_opt_long_long
    private :: sync_opt_dp
 
 contains
@@ -858,6 +866,20 @@ contains
          c_int_value = int(f_integer, kind=c_int)
       end if
    end subroutine sync_opt_int
+
+   ! Synchronize C/C++ long long with Fortran integer(c_long_long)
+   subroutine sync_opt_long_long(f_integer, c_long_long_value, direction)
+      implicit none
+      integer(kind=c_long_long), intent(inout) :: f_integer
+      integer(kind=c_long_long), intent(inout) :: c_long_long_value
+      integer, intent(in) :: direction
+
+      if (direction .eq. SYNC_OPTS_C2F) then
+         f_integer = c_long_long_value
+      else if (direction .eq. SYNC_OPTS_F2C) then
+         c_long_long_value = f_integer
+      end if
+   end subroutine sync_opt_long_long
 
    ! Synchronize C/C++ and Fortran double precision numbers
    subroutine sync_opt_dp(f_dp, c_double_value, direction)
@@ -980,14 +1002,16 @@ contains
       call sync_opt(opts%use_fullcoul_eps,        opts%opts_c%use_fullcoul_eps,        direction)
       call sync_opt(opts%use_fullcoul_exx,        opts%opts_c%use_fullcoul_exx,        direction)
       call sync_opt(opts%use_fullcoul_wc,         opts%opts_c%use_fullcoul_wc,         direction)
-      call sync_opt(opts%use_abacus_exx_symmetry, opts%opts_c%use_abacus_exx_symmetry, direction)
-      call sync_opt(opts%use_abacus_gw_symmetry,  opts%opts_c%use_abacus_gw_symmetry,  direction)
-      call sync_opt(opts%use_abacus_rpa_symmetry, opts%opts_c%use_abacus_rpa_symmetry, direction)
+      call sync_opt(opts%use_input_exx_symmetry, opts%opts_c%use_input_exx_symmetry, direction)
+      call sync_opt(opts%use_input_gw_symmetry,  opts%opts_c%use_input_gw_symmetry,  direction)
+      call sync_opt(opts%use_input_rpa_symmetry, opts%opts_c%use_input_rpa_symmetry, direction)
       call sync_opt(opts%output_abacus_gw_gf,     opts%opts_c%output_abacus_gw_gf,     direction)
       call sync_opt(opts%n_bands_chi0,            opts%opts_c%n_bands_chi0,            direction)
       call sync_opt(opts%n_bands_sigc,            opts%opts_c%n_bands_sigc,            direction)
       call sync_opt(opts%option_bvk_remap,        opts%opts_c%option_bvk_remap,        direction)
       call sync_opt(opts%gf_threshold,            opts%opts_c%gf_threshold,            direction)
+      call sync_opt(opts%libri_chi0_collect_s0_chunk, opts%opts_c%libri_chi0_collect_s0_chunk, direction)
+      call sync_opt(opts%libri_chi0_collect_max_bytes, opts%opts_c%libri_chi0_collect_max_bytes, direction)
       call sync_opt(opts%use_scalapack_ecrpa,     opts%opts_c%use_scalapack_ecrpa,     direction)
       call sync_opt(opts%use_shrink_abfs,         opts%opts_c%use_shrink_abfs,         direction)
       call sync_opt(opts%use_shrink_chi,          opts%opts_c%use_shrink_chi,          direction)

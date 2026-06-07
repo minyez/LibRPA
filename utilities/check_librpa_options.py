@@ -148,6 +148,8 @@ def parse_c_field_kind(raw_type: str, array: str) -> str:
         return "string"
     if c_type == "double":
         return "double"
+    if c_type == "long long":
+        return "long_long"
     if c_type == "LibrpaSwitch":
         return "switch"
     if c_type in {
@@ -266,6 +268,8 @@ def fortran_decl_kind(left: str, rhs_var: str) -> Tuple[str, str, str]:
         return name, "f_string", raw_type
 
     if compact.startswith("integer"):
+        if "c_long_long" in compact:
+            return name, "c_long_long", raw_type
         if "c_int" in compact:
             return name, "c_int", raw_type
         return name, "f_int", raw_type
@@ -432,6 +436,8 @@ def expected_bindc_kind(c_field: Field) -> str:
         return "c_string"
     if c_field.kind == "double":
         return "c_double"
+    if c_field.kind == "long_long":
+        return "c_long_long"
     if c_field.kind in {"int", "switch"}:
         return "c_int"
     return "unknown"
@@ -442,6 +448,8 @@ def expected_wrapper_kind(c_field: Field) -> str:
         return "f_string"
     if c_field.kind == "double":
         return "f_dp"
+    if c_field.kind == "long_long":
+        return "c_long_long"
     if c_field.kind == "switch":
         return "logical"
     if c_field.kind == "int":
@@ -452,10 +460,12 @@ def expected_wrapper_kind(c_field: Field) -> str:
 KIND_LABELS = {
     "string": "C char array",
     "double": "C double",
+    "long_long": "C long long",
     "switch": "LibrpaSwitch",
     "int": "C integer/enum",
     "c_string": "Fortran C char array",
     "c_double": "real(c_double)",
+    "c_long_long": "integer(c_long_long)",
     "c_int": "integer(c_int)",
     "f_string": "Fortran character",
     "f_dp": "real(dp)",
