@@ -6,6 +6,7 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <complex>
 #include <cstdint>
 #include <ctime>
 #include <functional>
@@ -1192,7 +1193,7 @@ void print_matrix_mm(const matrix_m<T> &mat, std::ostream &os, Treal threshold =
     size_t nnz = 0;
     for (size_t i = 0; i < mat.size(); i++)
     {
-        if (fabs((*mat.sptr())[i]) > threshold)
+        if (std::abs((*mat.sptr())[i]) > threshold)
             nnz++;
     }
     os << "%%MatrixMarket matrix coordinate "
@@ -1206,7 +1207,7 @@ void print_matrix_mm(const matrix_m<T> &mat, std::ostream &os, Treal threshold =
             for (int j = 0; j != nc; j++)
             {
                 auto &v = mat(i, j);
-                if (fabs(v) > threshold)
+                if (std::abs(v) > threshold)
                 {
                     os << i + 1 << " " << j + 1 << " " << showpoint << scientific << setprecision(15) << get_real(v);
                     if (is_complex<T>())
@@ -1221,7 +1222,7 @@ void print_matrix_mm(const matrix_m<T> &mat, std::ostream &os, Treal threshold =
             for (int i = 0; i != nr; i++)
             {
                 auto &v = mat(i, j);
-                if (fabs(v) > threshold)
+                if (std::abs(v) > threshold)
                 {
                     os << i + 1 << " " << j + 1 << " " << showpoint << scientific << setprecision(15) << get_real(v);
                     if (is_complex<T>())
@@ -1292,7 +1293,7 @@ void write_matrix_elsi_csc(const matrix_m<T> &mat, const std::string &fn, Treal 
     size_t nnz = 0;
     for (size_t i = 0; i != mat.size(); i++)
     {
-        if (fabs(mat.ptr()[i]) > threshold)
+        if (std::abs(mat.ptr()[i]) > threshold)
             nnz++;
     }
     // cout << nnz << endl;
@@ -1307,7 +1308,7 @@ void write_matrix_elsi_csc(const matrix_m<T> &mat, const std::string &fn, Treal 
         int64_t nnz_this_col = 0;
         for (int j = 0; j < nr; j++)
         {
-            if (fabs(mat(j, i)) > threshold)
+            if (std::abs(mat(j, i)) > threshold)
             {
                 const T val = mat(j,i);
                 // cout << val << endl;
