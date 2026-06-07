@@ -41,17 +41,19 @@ echo 'CPLUS_INCLUDE_PATH:' $CPLUS_INCLUDE_PATH
 echo "========================="
 
 echo "任务运行节点列表: ${SLURM_NODELIST}"
+echo Job id : ${SLURM_JOB_ID}
 
 
 echo Begin Time: `date`
 ### * * * Running the tasks * * * ###
 
 files=(
-    "test_sv_gemm"
+    # "test_sv_gemm"
     # "test_aware"
     # "test_pgeadd"
     # "test_potrf_solvermp"
-    "test_potrf_potrs"
+    # "test_potrf_potrs"
+    test_pgetrf_bpiv
 )
 
 # 遍历数组中的每一个文件

@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH -p v100
+#SBATCH -p 48cp3
 ##SBATCH --nodelist gpu005
 #SBATCH -J test
 ##SBATCH -A xgren
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:0
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=3
 #SBATCH --output=../../log_install

@@ -166,6 +166,28 @@ void pgetrf(
 );
 
 /**
+ * @brief Block LU factorization with partial pivoting within each block row.
+ *
+ * Computes PA = LU where pivoting is applied at the block level: within each
+ * block column the diagonal block is factored with getrf (producing P1 A = L1 U1),
+ * then the pivot is applied to the right panel (B ← P1 B), the U and L panels
+ * are computed via trsm, and the trailing submatrix updated via gemm.
+ *
+ * This is a right-looking block algorithm.  Corresponds to the block-wise
+ * derivation in README.md (Experimental Routines).
+ *
+ * @tparam T   Scalar type.
+ * @param m        Number of rows of A.
+ * @param n        Number of columns of A.
+ * @param d_A      Device pointer to matrix A (input/output -- L+U factors).
+ * @param array_descA  DdlaDesc for A (mb == nb required).
+ * @param ipiv     Host pivot array (output, 1-based, length >= m_loc).
+ * @param info     0 on success, >0 if singular.
+ */
+template <typename T>
+void pgetrf_bpiv(const int& m, const int& n, T* d_A, const DdlaDesc& array_descA, int* d_ipiv, int& info);
+
+/**
  * @brief Distributed LU solve: solve A * X = B using the factors from pgetrf.
  *
  * Steps:  apply row pivots (plapiv), forward solve L*Y=B (ptrtrs), backward

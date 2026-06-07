@@ -17,6 +17,7 @@ list(APPEND lib_sources
     pgetf2.cpp
     pgetf2_panel.cpp
     pgetrf.cpp
+    pgetrf_bpiv.cpp
     plapiv.cpp
     pswap.cpp
     pgetrs.cpp

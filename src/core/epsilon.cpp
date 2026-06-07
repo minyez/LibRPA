@@ -53,15 +53,19 @@ using std::vector;
 
 CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx_mat_t &coulmat,
                                                        const vector<atpair_t> &local_atpair,
-                                                       const BlacsCtxtHandler &blacs_h)
+                                                       const BlacsCtxtHandler &blacs_h, bool use_gpu_gw_wc)
 {
     using librpa_int::ArrayDesc;
     using librpa_int::global::ofs_myid;
     using librpa_int::global::lib_printf;
 
     CorrEnergy corr;
-    if (blacs_h.myid == 0)
-        lib_printf("Calculating EcRPA with BLACS/ScaLAPACK 2D gamma_only\n");
+    if (blacs_h.myid == 0){
+        if(use_gpu_gw_wc)
+            lib_printf("Calculating EcRPA with BLACS GPU 2D gamma_only\n");
+        else
+            lib_printf("Calculating EcRPA with BLACS/ScaLAPACK 2D gamma_only\n");
+    }
 
     // lib_printf("Calculating EcRPA with BLACS, pid:  %d\n", comm_h.myid);
     const auto &mf = chi0.mf;
@@ -80,12 +84,38 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
     ArrayDesc desc_nabf_nabf(blacs_h);
     // use a square blocksize instead max block, otherwise heev and inversion will complain about illegal parameter
     desc_nabf_nabf.init_square_blk(n_abf, n_abf, 0, 0);
+    ArrayDesc desc_nabf_nabf_opt(blacs_h);
+    const int nb_opt = std::min(128, desc_nabf_nabf.nb());
+    desc_nabf_nabf_opt.init(n_abf, n_abf, nb_opt, nb_opt, 0, 0);
     const auto set_IJ_nabf_nabf = get_necessary_IJ_from_block_2D_sy('U', chi0.atbasis_abf, desc_nabf_nabf);
     const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nabf_nabf);
-    auto chi0_block = init_local_mat<double>(desc_nabf_nabf, MAJOR::COL);
-    auto coul_block = init_local_mat<double>(desc_nabf_nabf, MAJOR::COL);
-    auto coul_chi0_block = init_local_mat<double>(desc_nabf_nabf, MAJOR::COL);
+    auto temp_block = init_local_mat<double>(desc_nabf_nabf, MAJOR::COL);
+    auto chi0_block = init_local_mat<double>(desc_nabf_nabf_opt, MAJOR::COL);
+    auto coul_block = init_local_mat<double>(desc_nabf_nabf_opt, MAJOR::COL);
+    auto coul_chi0_block = init_local_mat<double>(desc_nabf_nabf_opt, MAJOR::COL);
+    std::vector<int> ipiv(desc_nabf_nabf_opt.m_loc() + desc_nabf_nabf_opt.mb());
 
+    double* chi0_block_ptr;
+    double* coul_block_ptr;
+    double* coul_chi0_block_ptr;
+    int* ipiv_ptr;
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
+    if(use_gpu_gw_wc)
+    {
+        desc_nabf_nabf_opt.set_ddla_desc(blacs_h.ddla_handle);
+        DEVICE_CHECK(deviceMallocAsync((void**)&chi0_block_ptr, chi0_block.size() * sizeof(double), blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&coul_block_ptr, coul_block.size() * sizeof(double), blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&coul_chi0_block_ptr, coul_chi0_block.size() * sizeof(double), blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&ipiv_ptr, ipiv.size() * sizeof(int), blacs_h.ddla_handle->stream));
+    }
+    else
+#endif
+    {
+        chi0_block_ptr = chi0_block.ptr();
+        coul_block_ptr = coul_block.ptr();
+        coul_chi0_block_ptr = coul_chi0_block.ptr();
+        ipiv_ptr = ipiv.data();
+    }
     const auto &klist = chi0.pbc.klist;
     const auto &map_ibzk_weight = chi0.pbc.map_ibzk_weight;
     complex<double> tot_RPA_energy(0.0, 0.0);
@@ -136,8 +166,11 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
 
             double block_begin = omp_get_wtime();
 
-            collect_block_from_ALL_IJ_Tensor(coul_block, desc_nabf_nabf, chi0.atbasis_abf,
+            collect_block_from_ALL_IJ_Tensor(temp_block, desc_nabf_nabf, chi0.atbasis_abf,
                         qa,true, CONE, IJq_coul, MAJOR::ROW);
+            ScalapackConnector::pgemr2d_f(n_abf, n_abf, temp_block.ptr(), 1, 1, desc_nabf_nabf.desc,
+                                          coul_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                          blacs_h.ictxt);
             double block_end = omp_get_wtime();
             lib_printf("Vq Time  myid: %d  arr_time: %f  comm_time: %f   block_time: %f   pair_size: %d\n",comm_h.myid,arr_end-vq_begin, comm_end-comm_begin, block_end-block_begin,set_IJ_nabf_nabf.size());
             comm_h.barrier();
@@ -205,8 +238,11 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
                 // ofs_myid << "IJq_chi0" << endl << IJq_chi0;
                 double chi_end_comm = omp_get_wtime();
 
-                collect_block_from_ALL_IJ_Tensor(chi0_block, desc_nabf_nabf, chi0.atbasis_abf,
+                collect_block_from_ALL_IJ_Tensor(temp_block, desc_nabf_nabf, chi0.atbasis_abf,
                         qa,true, CONE, IJq_chi0, MAJOR::ROW);
+                ScalapackConnector::pgemr2d_f(n_abf, n_abf, temp_block.ptr(), 1, 1, desc_nabf_nabf.desc,
+                                              chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                              blacs_h.ictxt);
                 //printf("End collect block myid: %d ifreq: %d   TIME_USED: %f\n",comm_h.myid,ifreq,chi_end_comm-chi_end_arr);
                 comm_h.barrier();
                 double chi_end_2d = omp_get_wtime();
@@ -215,37 +251,71 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
                 chi_comm_time = (chi_end_comm - chi_end_arr);
                 chi_2d_time = (chi_end_2d - chi_end_comm);
             }
-
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
+            if (use_gpu_gw_wc)
+            {
+                DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr, chi0_block.ptr(), chi0_block.size() * sizeof(double), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+                DEVICE_CHECK(deviceMemcpyAsync(coul_block_ptr, coul_block.ptr(), coul_block.size() * sizeof(double), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+            }
+#endif
             double pi_begin = omp_get_wtime();
-            ScalapackConnector::pgemm_f('N', 'N', n_abf, n_abf, n_abf, 1.0, coul_block.ptr(), 1, 1,
-                                        desc_nabf_nabf.desc, chi0_block.ptr(), 1, 1,
-                                        desc_nabf_nabf.desc, 0.0, coul_chi0_block.ptr(), 1, 1,
-                                        desc_nabf_nabf.desc);
-            // char fnp[100];
-            // sprintf(fnp, "pi_ifreq_%d_iq_%d.mtx", ifreq, iq);
+            LaConnector::pgemm(
+                'N', 'N', n_abf, n_abf, n_abf, -1.0, coul_block_ptr, 1, 1,
+                desc_nabf_nabf_opt, chi0_block_ptr, 1, 1, desc_nabf_nabf_opt,
+                0.0, coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
             double pi_end = omp_get_wtime();
-            // printf("End pgemm  myid: %d ifreq: %d \n",mpi_comm_global_h.myid,ifreq);
             double trace_pi = 0.0;
             double trace_pi_loc = 0.0;
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
+            if (use_gpu_gw_wc)
+            {
+                DEVICE_CHECK(deviceMemcpyAsync(coul_chi0_block.ptr(), coul_chi0_block_ptr, coul_chi0_block.size() * sizeof(double), deviceMemcpyDeviceToHost, blacs_h.ddla_handle->stream));
+                DEVICE_CHECK(deviceStreamSynchronize(blacs_h.ddla_handle->stream));
+            }
+#endif
             for (int i = 0; i != n_abf; i++)
             {
-                const int ilo = desc_nabf_nabf.indx_g2l_r(i);
-                const int jlo = desc_nabf_nabf.indx_g2l_c(i);
-                if (ilo >= 0 && jlo >= 0) trace_pi_loc += coul_chi0_block(ilo, jlo);
+                const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
+                const int jlo = desc_nabf_nabf_opt.indx_g2l_c(i);
+                if (ilo >= 0 && jlo >= 0) trace_pi_loc -= coul_chi0_block(ilo, jlo);
             }
-
-            coul_chi0_block *= -1.0;
-            for (int i = 0; i != n_abf; i++)
+            LaConnector::pdam(1.0, coul_chi0_block_ptr, desc_nabf_nabf_opt);
+            int info = -1;
+            double det_begin = omp_get_wtime();
+            LaConnector::pgetrf_bpiv(n_abf, n_abf, coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt, ipiv_ptr, info);
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
+            if (use_gpu_gw_wc)
             {
-                const int ilo = desc_nabf_nabf.indx_g2l_r(i);
-                const int jlo = desc_nabf_nabf.indx_g2l_c(i);
-                if (ilo >= 0 && jlo >= 0) coul_chi0_block(ilo, jlo) += CONE;
+                DEVICE_CHECK(deviceMemcpyAsync(coul_chi0_block.ptr(), coul_chi0_block_ptr, coul_chi0_block.size() * sizeof(double), deviceMemcpyDeviceToHost, blacs_h.ddla_handle->stream));
+                DEVICE_CHECK(deviceStreamSynchronize(blacs_h.ddla_handle->stream));
+            }
+#endif
+            assert(info == 0);
+            double trf_end = omp_get_wtime();
+
+            double ln_det_loc = 0.0;
+            double ln_det = 0.0;
+
+            for (int ig = 0; ig != n_abf; ig++)
+            {
+                int locr = desc_nabf_nabf_opt.indx_g2l_r(ig);
+                int locc = desc_nabf_nabf_opt.indx_g2l_c(ig);
+                if (locr >= 0 && locc >= 0)
+                {
+                    double tmp_ln_det;
+                    if (coul_chi0_block(locr, locc) > 0)
+                    {
+                        tmp_ln_det = std::log(coul_chi0_block(locr, locc));
+                    }
+                    else
+                    {
+                        tmp_ln_det = std::log(-coul_chi0_block(locr, locc));
+                    }
+                    ln_det_loc += tmp_ln_det;
+                }
             }
 
-            int *ipiv = new int[desc_nabf_nabf.m_loc() * 10];
-            int info;
-            //printf("begin det  myid: %d ifreq: %d \n",comm_h.myid,ifreq);
-            double ln_det = compute_pi_det_blacs_2d_gamma_only(coul_chi0_block, desc_nabf_nabf, ipiv, info);
+            MPI_Allreduce(&ln_det_loc, &ln_det, 1, MPI_DOUBLE, MPI_SUM, desc_nabf_nabf_opt.comm());
             //printf("End det  myid: %d ifreq: %d \n",comm_h.myid,ifreq);
             double det_end = omp_get_wtime();
             comm_h.barrier();
@@ -261,6 +331,15 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
             }
         }
     }
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
+    if(use_gpu_gw_wc){
+        DEVICE_CHECK(deviceFreeAsync(chi0_block_ptr, blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(coul_block_ptr, blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(coul_chi0_block_ptr, blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(ipiv_ptr, blacs_h.ddla_handle->stream));
+    }
+
+#endif
 #else
     throw std::logic_error("need compilation with LibRI");
 #endif
@@ -570,13 +649,11 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
 
 double compute_pi_det_blacs_2d_gamma_only(matrix_m<double> &loc_piT, const ArrayDesc &arrdesc_pi, int *ipiv, int &info)
 {
-    int one = 1;
     const int range_all = arrdesc_pi.m();
-    int DESCPI_T[9];
 
     double det_begin = omp_get_wtime();
 
-    ScalapackConnector::pgetrf_f(range_all, range_all, loc_piT.ptr(), one, one, arrdesc_pi.desc,
+    ScalapackConnector::pgetrf_f(range_all, range_all, loc_piT.ptr(), 1, 1, arrdesc_pi.desc,
                                  ipiv, info);
     double trf_end = omp_get_wtime();
 

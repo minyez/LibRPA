@@ -276,7 +276,7 @@ public:
             int error;
             elpa_deallocate(elpa_handle_, &error);
             if(error != ELPA_OK){
-                throw std::runtime_error("elpa deallocate failure\n");
+                std::cerr << "Error: elpa deallocate failure in ArrayDesc destructor" << std::endl;
             }
         }
     }

@@ -38,6 +38,194 @@ communication.
 
 ---
 
+
+## Mathematical Foundations
+
+Below are the block-wise derivations for each supported routine.  All matrices are assumed to be distributed in 2D block-cyclic fashion; the formulas describe the **local algebraic operations** that the library performs panel-by-panel.
+
+### `pgetrf` — LU Factorization with Partial Pivoting
+
+Given a square (or tall) matrix $A$, we seek a permutation matrix $P$, a unit lower-triangular matrix $L$, and an upper-triangular matrix $U$ such that
+
+$$
+PA=LU
+$$
+Partition the current trailing submatrix at step k as
+$$
+A = \begin{pmatrix} A_{11} & A_{12} \\ A_{21} & A_{22} \end{pmatrix}
+$$
+
+
+where $A_{11}$ is the $nb \times nb$ diagonal panel.  The factorization proceeds in three stages:
+
+1. **Panel factorization** (`pgetf2`):  
+   $$
+   A_{11} = L_{11} U_{11}
+   $$
+   
+   (with partial row pivoting stored in `ipiv`).
+   
+2. **Trailing-submatrix update**:
+   $$U_{12} = L_{11}^{-1} A_{12}$$
+   $$L_{21} = A_{21} U_{11}^{-1}$$
+
+3. **Schur-complement update**:
+   $$A_{22} \leftarrow A_{22} - L_{21} U_{12}$$
+
+The updated $A_{22}$ becomes the new trailing matrix for the next step, i.e. $A_{22} = L_{22} U_{22}$ is factored recursively.
+
+---
+
+### `pgetrs` — Solve Using LU Factors
+
+With $PA = LU$ already computed, solve $AX = B$:
+
+$$AX = B \quad\Longrightarrow\quad PAX = PB$$
+
+Substitute $PA = LU$:
+
+$$LU X = PB$$
+
+Introduce the intermediate $Y = UX$:
+
+1. **Forward substitution** (unit lower triangular):
+   $$LY = PB$$
+
+2. **Backward substitution** (upper triangular):
+   $$UX = Y$$
+
+In the distributed implementation `pgetrs` first applies the pivot permutation `plapiv`, then calls `ptrtrs` twice (first with $L$, then with $U$).
+
+---
+
+### `pgesv` — Linear System Solver (LU Driver)
+
+This is the driver routine that composes the two steps above:
+
+$$AX = B \xrightarrow{\text{pgetrf}} PA = LU \xrightarrow{\text{plapiv}} PB \xrightarrow{\text{ptrtrs}(L)} Y \xrightarrow{\text{ptrtrs}(U)} X$$
+
+---
+
+### `ptrtrs` — Distributed Triangular Solve
+
+Solve $TX = B$ where $T$ is triangular.  For a lower-triangular $T$ partitioned block-wise:
+
+$$\begin{pmatrix} T_{11} & 0 \\ T_{21} & T_{22} \end{pmatrix} \begin{pmatrix} X_1 \\ X_2 \end{pmatrix} = \begin{pmatrix} B_1 \\ B_2 \end{pmatrix}$$
+
+The solution is obtained block-by-block:
+
+1. $$T_{11} X_1 = B_1 \quad\Longrightarrow\quad X_1 = T_{11}^{-1} B_1$$
+2. $$X_2 = T_{22}^{-1}(B_2 - T_{21} X_1)$$
+
+For an upper-triangular $T$ the sweep direction is reversed:
+
+1. $$T_{22} X_2 = B_2 \quad\Longrightarrow\quad X_2 = T_{22}^{-1} B_2$$
+2. $$X_1 = T_{11}^{-1}(B_1 - T_{12} X_2)$$
+
+---
+
+### `pgemm` — Distributed Matrix Multiplication
+
+General matrix-matrix product:
+
+$$C = \alpha \cdot \text{op}(A) \cdot \text{op}(B) + \beta \cdot C$$
+
+LibDDLA implements the **SUMMA** algorithm.  The local block $C_{ij}$ is accumulated over panels of width $nb$:
+
+$$C_{ij} = \beta C_{ij} + \sum_{k} \alpha \cdot A_{ik}^{\text{op}} \cdot B_{kj}^{\text{op}}$$
+
+where $A_{ik}^{\text{op}}$ denotes the properly transposed block.  At each step $k$ the required panel of $A$ is broadcast along the process row, the panel of $B$ along the process column, and a local `gemm` updates $C_{ij}$.
+
+---
+
+### `pgeadd` — Distributed Matrix Addition
+
+Element-wise addition with optional transposition:
+
+$$C = \alpha \cdot \text{op}(A) + \beta \cdot \text{op}(B)$$
+
+When $op(A)=A^{T}$ (or $A^{\dagger}$) the routine communicates the transposed local blocks between the symmetric process pairs $(r,c)\leftrightarrow(c,r)$ before calling the local `geam` kernel.
+
+---
+
+### `plapiv` — Apply Row Pivot Permutation
+
+Given a pivot vector `ipiv` produced by `pgetrf`, construct the permutation matrix $P$ and apply it to a matrix $A$:
+
+$$A \leftarrow PA$$
+
+For each row $i$ the routine looks up the target row $j = \text{ipiv}[i] - 1$ and performs a distributed row swap.  When the two rows reside on different processes the swap uses a temporary buffer and point-to-point communication.
+
+---
+
+### `pswap` — Swap Rows or Columns
+
+Distributed swap of two vectors (rows or columns):
+
+$$\text{swap}(X, Y) : \quad X \leftrightarrow Y$$
+
+If the two vectors are stored on different processes the data is exchanged via `cclSend`/`cclRecv`; otherwise a local `swap` BLAS call is used.
+
+---
+
+### `ppotrf` — Cholesky Factorization
+
+For a Hermitian positive-definite matrix $A$ (lower-triangular storage, $A = A^{\mathsf{H}}$), the Cholesky factorization is
+
+$$
+A = LL^{\dagger}$$
+$$
+
+
+Partition $A$ block-wise:
+
+$$A = \begin{pmatrix} A_{11} & A_{12} \\ A_{21} & A_{22} \end{pmatrix} = \begin{pmatrix} LL^{\mathsf{H}} & B \\ B^{\mathsf{H}} & C \end{pmatrix}$$
+
+Because $A$ is Hermitian, $A_{12} = A_{21}^{\mathsf{H}} \equiv B$ and $A_{22} \equiv C$.
+
+Introduce the block factors:
+
+$$\begin{pmatrix} L_{11} & 0 \\ L_{21} & L_{22} \end{pmatrix} \begin{pmatrix} L_{11}^{\mathsf{H}} & L_{21}^{\mathsf{H}} \\ 0 & L_{22}^{\mathsf{H}} \end{pmatrix} = \begin{pmatrix} L_{11}L_{11}^{\mathsf{H}} & L_{11}L_{21}^{\mathsf{H}} \\ L_{21}L_{11}^{\mathsf{H}} & L_{21}L_{21}^{\mathsf{H}}+L_{22}L_{22}^{\mathsf{H}} \end{pmatrix}$$
+
+Equating blocks gives the three update formulas used in the right-looking algorithm:
+
+1. **Diagonal panel**:
+   $$A_{11} = L_{11} L_{11}^{\mathsf{H}} \quad\Longrightarrow\quad L_{11} = \text{potrf}(A_{11})$$
+
+2. **Sub-diagonal panel**:
+   $$A_{21} = L_{21} L_{11}^{\mathsf{H}} \quad\Longrightarrow\quad L_{21} = A_{21} \, (L_{11}^{\mathsf{H}})^{-1}$$
+
+3. **Schur-complement update**:
+   $$A_{22} \leftarrow A_{22} - L_{21} L_{21}^{\mathsf{H}}$$
+
+The updated $A_{22}$ is again Hermitian positive-definite, so the process repeats recursively.
+
+---
+
+### `ppotrs` — Solve Using Cholesky Factors
+
+With $A = LL^{\mathsf{H}}$ already computed, solve $AX = B$:
+
+$$LL^{\mathsf{H}} X = B$$
+
+Introduce $Y = L^{\mathsf{H}} X$:
+
+1. **Forward substitution** (lower triangular):
+   $$LY = B$$
+2. **Backward substitution** (upper triangular, conjugate transpose):
+   $$L^{\mathsf{H}} X = Y$$
+
+Both steps are performed by `ptrtrs` with appropriate `uplo` / `trans` arguments.
+
+---
+
+### `pposv` — Positive-Definite System Solver (Cholesky Driver)
+
+Driver that composes Cholesky factorization and triangular solve:
+
+$$AX = B \xrightarrow{\text{ppotrf}} A = LL^{\mathsf{H}} \xrightarrow{\text{ptrtrs}(L)} Y \xrightarrow{\text{ptrtrs}(L^{\mathsf{H}})} X$$
+
+---
 ## Quick Example
 
 ```cpp
@@ -96,10 +284,10 @@ int main(int argc, char** argv) {
 mkdir build && cd build
 
 # CUDA backend
-cmake .. -DENABLE_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="80"
+cmake .. -DDDLA_USE_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="80"
 
 # HIP/ROCm backend
-cmake .. -DENABLE_HIP=ON -DCMAKE_HIP_ARCHITECTURES="gfx90a"
+cmake .. -DDDLA_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES="gfx90a"
 
 make -j
 ```
@@ -175,9 +363,71 @@ Inter-process GPU data movement uses **NCCL** (NVIDIA) or **RCCL** (AMD):
 - **Row communicator** (`nccl_row_comm`): broadcast / reduce along process rows
 - **Column communicator** (`nccl_col_comm`): broadcast / reduce along process columns
 
-An optional CPU-tunnel fallback (`ENABLE_GPU_CPU_TUNNEL`) routes data through
+An optional CPU-tunnel fallback (`DDLA_USE_GPU_CPU_TUNNEL`) routes data through
 host memory when NCCL is unavailable, using MPI for inter-node communication.
 
+
+## Experimental Routines
+
+### Block LU with Partial Pivoting (Recursive Panel Factorization)
+
+This section documents the block-wise derivation for a recursive panel LU factorization with partial row pivoting, where the diagonal panel is factored by a single-process GPU solver (cuSOLVER / rocSOLVER).
+
+Given a matrix $M$ partitioned into $2 \times 2$ blocks:
+
+$$M = \begin{pmatrix} A & B \\ C & D \end{pmatrix}$$
+
+We seek permutations $P_1, P_2$ and block triangular factors $L, U$ such that $PM = LU$.  The derivation proceeds recursively.
+
+**Step 1 — Pivot and factor the first panel.**
+
+Apply a row permutation $P_1$ to the first block-row and factor the panel:
+
+$$\begin{pmatrix} P_1^{-1} & 0 \\ 0 & I \end{pmatrix} \begin{pmatrix} A & B \\ C & D \end{pmatrix} = \begin{pmatrix} P_1^{-1} & 0 \\ 0 & I \end{pmatrix} \begin{pmatrix} P_1 A & P_1 B \\ C & D \end{pmatrix} = \begin{pmatrix} P_1^{-1} & 0 \\ 0 & I \end{pmatrix} \begin{pmatrix} L_1 U_1 & P_1 B \\ C & D \end{pmatrix}$$
+
+**Step 2 — Introduce the first block column of $L$ and first block row of $U$.**
+
+Rewrite the permuted matrix as a product of a unit block-lower triangular matrix and a block-upper triangular matrix:
+
+$$\begin{pmatrix} P_1^{-1} & 0 \\ 0 & I \end{pmatrix} \begin{pmatrix} L_1 & 0 \\ C U_1^{-1} & I \end{pmatrix} \begin{pmatrix} U_1 & L_1^{-1} P_1 B \\ 0 & D - C U_1^{-1} L_1^{-1} P_1 B \end{pmatrix}$$
+
+Here:
+- $L_1$ is unit lower triangular (from the panel LU).
+- $U_1$ is upper triangular (from the panel LU).
+- The Schur complement of the trailing block is $S = D - C U_1^{-1} L_1^{-1} P_1 B = D - (C U_1^{-1})(L_1^{-1} P_1 B)$.
+
+**Step 3 — Recurse on the Schur complement.**
+
+Factor the trailing block recursively with its own pivot $P_2$:
+
+$$S = P_2^{-1} L_2 U_2$$
+
+Absorb $P_2$ into the global permutation and write the final factorization:
+
+$$\begin{pmatrix} P_1^{-1} & 0 \\ 0 & P_2^{-1} \end{pmatrix} \begin{pmatrix} L_1 & 0 \\ P_2 C U_1^{-1} & L_2 \end{pmatrix} \begin{pmatrix} U_1 & L_1^{-1} P_1 B \\ 0 & U_2 \end{pmatrix}$$
+
+**Summary of the right-looking block algorithm (one step).**
+
+For a distributed matrix with block size $nb$, a single step updates the trailing matrix as follows:
+
+1. **Panel LU** (local, single GPU via cuSOLVER/rocSOLVER `getrf`):  
+   $$P_1 A = L_1 U_1$$
+
+2. **Apply pivot to the right panel** (distributed row swaps):  
+   $$B \leftarrow P_1 B$$
+
+3. **Compute the block row of $U$** (triangular solve, `trsm`):  
+   $$U_{12} = L_1^{-1} B$$
+
+4. **Compute the block column of $L$** (triangular solve, `trsm`):  
+   $$L_{21} = C \, U_1^{-1}$$
+
+5. **Schur-complement update** (matrix multiply, `gemm`):  
+   $$D \leftarrow D - L_{21} U_{12}$$
+
+The updated $D$ becomes the new trailing matrix for the next recursive step.
+
+---
 ---
 
 ## License

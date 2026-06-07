@@ -46,6 +46,7 @@ if(LIBRPA_USE_CUDA OR LIBRPA_USE_HIP)
     # Bundled LibDDLA from thirdparty/
     target_include_directories(rpa_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/LibDDLA/include)
     target_link_libraries(rpa_lib PRIVATE ddla_lib)
+    set(LIBDDLA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/LibDDLA)
   endif()
 endif()
 

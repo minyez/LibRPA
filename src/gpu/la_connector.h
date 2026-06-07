@@ -134,6 +134,27 @@ inline void axpy(
 }
 
 template <typename T>
+inline void pgetrf_bpiv(
+    const int& m, const int& n,
+    T* d_A, const int& ia, const int& ja, const ArrayDesc& array_descA,
+    int* ipiv, // host or device
+    int& info // host
+)
+{
+    #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+    if(ia!=1 || ja!=1){
+        throw std::runtime_error("In LaConnector::pgetrf_bpiv, only support ia=ja=1 for device implementation!");
+    }
+    if(DeviceConnector::check_device_ptr((void*)d_A)){
+        ddla::pgetrf_bpiv(m, n, d_A, array_descA.ddla_desc(), ipiv, info);
+    }else
+    #endif
+    {
+        ScalapackConnector::pgetrf_f(m, n, d_A, ia, ja, array_descA.desc, ipiv, info);
+    }
+}
+
+template <typename T>
 inline void pgesv(
     const int& n, const int& nrhs,
     T* d_A, const int& ia, const int& ja, const ArrayDesc& array_descA,
