@@ -54,6 +54,10 @@ target_include_directories(rpa_lib
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
   )
+target_include_directories(rpa_lib PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
 configure_file(utils/envs_cmake.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/envs_cmake.cpp)
 configure_file(utils/envs_cmake.h ${CMAKE_CURRENT_BINARY_DIR}/envs_cmake.h)  # only to make the configured envs_cmake.cpp compile
 
@@ -135,6 +139,11 @@ if(LIBRPA_USE_LIBRI)
       $<BUILD_INTERFACE:${LibComm_INCLUDE_DIR}>
       $<BUILD_INTERFACE:${LibRI_INCLUDE_DIR}>
     )
+  target_include_directories(rpa_lib PRIVATE
+    ${Cereal_INCLUDE_DIR}
+    ${LibComm_INCLUDE_DIR}
+    ${LibRI_INCLUDE_DIR}
+  )
 endif()
 
 if(LIBRPA_USE_CUDA)
