@@ -91,6 +91,8 @@ regression_tests/workspace*/
 regression_tests/regression.log
 sync_to_hpc3.sh
 
+CLAUDE.md
+
 # CodeGraph data files
 # These are local to each machine and should not be committed
 

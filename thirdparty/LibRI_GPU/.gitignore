@@ -1,0 +1,4 @@
+*.gch
+make/
+.envrc
+.clangd
