@@ -100,7 +100,7 @@ list(APPEND lib_sources
         io/fs.cpp
         io/global_io.cpp
         io/input_elsi.cpp
-        io/output_aims.cpp
+        io/output_gw.cpp
 
         interface/gx_minimax_wrp.f90
 
