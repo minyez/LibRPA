@@ -304,6 +304,7 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_switch(opts, replace_w_head);
     _parse_int(opts, option_dielect_func);
     _parse_switch(opts, use_2d_dielectric);
+    _parse_switch(opts, output_gw_sigc_ks_if);
     _parse_switch(opts, output_gw_sigc_mat);
     _parse_switch(opts, output_gw_sigc_mat_rt);
     _parse_switch(opts, output_gw_sigc_mat_rf);

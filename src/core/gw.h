@@ -25,6 +25,7 @@ private:
     bool is_kspace_built_;
     bool is_rspace_redist_for_KS_;
     bool is_rspace_redist_blacs_;
+    int output_sigc_ks_if_band_index_;
 
     //! frequency-domain reciprocal-space correlation self-energy, indices [ispin][ispinor_bra][ispinor_ket][freq][R][I][J](n_I, n_J)
     // Sparse storage from LibRI calculation
@@ -56,6 +57,7 @@ public:
     double libri_threshold_G;
 
     bool output_sigc_mat;
+    bool output_sigc_ks_if;
     bool output_sigc_mat_rt;
     bool output_sigc_mat_rf;
 
@@ -103,12 +105,14 @@ public:
     void build_sigc_matrix_KS_kgrid();
     void build_sigc_matrix_KS_band(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_band,
                                    const std::vector<Vector3_Order<double>> &kfrac_band,
-                                   const AtomPairBvKRemap<atom_t> &bvk_remap);
+                                   const AtomPairBvKRemap<atom_t> &bvk_remap,
+                                   const std::vector<int> *output_iks = nullptr);
     void build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h);
     void build_sigc_matrix_KS_band_blacs(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_band,
                                          const std::vector<Vector3_Order<double>> &kfrac_band,
                                          const AtomPairBvKRemap<atom_t> &bvk_remap,
-                                         const BlacsCtxtHandler &blacs_ctxt_h);
+                                         const BlacsCtxtHandler &blacs_ctxt_h,
+                                         const std::vector<int> *output_iks = nullptr);
 };
 
 } /* end of namespace librpa_int */

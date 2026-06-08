@@ -87,6 +87,7 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->libri_g0w0_threshold_G = 0.0e0;
     opts->libri_g0w0_threshold_Wc = 0.0e0;
 
+    opts->output_gw_sigc_ks_if = LIBRPA_SWITCH_OFF;
     opts->output_gw_sigc_mat = LIBRPA_SWITCH_OFF;
     opts->output_gw_sigc_mat_rt = LIBRPA_SWITCH_OFF;
     opts->output_gw_sigc_mat_rf = LIBRPA_SWITCH_OFF;

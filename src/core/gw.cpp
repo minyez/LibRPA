@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <fstream>
 #include <functional>
+#include <iomanip>
 #include <map>
 #include <sstream>
 #include <vector>
@@ -44,6 +45,84 @@ namespace librpa_int
 
 using std::vector;
 
+namespace
+{
+
+int infer_target_n_bands(
+    const MpiCommHandler &comm_h,
+    const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
+    const int fallback)
+{
+    int n_bands_local = 0;
+    for (const auto &spin_wfc : wfc_target)
+    {
+        for (const auto &spinor_wfc : spin_wfc.second)
+        {
+            for (const auto &k_wfc : spinor_wfc.second)
+            {
+                const auto &wfc = k_wfc.second;
+                if (wfc.nr <= 0) continue;
+                if (n_bands_local != 0 && n_bands_local != wfc.nr)
+                    throw LIBRPA_RUNTIME_ERROR("inconsistent target wave-function band counts");
+                n_bands_local = wfc.nr;
+            }
+        }
+    }
+
+    int n_bands_max = 0;
+    comm_h.allreduce(&n_bands_local, &n_bands_max, 1, MPI_MAX);
+    if (n_bands_max == 0) return fallback;
+
+    const int n_bands_min_send = n_bands_local == 0 ? n_bands_max : n_bands_local;
+    int n_bands_min = 0;
+    comm_h.allreduce(&n_bands_min_send, &n_bands_min, 1, MPI_MIN);
+    if (n_bands_min != n_bands_max)
+        throw LIBRPA_RUNTIME_ERROR("inconsistent target wave-function band counts");
+
+    return n_bands_max;
+}
+
+std::vector<int> collect_target_iks(
+    const MpiCommHandler &comm_h,
+    const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
+    const int n_kpts)
+{
+    std::vector<int> has_local(n_kpts, 0);
+    std::vector<int> has_global(n_kpts, 0);
+
+    for (const auto &spin_wfc : wfc_target)
+    {
+        for (const auto &spinor_wfc : spin_wfc.second)
+        {
+            for (const auto &k_wfc : spinor_wfc.second)
+            {
+                const int ik = k_wfc.first;
+                if (ik >= 0 && ik < n_kpts) has_local[ik] = 1;
+            }
+        }
+    }
+
+    if (n_kpts > 0)
+        comm_h.allreduce(has_local.data(), has_global.data(), n_kpts, MPI_MAX);
+
+    std::vector<int> iks;
+    for (int ik = 0; ik != n_kpts; ++ik)
+    {
+        if (has_global[ik]) iks.emplace_back(ik);
+    }
+    return iks;
+}
+
+std::string make_sigc_ks_imagfreq_band_stem(const std::string &output_dir, const int index)
+{
+    std::ostringstream ss;
+    ss << path_as_directory(output_dir) << "self_energy_omega_band_"
+       << std::setfill('0') << std::setw(5) << index;
+    return ss.str();
+}
+
+} // namespace
+
 G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const PeriodicBoundaryData &pbc_in, const TFGrids &tfg_in,
            const KPointBlacsParallelContext &kblacs_ctxt_in,
@@ -63,6 +142,7 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
     is_kspace_built_ = false;
     is_rspace_redist_for_KS_ = false;
     is_rspace_redist_blacs_ = false;
+    output_sigc_ks_if_band_index_ = 0;
 
     // Public runtime options
     libri_threshold_C = 0.0;
@@ -70,6 +150,7 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
     libri_threshold_G = 0.0;
     output_dir = "./";  // POSIX
     output_sigc_mat = false;
+    output_sigc_ks_if = true;
     output_sigc_mat_rt = false;
     output_sigc_mat_rf = false;
 }
@@ -1323,15 +1404,18 @@ void G0W0::build_sigc_matrix_KS_kgrid()
     comm_h.barrier();
     librpa_int::global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid" << std::endl;
     this->build_sigc_matrix_KS(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {});
-    // if (comm_h.is_root())
-    // {
-    //     write_self_energy_omega("self_energy_omega.dat", *this);
-    // }
+    if (this->output_sigc_ks_if)
+    {
+        const auto fn = path_as_directory(this->output_dir) + "self_energy_omega.dat";
+        write_self_energy_omega(fn.c_str(), *this, this->mf.get_n_kpoints(),
+                                this->mf.get_n_bands());
+    }
 }
 
 void G0W0::build_sigc_matrix_KS_band(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc,
                                      const std::vector<Vector3_Order<double>> &kfrac_band,
-                                     const AtomPairBvKRemap<atom_t> &bvk_remap)
+                                     const AtomPairBvKRemap<atom_t> &bvk_remap,
+                                     const std::vector<int> *output_iks)
 {
     comm_h.barrier();
     if (comm_h.myid == 0)
@@ -1339,6 +1423,17 @@ void G0W0::build_sigc_matrix_KS_band(const std::map<int, std::map<int, std::map<
         librpa_int::global::lib_printf("build_sigc_matrix_KS_kgrid: constructing self-energy matrix for band k-path\n");
     }
     this->build_sigc_matrix_KS(wfc, kfrac_band, bvk_remap);
+    if (this->output_sigc_ks_if)
+    {
+        const int n_bands = infer_target_n_bands(comm_h, wfc, this->mf.get_n_bands());
+        const auto iks = output_iks == nullptr
+                             ? collect_target_iks(comm_h, wfc, static_cast<int>(kfrac_band.size()))
+                             : *output_iks;
+        const auto stem = make_sigc_ks_imagfreq_band_stem(
+            this->output_dir, output_sigc_ks_if_band_index_++);
+        write_self_energy_omega((stem + ".dat").c_str(), *this, iks, n_bands);
+        write_self_energy_omega_kpoints((stem + ".kidx").c_str(), *this, iks);
+    }
 }
 
 void G0W0::build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h)
@@ -1346,17 +1441,20 @@ void G0W0::build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h
     comm_h.barrier();
     librpa_int::global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid with BLACS" << std::endl;
     this->build_sigc_matrix_KS_blacs(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {}, blacs_ctxt_h);
-    // if (comm_h.is_root())
-    // {
-    //     write_self_energy_omega("self_energy_omega.dat", *this);
-    // }
+    if (this->output_sigc_ks_if)
+    {
+        const auto fn = path_as_directory(this->output_dir) + "self_energy_omega.dat";
+        write_self_energy_omega(fn.c_str(), *this, this->mf.get_n_kpoints(),
+                                this->mf.get_n_bands());
+    }
 }
 
 void G0W0::build_sigc_matrix_KS_band_blacs(
     const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc,
     const std::vector<Vector3_Order<double>> &kfrac_band,
     const AtomPairBvKRemap<atom_t> &bvk_remap,
-    const BlacsCtxtHandler &blacs_ctxt_h)
+    const BlacsCtxtHandler &blacs_ctxt_h,
+    const std::vector<int> *output_iks)
 {
     comm_h.barrier();
     if (comm_h.myid == 0)
@@ -1364,6 +1462,17 @@ void G0W0::build_sigc_matrix_KS_band_blacs(
         librpa_int::global::lib_printf("build_sigc_matrix_KS_band: constructing self-energy matrix for band k-path with BLACS\n");
     }
     this->build_sigc_matrix_KS_blacs(wfc, kfrac_band, bvk_remap, blacs_ctxt_h);
+    if (this->output_sigc_ks_if)
+    {
+        const int n_bands = infer_target_n_bands(comm_h, wfc, this->mf.get_n_bands());
+        const auto iks = output_iks == nullptr
+                             ? collect_target_iks(comm_h, wfc, static_cast<int>(kfrac_band.size()))
+                             : *output_iks;
+        const auto stem = make_sigc_ks_imagfreq_band_stem(
+            this->output_dir, output_sigc_ks_if_band_index_++);
+        write_self_energy_omega((stem + ".dat").c_str(), *this, iks, n_bands);
+        write_self_energy_omega_kpoints((stem + ".kidx").c_str(), *this, iks);
+    }
 }
 
 } // namespace librpa_int

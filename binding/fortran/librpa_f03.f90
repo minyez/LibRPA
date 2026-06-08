@@ -188,6 +188,7 @@ module librpa_f03
       real(c_double) :: libri_g0w0_threshold_Wc
 
       ! Output controls
+      integer(c_int) :: output_gw_sigc_ks_if
       integer(c_int) :: output_gw_sigc_mat
       integer(c_int) :: output_gw_sigc_mat_rt
       integer(c_int) :: output_gw_sigc_mat_rf
@@ -303,6 +304,8 @@ module librpa_f03
       real(dp) :: libri_g0w0_threshold_G
       !> LibRI threshold of screened Coulomb matrix for G0W0 correlation self-energy.
       real(dp) :: libri_g0w0_threshold_Wc
+      !> Output KS-diagonal correlation self-energy on imaginary frequencies.
+      logical :: output_gw_sigc_ks_if
       !> Experimental: output correlation self-energy matrix in k-space and imaginary frequencies.
       logical :: output_gw_sigc_mat
       !> Experimental: output correlation self-energy matrix in real space and imaginary time.
@@ -993,6 +996,7 @@ contains
       call sync_opt(opts%libri_g0w0_threshold_C,  opts%opts_c%libri_g0w0_threshold_C,  direction)
       call sync_opt(opts%libri_g0w0_threshold_G,  opts%opts_c%libri_g0w0_threshold_G,  direction)
       call sync_opt(opts%libri_g0w0_threshold_Wc, opts%opts_c%libri_g0w0_threshold_Wc, direction)
+      call sync_opt(opts%output_gw_sigc_ks_if,    opts%opts_c%output_gw_sigc_ks_if, direction)
       call sync_opt(opts%output_gw_sigc_mat,      opts%opts_c%output_gw_sigc_mat,      direction)
       call sync_opt(opts%output_gw_sigc_mat_rt,   opts%opts_c%output_gw_sigc_mat_rt,   direction)
       call sync_opt(opts%output_gw_sigc_mat_rf,   opts%opts_c%output_gw_sigc_mat_rf,   direction)
