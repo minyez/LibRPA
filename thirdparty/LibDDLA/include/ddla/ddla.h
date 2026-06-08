@@ -185,7 +185,12 @@ void pgetrf(
  * @param info     0 on success, >0 if singular.
  */
 template <typename T>
-void pgetrf_bpiv(const int& m, const int& n, T* d_A, const DdlaDesc& array_descA, int* d_ipiv, int& info);
+void pgetrf_bpiv(
+    const int& m, const int& n,
+    T* d_A, const DdlaDesc& array_descA,
+    int* d_ipiv, // device
+    int& info  // host
+);
 
 /**
  * @brief Distributed LU solve: solve A * X = B using the factors from pgetrf.

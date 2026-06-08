@@ -7,6 +7,8 @@
 
 namespace ddla{
 
+#ifdef DDLA_USE_CUDA
+
 inline desolverStatus_t desolverLaswp(
     desolverHandle_t handle,
     int n,
@@ -26,6 +28,7 @@ inline desolverStatus_t desolverLaswp(
     throw std::runtime_error("not ENABLE CUDA and ENABLE HIP\n");
     #endif
 }
+
 
 inline desolverStatus_t desolverLaswp(
     desolverHandle_t handle,
@@ -86,6 +89,7 @@ inline desolverStatus_t desolverLaswp(
     throw std::runtime_error("not ENABLE CUDA and ENABLE HIP\n");
     #endif
 }
+#endif // DDLA_USE_CUDA
 
 /**
  * @brief Apply a series of row interchanges to matrix A based on ipiv from getrf.
@@ -125,23 +129,22 @@ inline deblasStatus_t deblasLaswp(
 
     int n_pivots = k2 - k1 + 1;
     std::vector<int> host_ipiv(n_pivots);
-    deviceMemcpy(host_ipiv.data(), ipiv + (k1 - 1) * incx,
-                 n_pivots * sizeof(int), deviceMemcpyDeviceToHost);
+    DEVICE_CHECK(deviceMemcpy(host_ipiv.data(), ipiv + (k1 - 1) * incx, n_pivots * sizeof(int), deviceMemcpyDeviceToHost));
 
     deblasStatus_t status = DEBLAS_STATUS_SUCCESS;
     for (int i = 0; i < n_pivots; ++i) {
         int current_row = k1 + i;   // 1-based
         int piv_row     = host_ipiv[i]; // 1-based
         if (piv_row != current_row) {
-            status = deblasSwap(handle, n,
-                                A + (current_row - 1), lda,
-                                A + (piv_row - 1),     lda);
+            status = deblasSwap(handle, n, A + current_row - 1, lda, A + piv_row - 1, lda);
             if (status != DEBLAS_STATUS_SUCCESS)
                 break;
         }
     }
     return status;
 }
+
+
 
 }
 

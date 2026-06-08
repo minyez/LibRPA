@@ -147,12 +147,23 @@ void pgetrf_bpiv(
                 // When j_loc < 0, all local columns are in the right panel, starting at 0.
                 
                 T* d_right_panel = d_A + right_panel_col_start * lld + mm_row_start;
+#ifdef DDLA_USE_CUDA
                 SOLVER_CHECK(desolverLaswp(
                     solverH, n_loc - right_panel_col_start,
                     d_right_panel, lld,
                     1, nb_real,   // 1-based local row range
                     d_ipiv + mm_row_start, 1
                 ));
+#endif
+#ifdef DDLA_USE_HIP
+                BLAS_CHECK(deblasLaswp(
+                    blasH, n_loc - right_panel_col_start,
+                    d_right_panel, lld,
+                    1, nb_real,   // 1-based local row range
+                    d_ipiv + mm_row_start, 1
+                ));
+
+#endif
                 // ================================================================
                 // Step 4: U12 = L1^{-1} * B  (trsm LEFT LOWER UNIT)
                 // ================================================================

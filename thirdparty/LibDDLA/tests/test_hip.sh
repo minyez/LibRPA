@@ -3,12 +3,12 @@
 ##SBATCH --nodelist j14r3n06
 #SBATCH -J test
 ##SBATCH -A xgren
-#SBATCH --nodes=1
-#SBATCH --gres=dcu:4
-#SBATCH --ntasks-per-node=4
+#SBATCH --nodes=4
+#SBATCH --gres=dcu:1
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=7
-#SBATCH --output=../log_hip
-#SBATCH --error=../err_hip
+#SBATCH --output=../../log_hip
+#SBATCH --error=../../err_hip
 
 ulimit -s unlimited
 ulimit -c unlimited
@@ -22,7 +22,7 @@ module load compiler/rocm/dtk/25.04.3
 export LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/lib64/:$LIBRARY_PATH
 module load compiler/devtoolset/9.3.1
 module load mpi/hpcx/2.13.1/gcc-9.3.1-wangxh
-
+cd ..
 LibDDLA_PATH="${PWD}_install"
 cd tests
 export CPATH=$LibDDLA_PATH/include:$CPATH
@@ -56,11 +56,12 @@ echo Begin Time: `date`
 
 # FILENAME=test_pzgemm
 files=(
-    "test_sv_gemm"
+    # "test_sv_gemm"
     # "test_aware"
     # "test_pgeadd"
     # "test_potrf_solvermp"
-    "test_potrf_potrs"
+    # "test_potrf_potrs"
+    test_pgetrf_bpiv
 )
 
 # 遍历数组中的每一个文件

@@ -7,8 +7,8 @@
 #SBATCH --gres=dcu:0
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=7
-#SBATCH --output=../log_hip
-#SBATCH --error=../err_hip
+#SBATCH --output=../../log_hip
+#SBATCH --error=../../err_hip
 
 ulimit -s unlimited
 ulimit -c unlimited
@@ -49,6 +49,7 @@ export OMPI_FC=$FC
 
 echo Begin Time: `date`
 ### * * * Running the tasks * * * ###
+cd ..
 BUILD_DIR=../build_hip
 INSTALL_DIR="${PWD}_install"
 # cd install_scripts
