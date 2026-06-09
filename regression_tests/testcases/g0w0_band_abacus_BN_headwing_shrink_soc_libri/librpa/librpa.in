@@ -9,5 +9,6 @@ vq_threshold = 0
 sqrt_coulomb_threshold = 0
 use_shrink_abfs = t
 use_soc = t
+use_kpara_scf_eigvec = t
 
 #debug = t
