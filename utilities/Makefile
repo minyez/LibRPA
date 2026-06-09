@@ -4,7 +4,7 @@ CXXFLAGS ?= -std=c++17 -O2
 
 .PHONY: all clean
 
-SRCS = convert_legacy_Cs.cpp convert_legacy_coulomb_mat_mpi.cpp
+SRCS = convert_legacy_Cs.cpp convert_legacy_coulomb_mat_mpi.cpp convert_legacy_sinvS.cpp
 OBJS = $(patsubst %.cpp,%.exe,$(SRCS))
 
 all: $(OBJS)
@@ -14,6 +14,9 @@ convert_legacy_Cs.exe: convert_legacy_Cs.cpp
 
 convert_legacy_coulomb_mat_mpi.exe: convert_legacy_coulomb_mat_mpi.cpp
 	$(MPICXX) $(CXXFLAGS) $< -o $@
+
+convert_legacy_sinvS.exe: convert_legacy_sinvS.cpp
+	$(CXX) $(CXXFLAGS) $< -o $@
 
 clean:
 	$(RM) -r $(OBJS) *.dSYM

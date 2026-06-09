@@ -35,6 +35,64 @@ using std::string;
 using librpa_int::atpair_t;
 using librpa_int::matrix;
 
+static bool starts_with_prefix(const std::string &text, const std::string &prefix)
+{
+    return text.rfind(prefix, 0) == 0;
+}
+
+static std::string basename_from_path(const std::string &path)
+{
+    const auto pos = path.find_last_of("/\\");
+    if (pos == std::string::npos)
+    {
+        return path;
+    }
+    return path.substr(pos + 1);
+}
+
+static void assert_distinct_Cs_prefixes()
+{
+    const auto &full_prefix = driver::driver_params.prefix_lri_coeff;
+    const auto &shrink_prefix = driver::driver_params.prefix_lri_coeff_shrink;
+    if (!full_prefix.empty() && full_prefix == shrink_prefix)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "prefix_lri_coeff and prefix_lri_coeff_shrink must be distinct; "
+            "reader-v1 full Cs and shrink Cs are separate file families");
+    }
+}
+
+static std::vector<std::string> discover_Cs_files_for_keyword(const std::string &dir_path,
+                                                             const std::string &keyword)
+{
+    assert_distinct_Cs_prefixes();
+
+    auto files = librpa_int::discover_files_with_prefix(dir_path, keyword);
+    const auto &full_prefix = driver::driver_params.prefix_lri_coeff;
+    const auto &shrink_prefix = driver::driver_params.prefix_lri_coeff_shrink;
+    std::string excluded_prefix;
+    if (keyword == full_prefix && starts_with_prefix(shrink_prefix, full_prefix))
+    {
+        excluded_prefix = shrink_prefix;
+    }
+    else if (keyword == shrink_prefix && starts_with_prefix(full_prefix, shrink_prefix))
+    {
+        excluded_prefix = full_prefix;
+    }
+
+    if (!excluded_prefix.empty())
+    {
+        files.erase(std::remove_if(files.begin(), files.end(),
+                                   [&excluded_prefix](const std::string &path)
+                                   {
+                                       return starts_with_prefix(basename_from_path(path),
+                                                                 excluded_prefix);
+                                   }),
+                    files.end());
+    }
+    return files;
+}
+
 static librpa_int::Cs_LRI &target_Cs_data_for_keyword(const std::string &keyword)
 {
     auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
@@ -654,7 +712,7 @@ void read_Cs_binary_v1_tasks(const std::vector<CsBinaryV1ReadTask> &tasks,
 
 int detect_Cs_reader_version(const string &dir_path, const string keyword)
 {
-    const auto files = librpa_int::discover_files_with_prefix(dir_path, keyword);
+    const auto files = discover_Cs_files_for_keyword(dir_path, keyword);
     if (files.empty())
     {
         throw std::logic_error("No LRI coefficient files found with prefix " + keyword);
@@ -1005,7 +1063,7 @@ size_t read_Cs(const string &dir_path, double threshold,
     size_t cs_discard = 0;
     if (reader_version == 1)
     {
-        const auto files = librpa_int::discover_files_with_prefix(dir_path, keyword);
+        const auto files = discover_Cs_files_for_keyword(dir_path, keyword);
         if (files.empty())
         {
             throw std::logic_error(
@@ -1034,53 +1092,45 @@ size_t read_Cs(const string &dir_path, double threshold,
 
     // cout << "Begin to read Cs" << endl;
     // cout << "cs_threshold:  " << threshold << endl;
-    struct dirent *ptr;
-    DIR *dir;
-    dir = opendir(dir_path.c_str());
-    std::vector<string> files;
     bool binary;
     bool binary_checked = false;
 
-    while ((ptr = readdir(dir)) != NULL)
+    const auto files = discover_Cs_files_for_keyword(dir_path, keyword);
+    if (files.empty())
     {
-        string fm(ptr->d_name);
-        if (fm.find(keyword) == 0)
+        throw std::logic_error("No LRI coefficient files found with prefix " + keyword);
+    }
+    for (const auto &fn: files)
+    {
+        if (has_Cs_binary_v1_layout(fn))
         {
-            const auto fn = dir_path + fm;
-            if (has_Cs_binary_v1_layout(fn))
+            throw_Cs_v1_requires_reader_version(fn);
+        }
+        if (!binary_checked)
+        {
+            binary = check_Cs_file_binary(fn);
+            binary_checked = true;
+            if (librpa_int::global::myid_global == 0)
             {
-                closedir(dir);
-                dir = NULL;
-                throw_Cs_v1_requires_reader_version(fn);
-            }
-            if (!binary_checked)
-            {
-                binary = check_Cs_file_binary(fn);
-                binary_checked = true;
-                if (librpa_int::global::myid_global == 0)
+                if (binary)
                 {
-                    if (binary)
-                    {
-                        cout << "Unformatted binary Cs files detected" << endl;
-                    }
-                    else
-                    {
-                        cout << "ASCII format Cs files detected" << endl;
-                    }
+                    cout << "Unformatted binary Cs files detected" << endl;
+                }
+                else
+                {
+                    cout << "ASCII format Cs files detected" << endl;
                 }
             }
-            if (binary)
-            {
-                cs_discard += handle_Cs_file_binary(fn, threshold, local_atpair, keyword);
-            }
-            else
-            {
-                cs_discard += handle_Cs_file(fn, threshold, local_atpair, keyword);
-            }
+        }
+        if (binary)
+        {
+            cs_discard += handle_Cs_file_binary(fn, threshold, local_atpair, keyword);
+        }
+        else
+        {
+            cs_discard += handle_Cs_file(fn, threshold, local_atpair, keyword);
         }
     }
-    closedir(dir);
-    dir = NULL;
     // initialize basis set object
     // librpa_int::atomic_basis_wfc.set(atom_nw);
     // librpa_int::atomic_basis_abf.set(atom_mu);
@@ -1420,7 +1470,7 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
 
     if (reader_version == 1)
     {
-        auto files = librpa_int::discover_files_with_prefix(dir_path, keyword);
+        auto files = discover_Cs_files_for_keyword(dir_path, keyword);
         if (files.empty())
         {
             throw std::logic_error(
@@ -1453,35 +1503,29 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
     }
 
     size_t cs_discard = 0;
-    struct dirent *ptr;
-    DIR *dir;
-    dir = opendir(dir_path.c_str());
-    std::vector<string> files;
+    auto files = discover_Cs_files_for_keyword(dir_path, keyword);
     unordered_map<string, std::vector<size_t>> files_Cs_ids;
     unordered_map<string, std::vector<size_t>> files_Cs_ids_this_proc;
     bool binary;
     bool binary_checked = false;
 
     profiler.start("handle_Cs_file_dry");
-    while ((ptr = readdir(dir)) != NULL)
+    if (files.empty())
     {
-        string fn(ptr->d_name);
-        if (fn.find(keyword) == 0)
+        profiler.stop("handle_Cs_file_dry");
+        throw std::logic_error("No LRI coefficient files found with prefix " + keyword);
+    }
+    for (const auto &file_path: files)
+    {
+        if (has_Cs_binary_v1_layout(file_path))
         {
-            const auto file_path = dir_path + fn;
-            if (has_Cs_binary_v1_layout(file_path))
-            {
-                profiler.stop("handle_Cs_file_dry");
-                closedir(dir);
-                dir = NULL;
-                throw_Cs_v1_requires_reader_version(file_path);
-            }
-            files.push_back(file_path);
-            if (!binary_checked)
-            {
-                binary = check_Cs_file_binary(file_path);
-                binary_checked = true;
-            }
+            profiler.stop("handle_Cs_file_dry");
+            throw_Cs_v1_requires_reader_version(file_path);
+        }
+        if (!binary_checked)
+        {
+            binary = check_Cs_file_binary(file_path);
+            binary_checked = true;
         }
     }
 
@@ -1524,8 +1568,6 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
         }
     }
     profiler.stop("handle_Cs_file_dry");
-    closedir(dir);
-    dir = NULL;
     if (myid == 0) lib_printf("Finished Cs filtering\n");
 
     profiler.start("handle_Cs_file");
@@ -1577,18 +1619,11 @@ void get_natom_ncell_from_first_Cs_file(int &n_atom, int &n_cell, const string &
 
     string file_path = "";
 
-    // find Cs file
-    struct dirent *ptr;
-    DIR *dir;
-    dir = opendir(dir_path.c_str());
-    while ((ptr = readdir(dir)) != NULL)
+    const auto files = discover_Cs_files_for_keyword(dir_path,
+                                                     driver::driver_params.prefix_lri_coeff);
+    if (!files.empty())
     {
-        string fn(ptr->d_name);
-        if (fn.find(driver::driver_params.prefix_lri_coeff) == 0)
-        {
-            file_path = dir_path + fn;
-            break;
-        }
+        file_path = files.front();
     }
     if (file_path == "")
         throw std::runtime_error("Cs_data file is not found under dir_path: " + dir_path);
@@ -1739,37 +1774,29 @@ static void collect_basis_from_Cs_prefix(const string &dir_path, const string &k
 {
     using namespace librpa_int;
 
-    struct dirent *ptr;
-    DIR *dir;
     bool binary;
     bool binary_checked = false;
 
     std::map<int, size_t> map_at_wfc;
     std::map<int, size_t> map_at_aux;
 
-    dir = opendir(dir_path.c_str());
-    while ((ptr = readdir(dir)) != NULL)
+    const auto files = discover_Cs_files_for_keyword(dir_path, keyword);
+    for (const auto &fn: files)
     {
-        string fm(ptr->d_name);
-        if (fm.find(keyword) == 0)
+        if (!binary_checked)
         {
-            const auto fn = dir_path + fm;
-            if (!binary_checked)
-            {
-                binary = check_Cs_file_binary(fn);
-                binary_checked = true;
-            }
-            if (binary)
-            {
-                get_basis_from_Cs_binary(fn, map_at_wfc, map_at_aux);
-            }
-            else
-            {
-                get_basis_from_Cs(fn, map_at_wfc, map_at_aux);
-            }
+            binary = check_Cs_file_binary(fn);
+            binary_checked = true;
+        }
+        if (binary)
+        {
+            get_basis_from_Cs_binary(fn, map_at_wfc, map_at_aux);
+        }
+        else
+        {
+            get_basis_from_Cs(fn, map_at_wfc, map_at_aux);
         }
     }
-    closedir(dir);
 
     if (map_at_wfc.empty() || map_at_aux.empty())
         throw std::runtime_error("Cannot infer basis dimensions from Cs prefix " + keyword +

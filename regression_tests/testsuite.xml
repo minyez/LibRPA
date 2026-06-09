@@ -77,6 +77,22 @@
       />
     </testcase>
 
+    <testcase name="BN shrink reader v1 (abacus input)" directory="g0w0_band_abacus_BN_shrink_v1_libri">
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <validate name="Quasi-particle energies on k-grid"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="26"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+    </testcase>
+
     <testcase name="BN SOC (abacus input)" directory="g0w0_band_abacus_BN_soc_libri">
       <build require_libri="true"
       />

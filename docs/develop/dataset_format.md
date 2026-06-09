@@ -13,6 +13,9 @@ By default, single-file inputs are named [`stru_out`](#stru-out),
 These exact filenames can be changed in `librpa.in` with `fn_stru`,
 `fn_bz_sampling`, `fn_basis`, `fn_eigocc_scf`, `fn_dielfunc`,
 `fn_vxc_scf`, and `fn_band_kpath_info`.
+When `use_shrink_abfs = t`, reader-v1 datasets should also provide
+`basis_out_shrink`, or the filename selected by `fn_basis_shrink`, for the
+compressed auxiliary basis.
 
 Multi-file inputs are selected by prefix.
 The defaults are [`Cs_data`](#cs-data) for localized RI coefficients,
@@ -24,6 +27,11 @@ These prefixes can be changed with `prefix_lri_coeff`,
 `prefix_lri_coeff_shrink`, `prefix_coul_full`, `prefix_coul_cut`, and
 `prefix_eigvecs_scf`.
 For example, `prefix_coul_full = coulomb_mat` matches files such as `coulomb_mat_0.txt`.
+For shrink reader-v1 datasets, keep the full and shrink coefficient families
+distinct, for example `prefix_lri_coeff = v1_Cs_data_` and
+`prefix_lri_coeff_shrink = v1_Cs_shrinked_data_`. The LRI reader rejects
+identical full/shrink prefixes and filters the other family when one prefix is
+a leading substring of the other.
 
 (stru-out)=
 ## `stru_out`
@@ -221,6 +229,8 @@ LibRPA supports two reader versions:
 Do not mix legacy and v1 files under the same prefix. Files are discovered by
 prefix only, so suffixes such as `.txt`, `.dat`, or no suffix are all accepted
 by the v1 reader.
+For full/shrink Cs reads, the two prefix families are treated as distinct; a
+full prefix must not select shrink files and vice versa.
 
 ### Legacy text format
 
@@ -732,3 +742,27 @@ The data are ordered such that state index `i_state` runs fastest and followed b
 For each k-point on the band path, the file `band_KS_eigenvector_k_{ik:05d}.txt` stores the Kohn-Sham eigenvectors at that k-point.
 The file contains a complex array of shape `(n_spins, n_states, n_basis)`,
 written in binary format using C-style ordering.
+
+### Shrink transform v1 format
+
+When `use_shrink_abfs = t`, `prefix_shrink_sinvS` selects the transform from
+the compressed auxiliary basis back to the full auxiliary basis. The default
+legacy prefix is `shrink_sinvS_`; reader-v1 producer runs should use
+`v1_shrink_sinvS_`.
+
+The reader-v1 binary format starts with:
+
+- `int32 marker = -30241621`
+- `int32 nblocks`
+
+Each block record stores:
+
+- `int32 iq` (1-based irreducible q-point index)
+- `int32 nrow_total`, `int32 ncol_total`
+- `int32 begin_row`, `int32 end_row`, `int32 begin_col`, `int32 end_col`
+- `double q_weight`
+- `int64 payload_offset`
+
+The payload is row-major `complex<double>` data for the rectangular block
+described by the row and column range. Multiple files and blocks may contribute
+to the same q-point.

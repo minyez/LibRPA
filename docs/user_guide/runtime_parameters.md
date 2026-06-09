@@ -70,12 +70,14 @@ For example, the default `prefix_lri_coeff = Cs_data` matches files such as `Cs_
 | `fn_stru`             | Structure-data filename                                              | string | `stru_out`                                     |              |
 | `fn_bz_sampling`      | Brillouin-zone sampling filename                                     | string | `bz_sampling_out`                              |              |
 | `fn_basis`            | Basis-set filename                                                   | string | `basis_out`                                    |              |
+| `fn_basis_shrink`     | Compressed auxiliary-basis metadata filename used with `use_shrink_abfs = t` | string | `basis_out_shrink`                     | Experimental |
 | `fn_eigocc_scf`       | SCF eigenvalue and occupation filename                               | string | `band_out`                                     |              |
 | `fn_dielfunc`         | Dielectric-function filename for dielectric-head correction           | string | `dielecfunc_out`                               |              |
 | `fn_vxc_scf`          | SCF exchange-correlation potential filename                          | string | `vxc_out`                                      |              |
 | `fn_band_kpath_info`  | Band-path k-point metadata filename                                  | string | `band_kpath_info`                              |              |
 | `prefix_lri_coeff`    | Prefix of localized RI coefficient files                             | string | `Cs_data`                                      |              |
 | `prefix_lri_coeff_shrink` | Prefix of compressed-auxiliary-basis RI coefficient files          | string | `Cs_shrinked_data`                             | Experimental |
+| `prefix_shrink_sinvS` | Prefix of shrink auxiliary-basis transform files                     | string | `shrink_sinvS_`                                | Experimental |
 | `prefix_coul_full`    | Prefix of bare Coulomb matrix files                                  | string | `coulomb_mat`                                  |              |
 | `prefix_coul_cut`     | Prefix of truncated Coulomb matrix files                             | string | `coulomb_cut`                                  |              |
 | `prefix_eigvecs_scf`  | Prefix of SCF Kohn-Sham eigenvector files                            | string | `KS_eigenvector`                               |              |

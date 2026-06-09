@@ -21,6 +21,7 @@
 #include <ios>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -52,6 +53,7 @@ namespace
 {
 
 constexpr double kAbacusKpointMatchTol = 1e-5;
+constexpr std::int32_t READER_SHRINK_SINVS_V1_MARKER = -30241621;
 
 bool use_loaded_abacus_symmetry_sidecars()
 {
@@ -69,6 +71,55 @@ bool nearly_same_kpoint(const librpa_int::Vector3_Order<double> &lhs,
     return std::abs(lhs.x - rhs.x) <= tol
            && std::abs(lhs.y - rhs.y) <= tol
            && std::abs(lhs.z - rhs.z) <= tol;
+}
+
+std::vector<size_t> read_aux_basis_sizes_from_basis_file(const std::string &file_path)
+{
+    using namespace librpa_int;
+
+    ifstream infile(file_path);
+    if (!infile.good())
+    {
+        throw LIBRPA_RUNTIME_ERROR("Failed to open basis information file " + file_path);
+    }
+
+    const int n_atoms = static_cast<int>(driver::n_atoms);
+    if (static_cast<size_t>(n_atoms) != driver::atom_types.size())
+    {
+        throw LIBRPA_RUNTIME_ERROR("Number of atoms not consistent with the geometry file!");
+    }
+
+    int ntypes = 0;
+    size_t n_wfc_total = 0;
+    size_t n_aux_total = 0;
+    string kind_str;
+    infile >> ntypes >> n_wfc_total >> n_aux_total >> kind_str;
+    if (!infile.good() || ntypes <= 0)
+    {
+        throw LIBRPA_RUNTIME_ERROR("Invalid basis information header in " + file_path);
+    }
+
+    std::map<int, size_t> map_at_aux;
+    for (int itype = 0; itype < ntypes; itype++)
+    {
+        int type = 0;
+        size_t n_wfc = 0;
+        size_t n_aux = 0;
+        infile >> type >> n_wfc >> n_aux;
+        if (!infile.good())
+        {
+            throw LIBRPA_RUNTIME_ERROR("Invalid basis information body in " + file_path);
+        }
+        map_at_aux[type - 1] = n_aux;
+    }
+
+    std::vector<size_t> nbs_aux(n_atoms);
+    for (int iat = 0; iat < n_atoms; iat++)
+    {
+        const auto type = driver::atom_types[iat];
+        nbs_aux[iat] = map_at_aux.at(type);
+    }
+    return nbs_aux;
 }
 
 librpa_int::Vector3_Order<double> convert_fractional_kpoint_to_klist_units(
@@ -1798,6 +1849,166 @@ static int handle_sinvS_file(const std::string &file_path,
     return 0;
 }
 
+static bool sinvS_file_has_v1_marker(const std::string &file_path)
+{
+    ifstream infile(file_path, std::ios::in | std::ios::binary);
+    if (!infile.good())
+    {
+        throw LIBRPA_RUNTIME_ERROR("Failed to open " + file_path);
+    }
+    std::int32_t marker = 0;
+    infile.read(reinterpret_cast<char *>(&marker), sizeof(marker));
+    return infile.good() && marker == READER_SHRINK_SINVS_V1_MARKER;
+}
+
+static std::streamoff checked_streamoff_from_i64(const std::int64_t value,
+                                                const std::string &context)
+{
+    if (value < 0 ||
+        static_cast<unsigned long long>(value) >
+            static_cast<unsigned long long>(std::numeric_limits<std::streamoff>::max()))
+    {
+        throw LIBRPA_RUNTIME_ERROR(context + ": invalid file offset");
+    }
+    return static_cast<std::streamoff>(value);
+}
+
+static std::size_t checked_sinvS_payload_bytes(const std::int32_t nrow,
+                                               const std::int32_t ncol,
+                                               const std::string &file_path)
+{
+    if (nrow <= 0 || ncol <= 0)
+    {
+        throw LIBRPA_RUNTIME_ERROR(file_path + ": invalid shrink_sinvS v1 block dimensions");
+    }
+    const auto max_count =
+        std::numeric_limits<std::size_t>::max() / sizeof(std::complex<double>);
+    const auto nrow_size = static_cast<std::size_t>(nrow);
+    const auto ncol_size = static_cast<std::size_t>(ncol);
+    if (nrow_size > max_count / ncol_size)
+    {
+        throw LIBRPA_RUNTIME_ERROR(file_path + ": shrink_sinvS v1 block is too large");
+    }
+    return nrow_size * ncol_size * sizeof(std::complex<double>);
+}
+
+static int handle_sinvS_v1_file(const std::string &file_path,
+                                std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
+{
+    struct Record
+    {
+        std::int32_t iq = 0;
+        std::int32_t nrow_total = 0;
+        std::int32_t ncol_total = 0;
+        std::int32_t begin_row = 0;
+        std::int32_t end_row = 0;
+        std::int32_t begin_col = 0;
+        std::int32_t end_col = 0;
+        double weight = 0.0;
+        std::int64_t offset = 0;
+    };
+
+    auto pds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
+    auto &pbc = pds->pbc;
+    const int nk_ibz = pbc.klist_ibz.size();
+
+    ifstream infile(file_path, std::ios::in | std::ios::binary);
+    if (!infile.good())
+    {
+        return 1;
+    }
+
+    std::int32_t marker = 0;
+    std::int32_t nrecords_i32 = 0;
+    infile.read(reinterpret_cast<char *>(&marker), sizeof(marker));
+    infile.read(reinterpret_cast<char *>(&nrecords_i32), sizeof(nrecords_i32));
+    if (!infile.good() || marker != READER_SHRINK_SINVS_V1_MARKER || nrecords_i32 < 0)
+    {
+        return 2;
+    }
+
+    infile.seekg(0, std::ios::end);
+    const auto end_pos = infile.tellg();
+    if (end_pos == std::streampos(-1))
+    {
+        return 3;
+    }
+    const auto file_size = static_cast<std::streamoff>(end_pos);
+    infile.seekg(2 * static_cast<std::streamoff>(sizeof(std::int32_t)), std::ios::beg);
+
+    std::vector<Record> records(static_cast<std::size_t>(nrecords_i32));
+    for (auto &record: records)
+    {
+        infile.read(reinterpret_cast<char *>(&record.iq), sizeof(record.iq));
+        infile.read(reinterpret_cast<char *>(&record.nrow_total), sizeof(record.nrow_total));
+        infile.read(reinterpret_cast<char *>(&record.ncol_total), sizeof(record.ncol_total));
+        infile.read(reinterpret_cast<char *>(&record.begin_row), sizeof(record.begin_row));
+        infile.read(reinterpret_cast<char *>(&record.end_row), sizeof(record.end_row));
+        infile.read(reinterpret_cast<char *>(&record.begin_col), sizeof(record.begin_col));
+        infile.read(reinterpret_cast<char *>(&record.end_col), sizeof(record.end_col));
+        infile.read(reinterpret_cast<char *>(&record.weight), sizeof(record.weight));
+        infile.read(reinterpret_cast<char *>(&record.offset), sizeof(record.offset));
+        if (!infile.good())
+        {
+            return 4;
+        }
+    }
+
+    for (const auto &record: records)
+    {
+        const int iq = record.iq - 1;
+        if (iq < 0 || iq >= nk_ibz)
+        {
+            return 5;
+        }
+        if (record.begin_row < 1 || record.begin_col < 1 ||
+            record.end_row < record.begin_row || record.end_col < record.begin_col ||
+            record.end_row > record.nrow_total || record.end_col > record.ncol_total)
+        {
+            return 6;
+        }
+        const auto nrow_block = record.end_row - record.begin_row + 1;
+        const auto ncol_block = record.end_col - record.begin_col + 1;
+        const auto bytes = checked_sinvS_payload_bytes(nrow_block, ncol_block, file_path);
+        const auto offset = checked_streamoff_from_i64(record.offset, file_path);
+        if (file_size - offset < static_cast<std::streamoff>(bytes))
+        {
+            return 7;
+        }
+
+        std::vector<std::complex<double>> tmp(
+            static_cast<std::size_t>(nrow_block) * static_cast<std::size_t>(ncol_block));
+        infile.seekg(offset, std::ios::beg);
+        infile.read(reinterpret_cast<char *>(tmp.data()), static_cast<std::streamsize>(bytes));
+        if (!infile.good())
+        {
+            return 8;
+        }
+
+        const auto qvec = pbc.klist_ibz[iq];
+        if (!sinvS.count(qvec))
+        {
+            sinvS[qvec].create(record.nrow_total, record.ncol_total);
+        }
+        if (sinvS[qvec].nr != record.nrow_total || sinvS[qvec].nc != record.ncol_total)
+        {
+            return 9;
+        }
+
+        for (int i = 0; i != nrow_block; ++i)
+        {
+            for (int j = 0; j != ncol_block; ++j)
+            {
+                sinvS[qvec](record.begin_row - 1 + i, record.begin_col - 1 + j) =
+                    tmp[static_cast<std::size_t>(i) * static_cast<std::size_t>(ncol_block) +
+                        static_cast<std::size_t>(j)];
+            }
+        }
+    }
+
+    return 0;
+}
+
 void read_ri_shrink(const string &dir_path)
 {
     using std::cout;
@@ -1823,8 +2034,23 @@ void read_ri_shrink(const string &dir_path)
         }
     }
 
-    pds->basis_aux_shrink.set(read_aux_basis_from_Cs(
-        driver_params.input_dir, driver_params.prefix_lri_coeff_shrink));
+    const auto shrink_basis_path =
+        librpa_int::join_dir_file(driver_params.input_dir, driver_params.fn_basis_shrink);
+    const auto legacy_shrink_basis_path =
+        librpa_int::join_dir_file(driver_params.input_dir, "basis_out.shrink_backup");
+    if (librpa_int::path_exists(shrink_basis_path.c_str()))
+    {
+        pds->basis_aux_shrink.set(read_aux_basis_sizes_from_basis_file(shrink_basis_path));
+    }
+    else if (librpa_int::path_exists(legacy_shrink_basis_path.c_str()))
+    {
+        pds->basis_aux_shrink.set(read_aux_basis_sizes_from_basis_file(legacy_shrink_basis_path));
+    }
+    else
+    {
+        pds->basis_aux_shrink.set(read_aux_basis_from_Cs(
+            driver_params.input_dir, driver_params.prefix_lri_coeff_shrink));
+    }
     pds->desc_abf_shrink.reset_handler(pds->blacs_h);
     pds->desc_abf_shrink.init_1b1p(pds->basis_aux_shrink.nb_total,
                                    pds->basis_aux_shrink.nb_total, 0, 0);
@@ -1838,7 +2064,7 @@ void read_ri_shrink(const string &dir_path)
 
     profiler.start("read_shrink_sinvS_fold", "Load shrink transformation");
     pds->sinvS.clear();
-    read_shrink_sinvS(driver_params.input_dir, "shrink_sinvS_", pds->sinvS);
+    read_shrink_sinvS(driver_params.input_dir, driver_params.prefix_shrink_sinvS, pds->sinvS);
 
     if (!pds->sinvS.empty())
     {
@@ -1873,50 +2099,44 @@ size_t read_shrink_sinvS(const string &dir_path, const string &vq_fprefix,
     using librpa_int::global::myid_global;
     using librpa_int::global::lib_printf;
 
-    size_t vq_save = 0;
     size_t vq_discard = 0;
-    struct dirent *ptr;
-    DIR *dir;
-    dir = opendir(dir_path.c_str());
-    std::vector<std::string> files;
-
-    bool binary;
-    bool binary_checked = false;
+    auto files = librpa_int::discover_files_with_prefix(dir_path, vq_fprefix);
+    if (files.empty())
+    {
+        throw LIBRPA_RUNTIME_ERROR("No shrink_sinvS files found with prefix " + vq_fprefix +
+                                  " under: " + dir_path);
+    }
 
     profiler.start("handle_sinvS_file");
-    while ((ptr = readdir(dir)) != NULL)
+    for (const auto &file_path: files)
     {
-        string fm(ptr->d_name);
-        if (fm.find(vq_fprefix) == 0)
+        int retcode = 0;
+        if (sinvS_file_has_v1_marker(file_path))
         {
-            string file_path = dir_path + fm;
-            if (!binary_checked)
+            if (myid_global == 0)
             {
-                binary = check_coulomb_file_binary(file_path);
-                binary_checked = true;
-                if (myid_global == 0)
-                {
-                    if (binary)
-                    {
-                        cout << "sinvS: Unformatted binary V files detected" << endl;
-                    }
-                    else
-                    {
-                        cout << "sinvS: ASCII format V files detected" << endl;
-                    }
-                }
+                cout << "sinvS: reader v1 binary files detected" << endl;
             }
-            int retcode = handle_sinvS_file(file_path, sinvS, binary);
-            if (retcode != 0)
+            retcode = handle_sinvS_v1_file(file_path, sinvS);
+        }
+        else
+        {
+            const bool binary = check_coulomb_file_binary(file_path);
+            if (myid_global == 0)
             {
-                lib_printf("Error encountered when reading %s, return code %d",
-                           fm.c_str(), retcode);
+                cout << "sinvS: " << (binary ? "Unformatted binary" : "ASCII")
+                     << " legacy files detected" << endl;
             }
+            retcode = handle_sinvS_file(file_path, sinvS, binary);
+        }
+        if (retcode != 0)
+        {
+            lib_printf("Error encountered when reading %s, return code %d",
+                       file_path.c_str(), retcode);
+            throw LIBRPA_RUNTIME_ERROR("Failed to read shrink_sinvS file " + file_path +
+                                      ", return code " + std::to_string(retcode));
         }
     }
     profiler.stop("handle_sinvS_file");
-
-    closedir(dir);
-    dir = NULL;
     return vq_discard;
 }

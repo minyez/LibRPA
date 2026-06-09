@@ -24,12 +24,14 @@ struct DriverParams
     // Input file prefixes and file names
     std::string prefix_lri_coeff;
     std::string prefix_lri_coeff_shrink;
+    std::string prefix_shrink_sinvS;
     std::string prefix_coul_full;
     std::string prefix_coul_cut;
     std::string prefix_eigvecs_scf;
     std::string fn_stru;
     std::string fn_bz_sampling;
     std::string fn_basis;
+    std::string fn_basis_shrink;
     std::string fn_eigocc_scf;
     std::string fn_dielfunc;
     std::string fn_vxc_scf;

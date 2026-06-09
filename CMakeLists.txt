@@ -183,6 +183,35 @@ endif()
 #       and is actually low in priority because LibRPA targets large-scale computation.
 add_compile_definitions("LIBRPA_USE_MPI")
 
+include(CheckCXXSourceCompiles)
+set(_librpa_required_libraries_save "${CMAKE_REQUIRED_LIBRARIES}")
+set(_librpa_filesystem_check_source [=[
+#include <filesystem>
+
+int main()
+{
+  return std::filesystem::exists(std::filesystem::path(".")) ? 0 : 1;
+}
+]=])
+check_cxx_source_compiles(
+  "${_librpa_filesystem_check_source}"
+  LIBRPA_STD_FILESYSTEM_NO_EXTRA_LIB)
+if(NOT LIBRPA_STD_FILESYSTEM_NO_EXTRA_LIB)
+  set(CMAKE_REQUIRED_LIBRARIES "${_librpa_required_libraries_save};stdc++fs")
+  check_cxx_source_compiles(
+    "${_librpa_filesystem_check_source}"
+    LIBRPA_STD_FILESYSTEM_STDCXXFS)
+  if(LIBRPA_STD_FILESYSTEM_STDCXXFS)
+    list(APPEND math_libs stdc++fs)
+    message(STATUS "Linking std::filesystem with stdc++fs")
+  else()
+    message(FATAL_ERROR "std::filesystem is not linkable with the active C++ compiler")
+  endif()
+endif()
+set(CMAKE_REQUIRED_LIBRARIES "${_librpa_required_libraries_save}")
+unset(_librpa_required_libraries_save)
+unset(_librpa_filesystem_check_source)
+
 if(LIBRPA_USE_EXTERNAL_ELPA AND LIBRPA_USE_BUNDLED_ELPA)
   message(FATAL_ERROR "LIBRPA_USE_EXTERNAL_ELPA and LIBRPA_USE_BUNDLED_ELPA are mutually exclusive")
 endif()

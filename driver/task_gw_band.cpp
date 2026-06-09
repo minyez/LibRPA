@@ -239,7 +239,7 @@ void task_g0w0_band(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
         {
             Profiler::start("read_shrink_sinvS_fold", "Load shrink transformation");
             // change atom_mu: number of {Mu,mu} in the later calculations
-            read_shrink_sinvS(driver_params.input_dir, "shrink_sinvS_", sinvS);
+            read_shrink_sinvS(driver_params.input_dir, driver_params.prefix_shrink_sinvS, sinvS);
             Profiler::stop("read_shrink_sinvS_fold");
         }
 
