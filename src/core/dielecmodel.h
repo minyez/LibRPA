@@ -81,7 +81,7 @@ private:
     // used for reduce all mpi Cs_data to Cs_IJR
     // Cs_LRI Cs_IJR;
 
-    MeanField &meanfield_df;
+    MeanField meanfield_df;
     std::vector<double> omega;
     std::vector<Vector3_Order<double>> kfrac_band;
     int n_basis, n_states, n_spin, n_abf, nk;
@@ -105,7 +105,7 @@ public:
     bool debug = false;
 
 public:
-    diele_func(MeanField &mf, const headwing_velocity_t &velocity,
+    diele_func(const MeanField &mf, const headwing_velocity_t &velocity,
                const std::vector<Vector3_Order<double>> &kfrac,
                const AtomicBasis &atomic_basis_wfc,
                const AtomicBasis &atomic_basis_abf,

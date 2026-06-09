@@ -7,6 +7,27 @@
 #include "librpa_enums.h"
 #include "testutils.h"
 
+template <typename T, typename = void>
+struct has_mf_headwing : std::false_type
+{};
+
+template <typename T>
+struct has_mf_headwing<T, std::void_t<decltype(std::declval<T>().mf_headwing)>> : std::true_type
+{};
+
+template <typename T, typename = void>
+struct has_kfrac_headwing_list : std::false_type
+{};
+
+template <typename T>
+struct has_kfrac_headwing_list<T, std::void_t<decltype(std::declval<T>().kfrac_headwing_list)>> : std::true_type
+{};
+
+static_assert(!has_mf_headwing<librpa_int::Dataset>::value,
+              "Dataset should use mf for analytic head/wing instead of mf_headwing");
+static_assert(!has_kfrac_headwing_list<librpa_int::Dataset>::value,
+              "Dataset should use pbc.kfrac_list for analytic head/wing instead of kfrac_headwing_list");
+
 static void test_set_comm_blacs_coul_np4()
 {
     using namespace librpa_int;

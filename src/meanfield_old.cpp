@@ -375,5 +375,3 @@ void MeanField::broadcast(const MpiCommHandler& comm_hdl, int root) {
         }
     }
 }
-
-MeanField pyatb_meanfield = MeanField();

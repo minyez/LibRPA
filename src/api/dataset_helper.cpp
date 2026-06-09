@@ -187,13 +187,11 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
             "analytic head/wing requested but headwing velocity matrix is not set");
     }
 
-    MeanField &mf_headwing = ds.mf_headwing.initialized() ? ds.mf_headwing : ds.mf;
-    if (!mf_headwing.initialized())
+    MeanField &mf = ds.mf;
+    if (!mf.initialized())
         throw LIBRPA_RUNTIME_ERROR("analytic head/wing meanfield is not initialized");
 
-    if (ds.kfrac_headwing_list.empty())
-        ds.kfrac_headwing_list = ds.pbc.kfrac_list;
-    if (static_cast<int>(ds.kfrac_headwing_list.size()) != mf_headwing.get_n_kpoints())
+    if (static_cast<int>(ds.pbc.kfrac_list.size()) != mf.get_n_kpoints())
         throw LIBRPA_RUNTIME_ERROR("analytic head/wing k-point list is inconsistent with meanfield");
 
     const auto &headwing_basis_aux =
@@ -203,11 +201,11 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
 
     const auto &freqs = ds.tfg.get_freq_nodes();
     ds.p_headwing = std::make_unique<diele_func>(
-        mf_headwing, ds.headwing_velocity, ds.kfrac_headwing_list, ds.basis_wfc,
-        headwing_basis_aux, freqs, mf_headwing.get_n_aos(), mf_headwing.get_n_states(),
-        mf_headwing.get_n_spins(), headwing_basis_aux.nb_total, ds.pbc, ds.comm_h, ds.blacs_h);
+        mf, ds.headwing_velocity, ds.pbc.kfrac_list, ds.basis_wfc,
+        headwing_basis_aux, freqs, mf.get_n_aos(), mf.get_n_states(),
+        mf.get_n_spins(), headwing_basis_aux.nb_total, ds.pbc, ds.comm_h, ds.blacs_h);
     ds.p_headwing->use_2d_dielectric = opts.use_2d_dielectric == LIBRPA_SWITCH_ON;
-    ds.p_headwing->use_soc = mf_headwing.get_n_spinor() > 1;
+    ds.p_headwing->use_soc = mf.get_n_spinor() > 1;
     ds.p_headwing->debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
     ds.p_headwing->init(opts.sqrt_coulomb_threshold, ds.vq);
     ds.p_headwing->cal_head();

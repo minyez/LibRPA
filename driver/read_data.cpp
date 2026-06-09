@@ -914,11 +914,29 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     using namespace librpa_int::global;
 
     auto pds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
-    auto &mf_headwing = pds->mf_headwing;
-    mf_headwing = MeanField();
+    auto &mf = pds->mf;
     auto &headwing_velocity = pds->headwing_velocity;
     headwing_velocity.clear();
-    pds->kfrac_headwing_list.clear();
+    struct MfRestore
+    {
+        MeanField &mf;
+        MeanField original;
+        bool active = false;
+
+        explicit MfRestore(MeanField &mf_in) : mf(mf_in) {}
+        void capture()
+        {
+            original = mf;
+            active = true;
+        }
+        ~MfRestore()
+        {
+            if (active)
+            {
+                mf = std::move(original);
+            }
+        }
+    } restore_mf(mf);
 
     const bool use_spinor_wfc = driver::driver_params.use_spinor_wfc;
     const string pyatb_dir = path_as_directory(dir_path) + "pyatb_librpa_df/";
@@ -929,24 +947,29 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     int n_states = 0;
     int n_spin = 0;
 
+    std::vector<double> freq_weights;
+    driver::h.get_imaginary_frequency_grids(driver::opts, pds->omegas_imagfreq, freq_weights);
+    const auto &freqs = pds->tfg.get_freq_nodes();
+
     if (path_exists(pyatb_velocity.c_str()))
     {
-        // Some head/wing workflows provide a separate band path.  Keep that
-        // path-specific mean field in Dataset::mf_headwing and keep the
-        // velocity/momentum matrices in Dataset::headwing_velocity; the
-        // latter is not a MeanField property.
+        // Temporarily load the PyATB mean-field data into Dataset::mf for the
+        // head/wing construction, then restore the SCF mean field before the
+        // downstream GW path continues. The velocity/momentum matrices remain
+        // separate because they are head/wing-specific inputs.
         if (mpi_comm_global_h.is_root())
         {
             std::cout << "Reading head/wing input from " << pyatb_dir << std::endl;
         }
-        read_scf_occ_eigenvalues(pyatb_dir + "band_out", mf_headwing, use_spinor_wfc);
+        restore_mf.capture();
+        read_scf_occ_eigenvalues(pyatb_dir + "band_out", mf, use_spinor_wfc);
         const int ret_eigenvec =
-            read_eigenvector(pyatb_dir, mf_headwing, use_spinor_wfc, nullptr);
+            read_eigenvector(pyatb_dir, mf, use_spinor_wfc, nullptr);
         if (ret_eigenvec != 0)
         {
             throw std::runtime_error("Failed to read pyatb head/wing eigenvectors from " + pyatb_dir);
         }
-        read_velocity(pyatb_velocity, mf_headwing, headwing_velocity);
+        read_velocity(pyatb_velocity, mf, headwing_velocity);
         kfrac_headwing = read_headwing_k_path_info(pyatb_dir + "k_path_info",
                                                    n_basis, n_states, n_spin);
         if (use_spinor_wfc)
@@ -955,8 +978,8 @@ void read_headwing_input(const string &dir_path, bool need_wing)
                 throw std::runtime_error("Head/wing spinor basis size is not even");
             n_basis /= 2;
         }
-        if (n_basis != mf_headwing.get_n_aos() || n_states != mf_headwing.get_n_states() ||
-            n_spin != mf_headwing.get_n_spins())
+        if (n_basis != mf.get_n_aos() || n_states != mf.get_n_states() ||
+            n_spin != mf.get_n_spins())
         {
             throw std::runtime_error("Head/wing k_path_info dimensions are inconsistent with band_out");
         }
@@ -965,21 +988,20 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     {
         // ABACUS/FHI-aims package outputs use the SCF k grid for head/wing.
         // Only the velocity/momentum matrix is head/wing-specific here.
-        mf_headwing = pds->mf;
         kfrac_headwing = pds->pbc.kfrac_list;
-        n_basis = mf_headwing.get_n_aos();
-        n_states = mf_headwing.get_n_states();
-        n_spin = mf_headwing.get_n_spins();
+        n_basis = mf.get_n_aos();
+        n_states = mf.get_n_states();
+        n_spin = mf.get_n_spins();
 
         const string file_abacus = path_as_directory(dir_path) + "velocity_matrix";
         const string file_aims = path_as_directory(dir_path) + "mommat_ks_kpt_000001.dat";
         if (path_exists(file_abacus.c_str()))
         {
-            read_velocity(file_abacus, mf_headwing, headwing_velocity);
+            read_velocity(file_abacus, mf, headwing_velocity);
         }
         else if (path_exists(file_aims.c_str()))
         {
-            read_velocity_aims(mf_headwing, path_as_directory(dir_path), headwing_velocity);
+            read_velocity_aims(mf, path_as_directory(dir_path), headwing_velocity);
         }
         else
         {
@@ -987,21 +1009,35 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         }
     }
 
-    pds->kfrac_headwing_list = kfrac_headwing;
+    if (static_cast<int>(kfrac_headwing.size()) != mf.get_n_kpoints())
+    {
+        throw std::runtime_error("Head/wing k-point count is inconsistent with meanfield");
+    }
+    if (static_cast<int>(pds->pbc.kfrac_list.size()) != mf.get_n_kpoints())
+    {
+        throw std::runtime_error("SCF k-point list is inconsistent with meanfield");
+    }
+    for (int ik = 0; ik != mf.get_n_kpoints(); ++ik)
+    {
+        if (!nearly_same_kpoint(kfrac_headwing[ik], pds->pbc.kfrac_list[ik]))
+        {
+            std::ostringstream oss;
+            oss << "Head/wing k-point " << ik
+                << " is inconsistent with the SCF meanfield k grid";
+            throw std::runtime_error(oss.str());
+        }
+    }
 
-    std::vector<double> freq_weights;
-    driver::h.get_imaginary_frequency_grids(driver::opts, pds->omegas_imagfreq, freq_weights);
-    const auto &freqs = pds->tfg.get_freq_nodes();
     const auto &headwing_basis_aux =
         driver::get_bool(driver::opts.use_shrink_abfs) ? pds->basis_aux_shrink : pds->basis_aux;
     if (!headwing_basis_aux.initialized())
         throw std::runtime_error("Head/wing auxiliary basis is not initialized");
     pds->p_headwing = std::make_unique<diele_func>(
-        mf_headwing, headwing_velocity, pds->kfrac_headwing_list, pds->basis_wfc,
+        mf, headwing_velocity, pds->pbc.kfrac_list, pds->basis_wfc,
         headwing_basis_aux, freqs,
         n_basis, n_states, n_spin, headwing_basis_aux.nb_total, pds->pbc, pds->comm_h, pds->blacs_h);
     pds->p_headwing->use_2d_dielectric = driver::get_bool(driver::opts.use_2d_dielectric);
-    pds->p_headwing->use_soc = mf_headwing.get_n_spinor() > 1;
+    pds->p_headwing->use_soc = mf.get_n_spinor() > 1;
     pds->p_headwing->debug = driver::opts.output_level >= LIBRPA_VERBOSE_DEBUG;
     pds->p_headwing->init(driver::opts.sqrt_coulomb_threshold, pds->vq);
     pds->p_headwing->cal_head();

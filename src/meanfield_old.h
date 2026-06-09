@@ -101,6 +101,5 @@ public:
 
 //! A global MeanField object
 extern MeanField meanfield;
-extern MeanField pyatb_meanfield;
 
 #endif  // ! MEANFIELD_H
