@@ -21,6 +21,7 @@
 #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
 #include "input_symmetry.h"
+#include "../utils/utils_mem.h"
 #include "atomic_basis.h"
 #include "meanfield_mpi.h"
 #include "geometry.h"
@@ -840,6 +841,7 @@ void Exx::build(const LibrpaParallelRouting routing,
                 else
                     exx_libri.cal_Hs();
                 global::profiler.stop("build_real_space_exx_4");
+                release_free_mem();
 
                 global::lib_printf("Task %4d: cal_Hs elapsed time: %f\n", comm_h.myid, global::profiler.get_wall_time_last("build_real_space_exx_4"));
                 // print_keys(global::ofs_myid, exx_libri.Hs);
@@ -973,6 +975,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     comm_h.barrier();
 #endif
 
+    release_free_mem();
     is_rspace_built_= true;
 }
 

@@ -31,6 +31,7 @@ source $SETUP_DIR/setup_cereal_extern
 
 
 source /public/home/hbchen/app/elpa/260226/setup_elpa
+source /public/home/hbchen/app/magma/260311/setup_magma
 
 
 
@@ -38,7 +39,6 @@ PREFIX=./
 LAPACK=$INSTALL_DIR/openblas-0.3.29/lib
 SCALAPACK=$INSTALL_DIR/scalapack-2.2.2/lib
 CEREAL=$INSTALL_DIR/cereal-master/include
-LIBRI=/public/home/hbchen/app/libri/260214/LibRI-master
 LIBCOMM=/public/home/hbchen/app/libcomm/260516/LibComm-fix_status
 ELPA_DIR=/public/home/hbchen/app/elpa/260226/elpa-2025.06.002_install_hip
 
@@ -73,7 +73,6 @@ cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
         -DSCALAPACK_DIR=$SCALAPACK \
         -DCEREAL_INCLUDE_DIR=$CEREAL \
         -DLIBRPA_USE_LIBRI=ON \
-        -DLIBRI_INCLUDE_DIR=$LIBRI/include \
         -DLIBCOMM_INCLUDE_DIR=$LIBCOMM/include \
         -DBUILD_SHARED_LIBS=ON \
         -DLIBRPA_VERBOSE_OUTPUT=ON\
@@ -91,6 +90,6 @@ cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
         # -DCMAKE_HIP_SEPARABLE_COMPILATION=ON \
         # -DBLAS_DIR=$LAPACK \
         # -DLAPACK_DIR=$LAPACK \
-cmake --build $BUILD_DIR -j `nproc`
+cmake --build $BUILD_DIR -j 8
 cmake --install $BUILD_DIR --prefix $INSTALL_DIR
 echo End Time: `date`

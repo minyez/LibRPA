@@ -28,7 +28,7 @@
 #include "../utils/error.h"
 // #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
-// #include "../utils/utils_mem.h"
+#include "../utils/utils_mem.h"
 
 #ifdef LIBRPA_USE_LIBRI
 #include <RI/comm/mix/Communicate_Tensors_Map_Judge.h>
@@ -379,6 +379,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
         profiler.stop("g0w0_exx_real_work");
         profiler.stop("g0w0_exx");
         pds->comm_h.barrier();
+        release_free_mem();
     }
 
     profiler.start("g0w0_wc", "Build screened interaction");
@@ -481,6 +482,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
         use_shrink_chi ? &pds->blacs_h : nullptr,
         use_shrink_chi ? &pds->desc_wfc_kb_full : nullptr);
     profiler.stop("g0w0_sigc_IJ");
+    release_free_mem();
 
     profiler.stop("api_build_g0w0_sigma");
 }
