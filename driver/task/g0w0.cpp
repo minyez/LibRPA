@@ -114,7 +114,6 @@ void driver::task_g0w0()
     const size_t n_local = n_states_calc * n_spins * iks_eigvec_this.size();
     std::vector<double> vexx_all;
     std::vector<cplxdb> sigc_all;
-    std::vector<double> eqp_all;
     {
         const auto vexx = h.get_exx_pot_kgrid(opts, n_spins, iks_eigvec_this, i_state_low, i_state_high);
         std::vector<double> vxc_flat(n_local);
@@ -143,7 +142,6 @@ void driver::task_g0w0()
             {
                 vexx_all = vexx;
                 sigc_all = qpe.sigc;
-                eqp_all = qpe.eqp;
             }
         }
         else
@@ -152,7 +150,6 @@ void driver::task_g0w0()
             const size_t n_all = n_states_calc * n_spins * n_kpoints;
             vexx_all.resize(n_all);
             sigc_all.resize(n_all);
-            eqp_all.resize(n_all);
             for (int isp = 0; isp != n_spins; isp++)
             {
                 const auto st_isp_local = isp * iks_eigvec_this.size() * n_states_calc;
@@ -164,19 +161,15 @@ void driver::task_g0w0()
                     const auto st = st_isp + ik * n_states_calc;
                     memcpy(sigc_all.data() + st, qpe.sigc.data() + st_local,
                            n_states_calc * sizeof(cplxdb));
-                    memcpy(eqp_all.data() + st, qpe.eqp.data() + st_local,
-                           n_states_calc * sizeof(double));
                     memcpy(vexx_all.data() + st, vexx.data() + st_local, n_states_calc * sizeof(double));
                 }
             }
             mpi_comm_global_h.reduce(MPI_IN_PLACE, vexx_all.data(), n_all, 0, MPI_SUM);
             mpi_comm_global_h.reduce(MPI_IN_PLACE, sigc_all.data(), n_all, 0, MPI_SUM);
-            mpi_comm_global_h.reduce(MPI_IN_PLACE, eqp_all.data(), n_all, 0, MPI_SUM);
             if (myid_global != 0)
             {
                 vexx_all.clear();
                 sigc_all.clear();
-                eqp_all.clear();
             }
         }
     }
@@ -291,7 +284,7 @@ void driver::task_g0w0()
                         const auto &exx_state = vexx_all[start_k+i] * HA2EV;
                         const auto &resigc = sigc_all[start_k+i].real() * HA2EV;
                         const auto &imsigc = sigc_all[start_k+i].imag() * HA2EV;
-                        const auto &eqp = eqp_all[start_k+i] * HA2EV;
+                        const auto &eqp = eks_state - vxc_state + exx_state + resigc;
                         lib_printf("%5d %16.5f %16.5f %16.5f %16.5f %16.5f %16.5f %16.5f\n",
                                    i_state+1, occ_state, eks_state, vxc_state, exx_state, resigc, imsigc, eqp);
                     }

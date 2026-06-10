@@ -547,7 +547,7 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
     const auto n_iter_max = opts.qpe_solver_n_iter_max;
     const auto damp_fac = opts.qpe_solver_damp_factor;
     const auto option_qpe_solver = opts.option_qpe_solver;
-    const double diff_init = option_qpe_solver == 0 ? 1.0 : 0.0;
+    const double diff_init = option_qpe_solver == 0 ? 1.0e-3 : 0.0;
     const bool use_adaptive_damp = opts.use_qpe_adaptive_damp == LIBRPA_SWITCH_ON;
     const bool override_qpe_solver_nan = opts.override_qpe_solver_nan == LIBRPA_SWITCH_ON;
 
@@ -697,7 +697,7 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
     const auto n_iter_max = opts.qpe_solver_n_iter_max;
     const auto damp_fac = opts.qpe_solver_damp_factor;
     const auto option_qpe_solver = opts.option_qpe_solver;
-    const double diff_init = option_qpe_solver == 0 ? 1.0 : 0.0;
+    const double diff_init = option_qpe_solver == 0 ? 1.0e-3 : 0.0;
     const bool use_adaptive_damp = opts.use_qpe_adaptive_damp == LIBRPA_SWITCH_ON;
     const bool override_qpe_solver_nan = opts.override_qpe_solver_nan == LIBRPA_SWITCH_ON;
 

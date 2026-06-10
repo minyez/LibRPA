@@ -11,6 +11,8 @@
 #include <set>
 #include <map>
 #include <valarray>
+#include <cassert>
+#include <utility>
 #include <mpi.h>
 
 namespace RI
@@ -20,33 +22,84 @@ template <typename Tdata>
 class Tensor
 {
 private:
-    Tdata dummy_val;
+    std::vector<std::size_t> shape;
+
+    static std::size_t shape_size_(const std::vector<std::size_t> &shape_in)
+    {
+        std::size_t size = 1;
+        for (const auto dim : shape_in)
+            size *= dim;
+        return shape_in.empty() ? 0 : size;
+    }
+
+    static std::vector<std::size_t> normalize_shape_(const std::vector<int> &dimension)
+    {
+        std::vector<std::size_t> shape_out;
+        shape_out.reserve(dimension.size());
+        for (const auto dim : dimension)
+        {
+            assert(dim >= 0);
+            shape_out.push_back(static_cast<std::size_t>(dim));
+        }
+        return shape_out;
+    }
+
+    void reset_(std::vector<std::size_t> shape_in, std::shared_ptr<std::valarray<Tdata>> data_in)
+    {
+        assert(data_in);
+        assert(shape_size_(shape_in) == data_in->size());
+        shape = std::move(shape_in);
+        data = std::move(data_in);
+    }
 
 public:
-    // dummy, should never be used
     std::shared_ptr<std::valarray<Tdata>> data;
 
-    Tensor(): dummy_val(0)
+    Tensor(): data(std::make_shared<std::valarray<Tdata>>())
     {};
 
-    Tensor(const std::vector<int> &dimension, std::shared_ptr<std::valarray<Tdata>> data_in): dummy_val(0)
-    {};
+    Tensor(const std::vector<int> &dimension, std::shared_ptr<std::valarray<Tdata>> data_in)
+    {
+        reset_(normalize_shape_(dimension), std::move(data_in));
+    };
 
-    Tensor(const std::initializer_list<std::size_t> &dimension, std::shared_ptr<std::valarray<Tdata>> data_in): dummy_val(0), data(data_in)
-    {};
+    Tensor(const std::initializer_list<std::size_t> &dimension, std::shared_ptr<std::valarray<Tdata>> data_in)
+    {
+        reset_(std::vector<std::size_t>(dimension), std::move(data_in));
+    };
 
-    inline Tdata operator() (const std::size_t i0, const std::size_t i1) const { return static_cast<Tdata>(0); };
+    inline Tdata& operator() (const std::size_t i0, const std::size_t i1) const
+    {
+        assert(shape.size() == 2);
+        assert(i0 < shape[0] && i1 < shape[1]);
+        return (*data)[i0 * shape[1] + i1];
+    };
 
-    inline Tdata operator() (const std::size_t i0, const std::size_t i1, const std::size_t i2) const { return static_cast<Tdata>(0); };
+    inline Tdata& operator() (const std::size_t i0, const std::size_t i1, const std::size_t i2) const
+    {
+        assert(shape.size() == 3);
+        assert(i0 < shape[0] && i1 < shape[1] && i2 < shape[2]);
+        return (*data)[(i0 * shape[1] + i1) * shape[2] + i2];
+    };
 
-    inline Tdata& operator() (const std::size_t i0, const std::size_t i1) { return this->dummy_val; };
+    inline Tdata& operator() (const std::size_t i0, const std::size_t i1)
+    {
+        return const_cast<const Tensor *>(this)->operator()(i0, i1);
+    };
 
-    inline Tdata& operator() (const std::size_t i0, const std::size_t i1, const std::size_t i2) { return this->dummy_val; };
+    inline Tdata& operator() (const std::size_t i0, const std::size_t i1, const std::size_t i2)
+    {
+        return const_cast<const Tensor *>(this)->operator()(i0, i1, i2);
+    };
 
-    inline std::size_t get_shape_all() const { return 0; };
+    inline std::size_t get_shape_all() const { return shape_size_(shape); };
 
-    Tdata* ptr() const { return &(*this->data)[0]; }
-    void clear() {};
+    Tdata* ptr() const { return data->size() > 0 ? &(*data)[0] : nullptr; }
+    void clear()
+    {
+        shape.clear();
+        data = std::make_shared<std::valarray<Tdata>>();
+    };
 };
 
 

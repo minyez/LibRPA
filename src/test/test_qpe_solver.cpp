@@ -100,7 +100,7 @@ void test_quasi_newton_uses_pade_derivative()
     assert(std::abs(sigc - sigc_ref) < 1.0e-10);
 }
 
-void test_nonadaptive_fixed_point_keeps_legacy_trial_update()
+void test_nonadaptive_fixed_point_returns_consistent_qpe_and_sigc()
 {
     constexpr int nfreq = 4;
     constexpr double e_mf = 0.0;
@@ -122,8 +122,7 @@ void test_nonadaptive_fixed_point_keeps_legacy_trial_update()
         false);
 
     assert(info != 0);
-    assert(fequal(e_qp, 0.1, 1.0e-12));
-    assert(std::abs(sigc - cplxdb{0.2, 0.0}) < 1.0e-12);
+    assert(fequal(e_qp, sigc.real(), 1.0e-12));
 }
 
 void test_perturbative_qp_weight()
@@ -205,7 +204,7 @@ int main(int argc, char *argv[])
     check_single_pole_self_energy(false);
     check_single_pole_self_energy(true);
     test_quasi_newton_uses_pade_derivative();
-    test_nonadaptive_fixed_point_keeps_legacy_trial_update();
+    test_nonadaptive_fixed_point_returns_consistent_qpe_and_sigc();
     test_perturbative_qp_weight();
     test_adaptive_damp_branch_hop_fallback();
 }
