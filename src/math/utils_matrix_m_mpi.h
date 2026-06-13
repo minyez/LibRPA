@@ -484,7 +484,7 @@ void collect_block_from_ALL_IJ_Tensor_sparse_zero_missing(
         int I_loc, J_loc, i_ab, j_ab;
         const int i_gl = ad.indx_l2g_r(ilo);
         atbasis.get_local_index(i_gl, I_loc, i_ab);
-        vector<Tdst> tmp_loc_row(ad.n_loc(), Tdst(0));
+        std::vector<Tdst> tmp_loc_row(ad.n_loc(), Tdst(0));
         for (int jlo = 0; jlo != ad.n_loc(); jlo++)
         {
             const int j_gl = ad.indx_l2g_c(jlo);
