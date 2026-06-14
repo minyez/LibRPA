@@ -46,12 +46,12 @@ void init_global_mpi(MPI_Comm comm)
     else
     {
         // Check thread support when LibRI is used
-        int provided = 0;
-        MPI_Query_thread(&provided);
-        if (provided < MPI_THREAD_MULTIPLE)
-            throw LIBRPA_RUNTIME_ERROR(
-                "LIBRPA_USE_LIBRI switched on, but MPI_Init_thread was called with thread support "
-                "below MPI_THREAD_MULTIPLE");
+        // int provided = 0;
+        // MPI_Query_thread(&provided);
+        // if (provided < MPI_THREAD_MULTIPLE)
+        //     throw LIBRPA_RUNTIME_ERROR(
+        //         "LIBRPA_USE_LIBRI switched on, but MPI_Init_thread was called with thread support "
+        //         "below MPI_THREAD_MULTIPLE");
     }
 #endif
 

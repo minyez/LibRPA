@@ -27,10 +27,10 @@ static void initialize(int argc, char **argv)
 
     // MPI Initialization
     int provided;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    if (MPI_THREAD_MULTIPLE != provided)
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+    if (MPI_THREAD_FUNNELED != provided)
     {
-        librpa_int::global::lib_printf("Warning: MPI_Init_thread provide %d != required %d", provided, MPI_THREAD_MULTIPLE);
+        librpa_int::global::lib_printf("Warning: MPI_Init_thread provide %d != required %d", provided, MPI_THREAD_FUNNELED);
     }
 
     librpa::init_global(LIBRPA_SWITCH_OFF);

@@ -30,7 +30,7 @@ source $SETUP_DIR/setup_scalapack_extern
 source $SETUP_DIR/setup_cereal_extern
 
 
-source /public/home/hbchen/app/elpa/260226/setup_elpa
+source /public/home/hbchen/app/elpa/260611/setup_elpa
 
 
 
@@ -40,7 +40,7 @@ SCALAPACK=$INSTALL_DIR/scalapack-2.2.2/lib
 CEREAL=$INSTALL_DIR/cereal-master/include
 LIBRI=/public/home/hbchen/app/libri/260214/LibRI-master
 LIBCOMM=/public/home/hbchen/app/libcomm/260516/LibComm-fix_status
-ELPA_DIR=/public/home/hbchen/app/elpa/260226/elpa-2025.06.002_install_hip
+ELPA_DIR=/public/home/hbchen/app/elpa/260611/elpa-2026.02.001_install_hip_rccl
 
 echo "========================="
 echo 'LD_LIBRARY_PATH:' $LD_LIBRARY_PATH
@@ -56,32 +56,32 @@ echo "========================="
 echo 'CPLUS_INCLUDE_PATH:' $CPLUS_INCLUDE_PATH
 echo "========================="
 
-BUILD_DIR=../build_hip
-INSTALL_DIR=../librpa_hip
+BUILD_DIR=../build_hip_cpur_funneled
+INSTALL_DIR=../librpa_hip_cpuri_funneled
 echo Start Time: `date`
-rm -rf $BUILD_DIR
+# rm -rf $BUILD_DIR
 
 rm -rf $INSTALL_DIR
 export LANGUAGE=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 export LANG=en_US.UTF-8
 
-cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
-        -DCMAKE_CXX_COMPILER=hipcc \
-        -DMPI_CXX_COMPILER=mpicxx \
-        -DCMAKE_Fortran_COMPILER=gfortran \
-        -DSCALAPACK_DIR=$SCALAPACK \
-        -DCEREAL_INCLUDE_DIR=$CEREAL \
-        -DLIBRPA_USE_LIBRI=ON \
-        -DLIBRI_INCLUDE_DIR=$LIBRI/include \
-        -DLIBCOMM_INCLUDE_DIR=$LIBCOMM/include \
-        -DBUILD_SHARED_LIBS=ON \
-        -DLIBRPA_VERBOSE_OUTPUT=ON\
-        -DCMAKE_CXX_FLAGS="-dwarf-4 -g -O2 -fopenmp -fgpu-rdc -Wunused-result -Wno-return-type -Wno-return-stack-address -Wno-format -Wno-unused-command-line-argument -Wno-format-security -Wno-exceptions" \
-        -DLIBRPA_USE_HIP=ON \
-        -DLIBRPA_USE_EXTERNAL_ELPA=ON \
-        -DEXTERNAL_ELPA_DIR=${ELPA_DIR} \
-        -DUSE_GREENX_API=ON \
+# cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
+#         -DCMAKE_CXX_COMPILER=hipcc \
+#         -DMPI_CXX_COMPILER=mpicxx \
+#         -DCMAKE_Fortran_COMPILER=gfortran \
+#         -DSCALAPACK_DIR=$SCALAPACK \
+#         -DCEREAL_INCLUDE_DIR=$CEREAL \
+#         -DLIBRPA_USE_LIBRI=ON \
+#         -DLIBRI_INCLUDE_DIR=$LIBRI/include \
+#         -DLIBCOMM_INCLUDE_DIR=$LIBCOMM/include \
+#         -DBUILD_SHARED_LIBS=ON \
+#         -DLIBRPA_VERBOSE_OUTPUT=ON\
+#         -DCMAKE_CXX_FLAGS="-dwarf-4 -g -O2 -fopenmp -fgpu-rdc -Wunused-result -Wno-return-type -Wno-return-stack-address -Wno-format -Wno-unused-command-line-argument -Wno-format-security -Wno-exceptions" \
+#         -DLIBRPA_USE_HIP=ON \
+#         -DLIBRPA_USE_EXTERNAL_ELPA=ON \
+#         -DEXTERNAL_ELPA_DIR=${ELPA_DIR} \
+#         -DUSE_GREENX_API=ON \
 
 
         # -DCMAKE_HIP_FLAGS="-g -O2 -fopenmp -fgpu-rdc -Wno-return-type"
@@ -91,6 +91,6 @@ cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
         # -DCMAKE_HIP_SEPARABLE_COMPILATION=ON \
         # -DBLAS_DIR=$LAPACK \
         # -DLAPACK_DIR=$LAPACK \
-cmake --build $BUILD_DIR -j `nproc`
+cmake --build $BUILD_DIR -j 8
 cmake --install $BUILD_DIR --prefix $INSTALL_DIR
 echo End Time: `date`
