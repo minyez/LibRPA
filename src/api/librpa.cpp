@@ -144,6 +144,12 @@ LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
 )
 
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
+    set_basis_convention,
+    (int bloch_phase, int bloch_ratom, LibrpaAngularOrder order, LibrpaRshCoeff nega_m, LibrpaRshCoeff posi_m),
+    (bloch_phase, bloch_ratom, order, nega_m, posi_m)
+)
+
+LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
     set_latvec_and_G,
     (const double lat_mat[9], const double G_mat[9]),
     (lat_mat, G_mat)

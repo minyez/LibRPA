@@ -1,4 +1,5 @@
 #include "read_data.h"
+#include "librpa_enums.h"
 #include "reader_lri.h"
 #include "reader_coulomb.h"
 
@@ -71,6 +72,76 @@ bool nearly_same_kpoint(const librpa_int::Vector3_Order<double> &lhs,
     return std::abs(lhs.x - rhs.x) <= tol
            && std::abs(lhs.y - rhs.y) <= tol
            && std::abs(lhs.z - rhs.z) <= tol;
+}
+
+std::string normalize_basis_convention(const std::string& convention)
+{
+    std::string normalized = convention;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    normalized.erase(
+        std::remove_if(normalized.begin(), normalized.end(),
+                       [](unsigned char ch) {
+                           return std::isspace(ch) != 0 || ch == '-' || ch == '_';
+                       }),
+        normalized.end());
+    return normalized;
+}
+
+void parse_basis_convention(const std::string& convention)
+{
+    const auto normalized = normalize_basis_convention(convention);
+    if (normalized.empty() || normalized == "unset" || normalized == "unknown" ||
+        normalized == "fallback" || normalized == "none")
+        return;
+
+    bool known_convention = false;
+    int bloch_phase, bloch_ratom;
+    LibrpaAngularOrder order;
+    LibrpaRshCoeff coeff_m_nega, coeff_m_posi;
+
+    if (normalized == "aims" || normalized == "fhiaims")
+    {
+        known_convention = true;
+        bloch_phase = -1;
+        bloch_ratom = 0;
+        order = LIBRPA_ANGULAR_ORDER_NATURAL;
+        coeff_m_nega = LIBRPA_RSH_COEFF_1_M;
+        coeff_m_posi = LIBRPA_RSH_COEFF_1_M;
+    }
+    if (normalized == "abacus")
+    {
+        known_convention = true;
+        bloch_phase = -1;
+        bloch_ratom = 0;
+        order = LIBRPA_ANGULAR_ORDER_ABS_PM;
+        coeff_m_nega = LIBRPA_RSH_COEFF_M_1;
+        coeff_m_posi = LIBRPA_RSH_COEFF_1_M;
+    }
+    if (normalized == "openmx")
+    {
+        known_convention = true;
+        bloch_phase = 1;
+        bloch_ratom = 0;
+        order = LIBRPA_ANGULAR_ORDER_OPENMX;
+        coeff_m_nega = LIBRPA_RSH_COEFF_1_M;
+        coeff_m_posi = LIBRPA_RSH_COEFF_M_1;
+    }
+    if (normalized == "pyscf")
+    {
+        known_convention = true;
+        bloch_phase = 1;
+        bloch_ratom = 0;
+        order = LIBRPA_ANGULAR_ORDER_PYSCF;
+        coeff_m_nega = LIBRPA_RSH_COEFF_1_M;
+        coeff_m_posi = LIBRPA_RSH_COEFF_M_1;
+    }
+    if (known_convention)
+    {
+        driver::h.set_basis_convention(bloch_phase, bloch_ratom, order, coeff_m_nega, coeff_m_posi);
+        return;
+    }
+    throw std::runtime_error("Unknown angular basis convention: " + convention);
 }
 
 std::vector<size_t> read_aux_basis_sizes_from_basis_file(const std::string &file_path)
@@ -1390,6 +1461,10 @@ void read_basis(const std::string &file_path)
     global::lib_printf_root("Reading basis information file: %s\n", file_path.c_str());
     ifstream infile;
     infile.open(file_path);
+    if (!infile.good())
+    {
+        throw LIBRPA_RUNTIME_ERROR("Fail to open basis information file " + file_path);
+    }
 
     int n_atoms = driver::atom_types.size();
     if (static_cast<size_t>(n_atoms) != driver::n_atoms)
@@ -1406,10 +1481,19 @@ void read_basis(const std::string &file_path)
     infile >> ntypes;
     // total basis, not used here
     infile >> n_wfc >> n_aux >> kind_str;
+    if (!infile.good())
+    {
+        throw LIBRPA_RUNTIME_ERROR("Invalid basis information header in " + file_path);
+    }
+    parse_basis_convention(kind_str);
 
     for (int itype = 0; itype < ntypes; itype++)
     {
         infile >> type >> n_wfc >> n_aux;
+        if (!infile.good())
+        {
+            throw LIBRPA_RUNTIME_ERROR("Invalid basis information body in " + file_path);
+        }
         type--;
         map_at_wfc[type] = n_wfc;
         map_at_aux[type] = n_aux;

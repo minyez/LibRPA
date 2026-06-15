@@ -70,7 +70,11 @@ The first line contains four entries:
 1. total number of atom types, `n_atom_types`
 2. total number of one-electron basis functions
 3. total number of auxiliary basis functions
-4. a string specifying the convention used for the ordering of azimuthal quantum numbers
+4. a string specifying the convention used for the Bloch-sum phase, basis ordering,
+   and real spherical harmonics.
+   Recognized producer presets are `aims`, `abacus`, `openmx`, `pyscf`, and `fallback`
+   (`fallback` means the convention is not known from this file).  Each producer
+   preset includes the conventions hard-coded by that upstream DFT program.
 
 For example:
 

@@ -46,6 +46,31 @@ extern "C" {
 // #define LIBRPA_KIND_OPENMX 102
 // #define LIBRPA_KIND_PYSCF 103
 
+/**
+ * @brief Ordering of real spherical harmonics inside one angular-momentum shell.
+ */
+typedef enum
+{
+    LIBRPA_ANGULAR_ORDER_UNSET = LIBRPA_UNSET,  ///< Unknown or not specified
+    LIBRPA_ANGULAR_ORDER_NATURAL = 0,           ///< -l, -l+1, ..., l-1, l
+    LIBRPA_ANGULAR_ORDER_ABS_PM = 1,            ///< 0, 1, -1, 2, -2, ...
+    LIBRPA_ANGULAR_ORDER_OPENMX = 2,            ///< OpenMX ordering
+    LIBRPA_ANGULAR_ORDER_PYSCF = 3,             ///< PySCF ordering
+} LibrpaAngularOrder;
+
+/**
+ * @brief Coefficient-pair convention for one nonzero real spherical harmonic branch.
+ *
+ * For m < 0 this selects {a, b} in i/sqrt(2) [a Y_l^m - b Y_l^{-m}].
+ * For m > 0 this selects {c, d} in 1/sqrt(2) [c Y_l^m + d Y_l^{-m}].
+ */
+typedef enum
+{
+    LIBRPA_RSH_COEFF_UNSET = LIBRPA_UNSET,  ///< Unknown or not specified
+    LIBRPA_RSH_COEFF_1_M = 0,               ///< {1, (-1)^m}
+    LIBRPA_RSH_COEFF_M_1 = 1,               ///< {(-1)^m, 1}
+} LibrpaRshCoeff;
+
 /** Number of parallel routing types available. */
 #define LIBRPA_ROUTING_COUNT 5
 

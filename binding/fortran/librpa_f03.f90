@@ -96,6 +96,24 @@ module librpa_f03
    integer, parameter, public :: LIBRPA_TFGRID_EVENSPACED_TF = 5        !< Evenly spaced in time-frequency
    !> @}
 
+   !> @name Angular basis ordering conventions
+   !> @brief Ordering of real spherical harmonics inside one angular-momentum shell.
+   !> @{
+   integer, parameter, public :: LIBRPA_ANGULAR_ORDER_UNSET = LIBRPA_UNSET  !< Unknown or not specified
+   integer, parameter, public :: LIBRPA_ANGULAR_ORDER_NATURAL = 0           !< -l, -l+1, ..., l-1, l
+   integer, parameter, public :: LIBRPA_ANGULAR_ORDER_ABS_PM = 1            !< 0, 1, -1, 2, -2, ...
+   integer, parameter, public :: LIBRPA_ANGULAR_ORDER_OPENMX = 2            !< OpenMX ordering
+   integer, parameter, public :: LIBRPA_ANGULAR_ORDER_PYSCF = 3             !< PySCF ordering
+   !> @}
+
+   !> @name Real spherical harmonic coefficient conventions
+   !> @brief Coefficient-pair conventions for nonzero real spherical harmonic branches.
+   !> @{
+   integer, parameter, public :: LIBRPA_RSH_COEFF_UNSET = LIBRPA_UNSET  !< Unknown or not specified
+   integer, parameter, public :: LIBRPA_RSH_COEFF_1_M = 0               !< {1, (-1)^m}
+   integer, parameter, public :: LIBRPA_RSH_COEFF_M_1 = 1               !< {(-1)^m, 1}
+   !> @}
+
    public :: librpa_init_global
    public :: librpa_finalize_global
    public :: librpa_get_major_version
@@ -428,6 +446,7 @@ module librpa_f03
          procedure :: set_wfc_spinor => librpa_set_wfc_spinor
          procedure :: set_ao_basis_wfc => librpa_set_ao_basis_wfc
          procedure :: set_ao_basis_aux => librpa_set_ao_basis_aux
+         procedure :: set_basis_convention => librpa_set_basis_convention
          procedure :: set_latvec_and_G => librpa_set_latvec_and_G
          procedure :: set_atoms => librpa_set_atoms
          procedure :: set_kgrids_kvec => librpa_set_kgrids_kvec
@@ -538,6 +557,13 @@ module librpa_f03
          integer(c_int), value :: natoms
          integer(c_size_t), dimension(*), intent(in) :: nbs_aux
       end subroutine librpa_set_ao_basis_aux_c
+
+      subroutine librpa_set_basis_convention_c(h, bloch_phase, bloch_ratom, order, nega_m, posi_m) &
+            bind(c, name="librpa_set_basis_convention")
+         import :: c_ptr, c_int
+         type(c_ptr), value :: h
+         integer(c_int), value :: bloch_phase, bloch_ratom, order, nega_m, posi_m
+      end subroutine librpa_set_basis_convention_c
 
       subroutine librpa_set_latvec_and_G_c(h, latt, recplatt) &
             bind(c, name="librpa_set_latvec_and_G")
@@ -1414,6 +1440,28 @@ contains
 
       call set_ao_basis(this, natoms, nbs_aux, .true.)
    end subroutine librpa_set_ao_basis_aux
+
+   !> @brief Set basis convention metadata used by symmetry-based reductions
+   !>
+   !> @param[in,out] this    Handler.
+   !> @param[in]     bloch_phase Bloch-sum phase sign, either +1 or -1.
+   !> @param[in]     bloch_ratom Coefficient of atom position in the Bloch-sum phase, one of -1, 0, or +1.
+   !> @param[in]     order   Angular basis ordering convention.
+   !> @param[in]     nega_m  Real-spherical-harmonic coefficient convention for m < 0.
+   !> @param[in]     posi_m  Real-spherical-harmonic coefficient convention for m > 0.
+   subroutine librpa_set_basis_convention(this, bloch_phase, bloch_ratom, order, nega_m, posi_m)
+      implicit none
+      class(LibrpaHandler), intent(inout) :: this
+      integer, intent(in) :: bloch_phase
+      integer, intent(in) :: bloch_ratom
+      integer, intent(in) :: order
+      integer, intent(in) :: nega_m
+      integer, intent(in) :: posi_m
+
+      call librpa_set_basis_convention_c(this%ptr_c_handle, &
+         int(bloch_phase, kind=c_int), int(bloch_ratom, kind=c_int), int(order, kind=c_int), &
+         int(nega_m, kind=c_int), int(posi_m, kind=c_int))
+   end subroutine librpa_set_basis_convention
 
    !> @brief Set the direct and reciprocal lattice vectors
    !>

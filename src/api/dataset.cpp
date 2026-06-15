@@ -37,6 +37,7 @@ Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
       basis_wfc(),
       basis_aux(),
       basis_aux_shrink(),
+      basis_convention(),
       atoms(),
       pbc(),
       kfrac_band_list(),

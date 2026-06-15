@@ -229,6 +229,10 @@ public:
     /** @brief Set auxiliary atomic orbital basis size. */
     void set_ao_basis_aux(const std::vector<size_t> &nbs_aux);
 
+    /** @brief Set basis convention metadata used by symmetry-based reductions. */
+    void set_basis_convention(int bloch_phase, int bloch_ratom, LibrpaAngularOrder order,
+                              LibrpaRshCoeff nega_m, LibrpaRshCoeff posi_m);
+
     /** @brief Set lattice vectors and reciprocal lattice vectors. */
     void set_latvec_and_G(const double lat_mat[9], const double G_mat[9]);
 

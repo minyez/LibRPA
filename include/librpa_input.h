@@ -107,6 +107,22 @@ void librpa_set_ao_basis_wfc(LibrpaHandler* h, int natoms, const size_t* nbs_wfc
 void librpa_set_ao_basis_aux(LibrpaHandler* h, int natoms, const size_t* nbs_aux);
 
 /**
+ * @brief Set basis convention metadata used by symmetry-based reductions.
+ *
+ * This metadata is optional for calculations that do not use input symmetry.
+ *
+ * @param[in] h       Handler.
+ * @param[in] bloch_phase Bloch-sum phase sign; must be either +1 or -1.
+ * @param[in] bloch_ratom Coefficient of atom position in the Bloch-sum phase; must be -1, 0, or +1.
+ * @param[in] order   Ordering of real spherical harmonics inside each shell.
+ * @param[in] nega_m  Coefficient convention for the m < 0 real-spherical-harmonic branch.
+ * @param[in] posi_m  Coefficient convention for the m > 0 real-spherical-harmonic branch.
+ */
+void librpa_set_basis_convention(LibrpaHandler* h, int bloch_phase, int bloch_ratom,
+                                 LibrpaAngularOrder order, LibrpaRshCoeff nega_m,
+                                 LibrpaRshCoeff posi_m);
+
+/**
  * @brief Set direct and reciprocal lattice vectors.
  * @param[in] h         Handler.
  * @param[in] lat_mat   Lattice vectors (3x3, column-major, in Bohr).

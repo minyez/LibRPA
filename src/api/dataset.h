@@ -68,6 +68,8 @@ public:
     AtomicBasis basis_aux;
     //! Handling object for shrinked auxiliary basis functions for RI
     AtomicBasis basis_aux_shrink;
+    //! Basis ordering and real-spherical-harmonic convention.
+    BasisConvention basis_convention;
     //! Atomic structure
     Atoms atoms;
     //! Periodic boundary setting

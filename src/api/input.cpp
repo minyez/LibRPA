@@ -314,6 +314,95 @@ void librpa_set_ao_basis_aux(LibrpaHandler* h, int natoms, const size_t *nbs_aux
     profiler.stop(tname);
 }
 
+namespace
+{
+
+bool is_valid_basis_order(const LibrpaAngularOrder order)
+{
+    switch (order)
+    {
+    case LIBRPA_ANGULAR_ORDER_NATURAL:
+    case LIBRPA_ANGULAR_ORDER_ABS_PM:
+    case LIBRPA_ANGULAR_ORDER_OPENMX:
+    case LIBRPA_ANGULAR_ORDER_PYSCF:
+        return true;
+    case LIBRPA_ANGULAR_ORDER_UNSET:
+        return false;
+    }
+    return false;
+}
+
+bool is_valid_rsh_coeff(const LibrpaRshCoeff coeff)
+{
+    switch (coeff)
+    {
+    case LIBRPA_RSH_COEFF_1_M:
+    case LIBRPA_RSH_COEFF_M_1:
+        return true;
+    case LIBRPA_RSH_COEFF_UNSET:
+        return false;
+    }
+    return false;
+}
+
+bool is_valid_bloch_phase(const int bloch_phase)
+{
+    return bloch_phase == 1 || bloch_phase == -1;
+}
+
+bool is_valid_bloch_ratom(const int bloch_ratom)
+{
+    return bloch_ratom == 1 || bloch_ratom == 0 || bloch_ratom == -1;
+}
+
+} // namespace
+
+void librpa_set_basis_convention(LibrpaHandler* h, int bloch_phase, int bloch_ratom,
+                                 LibrpaAngularOrder order,
+                                 LibrpaRshCoeff nega_m,
+                                 LibrpaRshCoeff posi_m)
+{
+    using librpa_int::global::lib_printf;
+    using librpa_int::global::profiler;
+
+    const std::string tname = "api_set_basis_convention";
+    profiler.start(tname);
+
+    if (!is_valid_bloch_phase(bloch_phase))
+    {
+        throw LIBRPA_RUNTIME_ERROR("Basis Bloch phase must be either 1 or -1");
+    }
+    if (!is_valid_bloch_ratom(bloch_ratom))
+    {
+        throw LIBRPA_RUNTIME_ERROR("Basis Bloch atom-position coefficient must be -1, 0, or 1");
+    }
+    if (!is_valid_basis_order(order))
+    {
+        throw LIBRPA_RUNTIME_ERROR("Invalid basis angular ordering convention");
+    }
+    if (!is_valid_rsh_coeff(nega_m) || !is_valid_rsh_coeff(posi_m))
+    {
+        throw LIBRPA_RUNTIME_ERROR("Invalid real-spherical-harmonic coefficient convention");
+    }
+
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    pds->basis_convention = {bloch_phase, bloch_ratom, order, nega_m, posi_m};
+
+    pds->comm_h.barrier();
+    if (pds->comm_h.is_root())
+    {
+        lib_printf("Basis convention set:\n");
+        lib_printf("| Bloch phase      : %d\n", pds->basis_convention.bloch_phase);
+        lib_printf("| Bloch r_atom     : %d\n", pds->basis_convention.bloch_ratom);
+        lib_printf("| angular order    : %d\n", pds->basis_convention.order);
+        lib_printf("| RSH coeff m < 0  : %d\n", pds->basis_convention.coeff_m_negative);
+        lib_printf("| RSH coeff m > 0  : %d\n", pds->basis_convention.coeff_m_positive);
+    }
+    pds->comm_h.barrier();
+
+    profiler.stop(tname);
+}
+
 void librpa_set_latvec_and_G(LibrpaHandler* h, const double lat_mat[9], const double G_mat[9])
 {
     using std::cout;

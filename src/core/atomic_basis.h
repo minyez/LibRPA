@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "atom.h"
+#include "librpa_enums.h"
 
 namespace librpa_int {
 
@@ -17,17 +18,31 @@ typedef std::size_t gloid_t;
 typedef std::pair<locid_t, locid_t> locid_ap_t;
 typedef std::pair<gloid_t, gloid_t> gloid_ap_t;
 
-/*! @enum
+/*! @brief Basis ordering, real-spherical-harmonic, and Bloch-sum convention.
  *
- *  Control for phase and order convention for basis functions in the same shell
+ * The Bloch-sum phase convention is parameterized as
+ * \f[
+ * \phi^{\mathbf{K}}_{U\mu}(r) =
+ *     \frac{1}{\sqrt{N_k}} \sum_{\mathbf{R}}
+ *     \exp[i\,\mathrm{bloch\_phase}\,\mathbf{k}\cdot
+ *          (\mathbf{R} + \mathrm{bloch\_ratom}\,\mathbf{s}_U)]
+ *     \phi^R_{U\mu}(r)
+ * \f]
+ * where
+ * \f[
+ * \phi^R_{U\mu}(r) =
+ *     \phi_{\mu}(r - \mathbf{s}_U - \mathbf{R}).
+ * \f]
  */
-enum class AngularConvention
+struct BasisConvention
 {
-    UNSET = -1,
-    AIMS = 0,
-    ABACUS = 1,
-    OPENMX = 2,
-    PYSCF = 3,
+    //! Bloch-sum phase sign; unset means not specified.
+    int bloch_phase = LIBRPA_UNSET;
+    //! Coefficient of atom position in the Bloch-sum phase; unset means not specified.
+    int bloch_ratom = LIBRPA_UNSET;
+    LibrpaAngularOrder order = LIBRPA_ANGULAR_ORDER_UNSET;
+    LibrpaRshCoeff coeff_m_negative = LIBRPA_RSH_COEFF_UNSET;
+    LibrpaRshCoeff coeff_m_positive = LIBRPA_RSH_COEFF_UNSET;
 };
 
 /*! @class
@@ -55,7 +70,8 @@ public:
     std::size_t nb_total;
 
     // Constructors
-    AtomicBasis(): initialized_(false), nbs_(), part_range_(), glo2iat_(), glo2loc_(), n_atoms(0), nb_total(0) {};
+    AtomicBasis(): initialized_(false),
+                   nbs_(), part_range_(), glo2iat_(), glo2loc_(), n_atoms(0), nb_total(0) {};
     AtomicBasis(const std::vector<std::size_t>& nbs);
     AtomicBasis(const std::vector<int>& atom_species,
                 const std::map<int, std::size_t>& map_species_nb);
