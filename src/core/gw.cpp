@@ -27,7 +27,7 @@
 #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
 #include "../utils/utils_mem.h"
-#include "abacus_symmetry.h"
+#include "input_symmetry.h"
 #include "atom.h"
 #include "atomic_basis.h"
 #include "chi0.h"
@@ -138,12 +138,12 @@ std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
     return atom_nw;
 }
 
-bool use_abacus_ibz_root_projection(
+bool use_input_symmetry_ibz_root_projection(
     const PeriodicBoundaryData& pbc,
     const int n_target_kpoints,
     const int n_meanfield_kpoints)
 {
-    const auto& ctx = LIBRPA::abacus_symmetry_ctx;
+    const auto& ctx = LIBRPA::input_symmetry_ctx;
     return ctx.available && !ctx.kstars.empty()
         && pbc.klist.size() < static_cast<std::size_t>(pbc.get_n_cells_bvk())
         && ctx.kstars.size() == static_cast<std::size_t>(n_meanfield_kpoints)
@@ -151,8 +151,8 @@ bool use_abacus_ibz_root_projection(
 }
 
 std::map<std::pair<int, int>, std::set<std::array<int, 3>>>
-convert_abacus_irreducible_sector_to_libri_gw(
-    const LIBRPA::abacus_irreducible_sector_t& irreducible_sector,
+convert_input_symmetry_irreducible_sector_to_libri_gw(
+    const LIBRPA::input_symmetry_irreducible_sector_t& irreducible_sector,
     const std::array<int, 3>& period)
 {
     auto canonicalize_r = [&period](const std::array<int, 3>& r) {
@@ -293,10 +293,10 @@ RI::Tensor<Tdata> convert_complex_matrix_to_libri_tensor_gw(
 
 template <typename Tdata>
 std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>>
-restore_abacus_ao_rspace_tensor_map_gw(
+restore_input_symmetry_ao_rspace_tensor_map_gw(
     const std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>>& tensors_ir,
-    const LIBRPA::AbacusSymmetryContext& symmetry_ctx,
-    const LIBRPA::abacus_rspace_sector_stars_t& sector_stars,
+    const LIBRPA::InputSymmetryContext& symmetry_ctx,
+    const LIBRPA::input_symmetry_rspace_sector_stars_t& sector_stars,
     const AtomicBasis& atbasis_wfc)
 {
     std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> tensors_full;
@@ -325,7 +325,7 @@ restore_abacus_ao_rspace_tensor_map_gw(
                 convert_libri_tensor_to_complex_matrix_gw(jr_entry.second, nao_I, nao_J);
             for (const auto& restore_member : pair_iter->second.at(ir_R))
             {
-                const ComplexMatrix sigma_full = LIBRPA::rotate_abacus_rspace_matrix(
+                const ComplexMatrix sigma_full = LIBRPA::rotate_input_symmetry_rspace_matrix(
                     symmetry_ctx, restore_member.isym, ir_I, ir_J, sigma_ir);
                 auto& target = tensors_full[restore_member.full_atom_pair.first][{
                     static_cast<int>(restore_member.full_atom_pair.second),
@@ -524,15 +524,15 @@ static void build_gf_libri_kserial(
     }
     const std::vector<Vector3_Order<int>> Rs_vec{Rs_local.cbegin(), Rs_local.cend()};
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
-    const bool restore_abacus_kstars = can_restore_abacus_kstar_meanfield(
-        mf, kfrac_list, atom_nw, LIBRPA::abacus_symmetry_ctx.input_coord_frac);
-    const auto member_kfrac_targets = restore_abacus_kstars
-        ? build_abacus_kstar_member_kfrac_targets(pbc)
-        : abacus_kstar_member_kfrac_targets_t{};
-    auto gf = restore_abacus_kstars
-        ? get_abacus_restored_gf_cplx_imagtimes_Rs(
+    const bool restore_input_symmetry_kstars = can_restore_input_symmetry_kstar_meanfield(
+        mf, kfrac_list, atom_nw, LIBRPA::input_symmetry_ctx.input_coord_frac);
+    const auto member_kfrac_targets = restore_input_symmetry_kstars
+        ? build_input_symmetry_kstar_member_kfrac_targets(pbc)
+        : input_symmetry_kstar_member_kfrac_targets_t{};
+    auto gf = restore_input_symmetry_kstars
+        ? get_input_symmetry_restored_gf_cplx_imagtimes_Rs(
               mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec, atom_nw,
-              LIBRPA::abacus_symmetry_ctx.input_coord_frac, -1, &member_kfrac_targets)
+              LIBRPA::input_symmetry_ctx.input_coord_frac, -1, &member_kfrac_targets)
         : mf.get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec);
     // global::ofs_myid << "gf " << gf << std::endl;
     tau_gf_libri.clear();
@@ -916,7 +916,7 @@ void G0W0::build_spacetime(
         gw_libri.set_Cs(LRI_Cs.data_libri, this->libri_threshold_C);
     }
 
-    const auto& symmetry_ctx = LIBRPA::abacus_symmetry_ctx;
+    const auto& symmetry_ctx = LIBRPA::input_symmetry_ctx;
     const bool use_input_sigc_symmetry =
         symmetry_ctx.available
         && this->pbc.klist.size() < static_cast<std::size_t>(this->pbc.get_n_cells_bvk())
@@ -927,16 +927,16 @@ void G0W0::build_spacetime(
         && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(natom);
     const auto libri_sigc_irreducible_sector =
         use_input_sigc_symmetry
-            ? convert_abacus_irreducible_sector_to_libri_gw(
+            ? convert_input_symmetry_irreducible_sector_to_libri_gw(
                   symmetry_ctx.irreducible_sector, this->pbc.period_array)
             : std::map<std::pair<int, int>, std::set<std::array<int, 3>>>{};
     const bool restore_input_sigc_output = use_input_sigc_symmetry;
-    LIBRPA::abacus_rspace_sector_stars_t abacus_sector_stars;
+    LIBRPA::input_symmetry_rspace_sector_stars_t input_symmetry_sector_stars;
     if (use_input_sigc_symmetry)
     {
-        LIBRPA::build_abacus_rspace_sector_stars(
+        LIBRPA::build_input_symmetry_rspace_sector_stars(
             symmetry_ctx, symmetry_ctx.input_coord_frac, this->pbc.period, pbc.Rlist,
-            abacus_sector_stars, nullptr);
+            input_symmetry_sector_stars, nullptr);
         gw_libri.set_symmetry(false, {});
         gw_libri_cplx.set_symmetry(false, {});
         if (use_complex_tensor)
@@ -1106,9 +1106,9 @@ void G0W0::build_spacetime(
 	                            if (restore_input_sigc_output)
 	                            {
 	                                gw_libri_cplx.Sigmas =
-	                                    restore_abacus_ao_rspace_tensor_map_gw(
+	                                    restore_input_symmetry_ao_rspace_tensor_map_gw(
 	                                        gw_libri_cplx.Sigmas, symmetry_ctx,
-	                                        abacus_sector_stars, this->atbasis_wfc);
+	                                        input_symmetry_sector_stars, this->atbasis_wfc);
 	                            }
 	                            global::profiler.stop("g0w0_build_spacetime_5");
                             global::profiler.start("g0w0_build_spacetime_5_clean");
@@ -1183,9 +1183,9 @@ void G0W0::build_spacetime(
 	                            if (restore_input_sigc_output)
 	                            {
 	                                gw_libri.Sigmas =
-	                                    restore_abacus_ao_rspace_tensor_map_gw(
+	                                    restore_input_symmetry_ao_rspace_tensor_map_gw(
 	                                        gw_libri.Sigmas, symmetry_ctx,
-	                                        abacus_sector_stars, this->atbasis_wfc);
+	                                        input_symmetry_sector_stars, this->atbasis_wfc);
 	                            }
 	                            global::profiler.stop("g0w0_build_spacetime_5");
                             global::profiler.start("g0w0_build_spacetime_5_clean");
@@ -1494,7 +1494,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     ArrayDesc desc_nband_nband_fb(blacs_ctxt_h);
     const int n_target_kpoints = static_cast<int>(kfrac_target.size());
     const bool use_root_dense_projection =
-        use_abacus_ibz_root_projection(this->pbc, n_target_kpoints, this->mf.get_n_kpoints());
+        use_input_symmetry_ibz_root_projection(this->pbc, n_target_kpoints, this->mf.get_n_kpoints());
     if (use_root_dense_projection)
     {
         desc_nao_nao_fb.init(n_aos, n_aos, n_aos, n_aos, 0, 0);

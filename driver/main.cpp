@@ -13,7 +13,7 @@
 #include "../src/utils/profiler.h"
 #include "../src/utils/utils_mem.h"
 #include "../src/io/fs.h"
-#include "../src/core/abacus_symmetry.h"
+#include "../src/core/input_symmetry.h"
 // #include "task_qsgw.h"
 // #include "task_qsgwA.h"
 // #include "task_qsgw_band.h"
@@ -125,15 +125,18 @@ int main(int argc, char **argv)
         get_bool(opts.use_input_exx_symmetry)
         || get_bool(opts.use_input_gw_symmetry)
         || get_bool(opts.use_input_rpa_symmetry);
+    const auto input_symmetry_convention =
+        LIBRPA::parse_input_symmetry_convention(driver_params.input_symmetry_convention);
     if (may_use_input_symmetry)
     {
-        LIBRPA::load_global_abacus_symmetry_context(
+        LIBRPA::load_global_input_symmetry_context(
             driver_params.input_dir,
+            input_symmetry_convention,
             mpi_comm_global_h.is_root() ? &std::cout : nullptr);
     }
     else
     {
-        LIBRPA::abacus_symmetry_ctx.clear();
+        LIBRPA::input_symmetry_ctx.clear();
     }
     profiler.stop("driver_input_symmetry");
 

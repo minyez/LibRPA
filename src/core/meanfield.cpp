@@ -6,7 +6,7 @@
 #include <limits>
 #include <stdexcept>
 
-#include "abacus_symmetry.h"
+#include "input_symmetry.h"
 #include "pbc.h"
 #include "../utils/constants.h"
 #include "../utils/error.h"
@@ -17,13 +17,13 @@ namespace librpa_int {
 namespace
 {
 
-void validate_abacus_kstar_meanfield_restore(
+void validate_input_symmetry_kstar_meanfield_restore(
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac)
 {
-    const auto& ctx = LIBRPA::abacus_symmetry_ctx;
+    const auto& ctx = LIBRPA::input_symmetry_ctx;
     if (!ctx.available || !ctx.has_ao_shell_layout() || ctx.kstars.empty())
     {
         throw std::runtime_error("ABACUS k-star restore requires loaded AO symmetry sidecars");
@@ -70,13 +70,13 @@ void validate_abacus_kstar_meanfield_restore(
     }
     for (const auto& kfrac : kfrac_list)
     {
-        (void)LIBRPA::find_abacus_kstar_for_ibz_kpoint(ctx, kfrac);
+        (void)LIBRPA::find_input_symmetry_kstar_for_ibz_kpoint(ctx, kfrac);
     }
 }
 
-void validate_abacus_kstar_member_kfrac_targets(
+void validate_input_symmetry_kstar_member_kfrac_targets(
     const std::vector<Vector3_Order<double>>& kfrac_list,
-    const abacus_kstar_member_kfrac_targets_t* member_kfrac_targets)
+    const input_symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets)
 {
     if (member_kfrac_targets == nullptr || member_kfrac_targets->empty())
     {
@@ -87,10 +87,10 @@ void validate_abacus_kstar_member_kfrac_targets(
         throw std::runtime_error(
             "ABACUS k-star restore target k-point list has inconsistent IBZ size");
     }
-    const auto& ctx = LIBRPA::abacus_symmetry_ctx;
+    const auto& ctx = LIBRPA::input_symmetry_ctx;
     for (std::size_t ik_ibz = 0; ik_ibz != kfrac_list.size(); ++ik_ibz)
     {
-        const auto& star = LIBRPA::find_abacus_kstar_for_ibz_kpoint(ctx, kfrac_list[ik_ibz]);
+        const auto& star = LIBRPA::find_input_symmetry_kstar_for_ibz_kpoint(ctx, kfrac_list[ik_ibz]);
         if ((*member_kfrac_targets)[ik_ibz].size() != star.members.size())
         {
             throw std::runtime_error(
@@ -99,9 +99,9 @@ void validate_abacus_kstar_member_kfrac_targets(
     }
 }
 
-const Vector3_Order<double>& get_abacus_kstar_member_kfrac_target(
-    const LIBRPA::AbacusKStarMember& member,
-    const abacus_kstar_member_kfrac_targets_t* member_kfrac_targets,
+const Vector3_Order<double>& get_input_symmetry_kstar_member_kfrac_target(
+    const LIBRPA::InputSymmetryKStarMember& member,
+    const input_symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets,
     const std::size_t ik_ibz,
     const std::size_t imember)
 {
@@ -112,9 +112,9 @@ const Vector3_Order<double>& get_abacus_kstar_member_kfrac_target(
     return (*member_kfrac_targets)[ik_ibz][imember];
 }
 
-double abacus_kstar_geometric_weight(const LIBRPA::AbacusKStar& star)
+double input_symmetry_kstar_geometric_weight(const LIBRPA::InputSymmetryKStar& star)
 {
-    const double full_count = static_cast<double>(LIBRPA::abacus_symmetry_ctx.count_kstar_members());
+    const double full_count = static_cast<double>(LIBRPA::input_symmetry_ctx.count_kstar_members());
     if (full_count <= 0.0)
     {
         throw std::runtime_error("ABACUS k-star restore found zero full-k members");
@@ -164,33 +164,33 @@ ComplexMatrix build_gf_cplx_imagtime_with_prefactor(
 
 } // namespace
 
-bool can_restore_abacus_kstar_meanfield(
+bool can_restore_input_symmetry_kstar_meanfield(
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac)
 {
-    const auto& ctx = LIBRPA::abacus_symmetry_ctx;
+    const auto& ctx = LIBRPA::input_symmetry_ctx;
     if (!ctx.available || !ctx.has_ao_shell_layout() || ctx.kstars.empty())
     {
         return false;
     }
-    validate_abacus_kstar_meanfield_restore(mf, kfrac_list, atom_nw, coord_frac);
+    validate_input_symmetry_kstar_meanfield_restore(mf, kfrac_list, atom_nw, coord_frac);
     return ctx.count_kstar_members() > kfrac_list.size();
 }
 
-abacus_kstar_member_kfrac_targets_t build_abacus_kstar_member_kfrac_targets(
+input_symmetry_kstar_member_kfrac_targets_t build_input_symmetry_kstar_member_kfrac_targets(
     const PeriodicBoundaryData& pbc)
 {
-    const auto& ctx = LIBRPA::abacus_symmetry_ctx;
+    const auto& ctx = LIBRPA::input_symmetry_ctx;
     if (!ctx.available || ctx.kstars.empty())
     {
         return {};
     }
 
-    const auto mapping = LIBRPA::build_abacus_kstar_grid_mapping(
+    const auto mapping = LIBRPA::build_input_symmetry_kstar_grid_mapping(
         ctx, pbc.klist, pbc.kfrac_list, pbc.map_irk_ks);
-    abacus_kstar_member_kfrac_targets_t targets(mapping.size());
+    input_symmetry_kstar_member_kfrac_targets_t targets(mapping.size());
 
     for (const auto& entry : mapping)
     {
@@ -206,11 +206,11 @@ abacus_kstar_member_kfrac_targets_t build_abacus_kstar_member_kfrac_targets(
         }
     }
 
-    validate_abacus_kstar_member_kfrac_targets(pbc.kfrac_list, &targets);
+    validate_input_symmetry_kstar_member_kfrac_targets(pbc.kfrac_list, &targets);
     return targets;
 }
 
-ComplexMatrix get_abacus_restored_dmat_cplx_R(
+ComplexMatrix get_input_symmetry_restored_dmat_cplx_R(
     const MeanField& mf,
     const int ispin,
     const int ispinor_bra,
@@ -219,18 +219,18 @@ ComplexMatrix get_abacus_restored_dmat_cplx_R(
     const Vector3_Order<int>& R,
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac,
-    const abacus_kstar_member_kfrac_targets_t* member_kfrac_targets)
+    const input_symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets)
 {
-    validate_abacus_kstar_meanfield_restore(mf, kfrac_list, atom_nw, coord_frac);
-    validate_abacus_kstar_member_kfrac_targets(kfrac_list, member_kfrac_targets);
-    const auto& ctx = LIBRPA::abacus_symmetry_ctx;
+    validate_input_symmetry_kstar_meanfield_restore(mf, kfrac_list, atom_nw, coord_frac);
+    validate_input_symmetry_kstar_member_kfrac_targets(kfrac_list, member_kfrac_targets);
+    const auto& ctx = LIBRPA::input_symmetry_ctx;
     const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
     ComplexMatrix dmat_cplx(mf.get_n_aos(), mf.get_n_aos());
 
     for (int ik_ibz = 0; ik_ibz != mf.get_n_kpoints(); ++ik_ibz)
     {
         const auto& k_ibz = kfrac_list[static_cast<std::size_t>(ik_ibz)];
-        const auto& star = LIBRPA::find_abacus_kstar_for_ibz_kpoint(ctx, k_ibz);
+        const auto& star = LIBRPA::find_input_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
         if (star.members.empty())
         {
             throw std::runtime_error("ABACUS k-star member list is empty");
@@ -241,10 +241,10 @@ ComplexMatrix get_abacus_restored_dmat_cplx_R(
         for (std::size_t imember = 0; imember != star.members.size(); ++imember)
         {
             const auto& member = star.members[imember];
-            const auto& k_bz_target = get_abacus_kstar_member_kfrac_target(
+            const auto& k_bz_target = get_input_symmetry_kstar_member_kfrac_target(
                 member, member_kfrac_targets, static_cast<std::size_t>(ik_ibz), imember);
             const bool use_time_reversal = member.isym >= nsym_space;
-            const auto dmat_member = LIBRPA::rotate_abacus_kspace_matrix(
+            const auto dmat_member = LIBRPA::rotate_input_symmetry_kspace_matrix(
                 ctx, member, dmat_ibz, atom_nw, k_ibz, coord_frac, use_time_reversal,
                 &k_bz_target);
             const double angle = -(k_bz_target * R) * TWO_PI;
@@ -257,7 +257,7 @@ ComplexMatrix get_abacus_restored_dmat_cplx_R(
 }
 
 std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>>
-get_abacus_restored_gf_cplx_imagtimes_Rs(
+get_input_symmetry_restored_gf_cplx_imagtimes_Rs(
     const MeanField& mf,
     const int ispin,
     const int ispinor_bra,
@@ -268,10 +268,10 @@ get_abacus_restored_gf_cplx_imagtimes_Rs(
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const int nbands_G,
-    const abacus_kstar_member_kfrac_targets_t* member_kfrac_targets)
+    const input_symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets)
 {
-    validate_abacus_kstar_meanfield_restore(mf, kfrac_list, atom_nw, coord_frac);
-    validate_abacus_kstar_member_kfrac_targets(kfrac_list, member_kfrac_targets);
+    validate_input_symmetry_kstar_meanfield_restore(mf, kfrac_list, atom_nw, coord_frac);
+    validate_input_symmetry_kstar_member_kfrac_targets(kfrac_list, member_kfrac_targets);
 
     std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> gf_tau_R;
     for (const auto tau : imagtimes)
@@ -283,7 +283,7 @@ get_abacus_restored_gf_cplx_imagtimes_Rs(
         return gf_tau_R;
     }
 
-    const auto& ctx = LIBRPA::abacus_symmetry_ctx;
+    const auto& ctx = LIBRPA::input_symmetry_ctx;
     const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
     const int n_bands = mf.get_n_bands();
     const double scale_spin = 0.5 * mf.get_n_spins() * mf.get_n_spinor();
@@ -294,13 +294,13 @@ get_abacus_restored_gf_cplx_imagtimes_Rs(
         for (int ik_ibz = 0; ik_ibz != mf.get_n_kpoints(); ++ik_ibz)
         {
             const auto& k_ibz = kfrac_list[static_cast<std::size_t>(ik_ibz)];
-            const auto& star = LIBRPA::find_abacus_kstar_for_ibz_kpoint(ctx, k_ibz);
+            const auto& star = LIBRPA::find_input_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
             if (star.members.empty())
             {
                 throw std::runtime_error("ABACUS k-star member list is empty");
             }
 
-            const double kpoint_weight = abacus_kstar_geometric_weight(star);
+            const double kpoint_weight = input_symmetry_kstar_geometric_weight(star);
             std::vector<double> prefactors(static_cast<std::size_t>(n_bands), 0.0);
             for (int ib = 0; ib != n_bands; ++ib)
             {
@@ -316,10 +316,10 @@ get_abacus_restored_gf_cplx_imagtimes_Rs(
             for (std::size_t imember = 0; imember != star.members.size(); ++imember)
             {
                 const auto& member = star.members[imember];
-                const auto& k_bz_target = get_abacus_kstar_member_kfrac_target(
+                const auto& k_bz_target = get_input_symmetry_kstar_member_kfrac_target(
                     member, member_kfrac_targets, static_cast<std::size_t>(ik_ibz), imember);
                 const bool use_time_reversal = member.isym >= nsym_space;
-                const auto gf_member = LIBRPA::rotate_abacus_kspace_matrix(
+                const auto gf_member = LIBRPA::rotate_input_symmetry_kspace_matrix(
                     ctx, member, gf_ibz, atom_nw, k_ibz, coord_frac, use_time_reversal,
                     &k_bz_target);
                 for (const auto& R : Rs)

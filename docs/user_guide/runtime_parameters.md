@@ -67,6 +67,7 @@ For example, the default `prefix_lri_coeff = Cs_data` matches files such as `Cs_
 | Parameter Name        | Description                                                          | Type   | Default Value (Options)                         | Status       |
 |-----------------------|----------------------------------------------------------------------|--------|-------------------------------------------------|--------------|
 | `input_dir`           | Input directory to find and read the AO dataset                      | string | `./`                                           |              |
+| `input_symmetry_convention` | Convention used to interpret input symmetry sidecars          | string | `auto` (`auto`, `abacus`, `none`)              | Experimental |
 | `fn_stru`             | Structure-data filename                                              | string | `stru_out`                                     |              |
 | `fn_bz_sampling`      | Brillouin-zone sampling filename                                     | string | `bz_sampling_out`                              |              |
 | `fn_basis`            | Basis-set filename                                                   | string | `basis_out`                                    |              |
@@ -88,6 +89,12 @@ When a reader-version selector is `-1`, the driver detects the format once from 
 file matching the corresponding prefix and reuses that reader for all files with the same prefix.
 Versioned binary files use a negative first integer marker; non-negative first integers are treated
 as legacy input.
+
+When `input_symmetry_convention = auto`, the driver currently detects and uses the ABACUS
+symmetry-sidecar convention if `irreducible_sector.txt`, `symrot_R.txt`, and `symrot_k.txt`
+are present under `input_dir` or `input_dir/OUT.ABACUS`. Set `input_symmetry_convention = abacus`
+to request that convention explicitly, or `none` to disable sidecar loading even when symmetry
+switches are enabled.
 
 (common-parameter-settings-for-librpa)=
 ## Common Parameter Settings for LibRPA
@@ -201,5 +208,8 @@ and may be removed in the future:
 | `use_soc`        | `use_spinor_wfc`     | Old spelling for selecting spinor-format driver input |
 | `tfgrid_type`    | `tfgrids_type`       | Old spelling                               |
 | `gf_R_threshold` | `gf_threshold`       | Old spelling                               |
+| `use_abacus_exx_symmetry` | `use_input_exx_symmetry` | Old spelling for the EXX input-symmetry switch |
+| `use_abacus_gw_symmetry`  | `use_input_gw_symmetry`  | Old spelling for the GW input-symmetry switch |
+| `use_abacus_rpa_symmetry` | `use_input_rpa_symmetry` | Old spelling for the RPA/chi0 input-symmetry switch |
 
 For details on all parameters, you can visit the API documentation of struct {librpa}`LibrpaOptions`.

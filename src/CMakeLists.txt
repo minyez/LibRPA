@@ -79,7 +79,7 @@ list(APPEND lib_sources
         api/options.cpp
 
         core/analycont.cpp
-        core/abacus_symmetry.cpp
+        core/input_symmetry.cpp
         core/atomic_basis.cpp
         core/chi0.cpp
         core/coulmat.cpp

@@ -29,7 +29,7 @@
 #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
 #include "../utils/utils_mem.h"
-#include "abacus_symmetry.h"
+#include "input_symmetry.h"
 #include "atomic_basis.h"
 #include "meanfield_mpi.h"
 #include "pbc.h"
@@ -592,19 +592,19 @@ static void build_gf_Rt_libri_serial(
     global::ofs_myid << "map_R_IJs " << map_R_IJs << std::endl;
 
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
-    if (can_restore_abacus_kstar_meanfield(
-            mf, kfrac_list, atom_nw, LIBRPA::abacus_symmetry_ctx.input_coord_frac))
+    if (can_restore_input_symmetry_kstar_meanfield(
+            mf, kfrac_list, atom_nw, LIBRPA::input_symmetry_ctx.input_coord_frac))
     {
-        const auto member_kfrac_targets = build_abacus_kstar_member_kfrac_targets(pbc);
+        const auto member_kfrac_targets = build_input_symmetry_kstar_member_kfrac_targets(pbc);
         std::vector<Vector3_Order<int>> Rs_this;
         Rs_this.reserve(map_R_IJs.size());
         for (const auto &R_IJs : map_R_IJs)
         {
             Rs_this.push_back(R_IJs.first);
         }
-        const auto gf_cplx_R = get_abacus_restored_gf_cplx_imagtimes_Rs(
+        const auto gf_cplx_R = get_input_symmetry_restored_gf_cplx_imagtimes_Rs(
             mf, ispin, isoc1, isoc2, kfrac_list, {tau}, Rs_this, atom_nw,
-            LIBRPA::abacus_symmetry_ctx.input_coord_frac, nbands_G, &member_kfrac_targets).at(tau);
+            LIBRPA::input_symmetry_ctx.input_coord_frac, nbands_G, &member_kfrac_targets).at(tau);
 
         for (const auto &R_IJs : map_R_IJs)
         {

@@ -34,7 +34,7 @@
 
 #include "driver.h"
 #include "../src/mpi/global_mpi.h"
-#include "../src/core/abacus_symmetry.h"
+#include "../src/core/input_symmetry.h"
 #include "../src/core/pbc.h"
 #include "../src/math/matrix.h"
 #include "../src/utils/constants.h"
@@ -53,13 +53,13 @@ using std::string;
 namespace
 {
 
-constexpr double kAbacusKpointMatchTol = 1e-5;
+constexpr double kInputSymmetryKpointMatchTol = 1e-5;
 constexpr std::int32_t READER_SHRINK_SINVS_V1_MARKER = -30241621;
 
-bool use_loaded_abacus_symmetry_sidecars()
+bool use_loaded_input_symmetry_sidecars()
 {
-    return LIBRPA::abacus_symmetry_ctx.available
-           && !LIBRPA::abacus_symmetry_ctx.kstars.empty()
+    return LIBRPA::input_symmetry_ctx.available
+           && !LIBRPA::input_symmetry_ctx.kstars.empty()
            && (driver::get_bool(driver::opts.use_input_gw_symmetry)
                || driver::get_bool(driver::opts.use_input_rpa_symmetry)
                || driver::get_bool(driver::opts.use_input_exx_symmetry));
@@ -67,7 +67,7 @@ bool use_loaded_abacus_symmetry_sidecars()
 
 bool nearly_same_kpoint(const librpa_int::Vector3_Order<double> &lhs,
                        const librpa_int::Vector3_Order<double> &rhs,
-                       const double tol = kAbacusKpointMatchTol)
+                       const double tol = kInputSymmetryKpointMatchTol)
 {
     return std::abs(lhs.x - rhs.x) <= tol
            && std::abs(lhs.y - rhs.y) <= tol
@@ -1274,7 +1274,7 @@ void read_stru(const std::string &file_path)
     driver::h.set_atoms(driver::atom_types, coords);
     {
         auto pds = api::get_dataset_instance(driver::h);
-        LIBRPA::abacus_symmetry_ctx.set_lattice(pds->pbc.latvec, pds->pbc.G);
+        LIBRPA::input_symmetry_ctx.set_lattice(pds->pbc.latvec, pds->pbc.G);
     }
 
     // // Internal check
@@ -1367,13 +1367,13 @@ void read_bz_sampling_from_stru(const std::string &file_path)
         nk[i] = stoi(x);
     }
     const int nk_full = nk[0] * nk[1] * nk[2];
-    const bool use_abacus_kstars =
-        use_loaded_abacus_symmetry_sidecars()
-        && LIBRPA::abacus_symmetry_ctx.kstars.size()
+    const bool use_input_symmetry_kstars =
+        use_loaded_input_symmetry_sidecars()
+        && LIBRPA::input_symmetry_ctx.kstars.size()
                == static_cast<std::size_t>(driver::n_kpoints)
         && driver::n_kpoints > 0
         && driver::n_kpoints <= nk_full;
-    const int n_k_rows = use_abacus_kstars ? driver::n_kpoints : nk_full;
+    const int n_k_rows = use_input_symmetry_kstars ? driver::n_kpoints : nk_full;
     std::vector<double> kvecs(3 * n_k_rows);
 
     for (int i = 0; i != 3 * n_k_rows; i++)
@@ -1388,15 +1388,15 @@ void read_bz_sampling_from_stru(const std::string &file_path)
         kvecs[i] = stod(x);
     }
 
-    if (use_abacus_kstars)
+    if (use_input_symmetry_kstars)
     {
         auto pds = api::get_dataset_instance(driver::h);
         auto &pbc = pds->pbc;
         std::vector<std::vector<Vector3_Order<double>>> full_kstars;
-        full_kstars.reserve(LIBRPA::abacus_symmetry_ctx.kstars.size());
-        for (std::size_t istar = 0; istar != LIBRPA::abacus_symmetry_ctx.kstars.size(); ++istar)
+        full_kstars.reserve(LIBRPA::input_symmetry_ctx.kstars.size());
+        for (std::size_t istar = 0; istar != LIBRPA::input_symmetry_ctx.kstars.size(); ++istar)
         {
-            const auto &star = LIBRPA::abacus_symmetry_ctx.kstars[istar];
+            const auto &star = LIBRPA::input_symmetry_ctx.kstars[istar];
             const Vector3_Order<double> k_ibz_read{
                 kvecs[3 * istar] / TWO_PI,
                 kvecs[3 * istar + 1] / TWO_PI,
@@ -1405,7 +1405,7 @@ void read_bz_sampling_from_stru(const std::string &file_path)
             if (!nearly_same_kpoint(k_ibz_read, k_ibz_sidecar))
             {
                 std::stringstream ss;
-                ss << "ABACUS symmetry k-star " << istar + 1
+                ss << "Input symmetry k-star " << istar + 1
                    << " does not match the corresponding stru_out IBZ k-point";
                 throw LIBRPA_RUNTIME_ERROR(ss.str());
             }

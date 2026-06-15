@@ -6,7 +6,7 @@
 #include "../../src/io/global_io.h"
 #include "../../src/io/fs.h"
 #include "../../src/io/stl_io_helper.h"
-#include "../../src/core/abacus_symmetry.h"
+#include "../../src/core/input_symmetry.h"
 #include "../../src/utils/profiler.h"
 #include "../../src/api/instance_manager.h"
 #include "../../src/utils/constants.h"
@@ -158,17 +158,17 @@ void driver::task_g0w0_band()
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &kfrac_list = pds->pbc.kfrac_list;
     const auto &mf = pds->mf;
-    std::vector<LIBRPA::AbacusFullKpointMemberEntry> full_k_members;
-    if (LIBRPA::abacus_symmetry_ctx.available && !LIBRPA::abacus_symmetry_ctx.kstars.empty())
+    std::vector<LIBRPA::InputSymmetryFullKpointMemberEntry> full_k_members;
+    if (LIBRPA::input_symmetry_ctx.available && !LIBRPA::input_symmetry_ctx.kstars.empty())
     {
-        full_k_members = LIBRPA::build_abacus_full_kpoint_member_list(
-            LIBRPA::abacus_symmetry_ctx, kfrac_list);
+        full_k_members = LIBRPA::build_input_symmetry_full_kpoint_member_list(
+            LIBRPA::input_symmetry_ctx, kfrac_list);
     }
-    const bool output_abacus_full_kgrid = full_k_members.size() > kfrac_list.size();
-    const int n_kpoints_output = output_abacus_full_kgrid
+    const bool output_full_kgrid_from_input_symmetry = full_k_members.size() > kfrac_list.size();
+    const int n_kpoints_output = output_full_kgrid_from_input_symmetry
         ? as_int(full_k_members.size())
         : n_kpoints;
-    const double occupation_output_scale = output_abacus_full_kgrid
+    const double occupation_output_scale = output_full_kgrid_from_input_symmetry
         ? static_cast<double>(full_k_members.size())
         : static_cast<double>(mf.get_n_kpoints());
 
@@ -199,10 +199,10 @@ void driver::task_g0w0_band()
             {
                 for (int i_kpoint = 0; i_kpoint < n_kpoints_output; i_kpoint++)
                 {
-                    const int i_kpoint_ibz = output_abacus_full_kgrid
+                    const int i_kpoint_ibz = output_full_kgrid_from_input_symmetry
                         ? full_k_members[as_size(i_kpoint)].ik_ibz
                         : i_kpoint;
-                    const auto &k = output_abacus_full_kgrid
+                    const auto &k = output_full_kgrid_from_input_symmetry
                         ? full_k_members[as_size(i_kpoint)].k_bz
                         : kfrac_list[i_kpoint_ibz];
                     lib_printf("spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n",

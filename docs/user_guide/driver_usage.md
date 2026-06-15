@@ -63,6 +63,10 @@ prefix_coul_full = coulomb_mat_alt
 prefix_coul_cut = coulomb_cut_alt
 ```
 
+For calculations that use exported symmetry sidecars, `input_symmetry_convention = auto`
+detects the supported ABACUS convention from the sidecar files. You can also set
+`input_symmetry_convention = abacus` explicitly.
+
 ### Run the calculation
 
 After setting up the input file `librpa.in`, the LibRPA driver can be called by issuing:

@@ -1,8 +1,8 @@
 /*!
- * @file abacus_symmetry.cpp
- * @brief Utilities for reading ABACUS symmetry sidecar files.
+ * @file input_symmetry.cpp
+ * @brief Utilities for reading input symmetry sidecar files.
  */
-#include "abacus_symmetry.h"
+#include "input_symmetry.h"
 
 #include "pbc.h"
 #include "../utils/constants.h"
@@ -31,11 +31,11 @@ using librpa_int::Vector3;
 namespace
 {
 
-constexpr double kAbacusSymmetryCoordTol = 1e-5;
+constexpr double kInputSymmetryCoordTol = 1e-5;
 // Real-space atom mapping is reconstructed from ABACUS text sidecars. When exact fractional
 // coordinates are available from the input `STRU`, LibRPA uses them directly. The looser
 // tolerance below remains as a fallback for text-derived coordinates and lattice-inversion noise.
-constexpr double kAbacusSymmetryRSpaceAtomMapTol = 5e-5;
+constexpr double kInputSymmetryRSpaceAtomMapTol = 5e-5;
 const std::complex<double> kImagUnit(0.0, 1.0);
 
 std::string trim(const std::string& text)
@@ -120,7 +120,7 @@ bool file_exists(const std::string& file_path)
     return ifs.good();
 }
 
-std::vector<std::string> build_abacus_path_candidates(const std::string& dir_path)
+std::vector<std::string> build_input_symmetry_path_candidates(const std::string& dir_path)
 {
     std::vector<std::string> dirs;
     auto append_unique = [&dirs](const std::string& dir) {
@@ -246,7 +246,7 @@ bool starts_with_integer_token(const std::string& text)
            || std::isspace(static_cast<unsigned char>(stripped[index])) != 0;
 }
 
-bool nearly_integer(const double value, const double tol = kAbacusSymmetryCoordTol)
+bool nearly_integer(const double value, const double tol = kInputSymmetryCoordTol)
 {
     return std::abs(value - std::round(value)) < tol;
 }
@@ -291,7 +291,7 @@ std::vector<int> build_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
 }
 
 Vector3_Order<double> restrict_fractional_coordinate(const Vector3_Order<double>& vec,
-                                                     const double tol = kAbacusSymmetryCoordTol)
+                                                     const double tol = kInputSymmetryCoordTol)
 {
     auto wrap = [tol](const double x) {
         double wrapped = std::fmod(x + 100.0 + tol, 1.0) - tol;
@@ -337,7 +337,7 @@ std::array<std::array<double, 3>, 3> multiply_rotation_matrices(
 
 bool nearly_same_kpoint(const Vector3_Order<double>& lhs,
                         const Vector3_Order<double>& rhs,
-                        const double tol = kAbacusSymmetryCoordTol)
+                        const double tol = kInputSymmetryCoordTol)
 {
     const auto is_same_component = [tol](const double lhs_component, const double rhs_component) {
         return std::abs((lhs_component - rhs_component) - std::round(lhs_component - rhs_component))
@@ -369,12 +369,12 @@ double factorial_as_double(const int n)
     return std::tgamma(static_cast<double>(n) + 1.0);
 }
 
-int abacus_m_to_index(const int m)
+int input_symmetry_m_to_index(const int m)
 {
     return (m > 0) ? (2 * m - 1) : (-2 * m);
 }
 
-double abacus_wigner_d(const double beta, const int l, const int m1, const int m2)
+double input_symmetry_wigner_d(const double beta, const int l, const int m1, const int m2)
 {
     double value = 0.0;
     for (int i = std::max(0, m2 - m1); i <= std::min(l - m1, l + m2); ++i)
@@ -393,7 +393,7 @@ double abacus_wigner_d(const double beta, const int l, const int m1, const int m
     return value;
 }
 
-std::complex<double> abacus_ovlp_Ylm_Slm(const int l, const int m1, const int m2)
+std::complex<double> input_symmetry_ovlp_Ylm_Slm(const int l, const int m1, const int m2)
 {
     (void)l;
     if (m1 == m2)
@@ -419,9 +419,9 @@ std::complex<double> abacus_ovlp_Ylm_Slm(const int l, const int m1, const int m2
     return 0.0;
 }
 
-Vector3_Order<double> abacus_get_euler_angle(const Matrix3& gmatc)
+Vector3_Order<double> input_symmetry_get_euler_angle(const Matrix3& gmatc)
 {
-    const double threshold = kAbacusSymmetryCoordTol;
+    const double threshold = kInputSymmetryCoordTol;
     double alpha = 0.0;
     double beta = 0.0;
     double gamma = 0.0;
@@ -468,7 +468,7 @@ Vector3_Order<double> abacus_get_euler_angle(const Matrix3& gmatc)
     return {alpha, beta, gamma};
 }
 
-std::complex<double> abacus_wigner_D(const Vector3_Order<double>& euler_angle,
+std::complex<double> input_symmetry_wigner_D(const Vector3_Order<double>& euler_angle,
                                      const int l,
                                      const int m1,
                                      const int m2,
@@ -478,7 +478,7 @@ std::complex<double> abacus_wigner_D(const Vector3_Order<double>& euler_angle,
                                                    0.0);
     return std::exp(-kImagUnit * static_cast<double>(m1) * euler_angle.x)
            * std::exp(-kImagUnit * static_cast<double>(m2) * euler_angle.z)
-           * abacus_wigner_d(euler_angle.y, l, m1, m2) * inversion_prefactor;
+           * input_symmetry_wigner_d(euler_angle.y, l, m1, m2) * inversion_prefactor;
 }
 
 void clean_nearly_integer_entries(ComplexMatrix& matrix, const double tol = 1e-10)
@@ -508,8 +508,8 @@ void clean_nearly_integer_entries(ComplexMatrix& matrix, const double tol = 1e-1
     }
 }
 
-ComplexMatrix build_abacus_shell_rotation_from_direct_rotation(
-    const AbacusSymmetryContext& ctx,
+ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
+    const InputSymmetryContext& ctx,
     const int l,
     const std::array<std::array<double, 3>, 3>& direct_rotation)
 {
@@ -532,7 +532,7 @@ ComplexMatrix build_abacus_shell_rotation_from_direct_rotation(
                                                         0.0, -1.0, 0.0,
                                                         0.0, 0.0, -1.0))
                           : cartesian_matrix;
-    const auto euler_angle = abacus_get_euler_angle(proper_cartesian);
+    const auto euler_angle = input_symmetry_get_euler_angle(proper_cartesian);
 
     const int nm = 2 * l + 1;
     ComplexMatrix c_mm(nm, nm);
@@ -541,10 +541,10 @@ ComplexMatrix build_abacus_shell_rotation_from_direct_rotation(
     {
         for (int m2 = -l; m2 <= l; ++m2)
         {
-            c_mm(abacus_m_to_index(m1), abacus_m_to_index(m2)) =
-                abacus_ovlp_Ylm_Slm(l, m1, m2);
-            D_mm(abacus_m_to_index(m1), abacus_m_to_index(m2)) =
-                abacus_wigner_D(euler_angle, l, m1, m2, improper_rotation);
+            c_mm(input_symmetry_m_to_index(m1), input_symmetry_m_to_index(m2)) =
+                input_symmetry_ovlp_Ylm_Slm(l, m1, m2);
+            D_mm(input_symmetry_m_to_index(m1), input_symmetry_m_to_index(m2)) =
+                input_symmetry_wigner_D(euler_angle, l, m1, m2, improper_rotation);
         }
     }
 
@@ -578,7 +578,7 @@ Vector3_Order<int> round_vec3_to_int(const Vector3_Order<double>& vec)
 }
 
 bool is_nearly_integer_vec3(const Vector3_Order<double>& vec,
-                            const double tol = kAbacusSymmetryCoordTol)
+                            const double tol = kInputSymmetryCoordTol)
 {
     return nearly_integer(vec.x, tol) && nearly_integer(vec.y, tol) && nearly_integer(vec.z, tol);
 }
@@ -621,14 +621,14 @@ void set_atom_block(ComplexMatrix& matrix,
     }
 }
 
-struct AbacusRSpaceOperationInfo
+struct InputSymmetryRSpaceOperationInfo
 {
     std::vector<atom_t> atom_map;
     std::vector<Vector3_Order<int>> return_lattice;
 };
 
-std::vector<AbacusRSpaceOperationInfo> build_rspace_operation_info(
-    const AbacusSymmetryContext& ctx,
+std::vector<InputSymmetryRSpaceOperationInfo> build_rspace_operation_info(
+    const InputSymmetryContext& ctx,
     const std::map<atom_t, std::array<double, 3>>& coord_frac)
 {
     if (coord_frac.size() != ctx.atom_to_type.size())
@@ -636,7 +636,7 @@ std::vector<AbacusRSpaceOperationInfo> build_rspace_operation_info(
         throw std::runtime_error("Fractional coordinates and ABACUS atom mapping have inconsistent sizes");
     }
 
-    std::vector<AbacusRSpaceOperationInfo> infos(ctx.rspace_operations.size());
+    std::vector<InputSymmetryRSpaceOperationInfo> infos(ctx.rspace_operations.size());
     for (auto& info : infos)
     {
         info.atom_map.resize(coord_frac.size(), static_cast<atom_t>(-1));
@@ -646,7 +646,7 @@ std::vector<AbacusRSpaceOperationInfo> build_rspace_operation_info(
     for (std::size_t isym = 0; isym < ctx.rspace_operations.size(); ++isym)
     {
         const auto& op = ctx.rspace_operations[isym];
-        const double atom_map_tol = kAbacusSymmetryRSpaceAtomMapTol;
+        const double atom_map_tol = kInputSymmetryRSpaceAtomMapTol;
         for (atom_t atom_from = 0; atom_from < coord_frac.size(); ++atom_from)
         {
             const auto& coord_from = coord_frac.at(atom_from);
@@ -698,7 +698,7 @@ std::vector<AbacusRSpaceOperationInfo> build_rspace_operation_info(
 }
 
 std::vector<int> build_rspace_inverse_map(
-    const AbacusSymmetryContext& ctx,
+    const InputSymmetryContext& ctx,
     const std::map<atom_t, std::array<double, 3>>& coord_frac)
 {
     (void)coord_frac;
@@ -732,8 +732,8 @@ std::vector<int> build_rspace_inverse_map(
 
 Vector3_Order<int> rotate_rspace_vector(
     const Vector3_Order<int>& R,
-    const AbacusRSpaceOperationInfo& op_info,
-    const AbacusSymmetryOperation& op,
+    const InputSymmetryRSpaceOperationInfo& op_info,
+    const InputSymmetryOperation& op,
     const atom_t atom_from_i,
     const atom_t atom_from_j)
 {
@@ -766,7 +766,7 @@ Vector3_Order<double> parse_vec3_double(const std::string& line, const std::stri
     return {values[0], values[1], values[2]};
 }
 
-abacus_R_t parse_vec3_int(const std::string& line, const std::string& context)
+input_symmetry_R_t parse_vec3_int(const std::string& line, const std::string& context)
 {
     const auto values = extract_integers(line);
     if (values.size() < 3)
@@ -832,7 +832,7 @@ ComplexMatrix parse_shell_rotation(const std::vector<std::string>& lines,
 }
 
 void load_irreducible_sector_file(const std::string& file_path,
-                                  abacus_irreducible_sector_t& irreducible_sector)
+                                  input_symmetry_irreducible_sector_t& irreducible_sector)
 {
     std::ifstream ifs(file_path);
     if (!ifs.good())
@@ -853,13 +853,13 @@ void load_irreducible_sector_file(const std::string& file_path,
             throw std::runtime_error("Failed to parse irreducible-sector line: " + line);
         }
         const atpair_t atom_pair{static_cast<atom_t>(values[0]), static_cast<atom_t>(values[1])};
-        const abacus_R_t R{static_cast<int>(values[2]), static_cast<int>(values[3]),
+        const input_symmetry_R_t R{static_cast<int>(values[2]), static_cast<int>(values[3]),
                            static_cast<int>(values[4])};
         irreducible_sector[atom_pair].insert(R);
     }
 }
 
-void load_symrot_R_file(const std::string& file_path, AbacusSymmetryContext& ctx)
+void load_symrot_R_file(const std::string& file_path, InputSymmetryContext& ctx)
 {
     std::ifstream ifs(file_path);
     if (!ifs.good())
@@ -918,7 +918,7 @@ void load_symrot_R_file(const std::string& file_path, AbacusSymmetryContext& ctx
             throw std::runtime_error("Expected symmetry index in " + file_path + ": " + lines[index]);
         }
 
-        AbacusSymmetryOperation op;
+        InputSymmetryOperation op;
         op.isym = std::stoi(trim(lines[index]));
         ++index;
 
@@ -965,10 +965,10 @@ void load_symrot_R_file(const std::string& file_path, AbacusSymmetryContext& ctx
     }
 }
 
-bool append_unique_abf_layout(std::vector<AbacusAOTypeLayout>& candidates,
-                              const AbacusAOTypeLayout& layout);
+bool append_unique_abf_layout(std::vector<InputSymmetryAOTypeLayout>& candidates,
+                              const InputSymmetryAOTypeLayout& layout);
 
-AbacusAOTypeLayout parse_symrot_type_layout_line(const std::string& line,
+InputSymmetryAOTypeLayout parse_symrot_type_layout_line(const std::string& line,
                                                  int& atom_type,
                                                  const std::string& file_path,
                                                  const std::string& layout_kind)
@@ -989,7 +989,7 @@ AbacusAOTypeLayout parse_symrot_type_layout_line(const std::string& line,
                                  + file_path + ": " + line);
     }
 
-    AbacusAOTypeLayout layout;
+    InputSymmetryAOTypeLayout layout;
     layout.label = fields[3];
     layout.nao = std::stoi(fields[5]);
     const int lmax = std::stoi(fields[7]);
@@ -1021,7 +1021,7 @@ AbacusAOTypeLayout parse_symrot_type_layout_line(const std::string& line,
 
 void parse_symrot_ao_layout_header(const std::vector<std::string>& lines,
                                    const std::string& file_path,
-                                   std::vector<AbacusAOTypeLayout>& layouts_by_type)
+                                   std::vector<InputSymmetryAOTypeLayout>& layouts_by_type)
 {
     layouts_by_type.clear();
 
@@ -1074,7 +1074,7 @@ void parse_symrot_ao_layout_header(const std::vector<std::string>& lines,
 void parse_symrot_abf_layout_header(
     const std::vector<std::string>& lines,
     const std::string& file_path,
-    std::vector<std::vector<AbacusAOTypeLayout>>& candidates_by_type)
+    std::vector<std::vector<InputSymmetryAOTypeLayout>>& candidates_by_type)
 {
     candidates_by_type.clear();
 
@@ -1126,12 +1126,12 @@ void parse_symrot_abf_layout_header(
 }
 
 void parse_symrot_k_file(const std::string& file_path,
-                         std::vector<AbacusKStar>& kstars,
+                         std::vector<InputSymmetryKStar>& kstars,
                          std::map<std::pair<int, int>, Vector3_Order<int>>* kspace_return_lattice = nullptr,
                          std::map<std::pair<int, int>, Vector3_Order<int>>* kstar_member_fold_G = nullptr,
                          const int nsym_space = -1,
-                         std::vector<AbacusAOTypeLayout>* ao_layouts = nullptr,
-                         std::vector<std::vector<AbacusAOTypeLayout>>* abf_layout_candidates = nullptr)
+                         std::vector<InputSymmetryAOTypeLayout>* ao_layouts = nullptr,
+                         std::vector<std::vector<InputSymmetryAOTypeLayout>>* abf_layout_candidates = nullptr)
 {
     std::ifstream ifs(file_path);
     if (!ifs.good())
@@ -1176,7 +1176,7 @@ void parse_symrot_k_file(const std::string& file_path,
             throw std::runtime_error("Expected star header in " + file_path + ": " + lines[index]);
         }
 
-        AbacusKStar star;
+        InputSymmetryKStar star;
         const auto star_numbers = extract_integers(lines[index]);
         if (star_numbers.empty())
         {
@@ -1207,7 +1207,7 @@ void parse_symrot_k_file(const std::string& file_path,
                 throw std::runtime_error("Expected symmetry index in " + file_path + ": " + lines[index]);
             }
 
-            AbacusKStarMember member;
+            InputSymmetryKStarMember member;
             member.isym = std::stoi(trim(lines[index]));
             ++index;
 
@@ -1254,7 +1254,7 @@ void parse_symrot_k_file(const std::string& file_path,
                     throw std::runtime_error("Expected atom header in " + file_path + ": " + lines[index]);
                 }
 
-                AbacusKAtomRotation atom_rotation;
+                InputSymmetryKAtomRotation atom_rotation;
                 const auto values = extract_integers(lines[index]);
                 if (values.size() < 4)
                 {
@@ -1301,7 +1301,7 @@ void parse_symrot_k_file(const std::string& file_path,
     }
 }
 
-void infer_atom_to_type_from_kstars(const std::vector<AbacusKStar>& kstars,
+void infer_atom_to_type_from_kstars(const std::vector<InputSymmetryKStar>& kstars,
                                     std::map<atom_t, int>& atom_to_type)
 {
     atom_to_type.clear();
@@ -1326,7 +1326,7 @@ void infer_atom_to_type_from_kstars(const std::vector<AbacusKStar>& kstars,
     }
 }
 
-void load_symrot_k_file(const std::string& file_path, AbacusSymmetryContext& ctx)
+void load_symrot_k_file(const std::string& file_path, InputSymmetryContext& ctx)
 {
     ctx.kstars.clear();
     ctx.ao_type_layouts.clear();
@@ -1352,7 +1352,7 @@ std::string find_first_existing_file(const std::vector<std::string>& candidates)
     return "";
 }
 
-std::string read_abacus_input_keyword(const std::string& input_file, const std::string& keyword)
+std::string read_input_symmetry_keyword(const std::string& input_file, const std::string& keyword)
 {
     std::ifstream ifs(input_file);
     if (!ifs.good())
@@ -1377,7 +1377,7 @@ std::string read_abacus_input_keyword(const std::string& input_file, const std::
     return "";
 }
 
-struct ParsedAbacusStru
+struct ParsedInputSymmetryStru
 {
     std::vector<std::string> species_labels;
     std::vector<std::string> orbital_files;
@@ -1385,7 +1385,7 @@ struct ParsedAbacusStru
     std::map<atom_t, std::array<double, 3>> coord_frac;
 };
 
-ParsedAbacusStru parse_abacus_stru_file(const std::string& stru_file)
+ParsedInputSymmetryStru parse_input_symmetry_stru_file(const std::string& stru_file)
 {
     std::ifstream ifs(stru_file);
     if (!ifs.good())
@@ -1404,7 +1404,7 @@ ParsedAbacusStru parse_abacus_stru_file(const std::string& stru_file)
         }
     }
 
-    ParsedAbacusStru parsed;
+    ParsedInputSymmetryStru parsed;
     double lattice_constant = 1.0;
     Matrix3 lattice_vectors;
     bool has_lattice_vectors = false;
@@ -1596,7 +1596,7 @@ ParsedAbacusStru parse_abacus_stru_file(const std::string& stru_file)
     return parsed;
 }
 
-ParsedAbacusStru parse_abacus_stru_out_file(const std::string& stru_file)
+ParsedInputSymmetryStru parse_input_symmetry_stru_out_file(const std::string& stru_file)
 {
     std::ifstream ifs(stru_file);
     if (!ifs.good())
@@ -1648,7 +1648,7 @@ ParsedAbacusStru parse_abacus_stru_out_file(const std::string& stru_file)
         throw std::runtime_error("Incomplete atomic coordinate block in " + stru_file);
     }
 
-    ParsedAbacusStru parsed;
+    ParsedInputSymmetryStru parsed;
     for (int iatom = 0; iatom != natoms; ++iatom)
     {
         const auto fields = split_fields(lines[static_cast<std::size_t>(7 + iatom)]);
@@ -1665,20 +1665,20 @@ ParsedAbacusStru parse_abacus_stru_out_file(const std::string& stru_file)
     return parsed;
 }
 
-ParsedAbacusStru parse_abacus_coord_source_file(const std::string& file_path)
+ParsedInputSymmetryStru parse_input_symmetry_coord_source_file(const std::string& file_path)
 {
     if (base_name(file_path) == "stru_out")
     {
-        return parse_abacus_stru_out_file(file_path);
+        return parse_input_symmetry_stru_out_file(file_path);
     }
-    return parse_abacus_stru_file(file_path);
+    return parse_input_symmetry_stru_file(file_path);
 }
 
-void try_load_abacus_input_coord_frac(const std::string& dir_path,
-                                      AbacusSymmetryContext& ctx,
+void try_load_input_symmetry_coord_frac(const std::string& dir_path,
+                                      InputSymmetryContext& ctx,
                                       std::ostream* log)
 {
-    const auto candidate_dirs = build_abacus_path_candidates(dir_path);
+    const auto candidate_dirs = build_input_symmetry_path_candidates(dir_path);
     std::vector<std::string> stru_candidates;
     for (const auto& dir : candidate_dirs)
     {
@@ -1708,7 +1708,7 @@ void try_load_abacus_input_coord_frac(const std::string& dir_path,
     {
         try
         {
-            const ParsedAbacusStru parsed = parse_abacus_coord_source_file(stru_file);
+            const ParsedInputSymmetryStru parsed = parse_input_symmetry_coord_source_file(stru_file);
             if (parsed.coord_frac.empty())
             {
                 throw std::runtime_error("atomic coordinates not found in " + stru_file);
@@ -1747,7 +1747,7 @@ void try_load_abacus_input_coord_frac(const std::string& dir_path,
     }
 }
 
-AbacusAOTypeLayout parse_abacus_orbital_file(const std::string& orbital_file,
+InputSymmetryAOTypeLayout parse_input_symmetry_orbital_file(const std::string& orbital_file,
                                              const std::string& species_label)
 {
     std::ifstream ifs(orbital_file);
@@ -1756,7 +1756,7 @@ AbacusAOTypeLayout parse_abacus_orbital_file(const std::string& orbital_file,
         throw std::runtime_error("Failed to open orbital file " + orbital_file);
     }
 
-    AbacusAOTypeLayout layout;
+    InputSymmetryAOTypeLayout layout;
     layout.label = species_label;
     layout.orbital_file = orbital_file;
 
@@ -1823,7 +1823,7 @@ AbacusAOTypeLayout parse_abacus_orbital_file(const std::string& orbital_file,
     return layout;
 }
 
-std::string resolve_abacus_file(const std::string& file_name,
+std::string resolve_input_symmetry_file(const std::string& file_name,
                                 const std::vector<std::string>& search_dirs)
 {
     if (is_absolute_path(file_name))
@@ -1846,11 +1846,11 @@ std::string resolve_abacus_file(const std::string& file_name,
     return file_exists(file_name) ? file_name : "";
 }
 
-bool append_unique_abf_layout(std::vector<AbacusAOTypeLayout>& candidates,
-                              const AbacusAOTypeLayout& layout)
+bool append_unique_abf_layout(std::vector<InputSymmetryAOTypeLayout>& candidates,
+                              const InputSymmetryAOTypeLayout& layout)
 {
     const auto duplicate = std::find_if(candidates.begin(), candidates.end(),
-                                        [&layout](const AbacusAOTypeLayout& candidate) {
+                                        [&layout](const InputSymmetryAOTypeLayout& candidate) {
                                             return candidate.label == layout.label
                                                    && candidate.shell_counts == layout.shell_counts
                                                    && candidate.nao == layout.nao;
@@ -1863,11 +1863,11 @@ bool append_unique_abf_layout(std::vector<AbacusAOTypeLayout>& candidates,
     return true;
 }
 
-[[maybe_unused]] void try_load_abacus_ao_shell_layout(const std::string& dir_path,
-                                                      AbacusSymmetryContext& ctx,
+[[maybe_unused]] void try_load_input_symmetry_ao_shell_layout(const std::string& dir_path,
+                                                      InputSymmetryContext& ctx,
                                                       std::ostream* log)
 {
-    const auto candidate_dirs = build_abacus_path_candidates(dir_path);
+    const auto candidate_dirs = build_input_symmetry_path_candidates(dir_path);
     std::vector<std::string> stru_candidates;
     std::vector<std::string> input_candidates;
     for (const auto& dir : candidate_dirs)
@@ -1888,11 +1888,11 @@ bool append_unique_abf_layout(std::vector<AbacusAOTypeLayout>& candidates,
 
     const std::string input_file = find_first_existing_file(input_candidates);
     const std::string orbital_dir =
-        input_file.empty() ? "" : read_abacus_input_keyword(input_file, "orbital_dir");
+        input_file.empty() ? "" : read_input_symmetry_keyword(input_file, "orbital_dir");
 
     try
     {
-        const ParsedAbacusStru parsed = parse_abacus_stru_file(stru_file);
+        const ParsedInputSymmetryStru parsed = parse_input_symmetry_stru_file(stru_file);
         if (parsed.species_labels.empty() || parsed.orbital_files.empty())
         {
             throw std::runtime_error("Failed to find ATOMIC_SPECIES / NUMERICAL_ORBITAL sections in "
@@ -1933,7 +1933,7 @@ bool append_unique_abf_layout(std::vector<AbacusAOTypeLayout>& candidates,
         for (std::size_t itype = 0; itype < parsed.species_labels.size(); ++itype)
         {
             const std::string resolved_orbital =
-                resolve_abacus_file(parsed.orbital_files[itype], search_dirs);
+                resolve_input_symmetry_file(parsed.orbital_files[itype], search_dirs);
             if (resolved_orbital.empty())
             {
                 throw std::runtime_error("Failed to resolve orbital file "
@@ -1941,7 +1941,7 @@ bool append_unique_abf_layout(std::vector<AbacusAOTypeLayout>& candidates,
                                          + parsed.species_labels[itype]);
             }
             ctx.ao_type_layouts.push_back(
-                parse_abacus_orbital_file(resolved_orbital, parsed.species_labels[itype]));
+                parse_input_symmetry_orbital_file(resolved_orbital, parsed.species_labels[itype]));
         }
 
         ctx.atom_to_type = parsed.atom_to_type;
@@ -1982,16 +1982,52 @@ bool append_unique_abf_layout(std::vector<AbacusAOTypeLayout>& candidates,
 
 } // namespace
 
-AbacusSymmetryContext abacus_symmetry_ctx;
+InputSymmetryContext input_symmetry_ctx;
 
-void AbacusSymmetryContext::clear()
+InputSymmetryConvention parse_input_symmetry_convention(const std::string& convention)
 {
+    std::string normalized = trim(convention);
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    if (normalized == "auto" || normalized.empty())
+    {
+        return InputSymmetryConvention::AUTO;
+    }
+    if (normalized == "abacus")
+    {
+        return InputSymmetryConvention::ABACUS;
+    }
+    if (normalized == "none" || normalized == "off" || normalized == "false")
+    {
+        return InputSymmetryConvention::NONE;
+    }
+    throw std::runtime_error("Unknown input symmetry convention: " + convention);
+}
+
+std::string input_symmetry_convention_name(const InputSymmetryConvention convention)
+{
+    switch (convention)
+    {
+    case InputSymmetryConvention::NONE:
+        return "none";
+    case InputSymmetryConvention::AUTO:
+        return "auto";
+    case InputSymmetryConvention::ABACUS:
+        return "abacus";
+    }
+    return "unknown";
+}
+
+void InputSymmetryContext::clear()
+{
+    convention = InputSymmetryConvention::NONE;
     available = false;
     lattice_available = false;
     ao_shell_layout_available = false;
     abf_shell_layout_available = false;
     ao_lmax = -1;
     abf_lmax = -1;
+    basis_convention = {};
     irreducible_sector.clear();
     rspace_operations.clear();
     kstars.clear();
@@ -2006,14 +2042,14 @@ void AbacusSymmetryContext::clear()
     kstar_member_fold_G.clear();
 }
 
-void AbacusSymmetryContext::set_lattice(const Matrix3& latvec, const Matrix3& G)
+void InputSymmetryContext::set_lattice(const Matrix3& latvec, const Matrix3& G)
 {
     lattice_vectors = latvec;
     reciprocal_vectors = G;
     lattice_available = true;
 }
 
-bool AbacusSymmetryContext::empty() const
+bool InputSymmetryContext::empty() const
 {
     return irreducible_sector.empty() && rspace_operations.empty() && kstars.empty()
            && abf_kstars.empty()
@@ -2022,22 +2058,22 @@ bool AbacusSymmetryContext::empty() const
            && kspace_return_lattice.empty() && kstar_member_fold_G.empty();
 }
 
-bool AbacusSymmetryContext::has_ao_shell_layout() const
+bool InputSymmetryContext::has_ao_shell_layout() const
 {
     return ao_shell_layout_available && !ao_type_layouts.empty();
 }
 
-bool AbacusSymmetryContext::has_abf_shell_layout() const
+bool InputSymmetryContext::has_abf_shell_layout() const
 {
     return abf_shell_layout_available && !abf_type_layout_candidates.empty();
 }
 
-std::size_t AbacusSymmetryContext::count_irreducible_pairs() const
+std::size_t InputSymmetryContext::count_irreducible_pairs() const
 {
     return irreducible_sector.size();
 }
 
-std::size_t AbacusSymmetryContext::count_irreducible_blocks() const
+std::size_t InputSymmetryContext::count_irreducible_blocks() const
 {
     std::size_t count = 0;
     for (const auto& pair_Rs : irreducible_sector)
@@ -2047,7 +2083,7 @@ std::size_t AbacusSymmetryContext::count_irreducible_blocks() const
     return count;
 }
 
-std::size_t AbacusSymmetryContext::count_kstar_members() const
+std::size_t InputSymmetryContext::count_kstar_members() const
 {
     std::size_t count = 0;
     for (const auto& star : kstars)
@@ -2057,12 +2093,12 @@ std::size_t AbacusSymmetryContext::count_kstar_members() const
     return count;
 }
 
-std::size_t AbacusSymmetryContext::count_atoms_with_layout() const
+std::size_t InputSymmetryContext::count_atoms_with_layout() const
 {
     return atom_to_type.size();
 }
 
-std::size_t AbacusSymmetryContext::count_abf_layout_candidates() const
+std::size_t InputSymmetryContext::count_abf_layout_candidates() const
 {
     std::size_t count = 0;
     for (const auto& candidates : abf_type_layout_candidates)
@@ -2072,7 +2108,7 @@ std::size_t AbacusSymmetryContext::count_abf_layout_candidates() const
     return count;
 }
 
-const AbacusAOTypeLayout& AbacusSymmetryContext::get_ao_type_layout(const int atom_type) const
+const InputSymmetryAOTypeLayout& InputSymmetryContext::get_ao_type_layout(const int atom_type) const
 {
     if (atom_type < 0 || atom_type >= static_cast<int>(ao_type_layouts.size()))
     {
@@ -2081,7 +2117,7 @@ const AbacusAOTypeLayout& AbacusSymmetryContext::get_ao_type_layout(const int at
     return ao_type_layouts[static_cast<std::size_t>(atom_type)];
 }
 
-const AbacusAOTypeLayout& AbacusSymmetryContext::find_abf_type_layout(const int atom_type,
+const InputSymmetryAOTypeLayout& InputSymmetryContext::find_abf_type_layout(const int atom_type,
                                                                       const int nao_hint) const
 {
     if (atom_type < 0 || atom_type >= static_cast<int>(abf_type_layout_candidates.size()))
@@ -2099,7 +2135,7 @@ const AbacusAOTypeLayout& AbacusSymmetryContext::find_abf_type_layout(const int 
     if (nao_hint > 0)
     {
         const auto matched = std::find_if(candidates.begin(), candidates.end(),
-                                          [nao_hint](const AbacusAOTypeLayout& candidate) {
+                                          [nao_hint](const InputSymmetryAOTypeLayout& candidate) {
                                               return candidate.nao == nao_hint;
                                           });
         if (matched != candidates.end())
@@ -2123,11 +2159,24 @@ const AbacusAOTypeLayout& AbacusSymmetryContext::find_abf_type_layout(const int 
     throw std::runtime_error(oss.str());
 }
 
-bool load_abacus_symmetry_context(const std::string& dir_path,
-                                  AbacusSymmetryContext& ctx,
+bool load_input_symmetry_context(const std::string& dir_path,
+                                  const InputSymmetryConvention convention,
+                                  InputSymmetryContext& ctx,
                                   std::ostream* log)
 {
-    const auto candidate_dirs = build_abacus_path_candidates(dir_path);
+    if (convention == InputSymmetryConvention::NONE)
+    {
+        ctx.clear();
+        return false;
+    }
+    if (convention != InputSymmetryConvention::AUTO
+        && convention != InputSymmetryConvention::ABACUS)
+    {
+        throw std::runtime_error("Unsupported input symmetry convention: "
+                                 + input_symmetry_convention_name(convention));
+    }
+
+    const auto candidate_dirs = build_input_symmetry_path_candidates(dir_path);
     std::string sidecar_dir;
     for (const auto& dir : candidate_dirs)
     {
@@ -2166,10 +2215,11 @@ bool load_abacus_symmetry_context(const std::string& dir_path,
     }
 
     ctx.clear();
+    ctx.convention = InputSymmetryConvention::ABACUS;
     load_irreducible_sector_file(irreducible_sector_file, ctx.irreducible_sector);
     load_symrot_R_file(symrot_R_file, ctx);
     load_symrot_k_file(symrot_k_file, ctx);
-    try_load_abacus_input_coord_frac(dir_path, ctx, log);
+    try_load_input_symmetry_coord_frac(dir_path, ctx, log);
     if (has_symrot_abf_k)
     {
         parse_symrot_k_file(symrot_abf_k_file, ctx.abf_kstars, nullptr, nullptr, -1, nullptr,
@@ -2246,12 +2296,14 @@ bool load_abacus_symmetry_context(const std::string& dir_path,
     return true;
 }
 
-bool load_global_abacus_symmetry_context(const std::string& dir_path, std::ostream* log)
+bool load_global_input_symmetry_context(const std::string& dir_path,
+                                        const InputSymmetryConvention convention,
+                                        std::ostream* log)
 {
-    return load_abacus_symmetry_context(dir_path, abacus_symmetry_ctx, log);
+    return load_input_symmetry_context(dir_path, convention, input_symmetry_ctx, log);
 }
 
-ComplexMatrix build_abacus_ao_rotation_matrix(const AbacusSymmetryContext& ctx,
+ComplexMatrix build_input_symmetry_ao_rotation_matrix(const InputSymmetryContext& ctx,
                                               const int atom_type,
                                               const std::map<int, ComplexMatrix>& shell_rotations)
 {
@@ -2302,8 +2354,8 @@ ComplexMatrix build_abacus_ao_rotation_matrix(const AbacusSymmetryContext& ctx,
     return rotation;
 }
 
-ComplexMatrix build_abacus_abf_rotation_matrix(
-    const AbacusSymmetryContext& ctx,
+ComplexMatrix build_input_symmetry_abf_rotation_matrix(
+    const InputSymmetryContext& ctx,
     const int atom_type,
     const int nao_hint,
     const std::map<int, ComplexMatrix>& shell_rotations,
@@ -2330,7 +2382,7 @@ ComplexMatrix build_abacus_abf_rotation_matrix(
         else
         {
             shell_rotation =
-                build_abacus_shell_rotation_from_direct_rotation(ctx, l, direct_rotation);
+                build_input_symmetry_shell_rotation_from_direct_rotation(ctx, l, direct_rotation);
         }
 
         const int nm = 2 * l + 1;
@@ -2364,7 +2416,7 @@ ComplexMatrix build_abacus_abf_rotation_matrix(
 namespace
 {
 
-int find_abacus_kstar_index_for_kpoint(const std::vector<AbacusKStar>& kstars,
+int find_input_symmetry_kstar_index_for_kpoint(const std::vector<InputSymmetryKStar>& kstars,
                                        const Vector3_Order<double>& k_point,
                                        const std::string& label)
 {
@@ -2397,7 +2449,7 @@ int find_abacus_kstar_index_for_kpoint(const std::vector<AbacusKStar>& kstars,
         const auto& star = kstars[istar];
         const bool star_contains_kpoint =
             std::any_of(star.members.begin(), star.members.end(),
-                        [&k_point](const AbacusKStarMember& member) {
+                        [&k_point](const InputSymmetryKStarMember& member) {
                             return nearly_same_kpoint(member.k_bz, k_point);
                         });
         if (!star_contains_kpoint)
@@ -2420,22 +2472,22 @@ int find_abacus_kstar_index_for_kpoint(const std::vector<AbacusKStar>& kstars,
 
 } // namespace
 
-const AbacusKStar& find_abacus_kstar_for_kpoint(const std::vector<AbacusKStar>& kstars,
+const InputSymmetryKStar& find_input_symmetry_kstar_for_kpoint(const std::vector<InputSymmetryKStar>& kstars,
                                                 const Vector3_Order<double>& k_point,
                                                 const std::string& label)
 {
     return kstars[static_cast<std::size_t>(
-        find_abacus_kstar_index_for_kpoint(kstars, k_point, label))];
+        find_input_symmetry_kstar_index_for_kpoint(kstars, k_point, label))];
 }
 
-const AbacusKStar& find_abacus_kstar_for_ibz_kpoint(const AbacusSymmetryContext& ctx,
+const InputSymmetryKStar& find_input_symmetry_kstar_for_ibz_kpoint(const InputSymmetryContext& ctx,
                                                     const Vector3_Order<double>& k_ibz)
 {
-    return find_abacus_kstar_for_kpoint(ctx.kstars, k_ibz);
+    return find_input_symmetry_kstar_for_kpoint(ctx.kstars, k_ibz);
 }
 
-std::vector<AbacusKStarGridMappingEntry> build_abacus_kstar_grid_mapping(
-    const AbacusSymmetryContext& ctx,
+std::vector<InputSymmetryKStarGridMappingEntry> build_input_symmetry_kstar_grid_mapping(
+    const InputSymmetryContext& ctx,
     const std::vector<Vector3_Order<double>>& klist_internal,
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::map<Vector3_Order<double>, std::vector<Vector3_Order<double>>>& irk_to_full_kpoints)
@@ -2480,13 +2532,13 @@ std::vector<AbacusKStarGridMappingEntry> build_abacus_kstar_grid_mapping(
                             });
     };
 
-    std::vector<AbacusKStarGridMappingEntry> mapping(kfrac_list.size());
+    std::vector<InputSymmetryKStarGridMappingEntry> mapping(kfrac_list.size());
     std::vector<bool> matched_stars(ctx.kstars.size(), false);
 
     for (std::size_t iq_ibz = 0; iq_ibz < kfrac_list.size(); ++iq_ibz)
     {
-        const int matched_star_index = find_abacus_kstar_index_for_kpoint(
-            ctx.kstars, kfrac_list[iq_ibz], "ABACUS k-stars");
+        const int matched_star_index = find_input_symmetry_kstar_index_for_kpoint(
+            ctx.kstars, kfrac_list[iq_ibz], "input symmetry k-stars");
 
         matched_stars[static_cast<std::size_t>(matched_star_index)] = true;
         auto& entry = mapping[iq_ibz];
@@ -2555,11 +2607,11 @@ std::vector<AbacusKStarGridMappingEntry> build_abacus_kstar_grid_mapping(
     return mapping;
 }
 
-std::vector<AbacusFullKpointMemberEntry> build_abacus_full_kpoint_member_list(
-    const AbacusSymmetryContext& ctx,
+std::vector<InputSymmetryFullKpointMemberEntry> build_input_symmetry_full_kpoint_member_list(
+    const InputSymmetryContext& ctx,
     const std::vector<Vector3_Order<double>>& kfrac_list)
 {
-    std::vector<AbacusFullKpointMemberEntry> members;
+    std::vector<InputSymmetryFullKpointMemberEntry> members;
     if (!ctx.available || ctx.kstars.empty())
     {
         return members;
@@ -2568,8 +2620,8 @@ std::vector<AbacusFullKpointMemberEntry> build_abacus_full_kpoint_member_list(
     members.reserve(ctx.count_kstar_members());
     for (int ik_ibz = 0; ik_ibz != static_cast<int>(kfrac_list.size()); ++ik_ibz)
     {
-        const int matched_star_index = find_abacus_kstar_index_for_kpoint(
-            ctx.kstars, kfrac_list[static_cast<std::size_t>(ik_ibz)], "ABACUS k-stars");
+        const int matched_star_index = find_input_symmetry_kstar_index_for_kpoint(
+            ctx.kstars, kfrac_list[static_cast<std::size_t>(ik_ibz)], "input symmetry k-stars");
 
         const auto& star = ctx.kstars[static_cast<std::size_t>(matched_star_index)];
         for (int imember = 0; imember != static_cast<int>(star.members.size()); ++imember)
@@ -2582,9 +2634,9 @@ std::vector<AbacusFullKpointMemberEntry> build_abacus_full_kpoint_member_list(
     return members;
 }
 
-Vector3_Order<int> build_abacus_kspace_return_lattice(
-    const AbacusSymmetryContext& ctx,
-    const AbacusKAtomRotation& atom_rotation,
+Vector3_Order<int> build_input_symmetry_kspace_return_lattice(
+    const InputSymmetryContext& ctx,
+    const InputSymmetryKAtomRotation& atom_rotation,
     const std::map<atom_t, std::array<double, 3>>& coord_frac_map,
     const int spatial_isym)
 {
@@ -2626,7 +2678,7 @@ Vector3_Order<int> build_abacus_kspace_return_lattice(
     return round_vec3_to_int(return_lattice);
 }
 
-Vector3_Order<int> build_abacus_equivalent_kpoint_shift(
+Vector3_Order<int> build_input_symmetry_equivalent_kpoint_shift(
     const Vector3_Order<double>& k_bz_source,
     const Vector3_Order<double>& k_bz_target)
 {
@@ -2643,15 +2695,15 @@ Vector3_Order<int> build_abacus_equivalent_kpoint_shift(
     return round_vec3_to_int(k_shift);
 }
 
-std::pair<atom_t, atom_t> canonicalize_abacus_upper_atom_pair(const atom_t atom_i,
+std::pair<atom_t, atom_t> canonicalize_input_symmetry_upper_atom_pair(const atom_t atom_i,
                                                               const atom_t atom_j)
 {
     return (atom_i <= atom_j) ? std::make_pair(atom_i, atom_j)
                               : std::make_pair(atom_j, atom_i);
 }
 
-std::vector<const AbacusKAtomRotation*> build_abacus_rotations_by_from(
-    const AbacusKStarMember& member)
+std::vector<const InputSymmetryKAtomRotation*> build_input_symmetry_rotations_by_from(
+    const InputSymmetryKStarMember& member)
 {
     int max_atom_index = -1;
     for (const auto& atom_rotation : member.atom_rotations)
@@ -2659,7 +2711,7 @@ std::vector<const AbacusKAtomRotation*> build_abacus_rotations_by_from(
         max_atom_index = std::max(max_atom_index, atom_rotation.atom_from);
         max_atom_index = std::max(max_atom_index, atom_rotation.atom_to);
     }
-    std::vector<const AbacusKAtomRotation*> rotations_by_from(
+    std::vector<const InputSymmetryKAtomRotation*> rotations_by_from(
         static_cast<std::size_t>(max_atom_index + 1), nullptr);
     for (const auto& atom_rotation : member.atom_rotations)
     {
@@ -2668,14 +2720,14 @@ std::vector<const AbacusKAtomRotation*> build_abacus_rotations_by_from(
     return rotations_by_from;
 }
 
-std::set<std::pair<atom_t, atom_t>> build_abacus_upper_atom_pair_closure(
-    const AbacusKStar& star,
+std::set<std::pair<atom_t, atom_t>> build_input_symmetry_upper_atom_pair_closure(
+    const InputSymmetryKStar& star,
     const std::set<std::pair<atom_t, atom_t>>& target_atom_pairs)
 {
     std::set<std::pair<atom_t, atom_t>> closure_pairs;
     for (const auto& atom_pair : target_atom_pairs)
     {
-        closure_pairs.insert(canonicalize_abacus_upper_atom_pair(
+        closure_pairs.insert(canonicalize_input_symmetry_upper_atom_pair(
             atom_pair.first, atom_pair.second));
     }
 
@@ -2686,7 +2738,7 @@ std::set<std::pair<atom_t, atom_t>> build_abacus_upper_atom_pair_closure(
         const auto snapshot_pairs = closure_pairs;
         for (const auto& member : star.members)
         {
-            const auto rotations_by_from = build_abacus_rotations_by_from(member);
+            const auto rotations_by_from = build_input_symmetry_rotations_by_from(member);
             for (const auto& atom_pair : snapshot_pairs)
             {
                 if (static_cast<std::size_t>(atom_pair.first) >= rotations_by_from.size()
@@ -2702,7 +2754,7 @@ std::set<std::pair<atom_t, atom_t>> build_abacus_upper_atom_pair_closure(
                     throw std::runtime_error(
                         "ABACUS atom-pair closure found an incomplete atom permutation");
                 }
-                const auto source_pair = canonicalize_abacus_upper_atom_pair(
+                const auto source_pair = canonicalize_input_symmetry_upper_atom_pair(
                     static_cast<atom_t>(rot_i->atom_to),
                     static_cast<atom_t>(rot_j->atom_to));
                 if (closure_pairs.insert(source_pair).second)
@@ -2718,7 +2770,7 @@ std::set<std::pair<atom_t, atom_t>> build_abacus_upper_atom_pair_closure(
 namespace
 {
 
-std::complex<double> build_abacus_reciprocal_gauge_phase(
+std::complex<double> build_input_symmetry_reciprocal_gauge_phase(
     const Vector3_Order<int>& k_shift,
     const atom_t atom,
     const std::map<atom_t, std::array<double, 3>>& coord_frac_map)
@@ -2742,10 +2794,10 @@ std::complex<double> build_abacus_reciprocal_gauge_phase(
 
 } // namespace
 
-abacus_atom_block_matrix_map_t rotate_abacus_abf_kspace_operator_blocks(
-    const AbacusSymmetryContext& ctx,
-    const AbacusKStarMember& member,
-    const abacus_atom_block_matrix_map_t& blocks_ibz,
+input_symmetry_atom_block_matrix_map_t rotate_input_symmetry_abf_kspace_operator_blocks(
+    const InputSymmetryContext& ctx,
+    const InputSymmetryKStarMember& member,
+    const input_symmetry_atom_block_matrix_map_t& blocks_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
     const Vector3_Order<double>& k_ibz,
     const std::map<atom_t, std::array<double, 3>>& coord_frac_map,
@@ -2787,7 +2839,7 @@ abacus_atom_block_matrix_map_t rotate_abacus_abf_kspace_operator_blocks(
     if (!use_time_reversal && member.isym == 0 && k_bz_target == nullptr
         && nearly_same_kpoint(member.k_bz, k_ibz))
     {
-        abacus_atom_block_matrix_map_t identity_blocks;
+        input_symmetry_atom_block_matrix_map_t identity_blocks;
         for (std::size_t atom_i = 0; atom_i < atom_nabf.size(); ++atom_i)
         {
             for (std::size_t atom_j = 0; atom_j < atom_nabf.size(); ++atom_j)
@@ -2806,7 +2858,7 @@ abacus_atom_block_matrix_map_t rotate_abacus_abf_kspace_operator_blocks(
         return identity_blocks;
     }
 
-    std::vector<const AbacusKAtomRotation*> rotations_by_from(atom_nabf.size(), nullptr);
+    std::vector<const InputSymmetryKAtomRotation*> rotations_by_from(atom_nabf.size(), nullptr);
     std::vector<bool> visited_to(atom_nabf.size(), false);
     for (const auto& atom_rotation : member.atom_rotations)
     {
@@ -2846,11 +2898,11 @@ abacus_atom_block_matrix_map_t rotate_abacus_abf_kspace_operator_blocks(
     for (std::size_t atom = 0; atom < atom_nabf.size(); ++atom)
     {
         const auto* atom_rotation = rotations_by_from[atom];
-        atom_M_blocks[atom] = build_abacus_abf_rotation_matrix(
+        atom_M_blocks[atom] = build_input_symmetry_abf_rotation_matrix(
             ctx, atom_rotation->atom_type, static_cast<int>(atom_nabf.at(atom)),
             atom_rotation->shell_rotations, direct_rotation);
         const auto return_lattice =
-            build_abacus_kspace_return_lattice(ctx, *atom_rotation, coord_frac_map, spatial_isym);
+            build_input_symmetry_kspace_return_lattice(ctx, *atom_rotation, coord_frac_map, spatial_isym);
         const double phase_arg =
             TWO_PI * (delta_k.x * static_cast<double>(return_lattice.x)
                       + delta_k.y * static_cast<double>(return_lattice.y)
@@ -2862,15 +2914,15 @@ abacus_atom_block_matrix_map_t rotate_abacus_abf_kspace_operator_blocks(
     std::vector<std::complex<double>> atom_target_phases(atom_nabf.size(), {1.0, 0.0});
     if (apply_target_gauge)
     {
-        const auto k_shift = build_abacus_equivalent_kpoint_shift(member.k_bz, *k_bz_target);
+        const auto k_shift = build_input_symmetry_equivalent_kpoint_shift(member.k_bz, *k_bz_target);
         for (std::size_t atom = 0; atom < atom_nabf.size(); ++atom)
         {
-            atom_target_phases[atom] = build_abacus_reciprocal_gauge_phase(
+            atom_target_phases[atom] = build_input_symmetry_reciprocal_gauge_phase(
                 k_shift, static_cast<atom_t>(atom), coord_frac_map);
         }
     }
 
-    abacus_atom_block_matrix_map_t rotated_blocks;
+    input_symmetry_atom_block_matrix_map_t rotated_blocks;
     for (std::size_t atom_i = 0; atom_i < atom_nabf.size(); ++atom_i)
     {
         const auto* rot_i = rotations_by_from[atom_i];
@@ -2939,12 +2991,12 @@ abacus_atom_block_matrix_map_t rotate_abacus_abf_kspace_operator_blocks(
     return rotated_blocks;
 }
 
-const AbacusKStarMember& find_matching_abf_kstar_member(const AbacusKStar& abf_star,
-                                                        const AbacusKStarMember& ao_member)
+const InputSymmetryKStarMember& find_matching_abf_kstar_member(const InputSymmetryKStar& abf_star,
+                                                        const InputSymmetryKStarMember& ao_member)
 {
     const auto matched = std::find_if(
         abf_star.members.begin(), abf_star.members.end(),
-        [&ao_member](const AbacusKStarMember& candidate) {
+        [&ao_member](const InputSymmetryKStarMember& candidate) {
             return candidate.isym == ao_member.isym
                    && nearly_same_kpoint(candidate.k_bz, ao_member.k_bz);
         });
@@ -2956,13 +3008,13 @@ const AbacusKStarMember& find_matching_abf_kstar_member(const AbacusKStar& abf_s
     return *matched;
 }
 
-abacus_atom_block_matrix_map_t symmetrize_abacus_abf_ibz_kspace_operator_blocks(
-    const AbacusSymmetryContext& ctx,
+input_symmetry_atom_block_matrix_map_t symmetrize_input_symmetry_abf_ibz_kspace_operator_blocks(
+    const InputSymmetryContext& ctx,
     const Vector3_Order<double>& k_ibz,
-    const abacus_atom_block_matrix_map_t& blocks_ibz,
+    const input_symmetry_atom_block_matrix_map_t& blocks_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
     const std::map<atom_t, std::array<double, 3>>& coord_frac,
-    const AbacusKStar* abf_star,
+    const InputSymmetryKStar* abf_star,
     const std::set<std::pair<atom_t, atom_t>>* target_atom_pairs)
 {
     if (!ctx.has_abf_shell_layout())
@@ -2988,8 +3040,8 @@ abacus_atom_block_matrix_map_t symmetrize_abacus_abf_ibz_kspace_operator_blocks(
         return blocks_ibz;
     }
 
-    const auto& star = find_abacus_kstar_for_ibz_kpoint(ctx, k_ibz);
-    abacus_atom_block_matrix_map_t accumulated_blocks;
+    const auto& star = find_input_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
+    input_symmetry_atom_block_matrix_map_t accumulated_blocks;
     int n_members_used = 0;
     const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
     for (const auto& member : star.members)
@@ -3008,7 +3060,7 @@ abacus_atom_block_matrix_map_t symmetrize_abacus_abf_ibz_kspace_operator_blocks(
         // Little-group members can return an equivalent IBZ representative that differs from the
         // active LibRPA label by a reciprocal-lattice vector G. Re-apply the target gauge so the
         // averaged operator is accumulated in the same k_ibz representative used by LibRPA.
-        const auto rotated_blocks = rotate_abacus_abf_kspace_operator_blocks(
+        const auto rotated_blocks = rotate_input_symmetry_abf_kspace_operator_blocks(
             ctx, abf_member, blocks_ibz, atom_nabf, k_ibz, coord_frac, false, target_atom_pairs,
             &k_ibz);
 
@@ -3046,9 +3098,9 @@ abacus_atom_block_matrix_map_t symmetrize_abacus_abf_ibz_kspace_operator_blocks(
     return accumulated_blocks;
 }
 
-ComplexMatrix rotate_abacus_abf_kspace_operator_matrix(
-    const AbacusSymmetryContext& ctx,
-    const AbacusKStarMember& member,
+ComplexMatrix rotate_input_symmetry_abf_kspace_operator_matrix(
+    const InputSymmetryContext& ctx,
+    const InputSymmetryKStarMember& member,
     const ComplexMatrix& matrix_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
     const Vector3_Order<double>& k_ibz,
@@ -3068,7 +3120,7 @@ ComplexMatrix rotate_abacus_abf_kspace_operator_matrix(
         throw std::runtime_error("The input matrix dimension is incompatible with the ABF basis layout");
     }
 
-    abacus_atom_block_matrix_map_t blocks_ibz;
+    input_symmetry_atom_block_matrix_map_t blocks_ibz;
     for (std::size_t atom_i = 0; atom_i < atom_nabf.size(); ++atom_i)
     {
         for (std::size_t atom_j = 0; atom_j < atom_nabf.size(); ++atom_j)
@@ -3079,7 +3131,7 @@ ComplexMatrix rotate_abacus_abf_kspace_operator_matrix(
         }
     }
 
-    const auto rotated_blocks = rotate_abacus_abf_kspace_operator_blocks(
+    const auto rotated_blocks = rotate_input_symmetry_abf_kspace_operator_blocks(
         ctx, member, blocks_ibz, atom_nabf, k_ibz, coord_frac_map, use_time_reversal,
         nullptr, k_bz_target);
 
@@ -3095,8 +3147,8 @@ ComplexMatrix rotate_abacus_abf_kspace_operator_matrix(
     return rotated_matrix;
 }
 
-ComplexMatrix symmetrize_abacus_abf_ibz_kspace_operator_matrix(
-    const AbacusSymmetryContext& ctx,
+ComplexMatrix symmetrize_input_symmetry_abf_ibz_kspace_operator_matrix(
+    const InputSymmetryContext& ctx,
     const Vector3_Order<double>& k_ibz,
     const ComplexMatrix& matrix_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
@@ -3108,7 +3160,7 @@ ComplexMatrix symmetrize_abacus_abf_ibz_kspace_operator_matrix(
     }
 
     const auto offsets = build_atom_offsets(atom_nabf);
-    abacus_atom_block_matrix_map_t blocks_ibz;
+    input_symmetry_atom_block_matrix_map_t blocks_ibz;
     for (std::size_t atom_i = 0; atom_i < atom_nabf.size(); ++atom_i)
     {
         for (std::size_t atom_j = 0; atom_j < atom_nabf.size(); ++atom_j)
@@ -3119,7 +3171,7 @@ ComplexMatrix symmetrize_abacus_abf_ibz_kspace_operator_matrix(
         }
     }
 
-    const auto rotated_blocks = symmetrize_abacus_abf_ibz_kspace_operator_blocks(
+    const auto rotated_blocks = symmetrize_input_symmetry_abf_ibz_kspace_operator_blocks(
         ctx, k_ibz, blocks_ibz, atom_nabf, coord_frac);
 
     ComplexMatrix accumulated(matrix_ibz.nr, matrix_ibz.nc);
@@ -3134,8 +3186,8 @@ ComplexMatrix symmetrize_abacus_abf_ibz_kspace_operator_matrix(
     return accumulated;
 }
 
-ComplexMatrix rotate_abacus_kspace_matrix(const AbacusSymmetryContext& ctx,
-                                          const AbacusKStarMember& member,
+ComplexMatrix rotate_input_symmetry_kspace_matrix(const InputSymmetryContext& ctx,
+                                          const InputSymmetryKStarMember& member,
                                           const ComplexMatrix& matrix_ibz,
                                           const std::map<atom_t, size_t>& atom_nw,
                                           const Vector3_Order<double>& k_ibz,
@@ -3174,7 +3226,7 @@ ComplexMatrix rotate_abacus_kspace_matrix(const AbacusSymmetryContext& ctx,
     }
 
     // Build atom permutation: rotations_by_from[I] gives the rotation entry for atom I.
-    std::vector<const AbacusKAtomRotation*> rotations_by_from(atom_nw.size(), nullptr);
+    std::vector<const InputSymmetryKAtomRotation*> rotations_by_from(atom_nw.size(), nullptr);
     std::vector<bool> visited_to(atom_nw.size(), false);
     for (const auto& atom_rotation : member.atom_rotations)
     {
@@ -3216,11 +3268,11 @@ ComplexMatrix rotate_abacus_kspace_matrix(const AbacusSymmetryContext& ctx,
     for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
     {
         const auto* atom_rotation = rotations_by_from[atom];
-        atom_M_blocks[atom] = build_abacus_ao_rotation_matrix(ctx,
+        atom_M_blocks[atom] = build_input_symmetry_ao_rotation_matrix(ctx,
                                                                atom_rotation->atom_type,
                                                                atom_rotation->shell_rotations);
         const auto return_lattice =
-            build_abacus_kspace_return_lattice(ctx, *atom_rotation, coord_frac_map, spatial_isym);
+            build_input_symmetry_kspace_return_lattice(ctx, *atom_rotation, coord_frac_map, spatial_isym);
         const double phase_arg =
             TWO_PI * (delta_k.x * static_cast<double>(return_lattice.x)
                       + delta_k.y * static_cast<double>(return_lattice.y)
@@ -3232,10 +3284,10 @@ ComplexMatrix rotate_abacus_kspace_matrix(const AbacusSymmetryContext& ctx,
     std::vector<std::complex<double>> atom_target_phases(atom_nw.size(), {1.0, 0.0});
     if (apply_target_gauge)
     {
-        const auto k_shift = build_abacus_equivalent_kpoint_shift(member.k_bz, *k_bz_target);
+        const auto k_shift = build_input_symmetry_equivalent_kpoint_shift(member.k_bz, *k_bz_target);
         for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
         {
-            atom_target_phases[atom] = build_abacus_reciprocal_gauge_phase(
+            atom_target_phases[atom] = build_input_symmetry_reciprocal_gauge_phase(
                 k_shift, static_cast<atom_t>(atom), coord_frac_map);
         }
     }
@@ -3296,11 +3348,11 @@ ComplexMatrix rotate_abacus_kspace_matrix(const AbacusSymmetryContext& ctx,
     return rotated_matrix;
 }
 
-void build_abacus_rspace_sector_stars(const AbacusSymmetryContext& ctx,
+void build_input_symmetry_rspace_sector_stars(const InputSymmetryContext& ctx,
                                       const std::map<atom_t, std::array<double, 3>>& coord_frac,
                                       const Vector3_Order<int>& period,
                                       const std::vector<Vector3_Order<int>>& Rlist,
-                                      abacus_rspace_sector_stars_t& sector_stars,
+                                      input_symmetry_rspace_sector_stars_t& sector_stars,
                                       std::ostream* log)
 {
     (void)period;
@@ -3396,7 +3448,7 @@ void build_abacus_rspace_sector_stars(const AbacusSymmetryContext& ctx,
     }
 }
 
-ComplexMatrix rotate_abacus_rspace_matrix(const AbacusSymmetryContext& ctx,
+ComplexMatrix rotate_input_symmetry_rspace_matrix(const InputSymmetryContext& ctx,
                                           const int isym,
                                           const atom_t atom_from_i,
                                           const atom_t atom_from_j,
@@ -3414,8 +3466,8 @@ ComplexMatrix rotate_abacus_rspace_matrix(const AbacusSymmetryContext& ctx,
     const int type_i = ctx.atom_to_type.at(atom_from_i);
     const int type_j = ctx.atom_to_type.at(atom_from_j);
     const auto& op = ctx.rspace_operations[static_cast<std::size_t>(isym)];
-    const ComplexMatrix T_i = build_abacus_ao_rotation_matrix(ctx, type_i, op.shell_rotations);
-    const ComplexMatrix T_j = build_abacus_ao_rotation_matrix(ctx, type_j, op.shell_rotations);
+    const ComplexMatrix T_i = build_input_symmetry_ao_rotation_matrix(ctx, type_i, op.shell_rotations);
+    const ComplexMatrix T_j = build_input_symmetry_ao_rotation_matrix(ctx, type_j, op.shell_rotations);
 
     if (matrix_source.nr != T_i.nr || matrix_source.nc != T_j.nr)
     {
@@ -3428,7 +3480,7 @@ ComplexMatrix rotate_abacus_rspace_matrix(const AbacusSymmetryContext& ctx,
     return transpose(T_i, false) * matrix_source * conj(T_j);
 }
 
-ComplexMatrix rotate_abacus_abf_rspace_matrix(const AbacusSymmetryContext& ctx,
+ComplexMatrix rotate_input_symmetry_abf_rspace_matrix(const InputSymmetryContext& ctx,
                                               const int isym,
                                               const atom_t atom_from_i,
                                               const atom_t atom_from_j,
@@ -3446,9 +3498,9 @@ ComplexMatrix rotate_abacus_abf_rspace_matrix(const AbacusSymmetryContext& ctx,
     const int type_i = ctx.atom_to_type.at(atom_from_i);
     const int type_j = ctx.atom_to_type.at(atom_from_j);
     const auto& op = ctx.rspace_operations[static_cast<std::size_t>(isym)];
-    const ComplexMatrix T_i = build_abacus_abf_rotation_matrix(
+    const ComplexMatrix T_i = build_input_symmetry_abf_rotation_matrix(
         ctx, type_i, matrix_source.nr, op.shell_rotations, op.rotation);
-    const ComplexMatrix T_j = build_abacus_abf_rotation_matrix(
+    const ComplexMatrix T_j = build_input_symmetry_abf_rotation_matrix(
         ctx, type_j, matrix_source.nc, op.shell_rotations, op.rotation);
 
     if (matrix_source.nr != T_i.nr || matrix_source.nc != T_j.nr)
