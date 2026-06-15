@@ -3483,7 +3483,7 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
     }
 
     const auto &latvec = pbc.latvec;
-    const auto &klist_full = pbc.klist;
+    const auto &klist_full = pbc.klist_full;
     if (static_cast<int>(klist_full.size()) != n_k_points)
     {
         throw LIBRPA_RUNTIME_ERROR(
