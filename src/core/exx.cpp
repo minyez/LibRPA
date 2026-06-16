@@ -763,6 +763,7 @@ void Exx::build(const LibrpaParallelRouting routing,
         V_libri.clear();
     }
     // exx_libri.set_Vs({}, libri_threshold_V);
+    release_free_mem();
     global::profiler.stop("build_real_space_exx_2_2");
     global::profiler.stop("build_real_space_exx_2");
     global::lib_printf("Task %4d: V setup for EXX\n", comm_h.myid);

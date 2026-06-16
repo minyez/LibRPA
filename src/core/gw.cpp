@@ -1021,6 +1021,7 @@ void G0W0::build_spacetime(
             gw_libri.set_Ws(Wc_libri, this->libri_threshold_Wc);
             if (it != tau_Wc_libri.end()) tau_Wc_libri.erase(it);
         }
+        release_free_mem();
         profiler.stop("g0w0_build_spacetime_3");
 
         const int n_spinor = mf.get_n_spinor();
@@ -1100,19 +1101,21 @@ void G0W0::build_spacetime(
                             for (const auto &gf: gf_libri)
                                 n_obj_gf_libri += gf.second.size();
 
-	                            gw_libri_cplx.set_Gs(gf_libri, this->libri_threshold_G);
-	                            global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
-	                            gw_libri_cplx.cal_Sigmas();
-	                            if (restore_input_sigc_output)
-	                            {
-	                                gw_libri_cplx.Sigmas =
-	                                    restore_input_symmetry_ao_rspace_tensor_map_gw(
-	                                        gw_libri_cplx.Sigmas, symmetry_ctx,
-	                                        input_symmetry_sector_stars, this->atbasis_wfc);
-	                            }
-	                            global::profiler.stop("g0w0_build_spacetime_5");
+                            gw_libri_cplx.set_Gs(gf_libri, this->libri_threshold_G);
+                            global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
+                            gw_libri_cplx.cal_Sigmas();
+                            if (restore_input_sigc_output)
+                            {
+                                gw_libri_cplx.Sigmas =
+                                    restore_input_symmetry_ao_rspace_tensor_map_gw(
+                                        gw_libri_cplx.Sigmas, symmetry_ctx,
+                                        input_symmetry_sector_stars, this->atbasis_wfc);
+                            }
+                            release_free_mem();
+                            global::profiler.stop("g0w0_build_spacetime_5");
                             global::profiler.start("g0w0_build_spacetime_5_clean");
                             gw_libri_cplx.free_Gs();
+                            release_free_mem();
                             global::profiler.stop("g0w0_build_spacetime_5_clean");
 
                             // Check size of data
@@ -1680,6 +1683,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                         auto [irsrc, icsrc] = blacs_ctxt_h.get_pcoord(pid);
                         desc_nao_nband_fb.init(n_aos, n_bands, n_aos, n_bands, irsrc, icsrc);
                         desc_nband_nband_fb.init(n_bands, n_bands, n_bands, n_bands, irsrc, icsrc);
+                        release_free_mem();
                         auto sigc_nband_nband_fb = init_local_mat<complex<double>>(desc_nband_nband_fb, MAJOR::COL);
                         for (int ik_this = 0; ik_this < nk_this; ik_this++)
                         {
@@ -1732,6 +1736,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                                                 0.0,
                                                                 sigc_nband_nband_fb.ptr(), 1, 1, desc_nband_nband_fb.desc);
                                 }
+                                release_free_mem();
                             }
                         }
                     }
