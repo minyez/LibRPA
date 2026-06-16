@@ -5,9 +5,6 @@
 #include "../../src/core/meanfield.h"
 #include "../../src/utils/base_utility.h"
 
-namespace driver
-{
-
 void write_energy_qp(const librpa_int::MeanField &mf,
                      const std::vector<librpa_int::Vector3_Order<double>> &kfrac_output,
                      const std::vector<int> &output_to_input_kpoint,
@@ -18,5 +15,3 @@ void write_energy_qp(const librpa_int::MeanField &mf,
                      int i_state_low,
                      int n_states_calc,
                      double occupation_scale);
-
-}

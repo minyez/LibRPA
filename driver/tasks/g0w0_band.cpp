@@ -1,22 +1,22 @@
 #include <cmath>
-
+#include <exception>
 #include <fstream>
 #include <iomanip>
-#include "../task.h"
+#include <sstream>
+
+#include <librpa_enums.h>
+
+#include "../../src/api/instance_manager.h"
+#include "../../src/core/input_symmetry.h"
+#include "../../src/io/fs.h"
+#include "../../src/io/global_io.h"
+#include "../../src/io/stl_io_helper.h"
+#include "../../src/utils/constants.h"
+#include "../../src/utils/profiler.h"
 #include "../driver.h"
 #include "../read_data.h"
-#include "task_utils.h"
-#include "../../src/io/global_io.h"
-#include "../../src/io/fs.h"
-#include "../../src/io/stl_io_helper.h"
-#include "../../src/core/input_symmetry.h"
-#include "../../src/utils/profiler.h"
-#include "../../src/api/instance_manager.h"
-#include "../../src/utils/constants.h"
-#include "librpa_enums.h"
-
-#include <exception>
-#include <sstream>
+#include "../task.h"
+#include "task_helper.h"
 
 void driver::task_g0w0_band()
 {
@@ -245,9 +245,8 @@ void driver::task_g0w0_band()
                         output_to_input_kpoint.push_back(member.ik_ibz);
                     }
                 }
-                driver::write_energy_qp(
-                    mf,
-                    output_full_kgrid_from_input_symmetry ? kfrac_energy_qp : kfrac_list,
+                write_energy_qp(
+                    mf, output_full_kgrid_from_input_symmetry ? kfrac_energy_qp : kfrac_list,
                     output_to_input_kpoint, vxc, vexx_all, sigc_all, n_kpoints, i_state_low,
                     n_states_calc, occupation_output_scale);
             }

@@ -14,15 +14,14 @@ list(APPEND exe_sources
   reader_coulomb.cpp
   task.cpp
   # Specific task implementations
-  task/task_utils.cpp
-  task/exx.cpp
-  task/exx_band.cpp
-  task/g0w0.cpp
-  task/g0w0_band.cpp
-  task/rpa.cpp
-  # task/screened_coulomb.cpp
-  task/print_minimax.cpp
-  # task/test.cpp
+  tasks/task_helper.cpp
+  tasks/exx.cpp
+  tasks/exx_band.cpp
+  tasks/g0w0.cpp
+  tasks/g0w0_band.cpp
+  tasks/rpa.cpp
+  tasks/print_minimax.cpp
+  # tasks/test.cpp
   # task_qsgw.cpp
   # task_qsgwA.cpp
   # task_qsgw_band.cpp

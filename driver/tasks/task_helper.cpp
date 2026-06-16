@@ -1,19 +1,15 @@
-#include "task_utils.h"
+#include "task_helper.h"
 
 #include <fstream>
 #include <iomanip>
 #include <string>
 
-void driver::write_energy_qp(const librpa_int::MeanField &mf,
-                             const std::vector<librpa_int::Vector3_Order<double>> &kfrac_output,
-                             const std::vector<int> &output_to_input_kpoint,
-                             const std::vector<librpa_int::matrix> &vxc,
-                             const std::vector<double> &vexx,
-                             const std::vector<librpa_int::cplxdb> &sigc,
-                             const int n_kpoints_data,
-                             const int i_state_low,
-                             const int n_states_calc,
-                             const double occupation_scale)
+void write_energy_qp(const librpa_int::MeanField &mf,
+                     const std::vector<librpa_int::Vector3_Order<double>> &kfrac_output,
+                     const std::vector<int> &output_to_input_kpoint,
+                     const std::vector<librpa_int::matrix> &vxc, const std::vector<double> &vexx,
+                     const std::vector<librpa_int::cplxdb> &sigc, const int n_kpoints_data,
+                     const int i_state_low, const int n_states_calc, const double occupation_scale)
 {
     const std::string banner(124, '-');
     std::ofstream ofs("energy_qp");
