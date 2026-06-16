@@ -15,10 +15,19 @@ def get_parser():
     _add_testsuite_options(p_list)
     _add_testsuite_options(p_analyze)
 
+    _add_workspace_options(p_full)
+    _add_workspace_options(p_run)
+    _add_workspace_options(p_list, dummy=True)
+    _add_workspace_options(p_analyze)
+
     _add_execute_options(p_full)
     _add_execute_options(p_run)
+    _add_execute_options(p_list, dummy=True)
+    _add_execute_options(p_analyze, dummy=True)
 
     _add_analyze_options(p_full)
+    _add_analyze_options(p_run, dummy=True)
+    _add_analyze_options(p_list, dummy=True)
     _add_analyze_options(p_analyze)
 
     return p
@@ -27,8 +36,6 @@ def get_parser():
 def _add_testsuite_options(p: ArgumentParser):
     p.add_argument("--xml", type=str, default="testsuite.xml",
                    help="XML file containing test case configurations, default: testsuite.xml")
-    p.add_argument("-d", dest="workspace", type=str, default="workspace",
-                   help="Working directory to run regression test, default: workspace/")
     p.add_argument("--use-libri", action="store_true",
                    help="Flag that the test executable is built with LibRI")
     p.add_argument("-n", "--ntasks", dest="ntasks", type=int, default=1,
@@ -46,16 +53,30 @@ def _add_testsuite_options(p: ArgumentParser):
                        help="Disable test cases with these directory names")
 
 
-def _add_execute_options(p: ArgumentParser):
-    p.add_argument("librpa_exec", help="Path to LibRPA executable for test")
+def _add_workspace_options(p: ArgumentParser, dummy: bool = False):
+    suffix = ""
+    if dummy:
+        suffix = " (dummy)"
+    p.add_argument("-d", dest="workspace", type=str, default="workspace",
+                   help="Working directory to run regression test, default: workspace/" + suffix)
+
+
+def _add_execute_options(p: ArgumentParser, dummy: bool = False):
+    suffix = ""
+    if dummy:
+        suffix = " (dummy)"
+    p.add_argument("librpa_exec", help="Path to LibRPA executable for test" + suffix)
     p.add_argument("-f", "--force", dest="force",
-                   action="store_true", help="Force running")
+                   action="store_true", help="Force running" + suffix)
     p.add_argument("--mpiexec", type=str, default="mpirun",
-                   help="MPI command, optionally with arguments")
+                   help="MPI command, optionally with arguments" + suffix)
     p.add_argument("--verbose", action="store_true",
-                   help="Print the command used to run each test")
+                   help="Print the command used to run each test" + suffix)
 
 
-def _add_analyze_options(p: ArgumentParser):
+def _add_analyze_options(p: ArgumentParser, dummy: bool = False):
+    suffix = ""
+    if dummy:
+        suffix = " (dummy)"
     p.add_argument("-o", "--output", default="regression.log",
-                   help="output file of regression test")
+                   help="output file of regression test" + suffix)
