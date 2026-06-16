@@ -48,3 +48,24 @@ For naming, follow these general conventions:
 - Use `UpperCamelCase` for classes and structs.
 - Use `snake_case` for variables, object instances, functions, and namespaces.
 - Use `SCREAMING_SNAKE_CASE` for constants.
+
+## A few C++ guidelines
+
+- Avoid forward declarations for concrete classes and structs; include the
+  header that provides the necessary definition.
+- Prefer RAII, standard containers, references, and `const` correctness; make
+  ownership and mutation explicit.
+- Treat MPI layout, rank ownership, and collectives as part of the program
+  behavior; check both serial and representative multi-rank cases when they may
+  be affected.
+- Use clear, explicit control flow for indexing, basis mappings, matrix layouts,
+  and symmetry logic. Add a short comment when the physical or parallel
+  assumption is not obvious from the code.
+- When adding code in `src/core`, consider whether reusable pieces belong in
+  utility components such as `src/math`, `src/mpi`, `src/io`, or `src/utils`;
+  implement those pieces in the appropriate place and assemble the core
+  algorithm under `src/core`.
+- Source files outside `src/core` should not include headers from `src/core`.
+- Files in `src/interface` should not include internal headers outside
+  `src/interface`.
+- Use `src/io/stl_io_helper.h` when printing STL containers.
