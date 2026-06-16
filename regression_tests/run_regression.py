@@ -5,21 +5,9 @@ import contextlib
 import pathlib
 import sys
 from backend.commandparser import get_parser
+from backend.output import ColorizedStatusStream, Tee
 from backend.xmlparser import XMLParser
 from backend.driver import TestDriver
-
-
-class Tee:
-    def __init__(self, *streams):
-        self._streams = streams
-
-    def write(self, data):
-        for stream in self._streams:
-            stream.write(data)
-
-    def flush(self):
-        for stream in self._streams:
-            stream.flush()
 
 
 def _run(args, parser):
@@ -75,7 +63,8 @@ if __name__ == '__main__':
         if output_path.parent != pathlib.Path("."):
             output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w") as output:
-            with contextlib.redirect_stdout(Tee(sys.stdout, output)):
+            stdout = ColorizedStatusStream(sys.stdout, enable=True)
+            with contextlib.redirect_stdout(Tee(stdout, output)):
                 status = _run(args, parser)
     else:
         status = _run(args, parser)
