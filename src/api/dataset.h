@@ -95,6 +95,10 @@ public:
     headwing_velocity_t headwing_velocity;
     //! Mean-field object for band calculation
     MeanField mf_band;
+    //! Whether band-path input data has been provided through set_band_* APIs.
+    bool is_band_data_set;
+    //! Whether band-path EXX/GW k-space matrices have been computed for the set band data.
+    bool is_band_calc_done;
     //! Time-frequency grids
     TFGrids tfg;
     //! Real-space RI coefficient tensors (local RI)

@@ -61,6 +61,8 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->qpe_solver_damp_factor = 0.1;
     opts->use_qpe_adaptive_damp = LIBRPA_SWITCH_OFF;
     opts->override_qpe_solver_nan = LIBRPA_SWITCH_OFF;
+    opts->sf_gf_omega_shift = 0.01;
+    opts->sf_sigc_omega_shift = 0.01;
     opts->use_scalapack_gw_wc = LIBRPA_SWITCH_ON;
     opts->use_cholesky_gw_wc = LIBRPA_SWITCH_OFF;
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)

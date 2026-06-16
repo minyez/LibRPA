@@ -41,8 +41,6 @@ DriverParams::DriverParams():
     sf_omega_start(0.0),
     sf_omega_end(1.0),
     sf_omega_step(0.1),
-    sf_gf_omega_shift(0.01),
-    sf_sigc_omega_shift(0.01),
     sf_state_start(0),
     sf_state_end(10000)
 {

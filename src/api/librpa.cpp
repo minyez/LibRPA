@@ -367,6 +367,43 @@ G0W0QpeResult Handler::get_g0w0_qpe_kgrid(
     return G0W0QpeResult{std::move(sigc), std::move(eqp)};
 }
 
+std::vector<double> Handler::get_g0w0_spectral_function_kgrid(
+    const Options& opts, const int n_spins, const std::vector<int>& iks_local,
+    int i_state_low, int i_state_high, const std::vector<double>& omegas,
+    const std::vector<double>& vxc, const std::vector<double>& vexx)
+{
+    const int n_kpoints_local = iks_local.size();
+    const int n_states_calc = i_state_high > i_state_low ? i_state_high - i_state_low : 0;
+    const int n_omegas = omegas.size();
+    const size_t n = static_cast<size_t>(n_spins) * n_kpoints_local * n_states_calc
+                     * n_omegas;
+    std::vector<double> spectral_function(n);
+    ::librpa_get_g0w0_spectral_function_kgrid(
+        this->h_, &opts, n_spins, n_kpoints_local, iks_local.data(), i_state_low,
+        i_state_high, n_omegas, omegas.data(), vxc.data(), vexx.data(),
+        spectral_function.data(), nullptr);
+    return spectral_function;
+}
+
+G0W0SpectralFunctionResult Handler::get_g0w0_spectral_function_with_sigc_kgrid(
+    const Options& opts, const int n_spins, const std::vector<int>& iks_local,
+    int i_state_low, int i_state_high, const std::vector<double>& omegas,
+    const std::vector<double>& vxc, const std::vector<double>& vexx)
+{
+    const int n_kpoints_local = iks_local.size();
+    const int n_states_calc = i_state_high > i_state_low ? i_state_high - i_state_low : 0;
+    const int n_omegas = omegas.size();
+    const size_t n = static_cast<size_t>(n_spins) * n_kpoints_local * n_states_calc
+                     * n_omegas;
+    std::vector<std::complex<double>> sigc(n);
+    std::vector<double> spectral_function(n);
+    ::librpa_get_g0w0_spectral_function_kgrid(
+        this->h_, &opts, n_spins, n_kpoints_local, iks_local.data(), i_state_low,
+        i_state_high, n_omegas, omegas.data(), vxc.data(), vexx.data(),
+        spectral_function.data(), reinterpret_cast<double *>(sigc.data()));
+    return G0W0SpectralFunctionResult{std::move(sigc), std::move(spectral_function)};
+}
+
 std::vector<std::complex<double>> Handler::get_g0w0_sigc_band_k(
     const Options& opts, const int n_spins, const std::vector<int>& iks_band_this, int i_state_low,
     int i_state_high, const std::vector<double>& vxc_band, const std::vector<double>& vexx_band)
@@ -393,6 +430,44 @@ G0W0QpeResult Handler::get_g0w0_qpe_band_k(
     for (size_t i = 0; i < n; i++)
         sigc_band[i] = std::complex<double>{sigc_band_re[i], sigc_band_im[i]};
     return G0W0QpeResult{std::move(sigc_band), std::move(eqp_band)};
+}
+
+std::vector<double> Handler::get_g0w0_spectral_function_band_k(
+    const Options& opts, const int n_spins, const std::vector<int>& iks_band_this,
+    int i_state_low, int i_state_high, const std::vector<double>& omegas,
+    const std::vector<double>& vxc_band, const std::vector<double>& vexx_band)
+{
+    const int n_kpts_band_this = iks_band_this.size();
+    const int n_states_calc = i_state_high > i_state_low ? i_state_high - i_state_low : 0;
+    const int n_omegas = omegas.size();
+    const size_t n = static_cast<size_t>(n_spins) * n_kpts_band_this * n_states_calc
+                     * n_omegas;
+    std::vector<double> spectral_function_band(n);
+    ::librpa_get_g0w0_spectral_function_band_k(
+        this->h_, &opts, n_spins, n_kpts_band_this, iks_band_this.data(), i_state_low,
+        i_state_high, n_omegas, omegas.data(), vxc_band.data(), vexx_band.data(),
+        spectral_function_band.data(), nullptr);
+    return spectral_function_band;
+}
+
+G0W0SpectralFunctionResult Handler::get_g0w0_spectral_function_with_sigc_band_k(
+    const Options& opts, const int n_spins, const std::vector<int>& iks_band_this,
+    int i_state_low, int i_state_high, const std::vector<double>& omegas,
+    const std::vector<double>& vxc_band, const std::vector<double>& vexx_band)
+{
+    const int n_kpts_band_this = iks_band_this.size();
+    const int n_states_calc = i_state_high > i_state_low ? i_state_high - i_state_low : 0;
+    const int n_omegas = omegas.size();
+    const size_t n = static_cast<size_t>(n_spins) * n_kpts_band_this * n_states_calc
+                     * n_omegas;
+    std::vector<std::complex<double>> sigc_band(n);
+    std::vector<double> spectral_function_band(n);
+    ::librpa_get_g0w0_spectral_function_band_k(
+        this->h_, &opts, n_spins, n_kpts_band_this, iks_band_this.data(), i_state_low,
+        i_state_high, n_omegas, omegas.data(), vxc_band.data(), vexx_band.data(),
+        spectral_function_band.data(), reinterpret_cast<double *>(sigc_band.data()));
+    return G0W0SpectralFunctionResult{std::move(sigc_band),
+                                      std::move(spectral_function_band)};
 }
 
 }

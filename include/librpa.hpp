@@ -48,6 +48,12 @@ struct G0W0QpeResult
     std::vector<double> eqp;
 };
 
+struct G0W0SpectralFunctionResult
+{
+    std::vector<std::complex<double>> sigc;
+    std::vector<double> spectral_function;
+};
+
 
 /* Options */
 /**
@@ -403,6 +409,22 @@ public:
                        int i_state_low, int i_state_high, const std::vector<double> &vxc,
                        const std::vector<double> &vexx);
 
+    /** @brief Get G0W0 spectral functions for k-grid states.
+     *
+     * The returned data are ordered as [spin][k-point][state][omega].
+     */
+    std::vector<double>
+    get_g0w0_spectral_function_kgrid(
+        const Options &opts, const int n_spins, const std::vector<int> &iks_this,
+        int i_state_low, int i_state_high, const std::vector<double> &omegas,
+        const std::vector<double> &vxc, const std::vector<double> &vexx);
+
+    G0W0SpectralFunctionResult
+    get_g0w0_spectral_function_with_sigc_kgrid(
+        const Options &opts, const int n_spins, const std::vector<int> &iks_this,
+        int i_state_low, int i_state_high, const std::vector<double> &omegas,
+        const std::vector<double> &vxc, const std::vector<double> &vexx);
+
     /** @brief Get G0W0 correlation self-energy for band k-points.
      *
      * @param[in] opts            Runtime options.
@@ -424,6 +446,22 @@ public:
                         const std::vector<int> &iks_band_this, int i_state_low,
                         int i_state_high, const std::vector<double> &vxc_band,
                         const std::vector<double> &vexx_band);
+
+    /** @brief Get G0W0 spectral functions for band k-point states.
+     *
+     * The returned data are ordered as [spin][band k-point][state][omega].
+     */
+    std::vector<double>
+    get_g0w0_spectral_function_band_k(
+        const Options &opts, const int n_spins, const std::vector<int> &iks_band_this,
+        int i_state_low, int i_state_high, const std::vector<double> &omegas,
+        const std::vector<double> &vxc_band, const std::vector<double> &vexx_band);
+
+    G0W0SpectralFunctionResult
+    get_g0w0_spectral_function_with_sigc_band_k(
+        const Options &opts, const int n_spins, const std::vector<int> &iks_band_this,
+        int i_state_low, int i_state_high, const std::vector<double> &omegas,
+        const std::vector<double> &vxc_band, const std::vector<double> &vexx_band);
 
     /* Utility functions */
 };

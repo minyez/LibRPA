@@ -46,6 +46,8 @@ Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
       mf(),
       headwing_velocity(),
       mf_band(),
+      is_band_data_set(false),
+      is_band_calc_done(false),
       tfg(),
       cs_data(),
       cs_data_shrink(),

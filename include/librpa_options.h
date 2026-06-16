@@ -188,6 +188,12 @@ typedef struct
     //! If enabled, keep the final unconverged QPE iterate instead of outputting NaN.
     LibrpaSwitch override_qpe_solver_nan;
 
+    //! Broadening/shift used for Green's function in spectral-function output, in Hartree.
+    double sf_gf_omega_shift;
+
+    //! Broadening/shift used for correlation self-energy in spectral-function output, in Hartree.
+    double sf_sigc_omega_shift;
+
     //! Flag of using ScaLAPACK for computing Wc from chi0
     LibrpaSwitch use_scalapack_gw_wc;
 

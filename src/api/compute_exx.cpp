@@ -119,6 +119,7 @@ void librpa_build_exx(LibrpaHandler* h, const LibrpaOptions *p_opts)
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
     // const bool debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
+    pds->is_band_calc_done = false;
 
     profiler.start("api_build_exx");
 
@@ -193,6 +194,7 @@ void librpa_get_exx_pot_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, con
     // ofs_myid << pexx->exx_IJR << endl;
     // TODO: make choosing blacs/non-blacs method a run time option
     pexx->build_KS_kgrid_blacs(pds->blacs_h);
+    pds->is_band_calc_done = false;
     const int n_states_calc = i_state_high - i_state_low;
     const bool publish_local_values =
         opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;
@@ -214,7 +216,7 @@ void librpa_get_exx_pot_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, co
 
     auto pds = librpa_int::api::get_dataset_instance(h);
 
-    if (pds->mf_band.get_n_spins() == 0)
+    if (!pds->is_band_data_set || pds->mf_band.get_n_spins() == 0)
         throw LIBRPA_RUNTIME_ERROR("Meanfield data for band calculation is not set");
 
     i_state_low = std::max(0, i_state_low);
@@ -241,11 +243,19 @@ void librpa_get_exx_pot_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, co
     auto &pexx = pds->p_exx;
     // ofs_myid << pexx->exx_IJR << endl;
     // TODO: make choosing blacs/non-blacs method a run time option
-    pexx->reset_kspace();
-    const auto bvk_remap = librpa_int::api::build_band_bvk_remap(
-        pds->atoms, pds->pbc, opts.option_bvk_remap);
-    pexx->build_KS_band_blacs(pds->mf_band.get_eigenvectors(), pds->kfrac_band_list,
-                              bvk_remap, pds->blacs_h);
+    if (!pds->is_band_calc_done || pexx->Eexx.empty())
+    {
+        if (!pds->is_band_calc_done && pds->p_g0w0)
+        {
+            pds->p_g0w0->reset_kspace();
+        }
+        pexx->reset_kspace();
+        const auto bvk_remap = librpa_int::api::build_band_bvk_remap(
+            pds->atoms, pds->pbc, opts.option_bvk_remap);
+        pexx->build_KS_band_blacs(pds->mf_band.get_eigenvectors(), pds->kfrac_band_list,
+                                  bvk_remap, pds->blacs_h);
+        pds->is_band_calc_done = true;
+    }
     const int n_states_calc = i_state_high - i_state_low;
     const bool publish_local_values =
         opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;

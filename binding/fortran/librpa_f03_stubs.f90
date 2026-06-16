@@ -203,6 +203,10 @@ module librpa_f03
       logical :: use_qpe_adaptive_damp
       !> Keep the final unconverged QPE iterate instead of outputting NaN.
       logical :: override_qpe_solver_nan
+      !> Broadening/shift used for Green's function in spectral-function output, in Hartree.
+      real(dp) :: sf_gf_omega_shift
+      !> Broadening/shift used for correlation self-energy in spectral-function output, in Hartree.
+      real(dp) :: sf_sigc_omega_shift
       !> Use ScaLAPACK for computing \f$W^c\f$ from \f$\chi^0\f$.
       logical :: use_scalapack_gw_wc
       !> Experimental: use Cholesky factorization for computing \f$W^c\f$ from \f$\chi^0\f$.
@@ -305,7 +309,9 @@ module librpa_f03
          procedure :: get_exx_pot_band_k => librpa_get_exx_pot_band_k
          procedure :: build_g0w0_sigma => librpa_build_g0w0_sigma
          procedure :: get_g0w0_sigc_kgrid => librpa_get_g0w0_sigc_kgrid
+         procedure :: get_g0w0_spectral_function_kgrid => librpa_get_g0w0_spectral_function_kgrid
          procedure :: get_g0w0_sigc_band_k => librpa_get_g0w0_sigc_band_k
+         procedure :: get_g0w0_spectral_function_band_k => librpa_get_g0w0_spectral_function_band_k
    end type LibrpaHandler
 
 contains
@@ -913,6 +919,35 @@ contains
       call error_on_call("librpa_get_g0w0_sigc_kgrid")
    end subroutine librpa_get_g0w0_sigc_kgrid
 
+   !> @brief Get G0W0 spectral functions for k-grid states.
+   !> @param[in,out] this                   Handler.
+   !> @param[in,out] opts                   Runtime options.
+   !> @param[in]     n_spins                Number of spin channels.
+   !> @param[in]     n_kpts_this            Number of k-points on this process.
+   !> @param[in]     iks_this               List of k-point indices (1-based).
+   !> @param[in]     i_state_low            First state index (1-based, inclusive).
+   !> @param[in]     i_state_high           Last state index (1-based, inclusive).
+   !> @param[in]     omegas                 Real-frequency points in Hartree.
+   !> @param[in]     vxc                    XC potential for selected states.
+   !> @param[in]     vexx                   Exact-exchange potential for selected states.
+   !> @param[out]    spectral_function      Spectral function values, ordered as (omega, state, k, spin).
+   !> @param[out]    sigc                   Optional continued correlation self-energy, ordered as (omega, state, k, spin).
+   subroutine librpa_get_g0w0_spectral_function_kgrid(this, opts, n_spins, n_kpts_this, iks_this, &
+                                                      i_state_low, i_state_high, omegas, vxc, vexx, &
+                                                      spectral_function, sigc)
+      implicit none
+      class(LibrpaHandler), intent(inout) :: this
+      type(LibrpaOptions), intent(inout) :: opts
+      integer, contiguous, dimension(:), intent(in) :: iks_this
+      integer, intent(in) :: n_spins, n_kpts_this, i_state_low, i_state_high
+      real(dp), contiguous, dimension(:), intent(in) :: omegas
+      real(dp), dimension(i_state_high - i_state_low + 1, n_kpts_this, n_spins), intent(in) :: vxc
+      real(dp), dimension(i_state_high - i_state_low + 1, n_kpts_this, n_spins), intent(in) :: vexx
+      real(dp), dimension(size(omegas), i_state_high - i_state_low + 1, n_kpts_this, n_spins), intent(inout) :: spectral_function
+      complex(dp), dimension(size(omegas), i_state_high - i_state_low + 1, n_kpts_this, n_spins), intent(inout), optional :: sigc
+      call error_on_call("librpa_get_g0w0_spectral_function_kgrid")
+   end subroutine librpa_get_g0w0_spectral_function_kgrid
+
    !> @brief Get G0W0 correlation self-energy for band k-points.
    !> @param[in,out] this              Handler.
    !> @param[in,out] opts              Runtime options.
@@ -936,5 +971,34 @@ contains
       complex(dp), dimension(i_state_high - i_state_low + 1, n_kpts_band_this, n_spins), intent(inout) :: sigc_band
       call error_on_call("librpa_get_g0w0_sigc_band_k")
    end subroutine librpa_get_g0w0_sigc_band_k
+
+   !> @brief Get G0W0 spectral functions for band k-points.
+   !> @param[in,out] this                   Handler.
+   !> @param[in,out] opts                   Runtime options.
+   !> @param[in]     n_spins                Number of spin channels.
+   !> @param[in]     n_kpts_band_this       Number of band k-points on this process.
+   !> @param[in]     iks_band_this          List of band k-point indices (1-based).
+   !> @param[in]     i_state_low            First state index (1-based, inclusive).
+   !> @param[in]     i_state_high           Last state index (1-based, inclusive).
+   !> @param[in]     omegas                 Real-frequency points in Hartree.
+   !> @param[in]     vxc_band               XC potential for selected band states.
+   !> @param[in]     vexx_band              Exact-exchange potential for selected band states.
+   !> @param[out]    spectral_function_band Spectral function values, ordered as (omega, state, k, spin).
+   !> @param[out]    sigc_band              Optional continued correlation self-energy, ordered as (omega, state, k, spin).
+   subroutine librpa_get_g0w0_spectral_function_band_k(this, opts, n_spins, n_kpts_band_this, iks_band_this, &
+                                                       i_state_low, i_state_high, omegas, vxc_band, vexx_band, &
+                                                       spectral_function_band, sigc_band)
+      implicit none
+      class(LibrpaHandler), intent(inout) :: this
+      type(LibrpaOptions), intent(inout) :: opts
+      integer, contiguous, dimension(:), intent(in) :: iks_band_this
+      integer, intent(in) :: n_spins, n_kpts_band_this, i_state_low, i_state_high
+      real(dp), contiguous, dimension(:), intent(in) :: omegas
+      real(dp), dimension(i_state_high - i_state_low + 1, n_kpts_band_this, n_spins), intent(in) :: vxc_band
+      real(dp), dimension(i_state_high - i_state_low + 1, n_kpts_band_this, n_spins), intent(in) :: vexx_band
+      real(dp), dimension(size(omegas), i_state_high - i_state_low + 1, n_kpts_band_this, n_spins), intent(inout) :: spectral_function_band
+      complex(dp), dimension(size(omegas), i_state_high - i_state_low + 1, n_kpts_band_this, n_spins), intent(inout), optional :: sigc_band
+      call error_on_call("librpa_get_g0w0_spectral_function_band_k")
+   end subroutine librpa_get_g0w0_spectral_function_band_k
 
 end module librpa_f03

@@ -39,7 +39,7 @@
 !> @brief Fortran 2003 module for LibRPA API
 module librpa_f03
 
-   use iso_c_binding, only: c_char, c_ptr, c_int, c_double, c_long_long, c_null_ptr, c_size_t
+   use iso_c_binding, only: c_char, c_ptr, c_int, c_double, c_long_long, c_null_ptr, c_size_t, c_loc
    implicit none
 
    private
@@ -193,6 +193,8 @@ module librpa_f03
       real(c_double) :: qpe_solver_damp_factor
       integer(c_int) :: use_qpe_adaptive_damp
       integer(c_int) :: override_qpe_solver_nan
+      real(c_double) :: sf_gf_omega_shift
+      real(c_double) :: sf_sigc_omega_shift
       integer(c_int) :: use_scalapack_gw_wc
       integer(c_int) :: use_cholesky_gw_wc
       integer(c_int) :: use_gpu_gw_wc
@@ -307,6 +309,10 @@ module librpa_f03
       logical :: use_qpe_adaptive_damp
       !> Keep the final unconverged QPE iterate instead of outputting NaN.
       logical :: override_qpe_solver_nan
+      !> Broadening/shift used for Green's function in spectral-function output, in Hartree.
+      real(dp) :: sf_gf_omega_shift
+      !> Broadening/shift used for correlation self-energy in spectral-function output, in Hartree.
+      real(dp) :: sf_sigc_omega_shift
       !> Use ScaLAPACK for computing \f$W^c\f$ from \f$\chi^0\f$.
       logical :: use_scalapack_gw_wc
       !> Experimental: use Cholesky factorization for computing \f$W^c\f$ from \f$\chi^0\f$.
@@ -470,7 +476,9 @@ module librpa_f03
          procedure :: get_exx_pot_band_k => librpa_get_exx_pot_band_k
          procedure :: build_g0w0_sigma => librpa_build_g0w0_sigma
          procedure :: get_g0w0_sigc_kgrid => librpa_get_g0w0_sigc_kgrid
+         procedure :: get_g0w0_spectral_function_kgrid => librpa_get_g0w0_spectral_function_kgrid
          procedure :: get_g0w0_sigc_band_k => librpa_get_g0w0_sigc_band_k
+         procedure :: get_g0w0_spectral_function_band_k => librpa_get_g0w0_spectral_function_band_k
    end type LibrpaHandler
 
    !> \cond INTERNAL
@@ -817,6 +825,20 @@ module librpa_f03
          real(c_double), dimension(*), intent(inout) :: sigc_re, sigc_im
       end subroutine librpa_get_g0w0_sigc_kgrid_c
 
+      subroutine librpa_get_g0w0_spectral_function_kgrid_c(h, opts, n_spins, n_kpts_this, iks_this, &
+                                                           i_state_low, i_state_high, n_omegas, omegas, &
+                                                           vxc, vexx, spectral_function, sigc) &
+            bind(c, name="librpa_get_g0w0_spectral_function_kgrid")
+         import :: LibrpaOptions_c, c_ptr, c_int, c_double
+         type(c_ptr), value :: h
+         type(LibrpaOptions_c), intent(in) :: opts
+         integer(c_int), value :: n_spins, n_kpts_this, i_state_low, i_state_high, n_omegas
+         integer(c_int), dimension(*), intent(in) :: iks_this
+         real(c_double), dimension(*), intent(in) :: omegas, vxc, vexx
+         real(c_double), dimension(*), intent(inout) :: spectral_function
+         type(c_ptr), value :: sigc
+      end subroutine librpa_get_g0w0_spectral_function_kgrid_c
+
       subroutine librpa_get_g0w0_sigc_band_k_c(h, opts, n_spins, n_kpts_band_this, iks_band_this, &
                                                i_state_low, i_state_high, vxc_band, vexx_band, sigc_band_re, sigc_band_im) &
             bind(c, name="librpa_get_g0w0_sigc_band_k")
@@ -828,6 +850,21 @@ module librpa_f03
          real(c_double), dimension(*), intent(in) :: vxc_band, vexx_band
          real(c_double), dimension(*), intent(inout) :: sigc_band_re, sigc_band_im
       end subroutine librpa_get_g0w0_sigc_band_k_c
+
+      subroutine librpa_get_g0w0_spectral_function_band_k_c(h, opts, n_spins, n_kpts_band_this, iks_band_this, &
+                                                            i_state_low, i_state_high, n_omegas, omegas, &
+                                                            vxc_band, vexx_band, spectral_function_band, &
+                                                            sigc_band) &
+            bind(c, name="librpa_get_g0w0_spectral_function_band_k")
+         import :: LibrpaOptions_c, c_ptr, c_int, c_double
+         type(c_ptr), value :: h
+         type(LibrpaOptions_c), intent(in) :: opts
+         integer(c_int), value :: n_spins, n_kpts_band_this, i_state_low, i_state_high, n_omegas
+         integer(c_int), dimension(*), intent(in) :: iks_band_this
+         real(c_double), dimension(*), intent(in) :: omegas, vxc_band, vexx_band
+         real(c_double), dimension(*), intent(inout) :: spectral_function_band
+         type(c_ptr), value :: sigc_band
+      end subroutine librpa_get_g0w0_spectral_function_band_k_c
    end interface
    !> \endcond
 
@@ -1048,6 +1085,8 @@ contains
       call sync_opt(opts%qpe_solver_damp_factor,  opts%opts_c%qpe_solver_damp_factor,  direction)
       call sync_opt(opts%use_qpe_adaptive_damp,   opts%opts_c%use_qpe_adaptive_damp,   direction)
       call sync_opt(opts%override_qpe_solver_nan, opts%opts_c%override_qpe_solver_nan, direction)
+      call sync_opt(opts%sf_gf_omega_shift,       opts%opts_c%sf_gf_omega_shift,       direction)
+      call sync_opt(opts%sf_sigc_omega_shift,     opts%opts_c%sf_sigc_omega_shift,     direction)
       call sync_opt(opts%option_dielect_func,     opts%opts_c%option_dielect_func,     direction)
       call sync_opt(opts%use_2d_dielectric,       opts%opts_c%use_2d_dielectric,       direction)
       call sync_opt(opts%rpa_headwing_body_start, opts%opts_c%rpa_headwing_body_start, direction)
@@ -2244,6 +2283,107 @@ contains
       deallocate(iks_this_c)
    end subroutine librpa_get_g0w0_sigc_kgrid
 
+   !> @brief Get G0W0 spectral functions for k-grid states.
+   !> @param[in,out] this                   Handler.
+   !> @param[in,out] opts                   Runtime options.
+   !> @param[in]     n_spins                Number of spin channels.
+   !> @param[in]     n_kpts_this            Number of k-points on this process.
+   !> @param[in]     iks_this               List of k-point indices (1-based).
+   !> @param[in]     i_state_low            First state index (1-based, inclusive).
+   !> @param[in]     i_state_high           Last state index (1-based, inclusive).
+   !> @param[in]     omegas                 Real-frequency points in Hartree.
+   !> @param[in]     vxc                    XC potential for selected states.
+   !> @param[in]     vexx                   Exact-exchange potential for selected states.
+   !> @param[out]    spectral_function      Spectral function values, ordered as (omega, state, k, spin).
+   !> @param[out]    sigc                   Optional continued correlation self-energy, ordered as (omega, state, k, spin).
+   subroutine librpa_get_g0w0_spectral_function_kgrid(this, opts, n_spins, n_kpts_this, iks_this, &
+                                                      i_state_low, i_state_high, omegas, vxc, vexx, &
+                                                      spectral_function, sigc)
+      implicit none
+      class(LibrpaHandler), intent(inout) :: this
+      type(LibrpaOptions), intent(inout) :: opts
+      integer, contiguous, dimension(:), intent(in) :: iks_this
+      integer, intent(in) :: n_spins, n_kpts_this, i_state_low, i_state_high
+      real(dp), contiguous, dimension(:), intent(in) :: omegas
+      real(dp), dimension(i_state_high - i_state_low + 1, n_kpts_this, n_spins), intent(in) :: vxc
+      real(dp), dimension(i_state_high - i_state_low + 1, n_kpts_this, n_spins), intent(in) :: vexx
+      real(dp), dimension(size(omegas), i_state_high - i_state_low + 1, n_kpts_this, n_spins), intent(inout) :: spectral_function
+      complex(dp), dimension(size(omegas), i_state_high - i_state_low + 1, n_kpts_this, n_spins), intent(inout), optional :: sigc
+
+      integer(c_int), allocatable :: iks_this_c(:)
+      real(c_double), allocatable :: omegas_c(:)
+      real(c_double), allocatable :: vxc_c(:,:,:), vexx_c(:,:,:)
+      real(c_double), allocatable, target :: sigc_c(:)
+      real(c_double), allocatable :: spectral_function_c(:,:,:,:)
+      type(c_ptr) :: sigc_ptr
+      integer(c_int) :: n_spins_c, n_kpts_this_c, i_state_low_c, i_state_high_c, n_omegas_c
+      integer :: n_states_calc, n_omegas, n_sigc, n_sigc_buffer
+
+      n_spins_c = int(n_spins, kind=c_int)
+      i_state_low_c = int(i_state_low - 1, kind=c_int)
+      i_state_high_c = int(i_state_high, kind=c_int)
+      n_omegas = size(omegas)
+      n_omegas_c = int(n_omegas, kind=c_int)
+
+      n_kpts_this_c = int(n_kpts_this, kind=c_int)
+      if (n_kpts_this > 0) then
+         allocate(iks_this_c(n_kpts_this))
+         iks_this_c = int(iks_this(1:n_kpts_this), kind=c_int) - 1
+      else
+         allocate(iks_this_c(1))
+      end if
+
+      n_states_calc = i_state_high - i_state_low + 1
+
+      call sync_opts(opts, SYNC_OPTS_F2C)
+      n_sigc = n_omegas * n_states_calc * n_kpts_this * n_spins
+      sigc_ptr = c_null_ptr
+      if (present(sigc)) then
+         n_sigc_buffer = max(n_omegas, 1) * max(n_states_calc, 1) * max(n_kpts_this, 1) * max(n_spins, 1)
+         allocate(sigc_c(2 * n_sigc_buffer))
+         sigc_ptr = c_loc(sigc_c(1))
+      end if
+      if (dp == c_double) then
+         call librpa_get_g0w0_spectral_function_kgrid_c(this%ptr_c_handle, opts%opts_c, n_spins_c, n_kpts_this_c, &
+                                                        iks_this_c, i_state_low_c, i_state_high_c, n_omegas_c, &
+                                                        omegas, vxc, vexx, spectral_function, sigc_ptr)
+         if (present(sigc) .and. n_sigc > 0) then
+            sigc(:,:,:,:) = cmplx(reshape(real(sigc_c(1:2*n_sigc-1:2), kind=dp), shape(sigc)), &
+                                  reshape(real(sigc_c(2:2*n_sigc:2), kind=dp), shape(sigc)), kind=dp)
+         end if
+      else
+         allocate(omegas_c(max(n_omegas, 1)))
+         allocate(vexx_c(n_states_calc, max(n_kpts_this, 1), n_spins))
+         allocate(vxc_c(n_states_calc, max(n_kpts_this, 1), n_spins))
+         allocate(spectral_function_c(max(n_omegas, 1), n_states_calc, max(n_kpts_this, 1), n_spins))
+         if (n_omegas > 0) then
+            omegas_c(1:n_omegas) = real(omegas, kind=c_double)
+         end if
+         if (n_kpts_this > 0) then
+            vxc_c = real(vxc, kind=c_double)
+            vexx_c = real(vexx, kind=c_double)
+         end if
+         call librpa_get_g0w0_spectral_function_kgrid_c(this%ptr_c_handle, opts%opts_c, n_spins_c, n_kpts_this_c, &
+                                                        iks_this_c, i_state_low_c, i_state_high_c, n_omegas_c, &
+                                                        omegas_c, vxc_c, vexx_c, spectral_function_c, &
+                                                        sigc_ptr)
+         if (n_omegas > 0 .and. n_kpts_this > 0) then
+            spectral_function(:,:,:,:) = real(spectral_function_c(1:n_omegas,:,:,:), kind=dp)
+         end if
+         if (present(sigc) .and. n_sigc > 0) then
+            sigc(:,:,:,:) = cmplx(reshape(real(sigc_c(1:2*n_sigc-1:2), kind=dp), shape(sigc)), &
+                                  reshape(real(sigc_c(2:2*n_sigc:2), kind=dp), shape(sigc)), kind=dp)
+         end if
+         deallocate(omegas_c)
+         deallocate(vxc_c)
+         deallocate(vexx_c)
+         deallocate(spectral_function_c)
+      end if
+
+      if (allocated(sigc_c)) deallocate(sigc_c)
+      deallocate(iks_this_c)
+   end subroutine librpa_get_g0w0_spectral_function_kgrid
+
    !> @brief Get G0W0 correlation self-energy for band k-points.
    !> @param[in,out] this              Handler.
    !> @param[in,out] opts              Runtime options.
@@ -2313,6 +2453,108 @@ contains
       deallocate(sigc_im_c)
       deallocate(iks_band_this_c)
    end subroutine librpa_get_g0w0_sigc_band_k
+
+   !> @brief Get G0W0 spectral functions for band k-points.
+   !> @param[in,out] this                   Handler.
+   !> @param[in,out] opts                   Runtime options.
+   !> @param[in]     n_spins                Number of spin channels.
+   !> @param[in]     n_kpts_band_this       Number of band k-points on this process.
+   !> @param[in]     iks_band_this          List of band k-point indices (1-based).
+   !> @param[in]     i_state_low            First state index (1-based, inclusive).
+   !> @param[in]     i_state_high           Last state index (1-based, inclusive).
+   !> @param[in]     omegas                 Real-frequency points in Hartree.
+   !> @param[in]     vxc_band               XC potential for selected band states.
+   !> @param[in]     vexx_band              Exact-exchange potential for selected band states.
+   !> @param[out]    spectral_function_band Spectral function values, ordered as (omega, state, k, spin).
+   !> @param[out]    sigc_band              Optional continued correlation self-energy, ordered as (omega, state, k, spin).
+   subroutine librpa_get_g0w0_spectral_function_band_k(this, opts, n_spins, n_kpts_band_this, iks_band_this, &
+                                                       i_state_low, i_state_high, omegas, vxc_band, vexx_band, &
+                                                       spectral_function_band, sigc_band)
+      implicit none
+      class(LibrpaHandler), intent(inout) :: this
+      type(LibrpaOptions), intent(inout) :: opts
+      integer, contiguous, dimension(:), intent(in) :: iks_band_this
+      integer, intent(in) :: n_spins, n_kpts_band_this, i_state_low, i_state_high
+      real(dp), contiguous, dimension(:), intent(in) :: omegas
+      real(dp), dimension(i_state_high - i_state_low + 1, n_kpts_band_this, n_spins), intent(in) :: vxc_band
+      real(dp), dimension(i_state_high - i_state_low + 1, n_kpts_band_this, n_spins), intent(in) :: vexx_band
+      real(dp), dimension(size(omegas), i_state_high - i_state_low + 1, n_kpts_band_this, n_spins), intent(inout) :: spectral_function_band
+      complex(dp), dimension(size(omegas), i_state_high - i_state_low + 1, n_kpts_band_this, n_spins), intent(inout), optional :: sigc_band
+
+      integer(c_int), allocatable :: iks_band_this_c(:)
+      real(c_double), allocatable :: omegas_c(:)
+      real(c_double), allocatable :: vxc_c(:,:,:), vexx_c(:,:,:)
+      real(c_double), allocatable, target :: sigc_c(:)
+      real(c_double), allocatable :: spectral_function_c(:,:,:,:)
+      type(c_ptr) :: sigc_ptr
+      integer(c_int) :: n_spins_c, n_kpts_band_this_c, i_state_low_c, i_state_high_c, n_omegas_c
+      integer :: n_states_calc, n_omegas, n_sigc, n_sigc_buffer
+
+      n_spins_c = int(n_spins, kind=c_int)
+      i_state_low_c = int(i_state_low - 1, kind=c_int)
+      i_state_high_c = int(i_state_high, kind=c_int)
+      n_omegas = size(omegas)
+      n_omegas_c = int(n_omegas, kind=c_int)
+
+      n_kpts_band_this_c = int(n_kpts_band_this, kind=c_int)
+      if (n_kpts_band_this > 0) then
+         allocate(iks_band_this_c(n_kpts_band_this))
+         iks_band_this_c = int(iks_band_this(1:n_kpts_band_this), kind=c_int) - 1
+      else
+         allocate(iks_band_this_c(1))
+      end if
+
+      n_states_calc = i_state_high - i_state_low + 1
+
+      call sync_opts(opts, SYNC_OPTS_F2C)
+      n_sigc = n_omegas * n_states_calc * n_kpts_band_this * n_spins
+      sigc_ptr = c_null_ptr
+      if (present(sigc_band)) then
+         n_sigc_buffer = max(n_omegas, 1) * max(n_states_calc, 1) * max(n_kpts_band_this, 1) * max(n_spins, 1)
+         allocate(sigc_c(2 * n_sigc_buffer))
+         sigc_ptr = c_loc(sigc_c(1))
+      end if
+      if (dp == c_double) then
+         call librpa_get_g0w0_spectral_function_band_k_c(this%ptr_c_handle, opts%opts_c, n_spins_c, n_kpts_band_this_c, &
+                                                         iks_band_this_c, i_state_low_c, i_state_high_c, n_omegas_c, &
+                                                         omegas, vxc_band, vexx_band, spectral_function_band, &
+                                                         sigc_ptr)
+         if (present(sigc_band) .and. n_sigc > 0) then
+            sigc_band(:,:,:,:) = cmplx(reshape(real(sigc_c(1:2*n_sigc-1:2), kind=dp), shape(sigc_band)), &
+                                       reshape(real(sigc_c(2:2*n_sigc:2), kind=dp), shape(sigc_band)), kind=dp)
+         end if
+      else
+         allocate(omegas_c(max(n_omegas, 1)))
+         allocate(vexx_c(n_states_calc, max(n_kpts_band_this, 1), n_spins))
+         allocate(vxc_c(n_states_calc, max(n_kpts_band_this, 1), n_spins))
+         allocate(spectral_function_c(max(n_omegas, 1), n_states_calc, max(n_kpts_band_this, 1), n_spins))
+         if (n_omegas > 0) then
+            omegas_c(1:n_omegas) = real(omegas, kind=c_double)
+         end if
+         if (n_kpts_band_this > 0) then
+            vxc_c = real(vxc_band, kind=c_double)
+            vexx_c = real(vexx_band, kind=c_double)
+         end if
+         call librpa_get_g0w0_spectral_function_band_k_c(this%ptr_c_handle, opts%opts_c, n_spins_c, n_kpts_band_this_c, &
+                                                         iks_band_this_c, i_state_low_c, i_state_high_c, n_omegas_c, &
+                                                         omegas_c, vxc_c, vexx_c, spectral_function_c, &
+                                                         sigc_ptr)
+         if (n_omegas > 0 .and. n_kpts_band_this > 0) then
+            spectral_function_band(:,:,:,:) = real(spectral_function_c(1:n_omegas,:,:,:), kind=dp)
+         end if
+         if (present(sigc_band) .and. n_sigc > 0) then
+            sigc_band(:,:,:,:) = cmplx(reshape(real(sigc_c(1:2*n_sigc-1:2), kind=dp), shape(sigc_band)), &
+                                       reshape(real(sigc_c(2:2*n_sigc:2), kind=dp), shape(sigc_band)), kind=dp)
+         end if
+         deallocate(omegas_c)
+         deallocate(vxc_c)
+         deallocate(vexx_c)
+         deallocate(spectral_function_c)
+      end if
+
+      if (allocated(sigc_c)) deallocate(sigc_c)
+      deallocate(iks_band_this_c)
+   end subroutine librpa_get_g0w0_spectral_function_band_k
    !> @}
 
 end module librpa_f03

@@ -132,6 +132,36 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts,
                                const double *vxc, const double *vexx, double *sigc_re,
                                double *sigc_im, double *eqp);
 
+//! Obtain spectral functions for selected k-grid states.
+/**
+ * Computes spectral functions under the diagonal approximation of the Green's
+ * function:
+ * \f$A_{n\mathbf{k}}(\omega) = -\pi^{-1}\mathrm{Im}\,G_{n\mathbf{k}}(\omega)\f$.
+ *
+ * @param[in]  h                       Pointer to LibRPA handler.
+ * @param[in]  p_opts                  Pointer to runtime options.
+ * @param[in]  n_spins                 Number of spin channels.
+ * @param[in]  n_kpts_this             Number of k-points to compute on this process.
+ * @param[in]  iks_this                Global k-point indices computed on this process.
+ * @param[in]  i_state_low             First state index (inclusive).
+ * @param[in]  i_state_high            Last state index (exclusive).
+ * @param[in]  n_omegas                Number of real-frequency points.
+ * @param[in]  omegas                  Real-frequency points, in Hartree.
+ * @param[in]  vxc                     XC potential for selected states.
+ * @param[in]  vexx                    Exact-exchange potential for selected states.
+ * @param[out] spectral_function       Spectral functions. This output array should be at least as long as
+ *                                     n_spins * n_kpts_this * (i_state_high - i_state_low) * n_omegas.
+ *                                     The order is [spin][k-point][state][omega].
+ * @param[out] sigc                    Optional continued correlation self-energy. Pass nullptr if this output is
+ *                                     not needed. If present, this is a packed complex<double> buffer with the
+ *                                     same [spin][k-point][state][omega] order as spectral_function.
+ */
+void librpa_get_g0w0_spectral_function_kgrid(
+    LibrpaHandler *h, const LibrpaOptions *p_opts, const int n_spins,
+    const int n_kpts_this, const int *iks_this, int i_state_low, int i_state_high,
+    const int n_omegas, const double *omegas, const double *vxc, const double *vexx,
+    double *spectral_function, double *sigc);
+
 //! Obtain correlation self-energies for selected states at band k-points.
 /**
  * @param[in]  h                Pointer to LibRPA handler.
@@ -171,6 +201,36 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts,
                                 const double *vxc_band, const double *vexx_band,
                                 double *sigc_band_re, double *sigc_band_im,
                                 double *eqp_band);
+
+//! Obtain spectral functions for selected band-k states.
+/**
+ * Same convention as librpa_get_g0w0_spectral_function_kgrid, but evaluates
+ * states at band k-points.
+ *
+ * @param[in]  h                       Pointer to LibRPA handler.
+ * @param[in]  p_opts                  Pointer to runtime options.
+ * @param[in]  n_spins                 Number of spin channels.
+ * @param[in]  n_kpts_band_this        Number of band k-points to compute on this process.
+ * @param[in]  iks_band_this           Global band-k indices computed on this process.
+ * @param[in]  i_state_low             First state index (inclusive).
+ * @param[in]  i_state_high            Last state index (exclusive).
+ * @param[in]  n_omegas                Number of real-frequency points.
+ * @param[in]  omegas                  Real-frequency points, in Hartree.
+ * @param[in]  vxc_band                XC potential for selected band states.
+ * @param[in]  vexx_band               Exact-exchange potential for selected band states.
+ * @param[out] spectral_function_band  Spectral functions. This output array should be at least as long as
+ *                                     n_spins * n_kpts_band_this * (i_state_high - i_state_low) * n_omegas.
+ *                                     The order is [spin][band k-point][state][omega].
+ * @param[out] sigc_band               Optional continued correlation self-energy. Pass nullptr if this output is
+ *                                     not needed. If present, this is a packed complex<double> buffer with the
+ *                                     same [spin][band k-point][state][omega] order as spectral_function_band.
+ */
+void librpa_get_g0w0_spectral_function_band_k(
+    LibrpaHandler *h, const LibrpaOptions *p_opts, const int n_spins,
+    const int n_kpts_band_this, const int *iks_band_this, int i_state_low,
+    int i_state_high, const int n_omegas, const double *omegas,
+    const double *vxc_band, const double *vexx_band, double *spectral_function_band,
+    double *sigc_band);
 
 #ifdef __cplusplus
 }

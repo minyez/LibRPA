@@ -434,8 +434,8 @@ void driver::task_g0w0_band()
     //     std::vector<cplxdb> omegas;
     //     // FIXME: should check negative n_omegas_sf beforehand for safety and clarity
     //     int n_omegas_sf = (driver_params.sf_omega_end - driver_params.sf_omega_start) / driver_params.sf_omega_step + 1;
-    //     const double gf_shift_ha = driver_params.sf_gf_omega_shift / HA2EV;
-    //     const double sigc_shift_ha = driver_params.sf_sigc_omega_shift / HA2EV;
+    //     const double gf_shift_ha = opts.sf_gf_omega_shift;
+    //     const double sigc_shift_ha = opts.sf_sigc_omega_shift;
     //
     //     if (driver_params.output_gw_spec_func && n_omegas_sf > 0)
     //     {
@@ -454,8 +454,8 @@ void driver::task_g0w0_band()
     //         wf_sf.write((char *) &driver_params.sf_omega_start, sizeof(double));
     //         wf_sf.write((char *) &driver_params.sf_omega_end, sizeof(double));
     //         wf_sf.write((char *) &driver_params.sf_omega_step, sizeof(double));
-    //         wf_sf.write((char *) &driver_params.sf_gf_omega_shift, sizeof(double));
-    //         wf_sf.write((char *) &driver_params.sf_sigc_omega_shift, sizeof(double));
+    //         wf_sf.write((char *) &opts.sf_gf_omega_shift, sizeof(double));
+    //         wf_sf.write((char *) &opts.sf_sigc_omega_shift, sizeof(double));
     //         // Output dimension information and Fermi level
     //         wf_sf.write((char *) &n_omegas_sf, sizeof(int));
     //         wf_sf.write((char *) &n_spin, sizeof(int));

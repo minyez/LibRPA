@@ -21,10 +21,12 @@
 #include "../core/coulmat.h"
 #include "../core/dielecmodel.h"
 #include "../core/epsilon.h"
+#include "../core/meanfield.h"
 #include "../core/qpe_solver.h"
 #include "../io/fs.h"
 #include "../math/complexmatrix.h"
 #include "../math/utils_matrix_m_mpi.h"
+#include "../utils/constants.h"
 #include "../utils/error.h"
 // #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
@@ -54,6 +56,164 @@ int sigc_diag_index(const int isp, const int ik_collect, const int ifreq, const 
                     const int nk_collect, const int nfreq, const int n_states_calc)
 {
     return (((isp * nk_collect + ik_collect) * nfreq + ifreq) * n_states_calc + i_state);
+}
+
+// Linearized index for public spectral-function output:
+// [spin][requested k][requested state][real-frequency].
+int spectral_function_index(const int isp, const int ik_this, const int i_state,
+                            const int iomega, const int n_kpts_this,
+                            const int n_states_calc, const int n_omegas)
+{
+    return (((isp * n_kpts_this + ik_this) * n_states_calc + i_state) * n_omegas
+            + iomega);
+}
+
+std::vector<librpa_int::cplxdb> make_imagfreqs(const std::vector<double> &freq_nodes)
+{
+    std::vector<librpa_int::cplxdb> imagfreqs;
+    imagfreqs.reserve(freq_nodes.size());
+    for (const auto &freq: freq_nodes)
+    {
+        imagfreqs.emplace_back(0.0, freq);
+    }
+    return imagfreqs;
+}
+
+std::vector<librpa_int::cplxdb> make_real_omegas(const int n_omegas,
+                                                  const double *omegas)
+{
+    std::vector<librpa_int::cplxdb> real_omegas;
+    real_omegas.reserve(n_omegas);
+    for (int iomega = 0; iomega != n_omegas; ++iomega)
+    {
+        real_omegas.emplace_back(omegas[iomega], 0.0);
+    }
+    return real_omegas;
+}
+
+std::vector<librpa_int::cplxdb> extract_sigc_state(
+    const std::vector<librpa_int::cplxdb> &sigc_diag, const int isp,
+    const int ik_collect, const int i_state, const int nk_collect, const int nfreq,
+    const int n_states_calc)
+{
+    std::vector<librpa_int::cplxdb> sigc_state;
+    sigc_state.reserve(nfreq);
+    for (int ifreq = 0; ifreq != nfreq; ++ifreq)
+    {
+        const int idx = sigc_diag_index(isp, ik_collect, ifreq, i_state,
+                                        nk_collect, nfreq, n_states_calc);
+        sigc_state.emplace_back(sigc_diag[idx]);
+    }
+    return sigc_state;
+}
+
+void validate_spectral_function_inputs(const int n_omegas, const double *omegas,
+                                       const double *vxc, const double *vexx,
+                                       const double *spectral_function)
+{
+    if (n_omegas < 0)
+    {
+        throw LIBRPA_RUNTIME_ERROR("n_omegas must be non-negative");
+    }
+    if (n_omegas == 0)
+    {
+        return;
+    }
+    if (n_omegas > 0 && omegas == nullptr)
+    {
+        throw LIBRPA_RUNTIME_ERROR("omegas is null");
+    }
+    if (vxc == nullptr)
+    {
+        throw LIBRPA_RUNTIME_ERROR("vxc is null");
+    }
+    if (vexx == nullptr)
+    {
+        throw LIBRPA_RUNTIME_ERROR("vexx is null");
+    }
+    if (spectral_function == nullptr)
+    {
+        throw LIBRPA_RUNTIME_ERROR("spectral_function is null");
+    }
+}
+
+void evaluate_spectral_function_diagonal(
+    const librpa_int::MeanField &mf, const int n_params_anacon,
+    const std::vector<librpa_int::cplxdb> &sigc_diag,
+    const std::vector<int> &iks_collect, const std::vector<double> &freq_nodes,
+    const int n_spins, const int n_kpts_this, const int *iks_this,
+    const int i_state_low, const int n_states_calc, const int n_omegas,
+    const double *omegas, const double *vxc, const double *vexx,
+    const double sigc_omega_imag_shift, const double gf_omega_imag_shift,
+    double *spectral_function, double *sigc)
+{
+    const auto ik_pos = make_ik_pos_map(iks_collect);
+    const int nk_collect = static_cast<int>(iks_collect.size());
+    const int nfreq = static_cast<int>(freq_nodes.size());
+    const auto imagfreqs = make_imagfreqs(freq_nodes);
+    const auto real_omegas = make_real_omegas(n_omegas, omegas);
+    const double efermi = mf.get_efermi();
+
+    for (int isp = 0; isp != n_spins; ++isp)
+    {
+        const int start_isp = isp * n_kpts_this * n_states_calc;
+        for (int ik_this = 0; ik_this != n_kpts_this; ++ik_this)
+        {
+            const int start_k = start_isp + ik_this * n_states_calc;
+            const int ik = iks_this[ik_this];
+            const int ik_collect = ik_pos.at(ik);
+            for (int i = 0; i != n_states_calc; ++i)
+            {
+                const int i_state = i_state_low + i;
+                const double eks_state = mf.get_eigenvals()[isp](ik, i_state);
+                const double vxc_state = vxc[start_k + i];
+                const double exx_state = vexx[start_k + i];
+                const auto sigc_state = extract_sigc_state(
+                    sigc_diag, isp, ik_collect, i, nk_collect, nfreq, n_states_calc);
+                const librpa_int::AnalyContPade pade(n_params_anacon, imagfreqs, sigc_state);
+                for (int iomega = 0; iomega != n_omegas; ++iomega)
+                {
+                    const auto omega_gf = real_omegas[iomega]
+                                          + librpa_int::cplxdb(0.0, gf_omega_imag_shift);
+                    const auto omega_sigc = real_omegas[iomega]
+                                            + librpa_int::cplxdb(0.0, sigc_omega_imag_shift);
+                    const auto sigc_omega = pade.get(omega_sigc - efermi);
+                    const auto gf_inv = omega_gf - eks_state + vxc_state - exx_state
+                                        - sigc_omega;
+                    const int idx = spectral_function_index(
+                        isp, ik_this, i, iomega, n_kpts_this, n_states_calc, n_omegas);
+                    if (sigc != nullptr)
+                    {
+                        sigc[2 * idx] = sigc_omega.real();
+                        sigc[2 * idx + 1] = sigc_omega.imag();
+                    }
+                    spectral_function[idx] = -((1.0 / librpa_int::PI) / gf_inv).imag();
+                }
+            }
+        }
+    }
+}
+
+void ensure_band_sigc_ks_blacs(librpa_int::Dataset &ds, const LibrpaOptions &opts,
+                               const std::vector<int> &iks_output)
+{
+    if (ds.is_band_calc_done && ds.p_g0w0 && !ds.p_g0w0->sigc_is_ik_f_KS.empty())
+    {
+        return;
+    }
+
+    if (!ds.is_band_calc_done && ds.p_exx)
+    {
+        ds.p_exx->reset_kspace();
+    }
+    ds.p_g0w0->reset_kspace();
+    const auto bvk_remap = librpa_int::api::build_band_bvk_remap(
+        ds.atoms, ds.pbc, opts.option_bvk_remap);
+    ds.p_g0w0->build_sigc_matrix_KS_band_blacs(ds.mf_band.get_eigenvectors(),
+                                               ds.kfrac_band_list,
+                                               bvk_remap, ds.blacs_h,
+                                               &iks_output);
+    ds.is_band_calc_done = true;
 }
 
 std::map<double, librpa_int::atom_mapping<std::map<librpa_int::Vector3_Order<double>,
@@ -305,6 +465,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
     const bool debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
+    pds->is_band_calc_done = false;
 
     profiler.start("api_build_g0w0_sigma");
 
@@ -523,6 +684,7 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
 
     profiler.start("g0w0_sigc_rotate_KS", "Correlation self-energy in K-S space");
     pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
+    pds->is_band_calc_done = false;
     profiler.stop("g0w0_sigc_rotate_KS");
 
     std::vector<int> iks_collect;
@@ -625,6 +787,63 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                               i_state_high, vxc, vexx, sigc_re, sigc_im, eqp.data());
 }
 
+void librpa_get_g0w0_spectral_function_kgrid(
+    LibrpaHandler *h, const LibrpaOptions *p_opts, const int n_spins,
+    const int n_kpts_this, const int *iks_this, int i_state_low, int i_state_high,
+    const int n_omegas, const double *omegas, const double *vxc, const double *vexx,
+    double *spectral_function, double *sigc)
+{
+    using namespace librpa_int;
+    using librpa_int::global::profiler;
+
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    const auto &opts = *p_opts;
+    if (n_omegas < 0)
+    {
+        throw LIBRPA_RUNTIME_ERROR("n_omegas must be non-negative");
+    }
+
+    i_state_low = std::max(0, i_state_low);
+    i_state_high = std::min(pds->mf.get_n_states(), i_state_high);
+    if (n_spins != pds->mf.get_n_spins())
+    {
+        global::ofs_myid << "n_spins != pds->mf.get_n_spins(): " << n_spins << " != "
+                         << pds->mf.get_n_spins() << std::endl;
+        throw LIBRPA_RUNTIME_ERROR("parsed nspins is not consitent with the SCF starting poing");
+    }
+    if (n_omegas == 0 || n_kpts_this == 0 || i_state_high <= i_state_low) return;
+    const int n_states_calc = i_state_high - i_state_low;
+    validate_spectral_function_inputs(n_omegas, omegas, vxc, vexx, spectral_function);
+
+    if (!pds->p_g0w0) librpa_build_g0w0_sigma(h, p_opts);
+
+    profiler.start("api_get_g0w0_spectral_function_kgrid");
+
+    profiler.start("g0w0_sigc_rotate_KS", "Correlation self-energy in K-S space");
+    pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
+    pds->is_band_calc_done = false;
+    profiler.stop("g0w0_sigc_rotate_KS");
+
+    std::vector<int> iks_collect;
+    const auto freq_nodes = pds->tfg.get_freq_nodes();
+    const bool publish_local_values =
+        opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;
+    const auto sigc_diag = collect_sigc_diag_to_callers(
+        pds->p_g0w0->sigc_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
+        n_spins, pds->mf.get_n_kpoints(), n_kpts_this, iks_this, i_state_low,
+        n_states_calc, iks_collect);
+
+    profiler.start("g0w0_spectral_function", "Compute spectral function");
+    evaluate_spectral_function_diagonal(
+        pds->mf, opts.n_params_anacon, sigc_diag, iks_collect, freq_nodes,
+        n_spins, n_kpts_this, iks_this, i_state_low, n_states_calc, n_omegas,
+        omegas, vxc, vexx, opts.sf_sigc_omega_shift, opts.sf_gf_omega_shift,
+        spectral_function, sigc);
+    profiler.stop("g0w0_spectral_function");
+
+    profiler.stop("api_get_g0w0_spectral_function_kgrid");
+}
+
 void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, const int n_spins,
                                 const int n_kpts_band_this, const int *iks_band_this,
                                 int i_state_low, int i_state_high, const double *vxc_band,
@@ -638,6 +857,8 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
     const bool debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
+    if (!pds->is_band_data_set || pds->mf_band.get_n_spins() == 0)
+        throw LIBRPA_RUNTIME_ERROR("Meanfield data for band calculation is not set");
     i_state_low = std::max(0, i_state_low);
     i_state_high = std::min(pds->mf_band.get_n_states(), i_state_high);
     const int n_spins_band = pds->mf_band.get_n_spins();
@@ -666,13 +887,7 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                                               iks_band_this, pds->mf_band.get_n_kpoints());
 
     profiler.start("g0w0_sigc_rotate_KS", "Correlation self-energy in K-S space");
-    pds->p_g0w0->reset_kspace();
-    const auto bvk_remap = librpa_int::api::build_band_bvk_remap(
-        pds->atoms, pds->pbc, opts.option_bvk_remap);
-    pds->p_g0w0->build_sigc_matrix_KS_band_blacs(pds->mf_band.get_eigenvectors(),
-                                                 pds->kfrac_band_list,
-                                                 bvk_remap, pds->blacs_h,
-                                                 &iks_output);
+    ensure_band_sigc_ks_blacs(*pds, opts, iks_output);
     profiler.stop("g0w0_sigc_rotate_KS");
 
     std::vector<int> iks_collect;
@@ -775,4 +990,69 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, 
     librpa_get_g0w0_qpe_band_k(h, p_opts, n_spins, n_kpts_band_this, iks_band_this,
                                i_state_low, i_state_high, vxc_band, vexx_band, sigc_band_re,
                                sigc_band_im, eqp_band.data());
+}
+
+void librpa_get_g0w0_spectral_function_band_k(
+    LibrpaHandler *h, const LibrpaOptions *p_opts, const int n_spins,
+    const int n_kpts_band_this, const int *iks_band_this, int i_state_low,
+    int i_state_high, const int n_omegas, const double *omegas,
+    const double *vxc_band, const double *vexx_band, double *spectral_function_band,
+    double *sigc_band)
+{
+    using namespace librpa_int;
+    using librpa_int::global::profiler;
+
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    const auto &opts = *p_opts;
+    if (n_omegas < 0)
+    {
+        throw LIBRPA_RUNTIME_ERROR("n_omegas must be non-negative");
+    }
+    if (!pds->is_band_data_set || pds->mf_band.get_n_spins() == 0)
+        throw LIBRPA_RUNTIME_ERROR("Meanfield data for band calculation is not set");
+
+    i_state_low = std::max(0, i_state_low);
+    i_state_high = std::min(pds->mf_band.get_n_states(), i_state_high);
+    const int n_spins_band = pds->mf_band.get_n_spins();
+    if (n_spins != n_spins_band)
+    {
+        global::ofs_myid << "n_spins != pds->mf_band.get_n_spins(): " << n_spins << " != "
+                         << n_spins_band << std::endl;
+        throw LIBRPA_RUNTIME_ERROR("parsed n_spins is not consitent with the band input data");
+    }
+    if (n_omegas == 0 || n_kpts_band_this == 0 || i_state_high <= i_state_low) return;
+    const int n_states_calc = i_state_high - i_state_low;
+    validate_spectral_function_inputs(n_omegas, omegas, vxc_band, vexx_band,
+                                      spectral_function_band);
+
+    if (!pds->p_g0w0) librpa_build_g0w0_sigma(h, p_opts);
+
+    profiler.start("api_get_g0w0_spectral_function_band_k");
+
+    const auto iks_output =
+        librpa_int::api::collect_requested_iks(pds->comm_h, n_kpts_band_this,
+                                              iks_band_this, pds->mf_band.get_n_kpoints());
+
+    profiler.start("g0w0_sigc_rotate_KS", "Correlation self-energy in K-S space");
+    ensure_band_sigc_ks_blacs(*pds, opts, iks_output);
+    profiler.stop("g0w0_sigc_rotate_KS");
+
+    std::vector<int> iks_collect;
+    const auto freq_nodes = pds->tfg.get_freq_nodes();
+    const bool publish_local_values =
+        opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;
+    const auto sigc_diag = collect_sigc_diag_to_callers(
+        pds->p_g0w0->sigc_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
+        n_spins, pds->mf_band.get_n_kpoints(), n_kpts_band_this, iks_band_this,
+        i_state_low, n_states_calc, iks_collect);
+
+    profiler.start("g0w0_spectral_function", "Compute spectral function");
+    evaluate_spectral_function_diagonal(
+        pds->mf_band, opts.n_params_anacon, sigc_diag, iks_collect, freq_nodes,
+        n_spins, n_kpts_band_this, iks_band_this, i_state_low, n_states_calc,
+        n_omegas, omegas, vxc_band, vexx_band, opts.sf_sigc_omega_shift,
+        opts.sf_gf_omega_shift, spectral_function_band, sigc_band);
+    profiler.stop("g0w0_spectral_function");
+
+    profiler.stop("api_get_g0w0_spectral_function_band_k");
 }

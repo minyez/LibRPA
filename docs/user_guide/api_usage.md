@@ -169,6 +169,13 @@ After data have been correctly set up by input parsing functions, computation fu
 - {librpa}`librpa_get_g0w0_sigc_kgrid` / {librpa}`Handler::get_g0w0_sigc_kgrid` / {librpa}`handler%get_g0w0_sigc_kgrid <librpahandler::get_g0w0_sigc_kgrid>`
 - {librpa}`librpa_get_g0w0_sigc_band_k` / {librpa}`Handler::get_g0w0_sigc_band_k` / {librpa}`handler%get_g0w0_sigc_band_k <librpahandler::get_g0w0_sigc_band_k>`
 
+**G0W0 spectral function:**
+- {librpa}`librpa_get_g0w0_spectral_function_kgrid` / {librpa}`Handler::get_g0w0_spectral_function_kgrid` / {librpa}`handler%get_g0w0_spectral_function_kgrid <librpahandler::get_g0w0_spectral_function_kgrid>`
+- {librpa}`librpa_get_g0w0_spectral_function_band_k` / {librpa}`Handler::get_g0w0_spectral_function_band_k` / {librpa}`handler%get_g0w0_spectral_function_band_k <librpahandler::get_g0w0_spectral_function_band_k>`
+
+The C spectral-function APIs take an optional packed complex self-energy output as the last argument.
+Pass `nullptr` when only the spectral function is needed.
+
 ## Schematic examples
 
 ### C++

@@ -50,8 +50,6 @@ These parameters are available only through the standalone driver.
 | `sf_omega_start`      | Starting frequency for spectral-function output                      | double | 0.0                                            | Experimental |
 | `sf_omega_end`        | Ending frequency for spectral-function output                        | double | 1.0                                            | Experimental |
 | `sf_omega_step`       | Frequency step for spectral-function output                          | double | 0.1                                            | Experimental |
-| `sf_gf_omega_shift`   | Broadening/shift used for Green's function in spectral output        | double | 0.01                                           | Experimental |
-| `sf_sigc_omega_shift` | Broadening/shift used for correlation self-energy in spectral output | double | 0.01                                           | Experimental |
 | `sf_state_start`      | First state index for spectral-function output (inclusive)           | int    | 0                                              | Experimental |
 | `sf_state_end`        | Last state index for spectral-function output (exclusive)            | int    | 10000                                          | Experimental |
 
@@ -172,6 +170,8 @@ Regular k-grid calculations are not affected by BvK remapping.
 | `qpe_solver_damp_factor` | Damping factor for QP equation updates; used as the initial and maximum factor when adaptive damping is enabled | double | 0.1  |              |
 | `use_qpe_adaptive_damp`  | Adapt the quasi-particle equation damping factor during the solve              | bool   | `false`                               |              |
 | `override_qpe_solver_nan` | Keep the final unconverged QPE iterate instead of outputting NaN            | bool   | `false`                               | Diagnostic   |
+| `sf_gf_omega_shift`   | Broadening/shift used for Green's function in spectral-function APIs, in Hartree | double | 0.01                                | Experimental |
+| `sf_sigc_omega_shift` | Broadening/shift used for continued correlation self-energy in spectral-function APIs, in Hartree | double | 0.01             | Experimental |
 
 ## LibRI Parameters
 

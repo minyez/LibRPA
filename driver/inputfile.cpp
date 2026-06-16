@@ -231,8 +231,6 @@ void parse_inputfile_to_params(const std::string &fn)
         _parse_double(driver_params, sf_omega_step);
         _parse_int(driver_params, sf_state_start);
         _parse_int(driver_params, sf_state_end);
-        _parse_double(driver_params, sf_gf_omega_shift);
-        _parse_double(driver_params, sf_sigc_omega_shift);
     }
 
     // general runtime parameters
@@ -363,6 +361,10 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_double(opts, qpe_solver_damp_factor);
     _parse_switch(opts, use_qpe_adaptive_damp);
     _parse_switch(opts, override_qpe_solver_nan);
+
+    // Spectral function
+    _parse_double(opts, sf_gf_omega_shift);
+    _parse_double(opts, sf_sigc_omega_shift);
 }
 
 #undef _parse_int

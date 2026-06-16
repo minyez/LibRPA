@@ -25,6 +25,17 @@
 #include "../utils/libri_stub.h"
 #endif
 
+namespace
+{
+
+void mark_band_data_set(const librpa_int::dataset_ptr_t &pds)
+{
+    pds->is_band_data_set = true;
+    pds->is_band_calc_done = false;
+}
+
+} // namespace
+
 void librpa_set_scf_dimension(LibrpaHandler* h, int nspins, int nkpts, int nstates, int nbasis, int nspinor)
 {
     using std::endl;
@@ -1055,6 +1066,7 @@ void librpa_set_band_kvec(LibrpaHandler* h, int n_kpts_band, const double* kfrac
     profiler.start(tname);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
+    mark_band_data_set(pds);
     pds->kfrac_band_list.clear();
     const auto &kf = kfrac_list_band;
     for (int ik = 0; ik < n_kpts_band; ik++)
@@ -1079,6 +1091,7 @@ void librpa_set_band_occ_eigval(LibrpaHandler* h, int n_spins, int n_kpts_band, 
     const int n_basis = pds->mf.get_n_aos();
     const int n_spinor = pds->mf.get_n_spinor();
     const double efermi = pds->mf.get_efermi();
+    mark_band_data_set(pds);
 
     auto &mfb = pds->mf_band;
     mfb.set(n_spins, n_kpts_band, n_states, n_basis, n_spinor);
@@ -1107,6 +1120,7 @@ void librpa_set_wfc_band(LibrpaHandler* h, int ispin, int ik_band, int nstates_l
     profiler.start(tname);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
+    mark_band_data_set(pds);
     auto &mfb = pds->mf_band;
 
     auto& wfc = mfb.get_eigenvectors()[ispin][0][ik_band];
@@ -1135,6 +1149,7 @@ void librpa_set_wfc_band_spinor(LibrpaHandler* h, int ik_band, int nstates_local
     profiler.start(tname);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
+    mark_band_data_set(pds);
     auto &mfb = pds->mf_band;
 
     auto& wfcs_up = mfb.get_eigenvectors()[0][0][ik_band];
@@ -1165,6 +1180,7 @@ void librpa_set_wfc_band_packed(LibrpaHandler* h, int ispin, int ik_band, int ns
     profiler.start(tname);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
+    mark_band_data_set(pds);
     auto &mfb = pds->mf_band;
 
     auto& wfc = mfb.get_eigenvectors()[ispin][0][ik_band];
@@ -1193,6 +1209,7 @@ void librpa_set_wfc_band_spinor_packed(LibrpaHandler* h, int ik_band, int nstate
     profiler.start(tname);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
+    mark_band_data_set(pds);
     auto &mfb = pds->mf_band;
 
     auto& wfcs_up = mfb.get_eigenvectors()[0][0][ik_band];
@@ -1222,6 +1239,8 @@ void librpa_reset_band_data(LibrpaHandler* h)
     profiler.start(tname);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
+    pds->is_band_data_set = false;
+    pds->is_band_calc_done = false;
     pds->kfrac_band_list = {};
     pds->mf_band = librpa_int::MeanField();
 
