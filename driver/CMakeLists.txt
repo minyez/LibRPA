@@ -14,6 +14,7 @@ list(APPEND exe_sources
   reader_coulomb.cpp
   task.cpp
   # Specific task implementations
+  task/task_utils.cpp
   task/exx.cpp
   task/exx_band.cpp
   task/g0w0.cpp

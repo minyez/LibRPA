@@ -4,6 +4,7 @@
 #include "../task.h"
 #include "../driver.h"
 #include "../read_data.h"
+#include "task_utils.h"
 #include "../../src/io/global_io.h"
 #include "../../src/io/fs.h"
 #include "../../src/io/stl_io_helper.h"
@@ -290,6 +291,13 @@ void driver::task_g0w0()
                     }
                     lib_printf("\n");
                 }
+            }
+
+            if (driver_params.output_energy_qp)
+            {
+                driver::write_energy_qp(pds->mf, pds->pbc.kfrac_list, {}, vxc, vexx_all, sigc_all,
+                                        n_kpoints, i_state_low, n_states_calc,
+                                        pds->mf.get_n_kpoints());
             }
         }
         // profiler.stop("g0w0_solve_qpe");

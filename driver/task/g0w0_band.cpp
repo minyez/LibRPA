@@ -1,8 +1,11 @@
 #include <cmath>
 
+#include <fstream>
+#include <iomanip>
 #include "../task.h"
 #include "../driver.h"
 #include "../read_data.h"
+#include "task_utils.h"
 #include "../../src/io/global_io.h"
 #include "../../src/io/fs.h"
 #include "../../src/io/stl_io_helper.h"
@@ -13,8 +16,7 @@
 #include "librpa_enums.h"
 
 #include <exception>
-// #include <fstream>
-// #include <sstream>
+#include <sstream>
 
 void driver::task_g0w0_band()
 {
@@ -227,6 +229,27 @@ void driver::task_g0w0_band()
                     }
                     lib_printf("\n");
                 }
+            }
+
+            if (driver_params.output_energy_qp)
+            {
+                std::vector<librpa_int::Vector3_Order<double>> kfrac_energy_qp;
+                std::vector<int> output_to_input_kpoint;
+                if (output_full_kgrid_from_input_symmetry)
+                {
+                    kfrac_energy_qp.reserve(full_k_members.size());
+                    output_to_input_kpoint.reserve(full_k_members.size());
+                    for (const auto &member : full_k_members)
+                    {
+                        kfrac_energy_qp.push_back(member.k_bz);
+                        output_to_input_kpoint.push_back(member.ik_ibz);
+                    }
+                }
+                driver::write_energy_qp(
+                    mf,
+                    output_full_kgrid_from_input_symmetry ? kfrac_energy_qp : kfrac_list,
+                    output_to_input_kpoint, vxc, vexx_all, sigc_all, n_kpoints, i_state_low,
+                    n_states_calc, occupation_output_scale);
             }
         }
     }
