@@ -64,11 +64,11 @@ using abf_rspace_dense_block_map_t =
 void dump_blacs_debug_matrix(const bool debug, const std::string &output_dir,
                              const std::string &file_name,
                              const matrix_m<std::complex<double>> &matrix_local,
-                             const ArrayDesc &matrix_desc, const double threshold = 1e-15)
+                             const ArrayDesc &matrix_desc, const std::string &comment = "", const double threshold = 1e-15)
 {
     if (!debug) return;
     print_matrix_mm_file_parallel(path_as_directory(output_dir) + file_name, matrix_local,
-                                  matrix_desc, threshold);
+                                  matrix_desc, comment, threshold);
 }
 
 bool are_equivalent_input_symmetry_qpoints(const Vector3_Order<double>& lhs,
@@ -2500,7 +2500,7 @@ compute_Wc_freq_q(
         if (debug)
         {
             sprintf(fn, "Vq_all_q_%d.mtx", iq);
-            print_matrix_mm_file(Vq_all,  + fn, 1e-15);
+            print_matrix_mm_file(Vq_all,  + fn, "", 1e-15);
         }
         const auto sqrtVq_all = power_hemat(Vq_all, 0.5, true, false, sqrt_coulomb_threshold);
         // Vq_all is now eigenvectors of the original Coulomb matrix
@@ -2509,12 +2509,12 @@ compute_Wc_freq_q(
         if (debug)
         {
             sprintf(fn, "sqrtVq_all_q_%d.mtx", iq);
-            print_matrix_mm_file(sqrtVq_all, path_as_directory(output_dir) + fn, 1e-15);
+            print_matrix_mm_file(sqrtVq_all, path_as_directory(output_dir) + fn, "", 1e-15);
             // sprintf(fn, "rotated_sqrtVq_all_q_%d.mtx", iq);
             // print_complex_matrix_mm(Vq_all * sqrtVq_all * transpose(Vq_all, true), fn, 1e-15);
             // print_complex_matrix_mm(transpose(Vq_all, true) * sqrtVq_all * Vq_all, fn, 1e-15);
             sprintf(fn, "Vqeigenvec_q_%d.mtx", iq);
-            print_matrix_mm_file(Vq_eigen, path_as_directory(output_dir) + fn, 1e-15);
+            print_matrix_mm_file(Vq_eigen, path_as_directory(output_dir) + fn, "", 1e-15);
         }
 
         // truncated (cutoff) Coulomb
@@ -2587,7 +2587,7 @@ compute_Wc_freq_q(
             if (debug)
             {
                 sprintf(fn, "chi0fq_all_q_%d_freq_%d.mtx", iq, ifreq);
-                print_matrix_mm_file(chi0fq_all, path_as_directory(output_dir) + fn, 1e-15);
+                print_matrix_mm_file(chi0fq_all, path_as_directory(output_dir) + fn, "", 1e-15);
             }
 
             auto eps_fq = - sqrtVq_all * chi0fq_all * sqrtVq_all;
@@ -2604,7 +2604,7 @@ compute_Wc_freq_q(
                 if (debug)
                 {
                     sprintf(fn, "rotated_vsxvs_q_%d_freq_%d.mtx", iq, ifreq);
-                    print_matrix_mm_file(eps_fq, path_as_directory(output_dir) + fn, 1e-10);
+                    print_matrix_mm_file(eps_fq, path_as_directory(output_dir) + fn, "", 1e-10);
                 }
                 // rotate back to ABF
                 eps_fq = Vq_eigen * eps_fq * transpose(Vq_eigen, true);
@@ -2614,7 +2614,7 @@ compute_Wc_freq_q(
             if (debug)
             {
                 sprintf(fn, "eps_q_%d_freq_%d.mtx", iq, ifreq);
-                print_matrix_mm_file(eps_fq, path_as_directory(output_dir) + fn, 1e-10);
+                print_matrix_mm_file(eps_fq, path_as_directory(output_dir) + fn, "", 1e-10);
             }
 
             // invert the epsilon matrix
@@ -3071,7 +3071,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                                 << "chi0_block_qx_" << q.x << "_qy_" << q.y << "_qz_"
                                 << q.z << "_freq_" << ifreq << ".mtx";
                 dump_blacs_debug_matrix(debug, output_dir, chi0_debug_name.str(), chi0_block,
-                                        desc_nabf_nabf_opt);
+                                        desc_nabf_nabf_opt, "");
             }
             global::profiler.stop("epsilon_prepare_chi0_2d");
 
@@ -3243,7 +3243,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                               << "epsinv_minus_identity_qx_" << q.x << "_qy_" << q.y
                               << "_qz_" << q.z << "_freq_" << ifreq << ".mtx";
             dump_blacs_debug_matrix(debug, output_dir, epsinv_debug_name.str(), chi0_block,
-                                    desc_nabf_nabf_opt, 1e-10);
+                                    desc_nabf_nabf_opt, "", 1e-10);
 
             if (epsmac_LF_imagfreq.size() > 0 && is_gamma_point(q) && option_dielect_func == 3)
             {
@@ -3668,11 +3668,15 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
             {
                 const auto iR = pbc.get_R_index(R);
                 std::stringstream ss;
+                std::string info = "Wc at iR " + std::to_string(iR) + " ( " + std::to_string(R.x) +
+                                   " " + std::to_string(R.y) + " " + std::to_string(R.z) +
+                                   " ) and ifreq " + std::to_string(ifreq) + " ( " +
+                                   std::to_string(freq) + " a.u. )";
                 ss << path_as_directory(output_dir)
                    << "Wc_iR_" << std::setfill('0') << std::setw(5) << iR
                    << "_ifreq_" << std::setfill('0') << std::setw(5) << ifreq
                    << ".mtx";
-                print_matrix_mm_file_parallel(ss.str(), Wc, *ad_Wc, 1e-10);
+                print_matrix_mm_file_parallel(ss.str(), Wc, *ad_Wc, info, 1e-10);
             }
         }
         global::profiler.stop("write_Wc_freq_R");

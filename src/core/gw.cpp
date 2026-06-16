@@ -418,7 +418,7 @@ void write_wc_rf_atom_blocks(
                    << "Wc_Mu_" << I << "_Nu_" << J
                    << "_iR_" << pbc.get_R_index(R)
                    << "_ifreq_" << ifreq << ".mtx";
-                print_matrix_mm_file(Wc, ss.str(), 1e-10);
+                print_matrix_mm_file(Wc, ss.str(), "", 1e-10);
             }
         }
     }

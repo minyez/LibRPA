@@ -536,7 +536,7 @@ void print_matrix(const char *desc, const matrix &mat, std::ostream &os, bool us
 	// return LapackConnector::nrm2(nr*nc,c,1);
 // }
 
-void print_matrix_mm(const matrix &mat, std::ostream &os, double threshold, bool row_first)
+void print_matrix_mm(const matrix &mat, std::ostream &os, const std::string &comment, double threshold, bool row_first)
 {
     using std::scientific;
     using std::showpoint;
@@ -547,8 +547,12 @@ void print_matrix_mm(const matrix &mat, std::ostream &os, double threshold, bool
     int prec = 15;
     size_t nnz = 0;
     auto format = scientific;
-    os << "%%MatrixMarket matrix coordinate real general" << endl;
+    os << "%%MatrixMarket matrix coordinate real general\n";
     os << "%" << endl;
+    if (!comment.empty())
+    {
+        os << "% " << comment << "\n" << "%\n";
+    }
     // count non-zero values first
     for (size_t i = 0; i < mat.size; i++)
     {
@@ -557,7 +561,7 @@ void print_matrix_mm(const matrix &mat, std::ostream &os, double threshold, bool
             nnz++;
     }
 
-    os << nr << " " << nc << " " << nnz << endl;
+    os << nr << " " << nc << " " << nnz << "\n";
 
     if (row_first)
     {
@@ -585,11 +589,11 @@ void print_matrix_mm(const matrix &mat, std::ostream &os, double threshold, bool
     }
 }
 
-void print_matrix_mm(const matrix &mat, const string &fn, double threshold, bool row_first)
+void print_matrix_mm(const matrix &mat, const string &fn, const std::string &comment, double threshold, bool row_first)
 {
     ofstream fs;
     fs.open(fn);
-    print_matrix_mm(mat, fs, threshold, row_first);
+    print_matrix_mm(mat, fs, comment, threshold, row_first);
     fs.close();
 }
 

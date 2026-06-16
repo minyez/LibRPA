@@ -132,7 +132,7 @@ void task_screened_coulomb_real_freq(std::map<Vector3_Order<double>, ComplexMatr
                     auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
                     auto iR = std::distance(Rlist.cbegin(), iteR);
                     sprintf(fn, "Wc_Mu_%zu_Nu_%zu_iR_%zu_ifreq_%d.mtx", Mu, Nu, iR, ifreq);
-                    print_matrix_mm_file(Wc, Params::output_dir + "/" + fn, 1e-10);
+                    print_matrix_mm_file(Wc, Params::output_dir + "/" + fn, "", 1e-10);
                 }
             }
         }

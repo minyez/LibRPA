@@ -1090,7 +1090,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
 
 template <typename T, typename Treal = typename to_real<T>::type>
 void print_matrix_mm_parallel(std::ostream &os, const matrix_m<T> &mat_loc, const ArrayDesc &ad,
-                              Treal threshold = 1e-15, bool row_first = true)
+                              const std::string &comment = "", Treal threshold = 1e-15, bool row_first = true)
 {
     ArrayDesc ad_fb(ad.ictxt());
     const int nr = ad.m(), nc = ad.n();
@@ -1102,17 +1102,21 @@ void print_matrix_mm_parallel(std::ostream &os, const matrix_m<T> &mat_loc, cons
                                   ad_fb.desc, ad.ictxt());
     if (ad_fb.is_src() && os.good())
     {
-        print_matrix_mm(mat_glo, os, threshold, row_first);
+        print_matrix_mm(mat_glo, os, comment, threshold, row_first);
     }
 }
 
 template <typename T, typename Treal = typename to_real<T>::type>
-void print_matrix_mm_file_parallel(const string &fn, const matrix_m<T> &mat_loc, const ArrayDesc &ad, Treal threshold = 1e-15, bool row_first = true)
+void print_matrix_mm_file_parallel(const string &fn, const matrix_m<T> &mat_loc,
+                                   const ArrayDesc &ad, const std::string &comment = "",
+                                   Treal threshold = 1e-15, bool row_first = true)
 {
     ofstream fs;
     if (ad.is_src())
         fs.open(fn);
-    print_matrix_mm_parallel(fs, mat_loc, ad, threshold, row_first);
+    print_matrix_mm_parallel(fs, mat_loc, ad, comment, threshold, row_first);
+    if (ad.is_src())
+        fs.close();
 }
 
 template <typename T, typename Treal = typename to_real<T>::type>

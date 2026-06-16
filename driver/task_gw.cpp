@@ -223,7 +223,7 @@ void task_g0w0(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                             klist.begin(), std::find(klist.begin(), klist.end(), q_Wc.first));
                         sprintf(fn, "Wcfq_ifreq_%d_iq_%d_I_%d_J_%d_id_%d.mtx", ifreq, iq, I, J,
                                 mpi_comm_global_h.myid);
-                        print_matrix_mm_file(q_Wc.second, Params::output_dir + "/" + fn, 1e-15);
+                        print_matrix_mm_file(q_Wc.second, Params::output_dir + "/" + fn, "", 1e-15);
                     }
                 }
             }
@@ -459,7 +459,7 @@ void task_g0w0(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 {
                     const auto ifreq = s_g0w0.tfg.get_freq_index(freq_sigc.first);
                     sprintf(fn, "Sigc_fk_mn_ispin_%d_ik_%d_ifreq_%d.mtx", ispin, ik, ifreq);
-                    print_matrix_mm_file(freq_sigc.second, Params::output_dir + "/" + fn, 1e-10);
+                    print_matrix_mm_file(freq_sigc.second, Params::output_dir + "/" + fn, "", 1e-10);
                 }
             }
         }

@@ -1182,7 +1182,8 @@ inline matrix_m<T> random_sy_selected_ev(int n, const std::vector<T> &evs, MAJOR
 
 //! print the matrix in matrix-market style
 template <typename T, typename Treal = typename to_real<T>::type>
-void print_matrix_mm(const matrix_m<T> &mat, std::ostream &os, Treal threshold = 1e-15, bool row_first = true)
+void print_matrix_mm(const matrix_m<T> &mat, std::ostream &os, const std::string &comment = "",
+                     Treal threshold = 1e-15, bool row_first = true)
 {
     using std::endl;
     using std::showpoint;
@@ -1199,6 +1200,8 @@ void print_matrix_mm(const matrix_m<T> &mat, std::ostream &os, Treal threshold =
     os << "%%MatrixMarket matrix coordinate "
        << (is_complex<T>()? "complex" : "real") << " general" << endl
        << "%" << endl;
+    if (!comment.empty())
+        os << "% " << comment << endl << "%" << endl;
     os << nr << " " << nc << " " << nnz << endl;
     // NOTE: better to remove duplicate code?
     if (row_first)
@@ -1261,23 +1264,13 @@ void print_whole_matrix(const char *desc, const matrix_m<T> &mat)
 }
 
 template <typename T, typename Treal = typename to_real<T>::type>
-void print_matrix_mm_file(const matrix_m<T> &mat, const std::string &fn, Treal threshold = 1e-15, bool row_first = true)
+void print_matrix_mm_file(const matrix_m<T> &mat, const std::string &fn,
+                          const std::string& header_comment = "",
+                          Treal threshold = 1e-15, bool row_first = true)
 {
     ofstream fs;
     fs.open(fn);
-    print_matrix_mm(mat, fs, threshold, row_first);
-    fs.close();
-}
-
-template <typename T, typename Treal = typename to_real<T>::type>
-void print_matrix_mm_file(const matrix_m<T> &mat, const std::string &fn, const std::string& header_comment, Treal threshold = 1e-15, bool row_first = true)
-{
-    ofstream fs;
-    fs.open(fn);
-    if (!header_comment.empty()){
-        fs << header_comment << std::endl;
-    }
-    print_matrix_mm(mat, fs, threshold, row_first);
+    print_matrix_mm(mat, fs, header_comment, threshold, row_first);
     fs.close();
 }
 

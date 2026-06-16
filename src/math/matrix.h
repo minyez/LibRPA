@@ -115,8 +115,9 @@ matrix power_symat(matrix &mat, double power,
 void print_matrix(const char *desc, const matrix &mat);
 void print_matrix(const char *desc, const matrix &mat, std::ostream &os, bool use_scientific);
 
-void print_matrix_mm(const matrix &mat, std::ostream &os, double threshold = 1e-15, bool row_first = true);
-void print_matrix_mm(const matrix &mat, const std::string &fn, double threshold = 1e-15, bool row_first = true);
-
+void print_matrix_mm(const matrix &mat, std::ostream &os, const std::string &comment = "",
+                     double threshold = 1e-15, bool row_first = true);
+void print_matrix_mm(const matrix &mat, const std::string &fn, const std::string &comment = "",
+                     double threshold = 1e-15, bool row_first = true);
 }
 #endif // MATRIX_H
