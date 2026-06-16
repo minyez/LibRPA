@@ -17,7 +17,7 @@
   </group>
 
   <group name="Exact-exchange (EXX) potentials" prefix="EXX">
-    <testcase name="BCC He, with eigenvector parllelized over k (aims input)" directory="exx_aims_bccHe_k_parallel_libri">
+    <testcase name="BCC He, with eigenvector parallelized over k (aims input)" directory="exx_aims_bccHe_k_parallel_libri">
       <build require_libri="true"
       />
       <validate name="EXX potential on k-grid"
