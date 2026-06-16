@@ -422,6 +422,24 @@ else()
   set(LIBRPA_GREENX_COMMIT_HASH "(EXTERNAL)")
 endif()
 
+function(librpa_keep_cxx_includes_explicit)
+  foreach(_include_dir IN LISTS ARGN)
+    if(NOT "${_include_dir}" STREQUAL "")
+      get_filename_component(_include_dir_abs "${_include_dir}" ABSOLUTE)
+      list(REMOVE_ITEM CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES "${_include_dir_abs}")
+    endif()
+  endforeach()
+  set(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES
+      "${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES}" PARENT_SCOPE)
+endfunction()
+
+librpa_keep_cxx_includes_explicit(
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  "${Cereal_INCLUDE_DIR}"
+  "${LibComm_INCLUDE_DIR}"
+  "${LibRI_INCLUDE_DIR}"
+)
+
 if(LIBRPA_ENABLE_TEST)
   # FetchContent_Declare(
   #   googletest

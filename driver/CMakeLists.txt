@@ -31,7 +31,6 @@ list(APPEND exe_sources
   # task_screened_coulomb.cpp
   )
 
-target_include_directories(rpa_exe PRIVATE rpa_lib)
 target_sources(rpa_exe PRIVATE ${exe_sources})
 
 target_link_libraries(rpa_exe PRIVATE rpa_lib)
