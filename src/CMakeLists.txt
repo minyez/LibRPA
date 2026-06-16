@@ -112,8 +112,11 @@ list(APPEND lib_sources
         math/mathtools.cpp
         math/matrix.cpp
         math/matrix3.cpp
+        math/rsh.cpp
+        math/symmetry.cpp
         math/utils_matrix_mpi.cpp
         math/vector3_order.cpp
+        math/wigner_rotation.cpp
 
         mpi/base_blacs.cpp
         mpi/base_mpi.cpp

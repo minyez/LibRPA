@@ -18,6 +18,7 @@ extern double ANG2BOHR;
 // Complex numbers
 constexpr std::complex<double> C_ONE{1.0, 0.0};
 constexpr std::complex<double> C_ZERO{0.0, 0.0};
+constexpr std::complex<double> C_IMAG{0.0, 1.0};
 
 constexpr size_t kbytes = 1024;
 constexpr size_t mbytes = kbytes * 1024;

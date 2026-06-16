@@ -53,8 +53,10 @@ foreach(target
     test_meanfield
     test_pbc
     test_qpe_solver
+    test_rsh
     test_rpa_headwing
     test_timefreq
+    test_wigner_rotation
     )
   config_test(${target} 1)
 endforeach()
