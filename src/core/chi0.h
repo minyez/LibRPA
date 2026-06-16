@@ -16,6 +16,7 @@
 #include "../mpi/kpoint_blacs_parallel_context.h"
 #include "atom.h"
 #include "atomic_basis.h"
+#include "input_symmetry.h"
 #include "meanfield.h"
 #include "pbc.h"
 #include "ri.h"
@@ -100,6 +101,7 @@ public:
     const AtomicBasis &atbasis_wfc;
     const AtomicBasis &atbasis_abf;
     const PeriodicBoundaryData &pbc;
+    const InputSymmetryContext &input_symmetry_ctx;
     const TFGrids &tfg;
     const MpiCommHandler &comm_h;
     const KPointBlacsParallelContext &kblacs_ctxt;
@@ -114,6 +116,7 @@ public:
 
     Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
          const AtomicBasis &atbasis_abf_in, const PeriodicBoundaryData &pbc_in,
+         const InputSymmetryContext &input_symmetry_ctx_in,
          const TFGrids &tfg_in, const KPointBlacsParallelContext &kblacs_ctxt_in,
          const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed);
     ~Chi0() {};

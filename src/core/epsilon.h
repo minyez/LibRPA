@@ -10,6 +10,7 @@
 #include "atomic_basis.h"
 #include "chi0.h"
 #include "dielecmodel.h"
+#include "input_symmetry.h"
 #include "pbc.h"
 #include "ri.h"
 
@@ -108,6 +109,7 @@ CT_Wc_freq2time_q(
 atom_mapping<std::map<Vector3_Order<int>, matrix_m<std::complex<double>>>>::pair_t_old FT_Wc_q2R(
     const MpiCommHandler &comm_h,
     const AtomicBasis &atbasis_abf,
+    const InputSymmetryContext &input_symmetry_ctx,
     const atom_mapping<std::map<Vector3_Order<double>, matrix_m<cplxdb>>>::pair_t_old
         &Wc_q,
     const TFGrids &tfg, const PeriodicBoundaryData &pbc, const std::vector<Vector3_Order<int>> &Rlist, const bool is_freq,

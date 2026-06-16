@@ -17,16 +17,11 @@
 #include "atomic_basis.h"
 #include "../math/complexmatrix.h"
 #include "../math/matrix3.h"
+#include "../math/symmetry.h"
 #include "../math/vector3_order.h"
 
-namespace LIBRPA
+namespace librpa_int
 {
-
-using librpa_int::atom_t;
-using librpa_int::atpair_t;
-using librpa_int::ComplexMatrix;
-using librpa_int::Matrix3;
-using librpa_int::Vector3_Order;
 
 using input_symmetry_R_t = std::array<int, 3>;
 using input_symmetry_irreducible_sector_t = std::map<atpair_t, std::set<input_symmetry_R_t>>;
@@ -44,13 +39,8 @@ std::string input_symmetry_convention_name(InputSymmetryConvention convention);
 /*!
  * @brief Real-space symmetry operation exported by an input symmetry convention.
  */
-struct InputSymmetryOperation
+struct InputSymmetryOperation : SpaceGroupSymOp
 {
-    int isym = -1;
-    std::array<std::array<double, 3>, 3> rotation{{{{0.0, 0.0, 0.0}},
-                                                    {{0.0, 0.0, 0.0}},
-                                                    {{0.0, 0.0, 0.0}}}};
-    Vector3_Order<double> translation{0.0, 0.0, 0.0};
     std::map<int, ComplexMatrix> shell_rotations;
 };
 
@@ -156,9 +146,9 @@ struct InputSymmetryContext
     bool abf_shell_layout_available = false;
     int ao_lmax = -1;
     int abf_lmax = -1;
-    librpa_int::BasisConvention basis_convention;
+    BasisConvention basis_convention;
     input_symmetry_irreducible_sector_t irreducible_sector;
-    std::vector<InputSymmetryOperation> rspace_operations;
+    SpaceGroupSymOps<InputSymmetryOperation> rspace_operations;
     std::vector<InputSymmetryKStar> kstars;
     std::vector<InputSymmetryKStar> abf_kstars;
     std::vector<InputSymmetryAOTypeLayout> ao_type_layouts;
@@ -184,16 +174,10 @@ struct InputSymmetryContext
     const InputSymmetryAOTypeLayout& find_abf_type_layout(int atom_type, int nao_hint) const;
 };
 
-extern InputSymmetryContext input_symmetry_ctx;
-
 bool load_input_symmetry_context(const std::string& dir_path,
                                   InputSymmetryConvention convention,
                                   InputSymmetryContext& ctx,
                                   std::ostream* log = nullptr);
-
-bool load_global_input_symmetry_context(const std::string& dir_path,
-                                         InputSymmetryConvention convention,
-                                         std::ostream* log = nullptr);
 
 ComplexMatrix build_input_symmetry_ao_rotation_matrix(const InputSymmetryContext& ctx,
                                               int atom_type,
@@ -293,4 +277,4 @@ ComplexMatrix rotate_input_symmetry_abf_rspace_matrix(const InputSymmetryContext
                                               atom_t atom_from_j,
                                               const ComplexMatrix& matrix_source);
 
-} // namespace LIBRPA
+} // namespace librpa_int

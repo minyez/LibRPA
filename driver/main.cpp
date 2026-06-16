@@ -12,6 +12,7 @@
 // May move to public API later
 #include "../src/utils/profiler.h"
 #include "../src/utils/utils_mem.h"
+#include "../src/api/instance_manager.h"
 #include "../src/io/fs.h"
 #include "../src/core/input_symmetry.h"
 // #include "task_qsgw.h"
@@ -126,17 +127,21 @@ int main(int argc, char **argv)
         || get_bool(opts.use_input_gw_symmetry)
         || get_bool(opts.use_input_rpa_symmetry);
     const auto input_symmetry_convention =
-        LIBRPA::parse_input_symmetry_convention(driver_params.input_symmetry_convention);
-    if (may_use_input_symmetry)
+        librpa_int::parse_input_symmetry_convention(driver_params.input_symmetry_convention);
     {
-        LIBRPA::load_global_input_symmetry_context(
-            driver_params.input_dir,
-            input_symmetry_convention,
-            mpi_comm_global_h.is_root() ? &std::cout : nullptr);
-    }
-    else
-    {
-        LIBRPA::input_symmetry_ctx.clear();
+        auto pds = librpa_int::api::get_dataset_instance(driver::h);
+        if (may_use_input_symmetry)
+        {
+            librpa_int::load_input_symmetry_context(
+                driver_params.input_dir,
+                input_symmetry_convention,
+                pds->input_symmetry_ctx,
+                mpi_comm_global_h.is_root() ? &std::cout : nullptr);
+        }
+        else
+        {
+            pds->input_symmetry_ctx.clear();
+        }
     }
     profiler.stop("driver_input_symmetry");
 

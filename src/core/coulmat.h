@@ -4,6 +4,7 @@
  */
 #pragma once
 #include "atomic_basis.h"
+#include "input_symmetry.h"
 #include "pbc.h"
 #include "ri.h"
 
@@ -18,7 +19,10 @@ namespace librpa_int {
  *        i.e. there always exists map[I][J] and map[J][I] for I not equal to J
  * @return  atpair_R_mat_t
  */
-atpair_R_mat_t FT_Vq(const AtomicBasis &basis_abf, const atpair_k_cplx_mat_t &coulmat_k, const PeriodicBoundaryData &pbc,
+atpair_R_mat_t FT_Vq(const AtomicBasis &basis_abf,
+                     const InputSymmetryContext &input_symmetry_ctx,
+                     const atpair_k_cplx_mat_t &coulmat_k,
+                     const PeriodicBoundaryData &pbc,
                      bool return_ordered_atom_pair);
 
 }

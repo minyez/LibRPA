@@ -5,6 +5,7 @@
 #include "input_symmetry.h"
 
 #include "pbc.h"
+#include "../math/rsh.h"
 #include "../utils/constants.h"
 
 #include <algorithm>
@@ -17,16 +18,8 @@
 #include <stdexcept>
 #include <tuple>
 
-namespace LIBRPA
+namespace librpa_int
 {
-
-using librpa_int::ANG2BOHR;
-using librpa_int::conj;
-using librpa_int::Matrix3;
-using librpa_int::PI;
-using librpa_int::transpose;
-using librpa_int::TWO_PI;
-using librpa_int::Vector3;
 
 namespace
 {
@@ -36,7 +29,6 @@ constexpr double kInputSymmetryCoordTol = 1e-5;
 // coordinates are available from the input `STRU`, LibRPA uses them directly. The looser
 // tolerance below remains as a fallback for text-derived coordinates and lattice-inversion noise.
 constexpr double kInputSymmetryRSpaceAtomMapTol = 5e-5;
-const std::complex<double> kImagUnit(0.0, 1.0);
 
 std::string trim(const std::string& text)
 {
@@ -304,37 +296,6 @@ Vector3_Order<double> restrict_fractional_coordinate(const Vector3_Order<double>
     return {wrap(vec.x), wrap(vec.y), wrap(vec.z)};
 }
 
-Vector3_Order<double> multiply_row_vector(
-    const Vector3_Order<double>& vec,
-    const std::array<std::array<double, 3>, 3>& matrix)
-{
-    return {
-        vec.x * matrix[0][0] + vec.y * matrix[1][0] + vec.z * matrix[2][0],
-        vec.x * matrix[0][1] + vec.y * matrix[1][1] + vec.z * matrix[2][1],
-        vec.x * matrix[0][2] + vec.y * matrix[1][2] + vec.z * matrix[2][2],
-    };
-}
-
-std::array<std::array<double, 3>, 3> multiply_rotation_matrices(
-    const std::array<std::array<double, 3>, 3>& lhs,
-    const std::array<std::array<double, 3>, 3>& rhs)
-{
-    std::array<std::array<double, 3>, 3> product{{{{0.0, 0.0, 0.0}},
-                                                   {{0.0, 0.0, 0.0}},
-                                                   {{0.0, 0.0, 0.0}}}};
-    for (int row = 0; row < 3; ++row)
-    {
-        for (int col = 0; col < 3; ++col)
-        {
-            for (int k = 0; k < 3; ++k)
-            {
-                product[row][col] += lhs[row][k] * rhs[k][col];
-            }
-        }
-    }
-    return product;
-}
-
 bool nearly_same_kpoint(const Vector3_Order<double>& lhs,
                         const Vector3_Order<double>& rhs,
                         const double tol = kInputSymmetryCoordTol)
@@ -354,168 +315,19 @@ Matrix3 build_matrix3_from_array(const std::array<std::array<double, 3>, 3>& mat
                    matrix[2][0], matrix[2][1], matrix[2][2]);
 }
 
-ComplexMatrix build_complex_identity(const int n)
-{
-    ComplexMatrix identity(n, n);
-    for (int i = 0; i < n; ++i)
-    {
-        identity(i, i) = std::complex<double>(1.0, 0.0);
-    }
-    return identity;
-}
-
-double factorial_as_double(const int n)
-{
-    return std::tgamma(static_cast<double>(n) + 1.0);
-}
-
-int input_symmetry_m_to_index(const int m)
-{
-    return (m > 0) ? (2 * m - 1) : (-2 * m);
-}
-
-double input_symmetry_wigner_d(const double beta, const int l, const int m1, const int m2)
-{
-    double value = 0.0;
-    for (int i = std::max(0, m2 - m1); i <= std::min(l - m1, l + m2); ++i)
-    {
-        const double numerator =
-            std::pow(-1.0, i)
-            * std::sqrt(factorial_as_double(l + m1) * factorial_as_double(l - m1)
-                        * factorial_as_double(l + m2) * factorial_as_double(l - m2))
-            * std::pow(std::cos(beta / 2.0), 2 * l + m2 - m1 - 2 * i)
-            * std::pow(-std::sin(beta / 2.0), m1 - m2 + 2 * i);
-        const double denominator =
-            factorial_as_double(i) * factorial_as_double(l - m1 - i)
-            * factorial_as_double(l + m2 - i) * factorial_as_double(i - m2 + m1);
-        value += numerator / denominator;
-    }
-    return value;
-}
-
-std::complex<double> input_symmetry_ovlp_Ylm_Slm(const int l, const int m1, const int m2)
-{
-    (void)l;
-    if (m1 == m2)
-    {
-        if (m1 == 0)
-        {
-            return 1.0;
-        }
-        if (m1 > 0)
-        {
-            return 1.0 / std::sqrt(2.0);
-        }
-        return std::pow(-1.0, m1) * kImagUnit / std::sqrt(2.0);
-    }
-    if (m1 == -m2)
-    {
-        if (m1 > 0)
-        {
-            return -kImagUnit / std::sqrt(2.0);
-        }
-        return std::pow(-1.0, m1) / std::sqrt(2.0);
-    }
-    return 0.0;
-}
-
-Vector3_Order<double> input_symmetry_get_euler_angle(const Matrix3& gmatc)
-{
-    const double threshold = kInputSymmetryCoordTol;
-    double alpha = 0.0;
-    double beta = 0.0;
-    double gamma = 0.0;
-
-    if (std::fabs(gmatc.e32) > threshold || std::fabs(gmatc.e31) > threshold)
-    {
-        alpha = std::atan2(gmatc.e32, gmatc.e31);
-        if (alpha < 0.0)
-        {
-            alpha += TWO_PI;
-        }
-        gamma = std::atan2(gmatc.e23, -gmatc.e13);
-        if (gamma < 0.0)
-        {
-            gamma += TWO_PI;
-        }
-        if (std::fabs(gmatc.e32) > std::fabs(gmatc.e31))
-        {
-            beta = std::atan2(gmatc.e32 / std::sin(alpha), gmatc.e33);
-        }
-        else
-        {
-            beta = std::atan2(gmatc.e31 / std::cos(alpha), gmatc.e33);
-        }
-    }
-    else
-    {
-        alpha = std::atan2(gmatc.e12, gmatc.e11);
-        if (alpha < 0.0)
-        {
-            alpha += TWO_PI;
-        }
-        if (gmatc.e33 > 0.0)
-        {
-            beta = 0.0;
-            gamma = 0.0;
-        }
-        else
-        {
-            beta = PI;
-            gamma = PI;
-        }
-    }
-    return {alpha, beta, gamma};
-}
-
-std::complex<double> input_symmetry_wigner_D(const Vector3_Order<double>& euler_angle,
-                                     const int l,
-                                     const int m1,
-                                     const int m2,
-                                     const bool improper_rotation)
-{
-    const std::complex<double> inversion_prefactor(improper_rotation ? std::pow(-1.0, l) : 1.0,
-                                                   0.0);
-    return std::exp(-kImagUnit * static_cast<double>(m1) * euler_angle.x)
-           * std::exp(-kImagUnit * static_cast<double>(m2) * euler_angle.z)
-           * input_symmetry_wigner_d(euler_angle.y, l, m1, m2) * inversion_prefactor;
-}
-
-void clean_nearly_integer_entries(ComplexMatrix& matrix, const double tol = 1e-10)
-{
-    for (int row = 0; row < matrix.nr; ++row)
-    {
-        for (int col = 0; col < matrix.nc; ++col)
-        {
-            auto& value = matrix(row, col);
-            if (std::abs(value.real() - std::round(value.real())) < tol)
-            {
-                value.real(std::round(value.real()));
-            }
-            if (std::abs(value.imag() - std::round(value.imag())) < tol)
-            {
-                value.imag(std::round(value.imag()));
-            }
-            if (std::abs(value.real()) < tol)
-            {
-                value.real(0.0);
-            }
-            if (std::abs(value.imag()) < tol)
-            {
-                value.imag(0.0);
-            }
-        }
-    }
-}
-
 ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
     const InputSymmetryContext& ctx,
     const int l,
     const std::array<std::array<double, 3>, 3>& direct_rotation)
 {
+    const auto& basis_convention = ctx.basis_convention;
     if (l == 0)
     {
-        return build_complex_identity(1);
+        return real_spherical_harmonic_rotation_matrix(Vector3<double>{0.0, 0.0, 0.0},
+                                                       0,
+                                                       basis_convention.order,
+                                                       basis_convention.coeff_m_negative,
+                                                       basis_convention.coeff_m_positive);
     }
     if (!ctx.lattice_available)
     {
@@ -526,31 +338,12 @@ ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
     const Matrix3 direct_matrix = build_matrix3_from_array(direct_rotation);
     const Matrix3 cartesian_matrix =
         ctx.lattice_vectors.Inverse() * direct_matrix * ctx.lattice_vectors;
-    const bool improper_rotation = cartesian_matrix.Det() < 0.0;
-    const Matrix3 proper_cartesian =
-        improper_rotation ? (cartesian_matrix * Matrix3(-1.0, 0.0, 0.0,
-                                                        0.0, -1.0, 0.0,
-                                                        0.0, 0.0, -1.0))
-                          : cartesian_matrix;
-    const auto euler_angle = input_symmetry_get_euler_angle(proper_cartesian);
-
-    const int nm = 2 * l + 1;
-    ComplexMatrix c_mm(nm, nm);
-    ComplexMatrix D_mm(nm, nm);
-    for (int m1 = -l; m1 <= l; ++m1)
-    {
-        for (int m2 = -l; m2 <= l; ++m2)
-        {
-            c_mm(input_symmetry_m_to_index(m1), input_symmetry_m_to_index(m2)) =
-                input_symmetry_ovlp_Ylm_Slm(l, m1, m2);
-            D_mm(input_symmetry_m_to_index(m1), input_symmetry_m_to_index(m2)) =
-                input_symmetry_wigner_D(euler_angle, l, m1, m2, improper_rotation);
-        }
-    }
-
-    ComplexMatrix rotation = transpose(c_mm, true) * D_mm * c_mm;
-    clean_nearly_integer_entries(rotation);
-    return rotation;
+    return real_spherical_harmonic_rotation_matrix(cartesian_matrix,
+                                                   l,
+                                                   basis_convention.order,
+                                                   basis_convention.coeff_m_negative,
+                                                   basis_convention.coeff_m_positive,
+                                                   kInputSymmetryCoordTol);
 }
 
 bool is_identity_rotation(const std::array<std::array<double, 3>, 3>& matrix,
@@ -707,7 +500,7 @@ std::vector<int> build_rspace_inverse_map(
     {
         for (std::size_t jsym = 0; jsym < ctx.rspace_operations.size(); ++jsym)
         {
-            const auto composed_rotation = multiply_rotation_matrices(
+            const auto composed_rotation = multiply_space_group_rotation_matrices(
                 ctx.rspace_operations[isym].rotation, ctx.rspace_operations[jsym].rotation);
             const auto composed_translation =
                 multiply_row_vector(ctx.rspace_operations[isym].translation,
@@ -1982,8 +1775,6 @@ bool append_unique_abf_layout(std::vector<InputSymmetryAOTypeLayout>& candidates
 
 } // namespace
 
-InputSymmetryContext input_symmetry_ctx;
-
 InputSymmetryConvention parse_input_symmetry_convention(const std::string& convention)
 {
     std::string normalized = trim(convention);
@@ -2294,13 +2085,6 @@ bool load_input_symmetry_context(const std::string& dir_path,
         }
     }
     return true;
-}
-
-bool load_global_input_symmetry_context(const std::string& dir_path,
-                                        const InputSymmetryConvention convention,
-                                        std::ostream* log)
-{
-    return load_input_symmetry_context(dir_path, convention, input_symmetry_ctx, log);
 }
 
 ComplexMatrix build_input_symmetry_ao_rotation_matrix(const InputSymmetryContext& ctx,
@@ -3511,4 +3295,4 @@ ComplexMatrix rotate_input_symmetry_abf_rspace_matrix(const InputSymmetryContext
     return transpose(T_i, false) * matrix_source * conj(T_j);
 }
 
-} // namespace LIBRPA
+} // namespace librpa_int

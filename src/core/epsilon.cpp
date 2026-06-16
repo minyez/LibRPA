@@ -154,11 +154,11 @@ void add_scaled_complex_matrix(ComplexMatrix& matrix_dst,
     }
 }
 
-LIBRPA::input_symmetry_atom_block_matrix_map_t collect_input_symmetry_abf_ibz_blocks_for_q(
+librpa_int::input_symmetry_atom_block_matrix_map_t collect_input_symmetry_abf_ibz_blocks_for_q(
     const abf_qspace_complex_block_map_t& blocks_by_q,
     const Vector3_Order<double>& q_ibz_internal)
 {
-    LIBRPA::input_symmetry_atom_block_matrix_map_t blocks_ibz;
+    librpa_int::input_symmetry_atom_block_matrix_map_t blocks_ibz;
     for (const auto& atom_i_pair : blocks_by_q)
     {
         const auto atom_i = atom_i_pair.first;
@@ -175,10 +175,10 @@ LIBRPA::input_symmetry_atom_block_matrix_map_t collect_input_symmetry_abf_ibz_bl
     return blocks_ibz;
 }
 
-LIBRPA::input_symmetry_atom_block_matrix_map_t to_ordered_input_symmetry_blocks(
+librpa_int::input_symmetry_atom_block_matrix_map_t to_ordered_input_symmetry_blocks(
     const atom_mapping<ComplexMatrix>::pair_t_old& atom_blocks)
 {
-    LIBRPA::input_symmetry_atom_block_matrix_map_t ordered_blocks;
+    librpa_int::input_symmetry_atom_block_matrix_map_t ordered_blocks;
     for (const auto& atom_i_pair : atom_blocks)
     {
         for (const auto& atom_j_pair : atom_i_pair.second)
@@ -190,7 +190,7 @@ LIBRPA::input_symmetry_atom_block_matrix_map_t to_ordered_input_symmetry_blocks(
 }
 
 atom_mapping<ComplexMatrix>::pair_t_old to_atom_mapping_blocks(
-    const LIBRPA::input_symmetry_atom_block_matrix_map_t& ordered_blocks)
+    const librpa_int::input_symmetry_atom_block_matrix_map_t& ordered_blocks)
 {
     atom_mapping<ComplexMatrix>::pair_t_old atom_blocks;
     for (const auto& atom_i_pair : ordered_blocks)
@@ -204,7 +204,7 @@ atom_mapping<ComplexMatrix>::pair_t_old to_atom_mapping_blocks(
 }
 
 std::set<std::pair<atom_t, atom_t>> collect_input_symmetry_atom_pairs(
-    const LIBRPA::input_symmetry_atom_block_matrix_map_t& atom_blocks)
+    const librpa_int::input_symmetry_atom_block_matrix_map_t& atom_blocks)
 {
     std::set<std::pair<atom_t, atom_t>> atom_pairs;
     for (const auto& atom_i_pair : atom_blocks)
@@ -274,7 +274,7 @@ std::vector<int> build_input_symmetry_atom_offsets(const std::map<atom_t, size_t
 }
 
 ComplexMatrix build_dense_input_symmetry_hermitian_matrix_from_local_blocks(
-    const LIBRPA::input_symmetry_atom_block_matrix_map_t& local_blocks,
+    const librpa_int::input_symmetry_atom_block_matrix_map_t& local_blocks,
     const std::map<atom_t, size_t>& atom_nabf)
 {
     const auto offsets = build_input_symmetry_atom_offsets(atom_nabf);
@@ -314,12 +314,12 @@ ComplexMatrix build_dense_input_symmetry_hermitian_matrix_from_local_blocks(
     return dense;
 }
 
-LIBRPA::input_symmetry_atom_block_matrix_map_t build_input_symmetry_blocks_from_dense_matrix(
+librpa_int::input_symmetry_atom_block_matrix_map_t build_input_symmetry_blocks_from_dense_matrix(
     const ComplexMatrix& dense_matrix,
     const std::map<atom_t, size_t>& atom_nabf)
 {
     const auto offsets = build_input_symmetry_atom_offsets(atom_nabf);
-    LIBRPA::input_symmetry_atom_block_matrix_map_t atom_blocks;
+    librpa_int::input_symmetry_atom_block_matrix_map_t atom_blocks;
     for (std::size_t atom_i = 0; atom_i < atom_nabf.size(); ++atom_i)
     {
         const int row_offset = offsets.at(atom_i);
@@ -343,8 +343,8 @@ LIBRPA::input_symmetry_atom_block_matrix_map_t build_input_symmetry_blocks_from_
     return atom_blocks;
 }
 
-LIBRPA::input_symmetry_atom_block_matrix_map_t gather_input_symmetry_ibz_blocks_collective(
-    const LIBRPA::input_symmetry_atom_block_matrix_map_t& blocks_ibz_local,
+librpa_int::input_symmetry_atom_block_matrix_map_t gather_input_symmetry_ibz_blocks_collective(
+    const librpa_int::input_symmetry_atom_block_matrix_map_t& blocks_ibz_local,
     const std::map<atom_t, size_t>& atom_nabf)
 {
     if (global::mpi_comm_global_h.nprocs <= 1)
@@ -359,12 +359,12 @@ LIBRPA::input_symmetry_atom_block_matrix_map_t gather_input_symmetry_ibz_blocks_
     return build_input_symmetry_blocks_from_dense_matrix(dense_ibz_global, atom_nabf);
 }
 
-const LIBRPA::InputSymmetryKStarMember& find_matching_abf_kstar_member(
-    const LIBRPA::InputSymmetryKStar& abf_star,
-    const LIBRPA::InputSymmetryKStarMember& ao_member)
+const librpa_int::InputSymmetryKStarMember& find_matching_abf_kstar_member(
+    const librpa_int::InputSymmetryKStar& abf_star,
+    const librpa_int::InputSymmetryKStarMember& ao_member)
 {
     const auto matched = std::find_if(abf_star.members.begin(), abf_star.members.end(),
-                                      [&ao_member](const LIBRPA::InputSymmetryKStarMember& candidate) {
+                                      [&ao_member](const librpa_int::InputSymmetryKStarMember& candidate) {
                                           return candidate.isym == ao_member.isym
                                                  && are_equivalent_input_symmetry_qpoints(candidate.k_bz,
                                                                                   ao_member.k_bz);
@@ -377,11 +377,11 @@ const LIBRPA::InputSymmetryKStarMember& find_matching_abf_kstar_member(
     return *matched;
 }
 
-LIBRPA::input_symmetry_irreducible_sector_t filter_input_symmetry_irreducible_sector_by_rlist(
-    const LIBRPA::input_symmetry_irreducible_sector_t& irreducible_sector,
+librpa_int::input_symmetry_irreducible_sector_t filter_input_symmetry_irreducible_sector_by_rlist(
+    const librpa_int::input_symmetry_irreducible_sector_t& irreducible_sector,
     const std::vector<Vector3_Order<int>>& Rlist)
 {
-    LIBRPA::input_symmetry_irreducible_sector_t filtered_sector;
+    librpa_int::input_symmetry_irreducible_sector_t filtered_sector;
     const std::set<Vector3_Order<int>> requested_rset(Rlist.begin(), Rlist.end());
     for (const auto& pair_Rs : irreducible_sector)
     {
@@ -399,7 +399,7 @@ LIBRPA::input_symmetry_irreducible_sector_t filter_input_symmetry_irreducible_se
 }
 
 std::set<std::pair<atom_t, atom_t>> build_input_symmetry_irreducible_target_atom_pairs(
-    const LIBRPA::input_symmetry_irreducible_sector_t& irreducible_sector)
+    const librpa_int::input_symmetry_irreducible_sector_t& irreducible_sector)
 {
     std::set<std::pair<atom_t, atom_t>> target_atom_pairs;
     for (const auto& pair_Rs : irreducible_sector)
@@ -415,20 +415,20 @@ std::set<std::pair<atom_t, atom_t>> build_input_symmetry_irreducible_target_atom
 struct InputSymmetryIrreducibleWRPlan
 {
     bool available = false;
-    LIBRPA::input_symmetry_irreducible_sector_t local_irreducible_sector;
-    LIBRPA::input_symmetry_rspace_sector_stars_t local_sector_stars;
+    librpa_int::input_symmetry_irreducible_sector_t local_irreducible_sector;
+    librpa_int::input_symmetry_rspace_sector_stars_t local_sector_stars;
     std::set<std::pair<atom_t, atom_t>> local_irreducible_pairs;
-    std::vector<LIBRPA::InputSymmetryKStarGridMappingEntry> kstar_grid_mapping;
+    std::vector<librpa_int::InputSymmetryKStarGridMappingEntry> kstar_grid_mapping;
     int nsym_space = 0;
 };
 
 InputSymmetryIrreducibleWRPlan build_input_symmetry_irreducible_wr_plan(
+    const librpa_int::InputSymmetryContext& ctx,
     const std::set<std::pair<atom_t, atom_t>>& local_target_pairs,
     const PeriodicBoundaryData& pbc,
     const std::vector<Vector3_Order<int>>& Rlist)
 {
     InputSymmetryIrreducibleWRPlan plan;
-    const auto& ctx = LIBRPA::input_symmetry_ctx;
     const auto filtered_sector =
         filter_input_symmetry_irreducible_sector_by_rlist(ctx.irreducible_sector, Rlist);
     if (filtered_sector.empty())
@@ -436,8 +436,8 @@ InputSymmetryIrreducibleWRPlan build_input_symmetry_irreducible_wr_plan(
         return plan;
     }
 
-    LIBRPA::input_symmetry_rspace_sector_stars_t sector_stars;
-    LIBRPA::build_input_symmetry_rspace_sector_stars(
+    librpa_int::input_symmetry_rspace_sector_stars_t sector_stars;
+    librpa_int::build_input_symmetry_rspace_sector_stars(
         ctx, ctx.input_coord_frac, pbc.period, Rlist, sector_stars, nullptr);
 
     for (const auto& pair_star : sector_stars)
@@ -445,7 +445,7 @@ InputSymmetryIrreducibleWRPlan build_input_symmetry_irreducible_wr_plan(
         const auto& ir_pair = pair_star.first;
         for (const auto& R_members : pair_star.second)
         {
-            std::vector<LIBRPA::InputSymmetryRSpaceRestoreMember> local_members;
+            std::vector<librpa_int::InputSymmetryRSpaceRestoreMember> local_members;
             for (const auto& restore_member : R_members.second)
             {
                 if (local_target_pairs.count(restore_member.full_atom_pair) != 0)
@@ -467,14 +467,14 @@ InputSymmetryIrreducibleWRPlan build_input_symmetry_irreducible_wr_plan(
     plan.local_irreducible_pairs =
         build_input_symmetry_irreducible_target_atom_pairs(plan.local_irreducible_sector);
     plan.kstar_grid_mapping =
-        LIBRPA::build_input_symmetry_kstar_grid_mapping(ctx, pbc.klist, pbc.kfrac_list, pbc.map_irk_ks);
+        librpa_int::build_input_symmetry_kstar_grid_mapping(ctx, pbc.klist, pbc.kfrac_list, pbc.map_irk_ks);
     plan.nsym_space = static_cast<int>(ctx.rspace_operations.size());
     plan.available = true;
     return plan;
 }
 
 abf_rspace_dense_block_map_t allocate_input_symmetry_irreducible_wr_storage(
-    const LIBRPA::input_symmetry_irreducible_sector_t& irreducible_sector,
+    const librpa_int::input_symmetry_irreducible_sector_t& irreducible_sector,
     const std::map<atom_t, size_t>& atom_nabf)
 {
     abf_rspace_dense_block_map_t blocks_by_R_dense;
@@ -513,8 +513,8 @@ abf_rspace_complex_block_map_t convert_dense_rspace_blocks_to_row_major(
 
 abf_rspace_dense_block_map_t restore_input_symmetry_abf_rspace_dense_blocks(
     const abf_rspace_dense_block_map_t& tensors_ir,
-    const LIBRPA::InputSymmetryContext& symmetry_ctx,
-    const LIBRPA::input_symmetry_rspace_sector_stars_t& sector_stars)
+    const librpa_int::InputSymmetryContext& symmetry_ctx,
+    const librpa_int::input_symmetry_rspace_sector_stars_t& sector_stars)
 {
     abf_rspace_dense_block_map_t tensors_full;
     for (const auto& i_entry : tensors_ir)
@@ -544,7 +544,7 @@ abf_rspace_dense_block_map_t restore_input_symmetry_abf_rspace_dense_blocks(
 
                 for (const auto& restore_member : star_iter->second)
                 {
-                    ComplexMatrix w_full = LIBRPA::rotate_input_symmetry_abf_rspace_matrix(
+                    ComplexMatrix w_full = librpa_int::rotate_input_symmetry_abf_rspace_matrix(
                         symmetry_ctx, restore_member.isym, ir_I, ir_J, R_matrix.second);
                     auto& target =
                         tensors_full[restore_member.full_atom_pair.first]
@@ -576,10 +576,10 @@ std::complex<double> build_ft_wq_phase(const PeriodicBoundaryData& pbc,
 }
 
 bool can_use_input_symmetry_irreducible_sector_wr_restore(
+    const librpa_int::InputSymmetryContext& ctx,
     const std::map<atom_t, size_t>& atom_nabf,
     const PeriodicBoundaryData& pbc)
 {
-    const auto& ctx = LIBRPA::input_symmetry_ctx;
     return ctx.available
            && ctx.has_abf_shell_layout()
            && ctx.has_ao_shell_layout()
@@ -594,10 +594,10 @@ bool can_use_input_symmetry_irreducible_sector_wr_restore(
 }
 
 bool can_symmetrize_input_symmetry_chi0_ibz_blocks(
+    const librpa_int::InputSymmetryContext& ctx,
     const std::map<atom_t, size_t>& atom_nabf,
     const PeriodicBoundaryData& pbc)
 {
-    const auto& ctx = LIBRPA::input_symmetry_ctx;
     return ctx.available
            && ctx.has_abf_shell_layout()
            && !ctx.kstars.empty()
@@ -607,12 +607,13 @@ bool can_symmetrize_input_symmetry_chi0_ibz_blocks(
 }
 
 atom_mapping<ComplexMatrix>::pair_t_old symmetrize_input_symmetry_chi0_ibz_blocks_if_needed(
+    const librpa_int::InputSymmetryContext& ctx,
     const atom_mapping<ComplexMatrix>::pair_t_old& blocks_ibz,
     const Vector3_Order<double>& q_ibz_internal,
     const PeriodicBoundaryData& pbc,
     const std::map<atom_t, size_t>& atom_nabf)
 {
-    if (!can_symmetrize_input_symmetry_chi0_ibz_blocks(atom_nabf, pbc))
+    if (!can_symmetrize_input_symmetry_chi0_ibz_blocks(ctx, atom_nabf, pbc))
     {
         return blocks_ibz;
     }
@@ -628,10 +629,9 @@ atom_mapping<ComplexMatrix>::pair_t_old symmetrize_input_symmetry_chi0_ibz_block
         return blocks_ibz;
     }
 
-    const auto& ctx = LIBRPA::input_symmetry_ctx;
     const auto& q_ibz_frac = pbc.kfrac_list.at(iq_ibz);
-    const auto& star = LIBRPA::find_input_symmetry_kstar_for_ibz_kpoint(ctx, q_ibz_frac);
-    const LIBRPA::InputSymmetryKStar* abf_star = nullptr;
+    const auto& star = librpa_int::find_input_symmetry_kstar_for_ibz_kpoint(ctx, q_ibz_frac);
+    const librpa_int::InputSymmetryKStar* abf_star = nullptr;
     if (!ctx.abf_kstars.empty())
     {
         if (ctx.abf_kstars.size() != ctx.kstars.size())
@@ -640,7 +640,7 @@ atom_mapping<ComplexMatrix>::pair_t_old symmetrize_input_symmetry_chi0_ibz_block
                 "ABF k-space symmetry sidecar count is inconsistent with symrot_k.txt");
         }
         abf_star =
-            &LIBRPA::find_input_symmetry_kstar_for_kpoint(ctx.abf_kstars, q_ibz_frac, "ABF k-stars");
+            &librpa_int::find_input_symmetry_kstar_for_kpoint(ctx.abf_kstars, q_ibz_frac, "ABF k-stars");
     }
 
     auto blocks_for_symmetrization = to_ordered_input_symmetry_blocks(blocks_ibz);
@@ -657,33 +657,33 @@ atom_mapping<ComplexMatrix>::pair_t_old symmetrize_input_symmetry_chi0_ibz_block
         return blocks_ibz;
     }
 
-    const auto symmetrized_blocks = LIBRPA::symmetrize_input_symmetry_abf_ibz_kspace_operator_blocks(
+    const auto symmetrized_blocks = librpa_int::symmetrize_input_symmetry_abf_ibz_kspace_operator_blocks(
         ctx, q_ibz_frac, blocks_for_symmetrization, atom_nabf, ctx.input_coord_frac, abf_star,
         &output_atom_pairs);
     return to_atom_mapping_blocks(symmetrized_blocks);
 }
 
 abf_rspace_complex_block_map_t accumulate_input_symmetry_full_wr_from_ibz_q(
+    const librpa_int::InputSymmetryContext& ctx,
     const abf_qspace_complex_block_map_t& Wc_q,
     const PeriodicBoundaryData& pbc,
     const std::vector<Vector3_Order<int>>& Rlist,
     const std::map<atom_t, size_t>& atom_nabf)
 {
     const auto local_target_pairs = collect_local_target_atom_pairs_from_qspace(Wc_q);
-    const auto plan = build_input_symmetry_irreducible_wr_plan(local_target_pairs, pbc, Rlist);
+    const auto plan = build_input_symmetry_irreducible_wr_plan(ctx, local_target_pairs, pbc, Rlist);
     if (!plan.available)
     {
         return {};
     }
 
-    const auto& ctx = LIBRPA::input_symmetry_ctx;
     auto blocks_by_R_ir =
         allocate_input_symmetry_irreducible_wr_storage(plan.local_irreducible_sector, atom_nabf);
 
     for (const auto& star_mapping : plan.kstar_grid_mapping)
     {
         const auto& star = ctx.kstars.at(static_cast<std::size_t>(star_mapping.star_list_index));
-        const LIBRPA::InputSymmetryKStar* abf_star = nullptr;
+        const librpa_int::InputSymmetryKStar* abf_star = nullptr;
         if (!ctx.abf_kstars.empty())
         {
             if (ctx.abf_kstars.size() != ctx.kstars.size())
@@ -704,8 +704,8 @@ abf_rspace_complex_block_map_t accumulate_input_symmetry_full_wr_from_ibz_q(
             continue;
         }
         const auto rotation_atom_pairs =
-            LIBRPA::build_input_symmetry_upper_atom_pair_closure(star, plan.local_irreducible_pairs);
-        blocks_ibz = LIBRPA::symmetrize_input_symmetry_abf_ibz_kspace_operator_blocks(
+            librpa_int::build_input_symmetry_upper_atom_pair_closure(star, plan.local_irreducible_pairs);
+        blocks_ibz = librpa_int::symmetrize_input_symmetry_abf_ibz_kspace_operator_blocks(
             ctx, q_ibz_frac, blocks_ibz, atom_nabf, ctx.input_coord_frac, abf_star,
             &rotation_atom_pairs);
         if (star.members.size() != star_mapping.member_q_bz_keys.size())
@@ -724,10 +724,10 @@ abf_rspace_complex_block_map_t accumulate_input_symmetry_full_wr_from_ibz_q(
                 pbc.latvec * star_mapping.member_q_bz_keys[imember];
             const Vector3_Order<double> q_bz_target_frac{
                 q_bz_target_frac_vec.x, q_bz_target_frac_vec.y, q_bz_target_frac_vec.z};
-            LIBRPA::input_symmetry_atom_block_matrix_map_t rotated_blocks;
+            librpa_int::input_symmetry_atom_block_matrix_map_t rotated_blocks;
             try
             {
-                rotated_blocks = LIBRPA::rotate_input_symmetry_abf_kspace_operator_blocks(
+                rotated_blocks = librpa_int::rotate_input_symmetry_abf_kspace_operator_blocks(
                     ctx, abf_member, blocks_ibz, atom_nabf, star.k_ibz, ctx.input_coord_frac,
                     use_time_reversal, &rotation_atom_pairs, &q_bz_target_frac);
             }
@@ -2755,7 +2755,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     const auto atom_nabf = build_atom_nabf_map(chi0.atbasis_abf);
     const bool use_input_symmetry_dense_chi0_collect =
         global::mpi_comm_global_h.nprocs > 1
-        && can_symmetrize_input_symmetry_chi0_ibz_blocks(atom_nabf, chi0.pbc);
+        && can_symmetrize_input_symmetry_chi0_ibz_blocks(chi0.input_symmetry_ctx, atom_nabf, chi0.pbc);
 
     vec<double> eigenvalues(n_abf);
     global::profiler.stop("compute_Wc_freq_q_blacs_init");
@@ -2991,12 +2991,12 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 if (has_local_chi0_q)
                 {
                     chi0_wq = symmetrize_input_symmetry_chi0_ibz_blocks_if_needed(
-                        chi0.get_chi0_q().at(freq).at(q), q, chi0.pbc, atom_nabf);
+                        chi0.input_symmetry_ctx, chi0.get_chi0_q().at(freq).at(q), q, chi0.pbc, atom_nabf);
                 }
                 else if (use_input_symmetry_dense_chi0_collect)
                 {
                     chi0_wq = symmetrize_input_symmetry_chi0_ibz_blocks_if_needed(
-                        chi0_wq, q, chi0.pbc, atom_nabf);
+                        chi0.input_symmetry_ctx, chi0_wq, q, chi0.pbc, atom_nabf);
                 }
 
                 if (use_input_symmetry_dense_chi0_collect)
@@ -4131,6 +4131,7 @@ CT_Wc_freq2time_q(
 atom_mapping<std::map<Vector3_Order<int>, matrix_m<complex<double>>>>::pair_t_old FT_Wc_q2R(
     const MpiCommHandler &comm_h,
     const AtomicBasis &atbasis_abf,
+    const InputSymmetryContext &input_symmetry_ctx,
     const atom_mapping<std::map<Vector3_Order<double>, matrix_m<cplxdb>>>::pair_t_old
         &Wc_q,
     const TFGrids &tfg, const PeriodicBoundaryData &pbc, const vector<Vector3_Order<int>> &Rlist, const bool is_freq,
@@ -4152,11 +4153,11 @@ atom_mapping<std::map<Vector3_Order<int>, matrix_m<complex<double>>>>::pair_t_ol
     comm_h.barrier();
 
     const auto atom_nabf = build_atom_nabf_map(atbasis_abf);
-    if (can_use_input_symmetry_irreducible_sector_wr_restore(atom_nabf, pbc))
+    if (can_use_input_symmetry_irreducible_sector_wr_restore(input_symmetry_ctx, atom_nabf, pbc))
     {
         lib_printf_root(
             "ABACUS GW symmetry accumulates irreducible-sector `W(R)` directly from IBZ q-stars\n");
-        Wc_R = accumulate_input_symmetry_full_wr_from_ibz_q(Wc_q, pbc, Rlist, atom_nabf);
+        Wc_R = accumulate_input_symmetry_full_wr_from_ibz_q(input_symmetry_ctx, Wc_q, pbc, Rlist, atom_nabf);
         comm_h.barrier();
         lib_printf_root("Done converting Wc q -> R\n");
         return Wc_R;

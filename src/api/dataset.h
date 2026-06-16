@@ -10,6 +10,7 @@
 #include "../core/exx.h"
 #include "../core/geometry.h"
 #include "../core/gw.h"
+#include "../core/input_symmetry.h"
 #include "../core/meanfield.h"
 #include "../core/pbc.h"
 #include "../core/ri.h"
@@ -70,6 +71,8 @@ public:
     AtomicBasis basis_aux_shrink;
     //! Basis ordering and real-spherical-harmonic convention.
     BasisConvention basis_convention;
+    //! Optional input-code symmetry sidecar data.
+    InputSymmetryContext input_symmetry_ctx;
     //! Atomic structure
     Atoms atoms;
     //! Periodic boundary setting

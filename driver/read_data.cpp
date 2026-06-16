@@ -58,8 +58,10 @@ constexpr std::int32_t READER_SHRINK_SINVS_V1_MARKER = -30241621;
 
 bool use_loaded_input_symmetry_sidecars()
 {
-    return LIBRPA::input_symmetry_ctx.available
-           && !LIBRPA::input_symmetry_ctx.kstars.empty()
+    const auto pds = librpa_int::api::get_dataset_instance(driver::h);
+    const auto& ctx = pds->input_symmetry_ctx;
+    return ctx.available
+           && !ctx.kstars.empty()
            && (driver::get_bool(driver::opts.use_input_gw_symmetry)
                || driver::get_bool(driver::opts.use_input_rpa_symmetry)
                || driver::get_bool(driver::opts.use_input_exx_symmetry));
@@ -138,6 +140,11 @@ void parse_basis_convention(const std::string& convention)
     }
     if (known_convention)
     {
+        driver::basis_convention =
+            {bloch_phase, bloch_ratom, order, coeff_m_nega, coeff_m_posi};
+        driver::basis_convention_name = convention;
+        auto pds = librpa_int::api::get_dataset_instance(driver::h);
+        pds->input_symmetry_ctx.basis_convention = driver::basis_convention;
         driver::h.set_basis_convention(bloch_phase, bloch_ratom, order, coeff_m_nega, coeff_m_posi);
         return;
     }
@@ -1274,7 +1281,7 @@ void read_stru(const std::string &file_path)
     driver::h.set_atoms(driver::atom_types, coords);
     {
         auto pds = api::get_dataset_instance(driver::h);
-        LIBRPA::input_symmetry_ctx.set_lattice(pds->pbc.latvec, pds->pbc.G);
+        pds->input_symmetry_ctx.set_lattice(pds->pbc.latvec, pds->pbc.G);
     }
 
     // // Internal check
@@ -1367,9 +1374,11 @@ void read_bz_sampling_from_stru(const std::string &file_path)
         nk[i] = stoi(x);
     }
     const int nk_full = nk[0] * nk[1] * nk[2];
+    auto pds = api::get_dataset_instance(driver::h);
+    const auto& input_symmetry_ctx = pds->input_symmetry_ctx;
     const bool use_input_symmetry_kstars =
         use_loaded_input_symmetry_sidecars()
-        && LIBRPA::input_symmetry_ctx.kstars.size()
+        && input_symmetry_ctx.kstars.size()
                == static_cast<std::size_t>(driver::n_kpoints)
         && driver::n_kpoints > 0
         && driver::n_kpoints <= nk_full;
@@ -1390,13 +1399,12 @@ void read_bz_sampling_from_stru(const std::string &file_path)
 
     if (use_input_symmetry_kstars)
     {
-        auto pds = api::get_dataset_instance(driver::h);
         auto &pbc = pds->pbc;
         std::vector<std::vector<Vector3_Order<double>>> full_kstars;
-        full_kstars.reserve(LIBRPA::input_symmetry_ctx.kstars.size());
-        for (std::size_t istar = 0; istar != LIBRPA::input_symmetry_ctx.kstars.size(); ++istar)
+        full_kstars.reserve(input_symmetry_ctx.kstars.size());
+        for (std::size_t istar = 0; istar != input_symmetry_ctx.kstars.size(); ++istar)
         {
-            const auto &star = LIBRPA::input_symmetry_ctx.kstars[istar];
+            const auto &star = input_symmetry_ctx.kstars[istar];
             const Vector3_Order<double> k_ibz_read{
                 kvecs[3 * istar] / TWO_PI,
                 kvecs[3 * istar + 1] / TWO_PI,
