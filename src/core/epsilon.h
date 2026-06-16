@@ -79,7 +79,10 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
 std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
     const MpiCommHandler &comm_h,
     std::map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
-    const PeriodicBoundaryData &pbc, const TFGrids &tfg, bool remove_freq_q = true);
+    const PeriodicBoundaryData &pbc, const TFGrids &tfg, bool remove_freq_q = true,
+    bool output_wc_rf = false, int ifreq_output_wc_start = 0,
+    int ifreq_output_wc_end = -1, const std::string &output_dir = ".",
+    const ArrayDesc *ad_Wc = nullptr);
 
 // @brief Fourier transform screened Coulomb Wc(q,w) -> Wc(R,w) -> W(R,t)
 // @details transform step by step to output Wc_freq_R, and return full atom-pair matrix

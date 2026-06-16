@@ -271,14 +271,14 @@ typedef struct
     //! Output correlation self-energy matrix in NAO (real space, imaginary frequency domain)
     LibrpaSwitch output_gw_sigc_mat_rf;
 
-    //! Switch of outputting Wc matrix in Abs (real space, imaginary frequency domain)
-    /*!
-     * Available values:
-     * - 0: do not output
-     * - 1: output lowerest frequency
-     * - 2: output all frequencies
-     */
-    int option_output_Wc_Rf_mat;
+    //! Output Wc matrix in ABFs (real space, imaginary frequency domain).
+    LibrpaSwitch output_wc_rf;
+
+    //! First zero-based Wc frequency index to output.
+    int ifreq_output_wc_start;
+
+    //! Half-open Wc frequency output end index; negative means all remaining frequencies.
+    int ifreq_output_wc_end;
 
 } LibrpaOptions;
 

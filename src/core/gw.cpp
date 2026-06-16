@@ -389,6 +389,41 @@ void complete_hermitian_Wc_q_blocks(
     }
 }
 
+int wc_rf_checked_ifreq_end(const int start, const int end, const int n_freq)
+{
+    if (start < 0)
+        throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_start must be non-negative");
+    if (start >= n_freq)
+        throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_start is outside the Wc frequency grid");
+    if (end >= 0 && end <= start)
+        throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_end must be negative or greater than ifreq_output_wc_start");
+    const int checked_end = end < 0 ? n_freq : end;
+    if (checked_end > n_freq)
+        throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_end is outside the Wc frequency grid");
+    return checked_end;
+}
+
+void write_wc_rf_atom_blocks(
+    const atom_mapping<std::map<Vector3_Order<int>, Matz>>::pair_t_old &Wc_R,
+    const PeriodicBoundaryData &pbc, const std::string &output_dir, const int ifreq)
+{
+    for (const auto &[I, J_RWc] : Wc_R)
+    {
+        for (const auto &[J, R_Wc] : J_RWc)
+        {
+            for (const auto &[R, Wc] : R_Wc)
+            {
+                std::ostringstream ss;
+                ss << path_as_directory(output_dir)
+                   << "Wc_Mu_" << I << "_Nu_" << J
+                   << "_iR_" << pbc.get_R_index(R)
+                   << "_ifreq_" << ifreq << ".mtx";
+                print_matrix_mm_file(Wc, ss.str(), 1e-10);
+            }
+        }
+    }
+}
+
 }  // namespace
 
 G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
@@ -424,6 +459,9 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
     output_sigc_ks_if = true;
     output_sigc_mat_rt = false;
     output_sigc_mat_rf = false;
+    output_wc_rf = false;
+    ifreq_output_wc_start = 0;
+    ifreq_output_wc_end = -1;
 }
 
 void G0W0::reset_rspace()
@@ -718,6 +756,34 @@ void G0W0::build_spacetime(
         Chi0 unfold_helper(mf, atbasis_wfc, *basis_aux_compressed, pbc, input_symmetry_ctx, tfg, kblacs_ctxt,
                            *desc_wfc_in, is_mf_eigvec_k_distributed_);
 
+        if (output_wc_rf)
+        {
+            const int ifreq_end = wc_rf_checked_ifreq_end(
+                ifreq_output_wc_start, ifreq_output_wc_end, tfg.get_n_grids());
+            profiler.start("write_Wc_freq_R", "Export Wc(R,w) to file");
+            for (int ifreq = ifreq_output_wc_start; ifreq != ifreq_end; ++ifreq)
+            {
+                const auto freq = tfg.get_freq_nodes()[ifreq];
+                auto freq_iter = Wc_freq_q_atom_pair->find(freq);
+                if (freq_iter == Wc_freq_q_atom_pair->end()) continue;
+                auto Wc_q = freq_iter->second;
+
+                profiler.start("unfold_Wc_abfs", "Do shrink transformation");
+                unfold_helper.unfold_abfs_Wc_q(*sinvS, Wc_q, pbc.klist_ibz,
+                                               *basis_aux_unfold, *blacs_ctxt_h);
+                profiler.stop("unfold_Wc_abfs");
+
+                profiler.start("construct_Wc_freq_lower_half", "Construct Lower Half of Wc(q,w)");
+                complete_hermitian_Wc_q_blocks(Wc_q);
+                profiler.stop("construct_Wc_freq_lower_half");
+
+                auto Wc_R = FT_Wc_q2R(comm_h, *basis_aux_unfold, input_symmetry_ctx, Wc_q, tfg,
+                                      pbc, pbc.Rlist, true, output_dir);
+                write_wc_rf_atom_blocks(Wc_R, pbc, output_dir, ifreq);
+            }
+            profiler.stop("write_Wc_freq_R");
+        }
+
         profiler.start("g0w0_build_spacetime_wt_ft_wc", "Tranform Wc (q,w) -> (q,t)");
         auto Wc_tau_q = CT_Wc_freq2time_q(
             comm_h, *basis_aux_compressed, *Wc_freq_q_atom_pair, tfg, pbc.get_n_cells_bvk(),
@@ -807,7 +873,9 @@ void G0W0::build_spacetime(
         // Transform from frequency/reciprocal to time/real-space
         profiler.start("g0w0_build_spacetime_ct_ft_wc", "Tranform Wc (q,w) -> (R,t)");
         profiler.start("g0w0_build_spacetime_ct_ft_real_work", "Perform transformation");
-        auto Wc_tau_R_blacs = CT_FT_Wc_freq_q(comm_h, Wc_freq_q, pbc, tfg, true);
+        auto Wc_tau_R_blacs = CT_FT_Wc_freq_q(
+            comm_h, Wc_freq_q, pbc, tfg, true, output_wc_rf, ifreq_output_wc_start,
+            ifreq_output_wc_end, output_dir, &ad_Wc);
         release_free_mem();
         profiler.stop("g0w0_build_spacetime_ct_ft_real_work");
 

@@ -252,7 +252,11 @@ module librpa_f03
       !> Experimental: output correlation self-energy matrix in real space and imaginary frequencies.
       logical :: output_gw_sigc_mat_rf
       !> Experimental: output \f$W^c\f$ matrix in real space and imaginary frequency.
-      integer :: option_output_Wc_Rf_mat
+      logical :: output_wc_rf
+      !> First zero-based \f$W^c\f$ frequency index to output.
+      integer :: ifreq_output_wc_start
+      !> Half-open \f$W^c\f$ frequency output end index; negative means all remaining frequencies.
+      integer :: ifreq_output_wc_end
 
       contains
          procedure :: init => librpa_init_options

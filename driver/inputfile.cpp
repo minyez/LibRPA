@@ -352,7 +352,26 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_switch(opts, output_gw_sigc_mat);
     _parse_switch(opts, output_gw_sigc_mat_rt);
     _parse_switch(opts, output_gw_sigc_mat_rf);
-    _parse_int(opts, option_output_Wc_Rf_mat);
+    _parse_switch(opts, output_wc_rf);
+    _parse_int(opts, ifreq_output_wc_start);
+    _parse_int(opts, ifreq_output_wc_end);
+    {  // backward-compatible
+        int option_output_Wc_Rf_mat = 0;
+        parser.parse_int("option_output_Wc_Rf_mat", option_output_Wc_Rf_mat, flag);
+        if (flag == 0)
+        {
+            if (option_output_Wc_Rf_mat < 0 || option_output_Wc_Rf_mat > 2)
+                throw std::runtime_error("option_output_Wc_Rf_mat must be 0, 1, or 2");
+            opts.output_wc_rf = get_switch(option_output_Wc_Rf_mat > 0);
+            opts.ifreq_output_wc_start = 0;
+            opts.ifreq_output_wc_end = option_output_Wc_Rf_mat == 1 ? 1 : -1;
+        }
+    }
+    if (opts.ifreq_output_wc_start < 0)
+        throw std::runtime_error("ifreq_output_wc_start must be non-negative");
+    if (opts.ifreq_output_wc_end >= 0 &&
+        opts.ifreq_output_wc_end <= opts.ifreq_output_wc_start)
+        throw std::runtime_error("ifreq_output_wc_end must be negative or greater than ifreq_output_wc_start");
 
     // QPE solver
     _parse_int(opts, option_qpe_solver);

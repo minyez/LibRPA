@@ -195,7 +195,9 @@ These parameters are active for LibRI-enabled builds and LibRI routing.
 | `output_gw_sigc_mat`      | Output correlation self-energy matrix (k-space, imaginary frequencies)    | bool | `false`                                   | Experimental |
 | `output_gw_sigc_mat_rt`   | Output correlation self-energy matrix (real-space, imaginary time)        | bool | `false`                                   | Experimental |
 | `output_gw_sigc_mat_rf`   | Output correlation self-energy matrix (real-space, imaginary frequencies) | bool | `false`                                   | Experimental |
-| `option_output_Wc_Rf_mat` | Output $W^c$ matrix in real space and imaginary frequency where supported | int  | 0 (0=off, 1=lowest frequency, 2=all frequencies) | Experimental |
+| `output_wc_rf`            | Output $W^c$ matrix in real space and imaginary frequency where supported | bool | `false`                                   | Experimental |
+| `ifreq_output_wc_start`   | First zero-based $W^c$ frequency index to output                         | int  | 0                                         | Experimental |
+| `ifreq_output_wc_end`     | Half-open $W^c$ frequency output end index; negative means all remaining frequencies | int | -1 | Experimental |
 
 ## Driver Compatibility Aliases
 
@@ -208,6 +210,9 @@ and may be removed in the future:
 | `use_soc`        | `use_spinor_wfc`     | Old spelling for selecting spinor-format driver input |
 | `tfgrid_type`    | `tfgrids_type`       | Old spelling                               |
 | `gf_R_threshold` | `gf_threshold`       | Old spelling                               |
+| `option_output_Wc_Rf_mat` | `output_wc_rf`,          | `0` disables output,  |
+|                           | `ifreq_output_wc_start`, | `1` maps to `[0,1)`,  |
+|                           | `ifreq_output_wc_end`    | `2` maps to `[0,all)` |
 | `use_abacus_exx_symmetry` | `use_input_exx_symmetry` | Old spelling for the EXX input-symmetry switch |
 | `use_abacus_gw_symmetry`  | `use_input_gw_symmetry`  | Old spelling for the GW input-symmetry switch |
 | `use_abacus_rpa_symmetry` | `use_input_rpa_symmetry` | Old spelling for the RPA/chi0 input-symmetry switch |

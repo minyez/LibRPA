@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <array>
+#include <iomanip>
 #include <iterator>
 #include <set>
+#include <sstream>
 #include <utility>
 #include <valarray>
 
@@ -3598,7 +3600,9 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
 std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
     const MpiCommHandler &comm_h,
     std::map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
-    const PeriodicBoundaryData &pbc, const TFGrids &tfg, bool remove_freq_q)
+    const PeriodicBoundaryData &pbc, const TFGrids &tfg, bool remove_freq_q,
+    bool output_wc_rf, int ifreq_output_wc_start, int ifreq_output_wc_end,
+    const std::string &output_dir, const ArrayDesc *ad_Wc)
 {
     using std::endl;
 
@@ -3638,6 +3642,41 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
 
     // Perform Fourier transform first, then inverse cosine transform
     auto Wc_freq_R = FT_Wc_freq_q(comm_h, Wc_freq_q, pbc, remove_freq_q);
+    if (output_wc_rf)
+    {
+        if (ad_Wc == nullptr)
+            throw LIBRPA_RUNTIME_ERROR("output_wc_rf needs a Wc matrix descriptor");
+        if (ifreq_output_wc_start < 0)
+            throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_start must be non-negative");
+        if (ifreq_output_wc_end >= 0 &&
+            ifreq_output_wc_end <= ifreq_output_wc_start)
+            throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_end must be negative or greater than ifreq_output_wc_start");
+        if (ifreq_output_wc_start >= n_freq)
+            throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_start is outside the Wc frequency grid");
+
+        const int ifreq_end = ifreq_output_wc_end < 0 ? n_freq : ifreq_output_wc_end;
+        if (ifreq_end > n_freq)
+            throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_end is outside the Wc frequency grid");
+
+        global::profiler.start("write_Wc_freq_R", "Export Wc(R,w) to file");
+        for (int ifreq = ifreq_output_wc_start; ifreq != ifreq_end; ++ifreq)
+        {
+            const auto freq = tfg.get_freq_nodes()[ifreq];
+            auto freq_iter = Wc_freq_R.find(freq);
+            if (freq_iter == Wc_freq_R.end()) continue;
+            for (const auto &[R, Wc] : freq_iter->second)
+            {
+                const auto iR = pbc.get_R_index(R);
+                std::stringstream ss;
+                ss << path_as_directory(output_dir)
+                   << "Wc_iR_" << std::setfill('0') << std::setw(5) << iR
+                   << "_ifreq_" << std::setfill('0') << std::setw(5) << ifreq
+                   << ".mtx";
+                print_matrix_mm_file_parallel(ss.str(), Wc, *ad_Wc, 1e-10);
+            }
+        }
+        global::profiler.stop("write_Wc_freq_R");
+    }
     // if (Params::debug)
     // {
     //     const auto &Wc = Wc_freq_R.at(tfg.get_freq_nodes()[0]).at(Rlist[0]);
@@ -3910,44 +3949,6 @@ CT_FT_Wc_q2R_freq2time(
 
     profiler.stop("Wc(q,w) -> Wc(R,w)");
 
-    const int output_Wc_Rf_mat = 0;
-
-    if (output_Wc_Rf_mat > 0)
-    {
-        profiler.start("write_Wc_freq_R", "Export Wc(R,w) to file");
-        int write_freq = output_Wc_Rf_mat == 1 ? 1 : ngrids;
-        for (int ifreq = 0; ifreq != write_freq; ifreq++)
-        {
-            char fn[80];
-            const auto freq = tfg.get_freq_nodes()[ifreq];
-            auto& freq_MuNuRWc = Wc_freq_R.at(freq);
-            for (const auto &Mu_NuRWc : freq_MuNuRWc)
-            {
-                auto Mu = Mu_NuRWc.first;
-                // const int n_mu = atom_mu[Mu];
-                for (const auto &Nu_RWc : Mu_NuRWc.second)
-                {
-                    auto Nu = Nu_RWc.first;
-                    // const int n_nu = atom_mu[Nu];
-                    for (const auto &R_Wc : Nu_RWc.second)
-                    {
-                        auto R = R_Wc.first;
-                        auto Wc = R_Wc.second;
-                        auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-                        auto iR = std::distance(Rlist.cbegin(), iteR);
-                        sprintf(fn, "Wc_Mu_%zu_Nu_%zu_iR_%zu_ifreq_%d.mtx", Mu, Nu, iR, ifreq);
-                        std::string info = "Wc at iR " + std::to_string(iR) + 
-                            " ( " + std::to_string(R.x) + " " + std::to_string(R.y) + " " + std::to_string(R.z) +
-                            " ) and ifreq " + std::to_string(ifreq) +
-                            " ( " + std::to_string(freq) + " a.u. )";
-                        print_matrix_mm_file(Wc, output_dir + "/" + fn, info, 1e-10);
-                    }
-                }
-            }
-        }
-        profiler.stop("write_Wc_freq_R");
-    }
-
     profiler.start("Wc(R,w) -> Wc(R,t)", "Convert Wc(R,w) -> Wc(R,t)");
     if (comm_h.is_root())
     {
@@ -4134,10 +4135,9 @@ atom_mapping<std::map<Vector3_Order<int>, matrix_m<complex<double>>>>::pair_t_ol
     const InputSymmetryContext &input_symmetry_ctx,
     const atom_mapping<std::map<Vector3_Order<double>, matrix_m<cplxdb>>>::pair_t_old
         &Wc_q,
-    const TFGrids &tfg, const PeriodicBoundaryData &pbc, const vector<Vector3_Order<int>> &Rlist, const bool is_freq,
-    const std::string &output_dir)
+    const TFGrids &, const PeriodicBoundaryData &pbc, const vector<Vector3_Order<int>> &Rlist, const bool,
+    const std::string &)
 {
-    using global::profiler;
     using global::lib_printf_root;
     using global::lib_printf_coll;
     using std::set;
@@ -4234,40 +4234,6 @@ atom_mapping<std::map<Vector3_Order<int>, matrix_m<complex<double>>>>::pair_t_ol
     }
     comm_h.barrier();
     lib_printf_root("Done converting Wc q -> R\n");
-
-    const int output_Wc_Rf_mat = 0;
-
-    if (is_freq && output_Wc_Rf_mat == 1)
-    {
-        profiler.start("write_Wc_freq_R", "Export Wc(R,w) to file");
-        int ifreq = 0;
-        const auto freq = tfg.get_freq_nodes()[ifreq];
-        char fn[80];
-        for (const auto &Mu_NuRWc : Wc_R)
-        {
-            auto Mu = Mu_NuRWc.first;
-            // const int n_mu = atom_mu[Mu];
-            for (const auto &Nu_RWc : Mu_NuRWc.second)
-            {
-                auto Nu = Nu_RWc.first;
-                // const int n_nu = atom_mu[Nu];
-                for (const auto &R_Wc : Nu_RWc.second)
-                {
-                    auto R = R_Wc.first;
-                    auto Wc = R_Wc.second;
-                    auto iteR = std::find(Rlist.cbegin(), Rlist.cend(), R);
-                    auto iR = std::distance(Rlist.cbegin(), iteR);
-                    sprintf(fn, "Wc_Mu_%zu_Nu_%zu_iR_%zu_ifreq_%d.mtx", Mu, Nu, iR, ifreq);
-                    std::string info = "Wc at iR " + std::to_string(iR) + 
-                        " ( " + std::to_string(R.x) + " " + std::to_string(R.y) + " " + std::to_string(R.z) +
-                        " ) and ifreq " + std::to_string(ifreq) +
-                        " ( " + std::to_string(freq) + " a.u. )";
-                    print_matrix_mm_file(Wc, output_dir + "/" + fn, info, 1e-10);
-                }
-            }
-        }
-        profiler.stop("write_Wc_freq_R");
-    }
 
     return Wc_R;
 }

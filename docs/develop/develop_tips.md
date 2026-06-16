@@ -69,3 +69,10 @@ For naming, follow these general conventions:
 - Files in `src/interface` should not include internal headers outside
   `src/interface`.
 - Use `src/io/stl_io_helper.h` when printing STL containers.
+
+## Adding new runtime options
+
+- `LibrpaSwitch`-type runtime options must begin with `output_` or `use_`, and vice versa.
+  The only exception: `output_level`.
+- Option with a few available values can either be an `int` type starting with `option_`,
+  or a dedicated `enum` type defined in `librpa_enums.h`.

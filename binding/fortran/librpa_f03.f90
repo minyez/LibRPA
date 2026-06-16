@@ -219,7 +219,9 @@ module librpa_f03
       integer(c_int) :: output_gw_sigc_mat
       integer(c_int) :: output_gw_sigc_mat_rt
       integer(c_int) :: output_gw_sigc_mat_rf
-      integer(c_int) :: option_output_Wc_Rf_mat
+      integer(c_int) :: output_wc_rf
+      integer(c_int) :: ifreq_output_wc_start
+      integer(c_int) :: ifreq_output_wc_end
    end type LibrpaOptions_c
 
    !> @brief High-level Fortran wrapper for runtime options.
@@ -358,7 +360,11 @@ module librpa_f03
       !> Experimental: output correlation self-energy matrix in real space and imaginary frequencies.
       logical :: output_gw_sigc_mat_rf
       !> Experimental: output \f$W^c\f$ matrix in real space and imaginary frequency.
-      integer :: option_output_Wc_Rf_mat
+      logical :: output_wc_rf
+      !> First zero-based \f$W^c\f$ frequency index to output.
+      integer :: ifreq_output_wc_start
+      !> Half-open \f$W^c\f$ frequency output end index; negative means all remaining frequencies.
+      integer :: ifreq_output_wc_end
 
       contains
          procedure :: init => librpa_init_options
@@ -1109,7 +1115,9 @@ contains
       call sync_opt(opts%output_gw_sigc_mat,      opts%opts_c%output_gw_sigc_mat,      direction)
       call sync_opt(opts%output_gw_sigc_mat_rt,   opts%opts_c%output_gw_sigc_mat_rt,   direction)
       call sync_opt(opts%output_gw_sigc_mat_rf,   opts%opts_c%output_gw_sigc_mat_rf,   direction)
-      call sync_opt(opts%option_output_Wc_Rf_mat, opts%opts_c%option_output_Wc_Rf_mat, direction)
+      call sync_opt(opts%output_wc_rf,            opts%opts_c%output_wc_rf,            direction)
+      call sync_opt(opts%ifreq_output_wc_start,   opts%opts_c%ifreq_output_wc_start,   direction)
+      call sync_opt(opts%ifreq_output_wc_end,     opts%opts_c%ifreq_output_wc_end,     direction)
    end subroutine
 
    !> @brief Initialize runtime options to default values.

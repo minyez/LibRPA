@@ -174,6 +174,8 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             normal_pair(rpa_headwing_body_start),
             normal_pair(qpe_solver_n_iter_max),
             normal_pair(libri_chi0_collect_s0_chunk),
+            normal_pair(ifreq_output_wc_start),
+            normal_pair(ifreq_output_wc_end),
         };
 
     const std::vector<std::pair<std::string, std::string>> str_params
@@ -207,6 +209,7 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             bool_pair(output_gw_sigc_mat),
             bool_pair(output_gw_sigc_mat_rf),
             bool_pair(output_gw_sigc_mat_rt),
+            bool_pair(output_wc_rf),
             bool_pair(use_qpe_adaptive_damp),
             bool_pair(override_qpe_solver_nan),
         };

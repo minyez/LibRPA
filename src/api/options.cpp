@@ -100,7 +100,9 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->output_gw_sigc_mat = LIBRPA_SWITCH_OFF;
     opts->output_gw_sigc_mat_rt = LIBRPA_SWITCH_OFF;
     opts->output_gw_sigc_mat_rf = LIBRPA_SWITCH_OFF;
-    opts->option_output_Wc_Rf_mat = 0;
+    opts->output_wc_rf = LIBRPA_SWITCH_OFF;
+    opts->ifreq_output_wc_start = 0;
+    opts->ifreq_output_wc_end = -1;
 }
 
 void librpa_set_output_dir(LibrpaOptions *opts, const char *output_dir)

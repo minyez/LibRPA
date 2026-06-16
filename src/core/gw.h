@@ -62,6 +62,9 @@ public:
     bool output_sigc_ks_if;
     bool output_sigc_mat_rt;
     bool output_sigc_mat_rf;
+    bool output_wc_rf;
+    int ifreq_output_wc_start;
+    int ifreq_output_wc_end;
 
     //! frequency-domain reciprocal-space correlation self-energy, indices [ispin][freq][k][I][J](n_I, n_J)
     // std::map<int, std::map<double, std::map<Vector3_Order<double>, atom_mapping<Matz>::pair_t_old>>> sigc_is_f_k_IJ;
