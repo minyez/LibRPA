@@ -1724,9 +1724,9 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                 sigc_nband_nband_fb.zero_out();
                                 collect_block_from_IJ_storage_matrix_transform(sigc_nao_nao, desc_nao_nao,
                                         this->atbasis_wfc, this->atbasis_wfc, fourier, sigc_isp_local.at(freq));
-                                ScalapackConnector::pgemr2d_f(n_aos, n_aos, sigc_nband_nband_fb.ptr(), 1, 1,
-                                                              desc_nband_nband_fb.desc, sigc_nband_nband_opt.ptr(),
-                                                              1, 1, desc_nband_nband_opt.desc, blacs_ctxt_h.ictxt);
+                                ScalapackConnector::pgemr2d_f(n_aos, n_aos, sigc_nao_nao.ptr(), 1, 1,
+                                                              desc_nao_nao.desc, sigc_nao_nao_opt.ptr(),
+                                                              1, 1, desc_nao_nao_opt.desc, blacs_ctxt_h.ictxt);
                                 if (pid == comm_h.myid)
                                 {
                                     const auto &wfc_bra = wfc_target.at(isp).at(ispn_bra).at(ik);
