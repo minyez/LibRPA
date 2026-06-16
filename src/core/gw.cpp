@@ -1492,6 +1492,19 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     ArrayDesc desc_nband_nband(blacs_ctxt_h);
     desc_nband_nband.init_1b1p(n_bands, n_bands, 0, 0);
 
+    int mb_opt = std::min(128, std::min(desc_nband_nao.mb(), desc_nband_nao.nb()));
+    ArrayDesc desc_nband_nao_opt(blacs_ctxt_h), desc_nao_nao_opt(blacs_ctxt_h);
+    ArrayDesc desc_nao_nband_opt(blacs_ctxt_h),  desc_nband_nband_opt(blacs_ctxt_h);
+    desc_nband_nao_opt.init(n_bands, n_aos, mb_opt, mb_opt, 0, 0);
+    desc_nao_nao_opt.init(n_aos, n_aos, mb_opt, mb_opt, 0, 0);
+    desc_nband_nband_opt.init(n_bands, n_bands, mb_opt, mb_opt, 0, 0);
+    desc_nao_nband_opt.init(n_aos, n_bands, mb_opt, mb_opt, 0, 0);
+
+    auto wfc_bra_opt = init_local_mat<complex<double>>(desc_nao_nband_opt, MAJOR::COL);
+    auto wfc_ket_opt = init_local_mat<complex<double>>(desc_nao_nband_opt, MAJOR::COL);
+    auto sigc_nao_nao_opt = init_local_mat<complex<double>>(desc_nao_nao_opt, MAJOR::COL);
+    auto sigc_nband_nband_opt = init_local_mat<complex<double>>(desc_nband_nband_opt, MAJOR::COL);
+
     ArrayDesc desc_nao_nband_fb(blacs_ctxt_h);  // For k-parallel
     ArrayDesc desc_nao_nao_fb(blacs_ctxt_h);
     ArrayDesc desc_nband_nband_fb(blacs_ctxt_h);
@@ -1655,7 +1668,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                 if (is_mf_eigvec_k_distributed_)
                 {
                     global::profiler.start("g0w0_build_sigc_KS_rotate_kpara");
-                    auto temp_nband_nao = init_local_mat<complex<double>>(desc_nband_nao, MAJOR::COL);
+                    auto temp_nband_nao_opt = init_local_mat<complex<double>>(desc_nband_nao_opt, MAJOR::COL);
                     // collect parsed eigenvectors all all processes
                     std::vector<int> nks_all(comm_h.nprocs, 0);
                     std::vector<int> iks_local;
@@ -1702,39 +1715,75 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                 sigc_nband_nband_fb.zero_out();
                                 collect_block_from_IJ_storage_matrix_transform(sigc_nao_nao, desc_nao_nao,
                                         this->atbasis_wfc, this->atbasis_wfc, fourier, sigc_isp_local.at(freq));
+                                ScalapackConnector::pgemr2d_f(n_aos, n_aos, sigc_nband_nband_fb.ptr(), 1, 1,
+                                                              desc_nband_nband_fb.desc, sigc_nband_nband_opt.ptr(),
+                                                              1, 1, desc_nband_nband_opt.desc, blacs_ctxt_h.ictxt);
                                 if (pid == comm_h.myid)
                                 {
                                     const auto &wfc_bra = wfc_target.at(isp).at(ispn_bra).at(ik);
                                     const auto &wfc_ket = wfc_target.at(isp).at(ispn_ket).at(ik);
-                                    // processing the k-point eigenvector on this process
-                                    ScalapackConnector::pgemm_f('C', 'N', n_bands, n_aos, n_aos, 1.0,
-                                                                wfc_bra.c, 1, 1, desc_nao_nband_fb.desc,
-                                                                sigc_nao_nao.ptr(), 1, 1, desc_nao_nao.desc,
-                                                                0.0,
-                                                                temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc);
-                                    ScalapackConnector::pgemm_f('N', 'N', n_bands, n_bands, n_aos, 1.0,
-                                                                temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc,
-                                                                wfc_ket.c, 1, 1, desc_nao_nband_fb.desc,
-                                                                0.0,
-                                                                sigc_nband_nband_fb.ptr(), 1, 1, desc_nband_nband_fb.desc);
+                                    ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_bra.c, 1, 1, 
+                                                                  desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
+                                                                  1, 1, desc_nao_nband_opt.desc, blacs_ctxt_h.ictxt);
+                                    ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_ket.c, 1, 1, 
+                                                                  desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
+                                                                  1, 1, desc_nao_nband_opt.desc, blacs_ctxt_h.ictxt);
+                                    // // processing the k-point eigenvector on this process
+                                    // ScalapackConnector::pgemm_f('C', 'N', n_bands, n_aos, n_aos, 1.0,
+                                    //                             wfc_bra.c, 1, 1, desc_nao_nband_fb.desc,
+                                    //                             sigc_nao_nao.ptr(), 1, 1, desc_nao_nao.desc,
+                                    //                             0.0,
+                                    //                             temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc);
+                                    // ScalapackConnector::pgemm_f('N', 'N', n_bands, n_bands, n_aos, 1.0,
+                                    //                             temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc,
+                                    //                             wfc_ket.c, 1, 1, desc_nao_nband_fb.desc,
+                                    //                             0.0,
+                                    //                             sigc_nband_nband_fb.ptr(), 1, 1, desc_nband_nband_fb.desc);
+                                    // auto sigc_freq = find_nested_int_map_2(this->sigc_is_ik_f_KS, isp, ik);
+                                    // if (sigc_freq == nullptr || sigc_freq->count(freq) == 0)
+                                    //     this->sigc_is_ik_f_KS[isp][ik][freq] = Matz(n_bands, n_bands, MAJOR::COL);
+                                    // this->sigc_is_ik_f_KS[isp][ik][freq] += sigc_nband_nband_fb;
+                                }
+                                else
+                                {
+                                    ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1, 
+                                                                  desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
+                                                                  1, 1, desc_nao_nband_opt.desc, blacs_ctxt_h.ictxt);
+                                    ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1, 
+                                                                  desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
+                                                                  1, 1, desc_nao_nband_opt.desc, blacs_ctxt_h.ictxt);
+                                    // processing the k-point eigenvector at other processes
+                                    // ScalapackConnector::pgemm_f('C', 'N', n_bands, n_aos, n_aos, 1.0,
+                                    //                             dummy.data(), 1, 1, desc_nao_nband_fb.desc,
+                                    //                             sigc_nao_nao.ptr(), 1, 1, desc_nao_nao.desc,
+                                    //                             0.0,
+                                    //                             temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc);
+                                    // ScalapackConnector::pgemm_f('N', 'N', n_bands, n_bands, n_aos, 1.0,
+                                    //                             temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc,
+                                    //                             dummy.data(), 1, 1, desc_nao_nband_fb.desc,
+                                    //                             0.0,
+                                    //                             sigc_nband_nband_fb.ptr(), 1, 1, desc_nband_nband_fb.desc);
+                                }
+                                release_free_mem();
+                                // processing the k-point eigenvector on this process
+                                ScalapackConnector::pgemm_f('C', 'N', n_bands, n_aos, n_aos, 1.0,
+                                                            wfc_bra_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
+                                                            sigc_nao_nao_opt.ptr(), 1, 1, desc_nao_nao_opt.desc,
+                                                            0.0,
+                                                            temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc);
+                                ScalapackConnector::pgemm_f('N', 'N', n_bands, n_bands, n_aos, 1.0,
+                                                            temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc,
+                                                            wfc_ket_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
+                                                            0.0,
+                                                            sigc_nband_nband_opt.ptr(), 1, 1, desc_nband_nband_opt.desc);
+                                ScalapackConnector::pgemr2d_f(n_aos, n_aos, sigc_nband_nband_opt.ptr(), 1, 1,
+                                                              desc_nband_nband_opt.desc, sigc_nband_nband_fb.ptr(),
+                                                              1, 1, desc_nband_nband_fb.desc, blacs_ctxt_h.ictxt);
+                                if (pid == comm_h.myid){
                                     auto sigc_freq = find_nested_int_map_2(this->sigc_is_ik_f_KS, isp, ik);
                                     if (sigc_freq == nullptr || sigc_freq->count(freq) == 0)
                                         this->sigc_is_ik_f_KS[isp][ik][freq] = Matz(n_bands, n_bands, MAJOR::COL);
                                     this->sigc_is_ik_f_KS[isp][ik][freq] += sigc_nband_nband_fb;
-                                }
-                                else
-                                {
-                                    // processing the k-point eigenvector at other processes
-                                    ScalapackConnector::pgemm_f('C', 'N', n_bands, n_aos, n_aos, 1.0,
-                                                                dummy.data(), 1, 1, desc_nao_nband_fb.desc,
-                                                                sigc_nao_nao.ptr(), 1, 1, desc_nao_nao.desc,
-                                                                0.0,
-                                                                temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc);
-                                    ScalapackConnector::pgemm_f('N', 'N', n_bands, n_bands, n_aos, 1.0,
-                                                                temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc,
-                                                                dummy.data(), 1, 1, desc_nao_nband_fb.desc,
-                                                                0.0,
-                                                                sigc_nband_nband_fb.ptr(), 1, 1, desc_nband_nband_fb.desc);
                                 }
                                 release_free_mem();
                             }
