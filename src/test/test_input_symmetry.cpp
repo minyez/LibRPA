@@ -49,17 +49,14 @@ void test_abf_rotation_fallback_uses_basis_convention()
                                   0.0, 0.0, 1.0);
     ctx.lattice_available = true;
 
-    const std::array<std::array<double, 3>, 3> direct_rotation{{{{0.0, -1.0, 0.0}},
-                                                                {{1.0, 0.0, 0.0}},
-                                                                {{0.0, 0.0, 1.0}}}};
-    const Matrix3 cartesian_rotation(0.0, -1.0, 0.0,
-                                     1.0, 0.0, 0.0,
-                                     0.0, 0.0, 1.0);
+    const Matrix3 direct_rotation(0.0, -1.0, 0.0,
+                                  1.0, 0.0, 0.0,
+                                  0.0, 0.0, 1.0);
 
     const auto fallback_rotation =
         build_input_symmetry_abf_rotation_matrix(ctx, 0, 3, {}, direct_rotation);
     const auto expected_rotation =
-        real_spherical_harmonic_rotation_matrix(cartesian_rotation,
+        real_spherical_harmonic_rotation_matrix(direct_rotation,
                                                 1,
                                                 ctx.basis_convention.order,
                                                 ctx.basis_convention.coeff_m_negative,

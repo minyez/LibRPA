@@ -4,17 +4,15 @@
  */
 #pragma once
 
-#include <array>
 #include <cstddef>
 #include <utility>
 #include <vector>
 
+#include "matrix3.h"
 #include "vector3_order.h"
 
 namespace librpa_int
 {
-
-using space_group_rotation_t = std::array<std::array<double, 3>, 3>;
 
 /*!
  * @brief Space-group operation in fractional coordinates.
@@ -24,9 +22,9 @@ using space_group_rotation_t = std::array<std::array<double, 3>, 3>;
 struct SpaceGroupSymOp
 {
     int isym = -1;
-    space_group_rotation_t rotation{{{{0.0, 0.0, 0.0}},
-                                     {{0.0, 0.0, 0.0}},
-                                     {{0.0, 0.0, 0.0}}}};
+    Matrix3 rotation{0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0};
     Vector3_Order<double> translation{0.0, 0.0, 0.0};
 };
 
@@ -62,12 +60,11 @@ struct SpaceGroupSymOps
     auto cend() const { return operations.cend(); }
 };
 
-space_group_rotation_t multiply_space_group_rotation_matrices(
-    const space_group_rotation_t& lhs,
-    const space_group_rotation_t& rhs);
+Matrix3 multiply_space_group_rotation_matrices(const Matrix3& lhs,
+                                               const Matrix3& rhs);
 
 Vector3_Order<double> multiply_row_vector(const Vector3_Order<double>& vec,
-                                          const space_group_rotation_t& matrix);
+                                          const Matrix3& matrix);
 
 SpaceGroupSymOp compose_space_group_symmetry_operations(
     const SpaceGroupSymOp& lhs,

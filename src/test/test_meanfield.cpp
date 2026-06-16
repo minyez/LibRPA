@@ -135,9 +135,7 @@ void test_input_symmetry_kstar_restored_dmat_uses_full_star_phases()
     ctx.input_coord_frac[0] = {0.0, 0.0, 0.0};
     librpa_int::InputSymmetryOperation identity_operation;
     identity_operation.isym = 0;
-    identity_operation.rotation = {{{{1.0, 0.0, 0.0}},
-                                    {{0.0, 1.0, 0.0}},
-                                    {{0.0, 0.0, 1.0}}}};
+    identity_operation.rotation.Identity();
     identity_operation.translation = {0.0, 0.0, 0.0};
     identity_operation.shell_rotations[0] = ComplexMatrix(1, 1);
     identity_operation.shell_rotations[0](0, 0) = {1.0, 0.0};
@@ -198,9 +196,7 @@ void test_input_symmetry_kstar_restored_dmat_uses_target_kpoint_gauge()
 
     librpa_int::InputSymmetryOperation identity_operation;
     identity_operation.isym = 0;
-    identity_operation.rotation = {{{{1.0, 0.0, 0.0}},
-                                    {{0.0, 1.0, 0.0}},
-                                    {{0.0, 0.0, 1.0}}}};
+    identity_operation.rotation.Identity();
     identity_operation.translation = {0.0, 0.0, 0.0};
     identity_operation.shell_rotations[0] = ComplexMatrix(1, 1);
     identity_operation.shell_rotations[0](0, 0) = {1.0, 0.0};

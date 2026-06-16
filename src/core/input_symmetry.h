@@ -188,7 +188,7 @@ ComplexMatrix build_input_symmetry_abf_rotation_matrix(
     int atom_type,
     int nao_hint,
     const std::map<int, ComplexMatrix>& shell_rotations,
-    const std::array<std::array<double, 3>, 3>& direct_rotation);
+    const Matrix3& direct_rotation);
 
 const InputSymmetryKStar& find_input_symmetry_kstar_for_kpoint(const std::vector<InputSymmetryKStar>& kstars,
                                                 const Vector3_Order<double>& k_point,

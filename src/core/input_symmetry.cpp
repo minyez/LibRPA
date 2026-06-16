@@ -318,7 +318,7 @@ Matrix3 build_matrix3_from_array(const std::array<std::array<double, 3>, 3>& mat
 ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
     const InputSymmetryContext& ctx,
     const int l,
-    const std::array<std::array<double, 3>, 3>& direct_rotation)
+    const Matrix3& direct_rotation)
 {
     const auto& basis_convention = ctx.basis_convention;
     if (l == 0)
@@ -335,9 +335,8 @@ ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
             "ABACUS shell rotation fallback requires lattice vectors from the structure input");
     }
 
-    const Matrix3 direct_matrix = build_matrix3_from_array(direct_rotation);
     const Matrix3 cartesian_matrix =
-        ctx.lattice_vectors.Inverse() * direct_matrix * ctx.lattice_vectors;
+        ctx.lattice_vectors.Inverse() * direct_rotation * ctx.lattice_vectors;
     return real_spherical_harmonic_rotation_matrix(cartesian_matrix,
                                                    l,
                                                    basis_convention.order,
@@ -346,21 +345,14 @@ ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
                                                    kInputSymmetryCoordTol);
 }
 
-bool is_identity_rotation(const std::array<std::array<double, 3>, 3>& matrix,
+bool is_identity_rotation(const Matrix3& matrix,
                           const double tol = 1e-8)
 {
-    for (int row = 0; row < 3; ++row)
-    {
-        for (int col = 0; col < 3; ++col)
-        {
-            const double target = (row == col) ? 1.0 : 0.0;
-            if (std::abs(matrix[row][col] - target) >= tol)
-            {
-                return false;
-            }
-        }
-    }
-    return true;
+    return std::abs(matrix.e11 - 1.0) < tol && std::abs(matrix.e12) < tol
+           && std::abs(matrix.e13) < tol && std::abs(matrix.e21) < tol
+           && std::abs(matrix.e22 - 1.0) < tol && std::abs(matrix.e23) < tol
+           && std::abs(matrix.e31) < tol && std::abs(matrix.e32) < tol
+           && std::abs(matrix.e33 - 1.0) < tol;
 }
 
 Vector3_Order<int> round_vec3_to_int(const Vector3_Order<double>& vec)
@@ -715,6 +707,9 @@ void load_symrot_R_file(const std::string& file_path, InputSymmetryContext& ctx)
         op.isym = std::stoi(trim(lines[index]));
         ++index;
 
+        std::array<std::array<double, 3>, 3> rotation_rows{{{{0.0, 0.0, 0.0}},
+                                                            {{0.0, 0.0, 0.0}},
+                                                            {{0.0, 0.0, 0.0}}}};
         for (int row = 0; row < 3; ++row)
         {
             while (index < lines.size() && trim(lines[index]).empty())
@@ -732,10 +727,11 @@ void load_symrot_R_file(const std::string& file_path, InputSymmetryContext& ctx)
             }
             for (int col = 0; col < 3; ++col)
             {
-                op.rotation[row][col] = values[col];
+                rotation_rows[row][col] = values[col];
             }
             ++index;
         }
+        op.rotation = build_matrix3_from_array(rotation_rows);
 
         while (index < lines.size() && trim(lines[index]).empty())
         {
@@ -2143,7 +2139,7 @@ ComplexMatrix build_input_symmetry_abf_rotation_matrix(
     const int atom_type,
     const int nao_hint,
     const std::map<int, ComplexMatrix>& shell_rotations,
-    const std::array<std::array<double, 3>, 3>& direct_rotation)
+    const Matrix3& direct_rotation)
 {
     const auto& layout = ctx.find_abf_type_layout(atom_type, nao_hint);
     ComplexMatrix rotation(layout.nao, layout.nao);
