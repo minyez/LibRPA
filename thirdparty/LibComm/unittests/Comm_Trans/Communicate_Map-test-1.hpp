@@ -34,10 +34,10 @@ namespace Communicate_Map_Test
 			std::map<int,std::map<int,double>>
 		> com(MPI_COMM_WORLD);
 
-//		com.set_value_recv = Comm::Communicate_Map::set_value_assignment<int,int,double>;
+		//com.set_value_recv = Comm::Communicate_Map::set_value_assignment<int,int,double>;
 		com.set_value_recv = Comm::Communicate_Map::set_value_add<int,int,double>;
 
-//		com.traverse_isend = Communicate_Map::traverse_datas_all<int,int,double>;
+		//com.traverse_isend = Communicate_Map::traverse_datas_all<int,int,double>;
 		com.traverse_isend = std::bind(
 			Comm::Communicate_Map::traverse_datas_mask<int,int,double>,
 			std::placeholders::_1, std::placeholders::_2, std::placeholders::_3,

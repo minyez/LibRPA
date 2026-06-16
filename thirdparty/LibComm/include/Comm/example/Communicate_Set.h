@@ -6,6 +6,7 @@
 #pragma once
 
 #include <set>
+#include <functional>
 
 namespace Comm
 {

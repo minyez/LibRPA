@@ -6,14 +6,17 @@
 #pragma once
 
 #include "../Comm_Tools.h"
-#include "../global/Global_Func.h"
+#include "../global/Cereal_Func.h"
+#include "State.h"
 #include <mpi.h>
+#include <vector>
 #include <functional>
 #include <future>
 #include <sstream>
 
 namespace Comm
 {
+	class Memory_Check;
 
 template<typename Tkey, typename Tvalue, typename Tdatas_isend, typename Tdatas_recv>
 class Comm_Trans
@@ -51,14 +54,33 @@ public:
 		Tdatas_recv &datas_recv);
 
 private:
-	void isend_data (const int rank_isend, const Tdatas_isend &datas_isend, std::string &str_isend, MPI_Request &request_isend, std::atomic<std::size_t> &memory_max_isend);
-	void recv_data (Tdatas_recv &datas_recv, const MPI_Status status_recv, MPI_Message message_recv, std::atomic_flag &lock_set_value, std::atomic<std::size_t> &memory_max_isend);
-	void post_process(
-		std::vector<MPI_Request> &requests_isend,
-		std::vector<std::string> &strs_isend,
-		std::vector<std::future<void>> &futures_isend,
-		std::vector<std::future<void>> &futures_recv) const;
-	bool memory_enough(const std::atomic<size_t> &memory_max) const { return Global_Func::memory_available() > memory_max.load() * 2; }
+	std::size_t oar_data(
+		const int rank_isend,
+		const Tdatas_isend &datas_isend,
+		std::string &buffer_isend,
+		std::atomic<State_Send> &state_send,
+		Memory_Check &memory);
+	void isend_data(
+		const int rank_isend,
+		const std::size_t exponent_align,
+		std::string &buffer_isend,
+		MPI_Request &request_isend,
+		std::atomic<State_Send> &state_send);
+	void recv_data (
+		const MPI_Status status_recv,
+		const MPI_Message message_recv,
+		Memory_Check &memory,
+		std::vector<char> &buffer_recv,
+		std::atomic<State_Recv> &state_recv);
+	void iar_data (
+		const int rank_recv,
+		std::vector<char> &buffer_recv,
+		std::atomic_flag &lock_set_value,
+		Tdatas_recv &datas_recv,
+		std::atomic<State_Recv> &state_recv) const;
+	bool check_finish(
+		const std::vector<std::atomic<State_Send>> &states_send,
+		const std::vector<std::atomic<State_Recv>> &states_recv) const;
 
 public:
 	const MPI_Comm &mpi_comm;

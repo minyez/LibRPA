@@ -36,7 +36,7 @@ inline Cereal_Func::Cereal_Func()
 	const std::size_t times = std::ceil( double(memory_max) / double(std::numeric_limits<int_type>::max()) );
 	const std::size_t exponent_align = std::ceil( std::log(times) / std::log(2) );
 	this->char_contiguous.resize(exponent_align);
-}	
+}
 
 // every 2^exponent_align char concatenate to 1 word
 	// <<exponent_align means *2^exponent_align
