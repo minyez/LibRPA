@@ -5,6 +5,7 @@
 #include "input_symmetry.h"
 
 #include "pbc.h"
+#include "../io/fs.h"
 #include "../math/rsh.h"
 #include "../utils/constants.h"
 
@@ -53,63 +54,6 @@ std::string strip_comment(const std::string& text)
 bool starts_with(const std::string& text, const std::string& prefix)
 {
     return text.rfind(prefix, 0) == 0;
-}
-
-std::string parent_path(const std::string& file_path)
-{
-    const auto pos = file_path.find_last_of("/\\");
-    if (pos == std::string::npos)
-    {
-        return ".";
-    }
-    if (pos == 0)
-    {
-        return file_path.substr(0, 1);
-    }
-    return file_path.substr(0, pos);
-}
-
-std::string base_name(const std::string& file_path)
-{
-    const auto pos = file_path.find_last_of("/\\");
-    if (pos == std::string::npos)
-    {
-        return file_path;
-    }
-    return file_path.substr(pos + 1);
-}
-
-bool is_absolute_path(const std::string& file_path)
-{
-    if (file_path.empty())
-    {
-        return false;
-    }
-    if (file_path.front() == '/' || file_path.front() == '\\')
-    {
-        return true;
-    }
-    return file_path.size() > 1 && std::isalpha(static_cast<unsigned char>(file_path[0])) != 0
-           && file_path[1] == ':';
-}
-
-std::string join_path(const std::string& dir_path, const std::string& file_name)
-{
-    if (dir_path.empty())
-    {
-        return file_name;
-    }
-    if (dir_path.back() == '/' || dir_path.back() == '\\')
-    {
-        return dir_path + file_name;
-    }
-    return dir_path + "/" + file_name;
-}
-
-bool file_exists(const std::string& file_path)
-{
-    std::ifstream ifs(file_path);
-    return ifs.good();
 }
 
 std::vector<std::string> build_input_symmetry_path_candidates(const std::string& dir_path)

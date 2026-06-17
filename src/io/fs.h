@@ -7,7 +7,15 @@ namespace librpa_int
 
 std::string path_as_directory(const std::string &path);
 
-std::string join_dir_file(const std::string &dir_path, const std::string &filename);
+std::string parent_path(const std::string &file_path);
+
+std::string base_name(const std::string &file_path);
+
+bool is_absolute_path(const std::string &file_path);
+
+std::string join_path(const std::string &dir_path, const std::string &file_name);
+
+bool file_exists(const std::string &file_path);
 
 std::vector<std::string> discover_files(const std::string &dir_path,
                                         const std::string &prefix,

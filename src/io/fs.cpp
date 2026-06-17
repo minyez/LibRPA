@@ -16,27 +16,38 @@ std::string path_as_directory(const std::string &path)
         throw LIBRPA_RUNTIME_ERROR("dirpath is empty");
     }
 
-    if (path.find(":") != std::string::npos)
+    if (path.back() != '/' && path.back() != '\\')
     {
-        throw LIBRPA_RUNTIME_ERROR("dirpath contains invalid character (:) for POSIX path");
-    }
-
-    if (path.back() != '/')
-    {
-        return path + '/';
+        return path + std::filesystem::path::preferred_separator;
     }
 
     return path;
 }
 
-std::string join_dir_file(const std::string &dir_path, const std::string &filename)
+std::string parent_path(const std::string &file_path)
+{
+    const auto parent = std::filesystem::path(file_path).parent_path().string();
+    return parent.empty() ? "." : parent;
+}
+
+std::string base_name(const std::string &file_path)
+{
+    return std::filesystem::path(file_path).filename().string();
+}
+
+bool is_absolute_path(const std::string &file_path)
+{
+    return std::filesystem::path(file_path).is_absolute();
+}
+
+std::string join_path(const std::string &dir_path, const std::string &file_name)
 {
     if (dir_path.empty())
     {
-        return filename;
+        return file_name;
     }
 
-    return (std::filesystem::path(dir_path) / filename).string();
+    return (std::filesystem::path(dir_path) / file_name).string();
 }
 
 namespace
@@ -55,6 +66,12 @@ bool ends_with(const std::string &text, const std::string &suffix)
 }
 
 } // namespace
+
+bool file_exists(const std::string &file_path)
+{
+    std::error_code ec;
+    return std::filesystem::exists(file_path, ec);
+}
 
 std::vector<std::string> discover_files(const std::string &dir_path,
                                         const std::string &prefix,
@@ -88,7 +105,7 @@ std::vector<std::string> discover_files_with_suffix(const std::string &dir_path,
 
 bool path_exists(const char *path_cstr)
 {
-    return path_cstr != nullptr && std::filesystem::exists(path_cstr);
+    return path_cstr != nullptr && file_exists(path_cstr);
 }
 
 void create_directories(const char *dname, int root_process)

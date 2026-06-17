@@ -30,13 +30,13 @@ int main (int argc, char *argv[])
     assert(path_exists("librpa.d/nested/path"));
     create_directories("librpa.d/fs_discovery", myid);
 
-    assert(join_dir_file("", "file.dat") == "file.dat");
-    assert(join_dir_file("librpa.d/fs_discovery", "alpha_001.dat") ==
+    assert(join_path("", "file.dat") == "file.dat");
+    assert(join_path("librpa.d/fs_discovery", "alpha_001.dat") ==
            "librpa.d/fs_discovery/alpha_001.dat");
 
-    std::ofstream(join_dir_file("librpa.d/fs_discovery", "alpha_001.dat")).close();
-    std::ofstream(join_dir_file("librpa.d/fs_discovery", "alpha_002.txt")).close();
-    std::ofstream(join_dir_file("librpa.d/fs_discovery", "beta_001.dat")).close();
+    std::ofstream(join_path("librpa.d/fs_discovery", "alpha_001.dat")).close();
+    std::ofstream(join_path("librpa.d/fs_discovery", "alpha_002.txt")).close();
+    std::ofstream(join_path("librpa.d/fs_discovery", "beta_001.dat")).close();
 
     const auto alpha_all = discover_files_with_prefix("librpa.d/fs_discovery", "alpha_");
     assert(alpha_all.size() == 2);
@@ -46,7 +46,7 @@ int main (int argc, char *argv[])
 
     const auto alpha_dat = discover_files("librpa.d/fs_discovery", "alpha_", ".dat");
     assert(alpha_dat.size() == 1);
-    assert(alpha_dat[0] == join_dir_file("librpa.d/fs_discovery", "alpha_001.dat"));
+    assert(alpha_dat[0] == join_path("librpa.d/fs_discovery", "alpha_001.dat"));
 
     std::map<int, std::map<int, std::map<int, double>>> nested_map
     {

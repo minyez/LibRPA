@@ -2127,9 +2127,9 @@ void read_ri_shrink(const string &dir_path)
     }
 
     const auto shrink_basis_path =
-        librpa_int::join_dir_file(driver_params.input_dir, driver_params.fn_basis_shrink);
+        librpa_int::join_path(driver_params.input_dir, driver_params.fn_basis_shrink);
     const auto legacy_shrink_basis_path =
-        librpa_int::join_dir_file(driver_params.input_dir, "basis_out.shrink_backup");
+        librpa_int::join_path(driver_params.input_dir, "basis_out.shrink_backup");
     if (librpa_int::path_exists(shrink_basis_path.c_str()))
     {
         pds->basis_aux_shrink.set(read_aux_basis_sizes_from_basis_file(shrink_basis_path));
