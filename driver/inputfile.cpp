@@ -214,7 +214,10 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_string(driver_params, prefix_eigvecs_scf);
     _parse_string(driver_params, fn_stru);
     _parse_string(driver_params, fn_basis);
-    _parse_string(driver_params, fn_basis_shrink);
+    _parse_string(driver_params, fn_basis_wfc);
+    _parse_string(driver_params, fn_basis_aux);
+    _parse_string(driver_params, fn_basis_aux_shrink);
+    parser.parse_string("fn_basis_shrink", driver_params.fn_basis_aux_shrink, flag);
     _parse_string(driver_params, fn_bz_sampling);
     _parse_string(driver_params, fn_eigocc_scf);
     _parse_string(driver_params, fn_dielfunc);

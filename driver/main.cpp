@@ -2,6 +2,7 @@
 
 #include "driver.h"
 #include "read_data.h"
+#include "reader_basis.h"
 #include "inputfile.h"
 #include "task.h"
 
@@ -120,6 +121,8 @@ int main(int argc, char **argv)
     const string path_stru = driver_params.input_dir + driver_params.fn_stru;
     const string path_bz_sampling = driver_params.input_dir + driver_params.fn_bz_sampling;
     const string path_basis = driver_params.input_dir + driver_params.fn_basis;
+    const string path_basis_wfc = driver_params.input_dir + driver_params.fn_basis_wfc;
+    const string path_basis_aux = driver_params.input_dir + driver_params.fn_basis_aux;
     const string path_eigocc_scf = driver_params.input_dir + driver_params.fn_eigocc_scf;
 
     profiler.start("driver_input_symmetry", "Driver Read input symmetry sidecars");
@@ -169,10 +172,20 @@ int main(int argc, char **argv)
         profiler.stop("driver_bz");
 
         profiler.start("driver_basis", "Basis (wave-function and auxiliary)");
-        if (librpa_int::path_exists(path_basis.c_str()))
+        if (librpa_int::path_exists(path_basis_wfc.c_str()) &&
+            librpa_int::path_exists(path_basis_aux.c_str()))
+        {
+            reader_basis_wfc(path_basis_wfc);
+            reader_basis_aux(path_basis_aux);
+        }
+        else if (librpa_int::path_exists(path_basis.c_str()))
+        {
             read_basis(path_basis);
+        }
         else
+        {
             read_basis_from_Cs(driver_params.input_dir);
+        }
         lib_printf_root("\n");
         profiler.stop("driver_basis");
 

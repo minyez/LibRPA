@@ -1,6 +1,7 @@
 #include "read_data.h"
 #include <librpa_enums.h>
 
+#include "reader_basis.h"
 #include "reader_lri.h"
 #include "reader_coulomb.h"
 #include "reader_structure.h"
@@ -76,130 +77,6 @@ bool nearly_same_kpoint(const librpa_int::Vector3_Order<double> &lhs,
     return std::abs(lhs.x - rhs.x) <= tol
            && std::abs(lhs.y - rhs.y) <= tol
            && std::abs(lhs.z - rhs.z) <= tol;
-}
-
-std::string normalize_basis_convention(const std::string& convention)
-{
-    std::string normalized = convention;
-    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
-                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-    normalized.erase(
-        std::remove_if(normalized.begin(), normalized.end(),
-                       [](unsigned char ch) {
-                           return std::isspace(ch) != 0 || ch == '-' || ch == '_';
-                       }),
-        normalized.end());
-    return normalized;
-}
-
-void parse_basis_convention(const std::string& convention)
-{
-    const auto normalized = normalize_basis_convention(convention);
-    if (normalized.empty() || normalized == "unset" || normalized == "unknown" ||
-        normalized == "fallback" || normalized == "none")
-        return;
-
-    bool known_convention = false;
-    int bloch_phase, bloch_ratom;
-    LibrpaAngularOrder order;
-    LibrpaRshCoeff coeff_m_nega, coeff_m_posi;
-
-    if (normalized == "aims" || normalized == "fhiaims")
-    {
-        known_convention = true;
-        bloch_phase = -1;
-        bloch_ratom = 0;
-        order = LIBRPA_ANGULAR_ORDER_NATURAL;
-        coeff_m_nega = LIBRPA_RSH_COEFF_1_M;
-        coeff_m_posi = LIBRPA_RSH_COEFF_1_M;
-    }
-    if (normalized == "abacus")
-    {
-        known_convention = true;
-        bloch_phase = -1;
-        bloch_ratom = 0;
-        order = LIBRPA_ANGULAR_ORDER_ABS_PM;
-        coeff_m_nega = LIBRPA_RSH_COEFF_M_1;
-        coeff_m_posi = LIBRPA_RSH_COEFF_1_M;
-    }
-    if (normalized == "openmx")
-    {
-        known_convention = true;
-        bloch_phase = 1;
-        bloch_ratom = 0;
-        order = LIBRPA_ANGULAR_ORDER_OPENMX;
-        coeff_m_nega = LIBRPA_RSH_COEFF_1_M;
-        coeff_m_posi = LIBRPA_RSH_COEFF_M_1;
-    }
-    if (normalized == "pyscf")
-    {
-        known_convention = true;
-        bloch_phase = 1;
-        bloch_ratom = 0;
-        order = LIBRPA_ANGULAR_ORDER_PYSCF;
-        coeff_m_nega = LIBRPA_RSH_COEFF_1_M;
-        coeff_m_posi = LIBRPA_RSH_COEFF_M_1;
-    }
-    if (known_convention)
-    {
-        driver::basis_convention =
-            {bloch_phase, bloch_ratom, order, coeff_m_nega, coeff_m_posi};
-        driver::basis_convention_name = convention;
-        auto pds = librpa_int::api::get_dataset_instance(driver::h);
-        pds->input_symmetry_ctx.basis_convention = driver::basis_convention;
-        driver::h.set_basis_convention(bloch_phase, bloch_ratom, order, coeff_m_nega, coeff_m_posi);
-        return;
-    }
-    throw std::runtime_error("Unknown angular basis convention: " + convention);
-}
-
-std::vector<size_t> read_aux_basis_sizes_from_basis_file(const std::string &file_path)
-{
-    using namespace librpa_int;
-
-    ifstream infile(file_path);
-    if (!infile.good())
-    {
-        throw LIBRPA_RUNTIME_ERROR("Failed to open basis information file " + file_path);
-    }
-
-    const int n_atoms = static_cast<int>(driver::n_atoms);
-    if (static_cast<size_t>(n_atoms) != driver::atom_types.size())
-    {
-        throw LIBRPA_RUNTIME_ERROR("Number of atoms not consistent with the geometry file!");
-    }
-
-    int ntypes = 0;
-    size_t n_wfc_total = 0;
-    size_t n_aux_total = 0;
-    string kind_str;
-    infile >> ntypes >> n_wfc_total >> n_aux_total >> kind_str;
-    if (!infile.good() || ntypes <= 0)
-    {
-        throw LIBRPA_RUNTIME_ERROR("Invalid basis information header in " + file_path);
-    }
-
-    std::map<int, size_t> map_at_aux;
-    for (int itype = 0; itype < ntypes; itype++)
-    {
-        int type = 0;
-        size_t n_wfc = 0;
-        size_t n_aux = 0;
-        infile >> type >> n_wfc >> n_aux;
-        if (!infile.good())
-        {
-            throw LIBRPA_RUNTIME_ERROR("Invalid basis information body in " + file_path);
-        }
-        map_at_aux[type - 1] = n_aux;
-    }
-
-    std::vector<size_t> nbs_aux(n_atoms);
-    for (int iat = 0; iat < n_atoms; iat++)
-    {
-        const auto type = driver::atom_types[iat];
-        nbs_aux[iat] = map_at_aux.at(type);
-    }
-    return nbs_aux;
 }
 
 librpa_int::Vector3_Order<double> convert_fractional_kpoint_to_klist_units(
@@ -1412,62 +1289,7 @@ void read_bz_sampling_from_stru(const std::string &file_path)
 
 void read_basis(const std::string &file_path)
 {
-    using namespace librpa_int;
-
-    global::lib_printf_root("Reading basis information file: %s\n", file_path.c_str());
-    ifstream infile;
-    infile.open(file_path);
-    if (!infile.good())
-    {
-        throw LIBRPA_RUNTIME_ERROR("Fail to open basis information file " + file_path);
-    }
-
-    int n_atoms = driver::atom_types.size();
-    if (static_cast<size_t>(n_atoms) != driver::n_atoms)
-        throw LIBRPA_RUNTIME_ERROR("Number of atoms not consistent with the geometry file!");
-    std::map<int, size_t> map_at_wfc;
-    std::map<int, size_t> map_at_aux;
-    std::vector<size_t> nbs_wfc(n_atoms);
-    std::vector<size_t> nbs_aux(n_atoms);
-
-    int ntypes, type;
-    size_t n_wfc, n_aux;
-    string kind_str;
-
-    infile >> ntypes;
-    // total basis, not used here
-    infile >> n_wfc >> n_aux >> kind_str;
-    if (!infile.good())
-    {
-        throw LIBRPA_RUNTIME_ERROR("Invalid basis information header in " + file_path);
-    }
-    parse_basis_convention(kind_str);
-
-    for (int itype = 0; itype < ntypes; itype++)
-    {
-        infile >> type >> n_wfc >> n_aux;
-        if (!infile.good())
-        {
-            throw LIBRPA_RUNTIME_ERROR("Invalid basis information body in " + file_path);
-        }
-        type--;
-        map_at_wfc[type] = n_wfc;
-        map_at_aux[type] = n_aux;
-    }
-    for (int iat = 0; iat < n_atoms; iat++)
-    {
-        auto type = driver::atom_types[iat];
-        nbs_wfc[iat] = map_at_wfc.at(type);
-        nbs_aux[iat] = map_at_aux.at(type);
-    }
-
-    // std::cout << "nbs_wfc " << nbs_wfc << std::endl;
-    // std::cout << "nbs_aux " << nbs_aux << std::endl;
-
-    driver::h.set_ao_basis_wfc(nbs_wfc);
-    driver::h.set_ao_basis_aux(nbs_aux);
-
-    infile.close();
+    reader_basis(file_path);
 }
 
 void read_band_kpath_info(const string &file_path)
@@ -2051,12 +1873,8 @@ static int handle_sinvS_v1_file(const std::string &file_path,
 
 void read_ri_shrink(const string &dir_path)
 {
-    using std::cout;
-    using std::endl;
-    using librpa_int::global::profiler;
     using librpa_int::global::mpi_comm_global_h;
-    using librpa_int::global::myid_global;
-    using librpa_int::global::lib_printf;
+    using librpa_int::global::profiler;
     using driver::driver_params;
 
     auto pds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
@@ -2068,23 +1886,28 @@ void read_ri_shrink(const string &dir_path)
         int I = 0;
         for (auto &mu : abf.get_atom_nbs())
         {
-            // use i and x
             std::cout << I << "," << mu << std::endl;
             ++I;
         }
     }
 
     const auto shrink_basis_path =
-        librpa_int::join_path(driver_params.input_dir, driver_params.fn_basis_shrink);
+        librpa_int::join_path(driver_params.input_dir, driver_params.fn_basis_aux_shrink);
     const auto legacy_shrink_basis_path =
+        librpa_int::join_path(driver_params.input_dir, "basis_out_shrink");
+    const auto legacy_backup_basis_path =
         librpa_int::join_path(driver_params.input_dir, "basis_out.shrink_backup");
     if (librpa_int::path_exists(shrink_basis_path.c_str()))
     {
-        pds->basis_aux_shrink.set(read_aux_basis_sizes_from_basis_file(shrink_basis_path));
+        reader_basis_aux_shrink(shrink_basis_path);
     }
     else if (librpa_int::path_exists(legacy_shrink_basis_path.c_str()))
     {
-        pds->basis_aux_shrink.set(read_aux_basis_sizes_from_basis_file(legacy_shrink_basis_path));
+        reader_basis_aux_shrink(legacy_shrink_basis_path);
+    }
+    else if (librpa_int::path_exists(legacy_backup_basis_path.c_str()))
+    {
+        reader_basis_aux_shrink(legacy_backup_basis_path);
     }
     else
     {
@@ -2122,7 +1945,6 @@ void read_ri_shrink(const string &dir_path)
         int I = 0;
         for (auto &mu : pds->basis_aux_shrink.get_atom_nbs())
         {
-            // use i and x
             std::cout << I << "," << mu << std::endl;
             ++I;
         }

@@ -35,7 +35,9 @@ struct DriverParams
     std::string fn_stru;
     std::string fn_bz_sampling;
     std::string fn_basis;
-    std::string fn_basis_shrink;
+    std::string fn_basis_wfc;
+    std::string fn_basis_aux;
+    std::string fn_basis_aux_shrink;
     std::string fn_eigocc_scf;
     std::string fn_dielfunc;
     std::string fn_vxc_scf;

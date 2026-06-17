@@ -10,6 +10,7 @@ list(APPEND exe_sources
   inputfile.cpp
   main.cpp
   read_data.cpp
+  reader_basis.cpp
   reader_structure.cpp
   reader_lri.cpp
   reader_coulomb.cpp

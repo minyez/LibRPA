@@ -68,8 +68,10 @@ For example, the default `prefix_lri_coeff = Cs_data` matches files such as `Cs_
 | `input_symmetry_convention` | Convention used to interpret input symmetry sidecars          | string | `auto` (`auto`, `abacus`, `none`)              | Experimental |
 | `fn_stru`             | Structure-data filename                                              | string | `stru_out`                                     |              |
 | `fn_bz_sampling`      | Brillouin-zone sampling filename                                     | string | `bz_sampling_out`                              |              |
-| `fn_basis`            | Basis-set filename                                                   | string | `basis_out`                                    |              |
-| `fn_basis_shrink`     | Compressed auxiliary-basis metadata filename used with `use_shrink_abfs = t` | string | `basis_out_shrink`                     | Experimental |
+| `fn_basis`            | Deprecated combined basis-set fallback filename                      | string | `basis_out`                                    | Deprecated   |
+| `fn_basis_wfc`        | Wave-function basis metadata filename                                | string | `basis_wfc_out`                                |              |
+| `fn_basis_aux`        | Auxiliary-basis metadata filename                                    | string | `basis_aux_out`                                |              |
+| `fn_basis_aux_shrink` | Compressed auxiliary-basis metadata filename used with `use_shrink_abfs = t`; old key `fn_basis_shrink` is accepted as an alias | string | `basis_aux_shrink_out` | Experimental |
 | `fn_eigocc_scf`       | SCF eigenvalue and occupation filename                               | string | `band_out`                                     |              |
 | `fn_dielfunc`         | Dielectric-function filename for dielectric-head correction           | string | `dielecfunc_out`                               |              |
 | `fn_vxc_scf`          | SCF exchange-correlation potential filename                          | string | `vxc_out`                                      |              |

@@ -6,16 +6,21 @@ This page documents the formats of the input data files required by the LibRPA d
 
 The standalone driver reads dataset files from `input_dir`.
 By default, single-file inputs are named [`stru_out`](#stru-out),
-[`bz_sampling_out`](#bz-sampling-out), [`basis_out`](#basis-out), and
-[`band_out`](#band-out). Additional optional single-file inputs use
+[`bz_sampling_out`](#bz-sampling-out), [`basis_wfc_out`](#basis-files),
+[`basis_aux_out`](#basis-files), and [`band_out`](#band-out).
+Additional optional single-file inputs use
 [`dielecfunc_out`](#dielecfunc-out), [`vxc_out`](#vxc-out), and
 [`band_kpath_info`](#band-kpath-info).
 These exact filenames can be changed in `librpa.in` with `fn_stru`,
-`fn_bz_sampling`, `fn_basis`, `fn_eigocc_scf`, `fn_dielfunc`,
-`fn_vxc_scf`, and `fn_band_kpath_info`.
+`fn_bz_sampling`, `fn_basis_wfc`, `fn_basis_aux`, `fn_eigocc_scf`,
+`fn_dielfunc`, `fn_vxc_scf`, and `fn_band_kpath_info`.
+
+The combined [`basis_out`](#basis-out) file selected by `fn_basis` is
+deprecated and is read only as a fallback when split basis files are absent.
 When `use_shrink_abfs = t`, reader-v1 datasets should also provide
-`basis_out_shrink`, or the filename selected by `fn_basis_shrink`, for the
-compressed auxiliary basis.
+`basis_aux_shrink_out`, or the filename selected by `fn_basis_aux_shrink`, for
+the compressed auxiliary basis. The old `fn_basis_shrink` input key is still
+accepted as an alias.
 
 Multi-file inputs are selected by prefix.
 The defaults are [`Cs_data`](#cs-data) for localized RI coefficients,
@@ -57,82 +62,88 @@ This information is now stored in [`bz_sampling_out`](#bz-sampling-out) and is r
   Suppose the integer on the n-th line is m.
   This means that the irreducible representative of the n-th k-point in the full k-point set is the m-th k-point in the full set.
 
-(basis-out)=
-## `basis_out`
+(basis-files)=
+## Basis files
 
-This file describes the atomic basis sets used in the calculation,
-including both the one-electron basis and the auxiliary basis.
+The split basis files `basis_wfc_out`, `basis_aux_out`, and
+`basis_aux_shrink_out` use the same format. They describe, respectively, the
+wave-function basis, the full auxiliary basis, and the shrink auxiliary basis.
 
-Its structure is as follows.
-
-The first line contains four entries:
+The first line contains three entries:
 
 1. total number of atom types, `n_atom_types`
-2. total number of one-electron basis functions
-3. total number of auxiliary basis functions
-4. a string specifying the convention used for the Bloch-sum phase, basis ordering,
-   and real spherical harmonics.
-   Recognized producer presets are `aims`, `abacus`, `openmx`, `pyscf`, and `fallback`
-   (`fallback` means the convention is not known from this file).  Each producer
-   preset includes the conventions hard-coded by that upstream DFT program.
+2. total number of basis functions in this basis
+3. a string specifying the convention used for the Bloch-sum phase, basis
+   ordering, and real spherical harmonics
+
+Recognized producer presets are `aims`, `abacus`, `openmx`, `pyscf`, and
+`fallback`. `fallback` means the convention is not known from this file.
 
 For example:
 
 ```text
-1        10        36    aims
+2        26    abacus
 ```
 
-The next `n_atom_types` lines provide a summary for each atom type. Each line contains:
+The next `n_atom_types` lines provide the size for each atom type. Each line
+contains:
 
 1. atom type index
-2. number of one-electron basis functions for this atom type
-3. number of auxiliary basis functions for this atom type
+2. number of basis functions for this atom type
 
 For example:
 
 ```text
-1         5        18
+1        13
+2        13
 ```
 
-Next comes the description of the one-electron basis. There are `n_atom_types` blocks, one for each atom type.
-
-In each block:
+The remaining content gives the l-shell layout. There are `n_atom_types`
+blocks, one for each atom type. In each block:
 
 - the first line contains the atom type index and the number of radial functions
-- the following lines list the angular momentum quantum number `l` for each radial function, one integer per line
+- the following lines list the angular momentum quantum number `l` for each
+  radial function, one integer per line
 
 For example:
 
 ```text
-1       3
+1       5
 0
 0
-1
-```
-
-This means that atom type `1` has `5` radial functions in the one-electron basis, with angular momenta `0, 0, 0, 1, 1`.
-
-After the one-electron basis blocks, the same block structure is repeated for the auxiliary basis.
-Again, there are `n_atom_types` blocks. For each block:
-
-- the first line contains the atom type index and the number of radial functions
-- the following lines list the angular momentum quantum number `l` for each radial function in the auxiliary basis, one integer per line
-
-For example:
-
-```text
-1      8
-0
-0
-0
-0
-1
 1
 1
 2
 ```
 
-This means that atom type `1` has `8` radial functions in the auxiliary basis, with angular momenta `0, 0, 0, 0, 1, 1, 1, 2`.
+Each radial function with angular momentum `l` contributes `2*l + 1` basis
+functions. In the example above, atom type `1` has `1 + 1 + 3 + 3 + 5 = 13`
+basis functions.
+
+(basis-out)=
+## `basis_out` (deprecated)
+
+`basis_out` is the legacy combined basis file. New datasets should write
+[`basis_wfc_out`](#basis-files), [`basis_aux_out`](#basis-files), and, when
+`use_shrink_abfs = t`, [`basis_aux_shrink_out`](#basis-files). The driver
+still reads `basis_out` as a fallback when `basis_wfc_out` and
+`basis_aux_out` are absent.
+
+The first line contains four entries:
+
+1. total number of atom types, `n_atom_types`
+2. total number of wave-function basis functions
+3. total number of auxiliary basis functions
+4. the basis convention string
+
+The next `n_atom_types` lines contain:
+
+1. atom type index
+2. number of wave-function basis functions for this atom type
+3. number of auxiliary basis functions for this atom type
+
+After that, `basis_out` stores the l-shell blocks for the wave-function basis,
+then the same block structure for the auxiliary basis.
 
 (bz-sampling-out)=
 ## `bz_sampling_out`
