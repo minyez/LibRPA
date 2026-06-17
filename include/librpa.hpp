@@ -242,10 +242,12 @@ public:
                                const std::complex<double> *wfc_dn);
 
     /** @brief Set atomic orbital basis size for wavefunctions. */
-    void set_ao_basis_wfc(const std::vector<size_t> &nbs_wfc);
+    void set_ao_basis_wfc(const std::vector<size_t> &nbs_wfc,
+                          const std::vector<std::vector<int>> &l_shells = {});
 
     /** @brief Set auxiliary atomic orbital basis size. */
-    void set_ao_basis_aux(const std::vector<size_t> &nbs_aux);
+    void set_ao_basis_aux(const std::vector<size_t> &nbs_aux,
+                          const std::vector<std::vector<int>> &l_shells = {});
 
     /** @brief Set basis convention metadata used by symmetry-based reductions. */
     void set_basis_convention(int bloch_phase, int bloch_ratom, LibrpaAngularOrder order,

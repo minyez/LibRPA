@@ -56,6 +56,48 @@ void Handler::free()
 
 Handler::~Handler() { free(); }
 
+namespace
+{
+
+void flatten_l_shells(const std::vector<std::vector<int>> &l_shells,
+                      std::vector<int> &nshells,
+                      std::vector<int> &flat_l_shells)
+{
+    nshells.clear();
+    flat_l_shells.clear();
+    nshells.reserve(l_shells.size());
+    for (const auto &atom_l_shells : l_shells)
+    {
+        nshells.push_back(static_cast<int>(atom_l_shells.size()));
+        flat_l_shells.insert(flat_l_shells.end(), atom_l_shells.begin(), atom_l_shells.end());
+    }
+}
+
+void basis_l_shell_ptrs(const std::size_t natoms,
+                        const std::vector<std::vector<int>> &l_shells,
+                        std::vector<int> &nshells,
+                        std::vector<int> &flat_l_shells,
+                        const int *&nshells_ptr,
+                        const int *&l_shells_ptr)
+{
+    nshells_ptr = nullptr;
+    l_shells_ptr = nullptr;
+    if (l_shells.empty())
+    {
+        return;
+    }
+    if (l_shells.size() != natoms)
+    {
+        throw LIBRPA_RUNTIME_ERROR("l-shell metadata must have one entry per atom");
+    }
+
+    flatten_l_shells(l_shells, nshells, flat_l_shells);
+    nshells_ptr = nshells.data();
+    l_shells_ptr = flat_l_shells.empty() ? nullptr : flat_l_shells.data();
+}
+
+} // namespace
+
 // The following macros are helper to implement the methods of the C++ handler class
 // that wraps the corresponding `librpa_` prefixed C-API functions.
 #define LIBRPA_C_NAME(name) librpa_##name
@@ -135,17 +177,31 @@ LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
      reinterpret_cast<const double*>(wfc_up), reinterpret_cast<const double*>(wfc_dn))
 )
 
-LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
-    set_ao_basis_wfc,
-    (const std::vector<size_t> &nbs_wfc),
-    (nbs_wfc.size(), nbs_wfc.data())
-)
+void Handler::set_ao_basis_wfc(const std::vector<size_t> &nbs_wfc,
+                               const std::vector<std::vector<int>> &l_shells)
+{
+    std::vector<int> nshells;
+    std::vector<int> flat_l_shells;
+    const int *nshells_ptr = nullptr;
+    const int *l_shells_ptr = nullptr;
+    basis_l_shell_ptrs(nbs_wfc.size(), l_shells, nshells, flat_l_shells,
+                       nshells_ptr, l_shells_ptr);
+    ::librpa_set_ao_basis_wfc(this->h_, static_cast<int>(nbs_wfc.size()), nbs_wfc.data(),
+                              nshells_ptr, l_shells_ptr);
+}
 
-LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
-    set_ao_basis_aux,
-    (const std::vector<size_t> &nbs_aux),
-    (nbs_aux.size(), nbs_aux.data())
-)
+void Handler::set_ao_basis_aux(const std::vector<size_t> &nbs_aux,
+                               const std::vector<std::vector<int>> &l_shells)
+{
+    std::vector<int> nshells;
+    std::vector<int> flat_l_shells;
+    const int *nshells_ptr = nullptr;
+    const int *l_shells_ptr = nullptr;
+    basis_l_shell_ptrs(nbs_aux.size(), l_shells, nshells, flat_l_shells,
+                       nshells_ptr, l_shells_ptr);
+    ::librpa_set_ao_basis_aux(this->h_, static_cast<int>(nbs_aux.size()), nbs_aux.data(),
+                              nshells_ptr, l_shells_ptr);
+}
 
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
     set_basis_convention,

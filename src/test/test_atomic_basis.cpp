@@ -4,6 +4,7 @@
 #include "testutils.h"
 
 #include <cassert>
+#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 
@@ -55,6 +56,29 @@ void test_indexing()
         assert(ilo == go_I_lo.second.second);
         assert(igo == ab.get_global_index(I, ilo));
     }
+}
+
+void test_l_shell_metadata()
+{
+    librpa_int::AtomicBasis ab({1, 3, 5});
+    const std::vector<std::vector<int>> l_shells{{0}, {1}, {2}};
+    ab.set_l_shells(l_shells);
+    assert(ab.has_l_shells());
+    assert(ab.get_l_shells() == l_shells);
+
+    bool caught = false;
+    try
+    {
+        ab.set_l_shells({{0}, {2}, {2}});
+    }
+    catch (const std::invalid_argument &)
+    {
+        caught = true;
+    }
+    assert(caught);
+
+    ab.set({1});
+    assert(!ab.has_l_shells());
 }
 
 void test_get_2d_indices()
@@ -134,6 +158,7 @@ void test_get_1d_indices()
 int main (int argc, char *argv[])
 {
     test_constuctor();
+    test_l_shell_metadata();
     test_indexing();
     test_get_2d_indices();
     test_get_1d_indices();

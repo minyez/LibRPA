@@ -565,20 +565,22 @@ module librpa_f03
          type(c_ptr), value :: wfc_up, wfc_dn
       end subroutine librpa_set_wfc_spinor_packed_c
 
-      subroutine librpa_set_ao_basis_wfc_c(h, natoms, nbs_wfc) &
+      subroutine librpa_set_ao_basis_wfc_c(h, natoms, nbs_wfc, nshells, l_shells) &
             bind(c, name="librpa_set_ao_basis_wfc")
          import :: c_ptr, c_int, c_size_t
          type(c_ptr), value :: h
          integer(c_int), value :: natoms
          integer(c_size_t), dimension(*), intent(in) :: nbs_wfc
+         type(c_ptr), value :: nshells, l_shells
       end subroutine librpa_set_ao_basis_wfc_c
 
-      subroutine librpa_set_ao_basis_aux_c(h, natoms, nbs_aux) &
+      subroutine librpa_set_ao_basis_aux_c(h, natoms, nbs_aux, nshells, l_shells) &
             bind(c, name="librpa_set_ao_basis_aux")
          import :: c_ptr, c_int, c_size_t
          type(c_ptr), value :: h
          integer(c_int), value :: natoms
          integer(c_size_t), dimension(*), intent(in) :: nbs_aux
+         type(c_ptr), value :: nshells, l_shells
       end subroutine librpa_set_ao_basis_aux_c
 
       subroutine librpa_set_basis_convention_c(h, bloch_phase, bloch_ratom, order, nega_m, posi_m) &
@@ -1460,24 +1462,49 @@ contains
       end if
    end subroutine librpa_set_wfc_spinor
 
-   subroutine set_ao_basis(h, natoms, nbs, is_aux)
+   subroutine set_ao_basis(h, natoms, nbs, is_aux, nshells, l_shells)
       implicit none
       type(LibrpaHandler), intent(inout) :: h
       integer, intent(in) :: natoms
       integer, intent(in) :: nbs(natoms)
       logical, intent(in) :: is_aux
+      integer, intent(in), optional :: nshells(natoms)
+      integer, intent(in), optional :: l_shells(*)
 
       integer(c_size_t), allocatable :: nbs_c(:)
+      integer(c_int), allocatable, target :: nshells_c(:)
+      integer(c_int), allocatable, target :: l_shells_c(:)
       integer(c_int) :: natoms_c
+      integer :: ishell, total_shells
+      type(c_ptr) :: nshells_ptr, l_shells_ptr
 
       allocate(nbs_c(natoms))
       nbs_c = int(nbs, kind=c_size_t)
       natoms_c = int(natoms, kind=c_int)
-      if (is_aux) then
-         call librpa_set_ao_basis_aux_c(h%ptr_c_handle, natoms_c, nbs_c)
-      else
-         call librpa_set_ao_basis_wfc_c(h%ptr_c_handle, natoms_c, nbs_c)
+      nshells_ptr = c_null_ptr
+      l_shells_ptr = c_null_ptr
+      if (present(nshells)) then
+         allocate(nshells_c(natoms))
+         nshells_c = int(nshells, kind=c_int)
+         if (natoms > 0) nshells_ptr = c_loc(nshells_c(1))
+
+         total_shells = sum(nshells)
+         if (present(l_shells) .and. total_shells > 0) then
+            allocate(l_shells_c(total_shells))
+            do ishell = 1, total_shells
+               l_shells_c(ishell) = int(l_shells(ishell), kind=c_int)
+            end do
+            l_shells_ptr = c_loc(l_shells_c(1))
+         end if
       end if
+
+      if (is_aux) then
+         call librpa_set_ao_basis_aux_c(h%ptr_c_handle, natoms_c, nbs_c, nshells_ptr, l_shells_ptr)
+      else
+         call librpa_set_ao_basis_wfc_c(h%ptr_c_handle, natoms_c, nbs_c, nshells_ptr, l_shells_ptr)
+      end if
+      if (allocated(l_shells_c)) deallocate(l_shells_c)
+      if (allocated(nshells_c)) deallocate(nshells_c)
       deallocate(nbs_c)
    end subroutine set_ao_basis
 
@@ -1486,13 +1513,15 @@ contains
    !> @param[in,out] this     Handler.
    !> @param[in]     natoms   Number of atoms.
    !> @param[in]     nbs_wfc  Number of wave-function basis functions on each atom.
-   subroutine librpa_set_ao_basis_wfc(this, natoms, nbs_wfc)
+   subroutine librpa_set_ao_basis_wfc(this, natoms, nbs_wfc, nshells, l_shells)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
       integer, intent(in) :: natoms
       integer, intent(in) :: nbs_wfc(natoms)
+      integer, intent(in), optional :: nshells(natoms)
+      integer, intent(in), optional :: l_shells(*)
 
-      call set_ao_basis(this, natoms, nbs_wfc, .false.)
+      call set_ao_basis(this, natoms, nbs_wfc, .false., nshells, l_shells)
    end subroutine librpa_set_ao_basis_wfc
 
    !> @brief Set the auxiliary atomic basis
@@ -1500,13 +1529,15 @@ contains
    !> @param[in,out] this     Handler.
    !> @param[in]     natoms   Number of atoms.
    !> @param[in]     nbs_aux  Number of auxiliary basis functions on each atom.
-   subroutine librpa_set_ao_basis_aux(this, natoms, nbs_aux)
+   subroutine librpa_set_ao_basis_aux(this, natoms, nbs_aux, nshells, l_shells)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
       integer, intent(in) :: natoms
       integer, intent(in) :: nbs_aux(natoms)
+      integer, intent(in), optional :: nshells(natoms)
+      integer, intent(in), optional :: l_shells(*)
 
-      call set_ao_basis(this, natoms, nbs_aux, .true.)
+      call set_ao_basis(this, natoms, nbs_aux, .true., nshells, l_shells)
    end subroutine librpa_set_ao_basis_aux
 
    !> @brief Set basis convention metadata used by symmetry-based reductions

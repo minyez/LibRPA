@@ -92,19 +92,25 @@ void librpa_set_wfc_spinor_packed(LibrpaHandler* h, int ik, int nstates_local,
 
 /**
  * @brief Set atomic orbital basis size for wavefunctions.
- * @param[in] h        Handler.
- * @param[in] natoms   Number of atoms.
- * @param[in] nbs_wfc  Number of basis functions per atom.
+ * @param[in] h         Handler.
+ * @param[in] natoms    Number of atoms.
+ * @param[in] nbs_wfc   Number of basis functions per atom.
+ * @param[in] nshells   Optional number of angular shells per atom.
+ * @param[in] l_shells  Optional concatenated angular momenta, grouped by atom.
  */
-void librpa_set_ao_basis_wfc(LibrpaHandler* h, int natoms, const size_t* nbs_wfc);
+void librpa_set_ao_basis_wfc(LibrpaHandler* h, int natoms, const size_t* nbs_wfc,
+                             const int* nshells = nullptr, const int* l_shells = nullptr);
 
 /**
  * @brief Set auxiliary atomic orbital basis size.
- * @param[in] h       Handler.
- * @param[in] natoms  Number of atoms.
- * @param[in] nbs_aux Number of auxiliary basis functions per atom.
+ * @param[in] h         Handler.
+ * @param[in] natoms    Number of atoms.
+ * @param[in] nbs_aux   Number of auxiliary basis functions per atom.
+ * @param[in] nshells   Optional number of angular shells per atom.
+ * @param[in] l_shells  Optional concatenated angular momenta, grouped by atom.
  */
-void librpa_set_ao_basis_aux(LibrpaHandler* h, int natoms, const size_t* nbs_aux);
+void librpa_set_ao_basis_aux(LibrpaHandler* h, int natoms, const size_t* nbs_aux,
+                             const int* nshells = nullptr, const int* l_shells = nullptr);
 
 /**
  * @brief Set basis convention metadata used by symmetry-based reductions.

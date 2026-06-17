@@ -58,6 +58,7 @@ private:
     std::vector<std::size_t> part_range_;
     std::vector<int> glo2iat_;
     std::vector<std::size_t> glo2loc_;
+    std::vector<std::vector<int>> l_shells_;
     // std::vector<int> irad_;
     // std::vector<int> l_;
     // std::vector<int> m_;
@@ -71,7 +72,8 @@ public:
 
     // Constructors
     AtomicBasis(): initialized_(false),
-                   nbs_(), part_range_(), glo2iat_(), glo2loc_(), n_atoms(0), nb_total(0) {};
+                   nbs_(), part_range_(), glo2iat_(), glo2loc_(), l_shells_(),
+                   n_atoms(0), nb_total(0) {};
     AtomicBasis(const std::vector<std::size_t>& nbs);
     AtomicBasis(const std::vector<int>& atom_species,
                 const std::map<int, std::size_t>& map_species_nb);
@@ -82,6 +84,7 @@ public:
     void set(const std::vector<int>& atom_species,
              const std::map<int, std::size_t>& map_species_nb);
     void set(const std::map<std::size_t, std::size_t>& iatom_nbs);
+    void set_l_shells(const std::vector<std::vector<int>>& l_shells);
 
     //! Get the global index of a certain basis function of an atom
     inline std::size_t get_global_index(const int& i_atom, const std::size_t& i_loc_b) const noexcept
@@ -132,6 +135,9 @@ public:
     inline std::size_t get_atom_nb(int i_atom) const { return nbs_.at(as_size(i_atom)); }
     inline std::size_t operator[](int i_atom) const { return nbs_.at(as_size(i_atom)); }
     inline std::vector<std::size_t> get_atom_nbs() const noexcept { return nbs_; }
+    inline bool has_l_shells() const noexcept { return l_shells_.size() == n_atoms && n_atoms > 0; }
+    inline const std::vector<std::vector<int>>& get_l_shells() const noexcept { return l_shells_; }
+    inline const std::vector<int>& get_l_shells(int i_atom) const noexcept { return l_shells_.at(i_atom); }
     inline const std::vector<std::size_t>& get_part_range() const noexcept { return part_range_; }
     inline bool initialized() const noexcept { return initialized_; }
 };

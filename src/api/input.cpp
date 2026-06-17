@@ -34,6 +34,43 @@ void mark_band_data_set(const librpa_int::dataset_ptr_t &pds)
     pds->is_band_calc_done = false;
 }
 
+std::vector<std::vector<int>> parse_l_shells(const int natoms,
+                                             const int *nshells,
+                                             const int *l_shells)
+{
+    if (natoms < 0)
+    {
+        throw LIBRPA_RUNTIME_ERROR("Number of atoms for l-shell metadata must be non-negative");
+    }
+    if (natoms > 0 && nshells == nullptr)
+    {
+        throw LIBRPA_RUNTIME_ERROR("Missing per-atom shell counts for l-shell metadata");
+    }
+
+    std::vector<std::vector<int>> parsed(static_cast<std::size_t>(natoms));
+    std::size_t offset = 0;
+    for (int iat = 0; iat < natoms; ++iat)
+    {
+        if (nshells[iat] < 0)
+        {
+            throw LIBRPA_RUNTIME_ERROR("Number of l-shells per atom must be non-negative");
+        }
+        if (nshells[iat] > 0 && l_shells == nullptr)
+        {
+            throw LIBRPA_RUNTIME_ERROR("Missing l-shell metadata");
+        }
+
+        auto &atom_l_shells = parsed[static_cast<std::size_t>(iat)];
+        atom_l_shells.reserve(static_cast<std::size_t>(nshells[iat]));
+        for (int ishell = 0; ishell < nshells[iat]; ++ishell)
+        {
+            atom_l_shells.push_back(l_shells[offset]);
+            ++offset;
+        }
+    }
+    return parsed;
+}
+
 } // namespace
 
 void librpa_set_scf_dimension(LibrpaHandler* h, int nspins, int nkpts, int nstates, int nbasis, int nspinor)
@@ -260,7 +297,11 @@ void librpa_set_wfc_spinor_packed(LibrpaHandler* h, int ik, int nstates_local, i
     profiler.stop(tname);
 }
 
-void librpa_set_ao_basis_wfc(LibrpaHandler* h, const int natoms, const size_t *nbs_wfc)
+void librpa_set_ao_basis_wfc(LibrpaHandler* h,
+                             const int natoms,
+                             const size_t *nbs_wfc,
+                             const int *nshells,
+                             const int *l_shells)
 {
     using librpa_int::global::lib_printf;
     using librpa_int::global::profiler;
@@ -273,6 +314,10 @@ void librpa_set_ao_basis_wfc(LibrpaHandler* h, const int natoms, const size_t *n
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     pds->basis_wfc.set(nbs);
+    if (nshells != nullptr || l_shells != nullptr)
+    {
+        pds->basis_wfc.set_l_shells(parse_l_shells(natoms, nshells, l_shells));
+    }
     pds->desc_wfc.reset_handler(pds->blacs_h);
     const auto n = pds->basis_wfc.nb_total;
     pds->desc_wfc.init_1b1p(n, n, 0, 0);
@@ -288,7 +333,11 @@ void librpa_set_ao_basis_wfc(LibrpaHandler* h, const int natoms, const size_t *n
     profiler.stop(tname);
 }
 
-void librpa_set_ao_basis_aux(LibrpaHandler* h, int natoms, const size_t *nbs_aux)
+void librpa_set_ao_basis_aux(LibrpaHandler* h,
+                             int natoms,
+                             const size_t *nbs_aux,
+                             const int *nshells,
+                             const int *l_shells)
 {
     using librpa_int::global::lib_printf;
     using librpa_int::global::profiler;
@@ -308,6 +357,10 @@ void librpa_set_ao_basis_aux(LibrpaHandler* h, int natoms, const size_t *nbs_aux
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     pds->basis_aux.set(nbs);
+    if (nshells != nullptr || l_shells != nullptr)
+    {
+        pds->basis_aux.set_l_shells(parse_l_shells(natoms, nshells, l_shells));
+    }
 
     // After auxiliary basis is set, we can initialize the global (continous) array descriptor for N_abf size basis.
     pds->desc_abf.reset_handler(pds->blacs_h);

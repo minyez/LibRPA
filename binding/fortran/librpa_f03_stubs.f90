@@ -534,11 +534,13 @@ contains
    !> @param[in,out] this     Handler.
    !> @param[in]     natoms   Number of atoms.
    !> @param[in]     nbs_wfc  Number of wave-function basis functions on each atom.
-   subroutine librpa_set_ao_basis_wfc(this, natoms, nbs_wfc)
+   subroutine librpa_set_ao_basis_wfc(this, natoms, nbs_wfc, nshells, l_shells)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
       integer, intent(in) :: natoms
       integer, intent(in) :: nbs_wfc(natoms)
+      integer, intent(in), optional :: nshells(natoms)
+      integer, intent(in), optional :: l_shells(*)
       call error_on_call("librpa_set_ao_basis_wfc")
    end subroutine librpa_set_ao_basis_wfc
 
@@ -547,11 +549,13 @@ contains
    !> @param[in,out] this     Handler.
    !> @param[in]     natoms   Number of atoms.
    !> @param[in]     nbs_aux  Number of auxiliary basis functions on each atom.
-   subroutine librpa_set_ao_basis_aux(this, natoms, nbs_aux)
+   subroutine librpa_set_ao_basis_aux(this, natoms, nbs_aux, nshells, l_shells)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
       integer, intent(in) :: natoms
       integer, intent(in) :: nbs_aux(natoms)
+      integer, intent(in), optional :: nshells(natoms)
+      integer, intent(in), optional :: l_shells(*)
       call error_on_call("librpa_set_ao_basis_aux")
    end subroutine librpa_set_ao_basis_aux
 

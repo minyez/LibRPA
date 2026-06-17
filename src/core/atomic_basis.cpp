@@ -37,20 +37,20 @@ void AtomicBasis::initialize()
 
 AtomicBasis::AtomicBasis(const std::vector<int>& atom_species,
                          const std::map<int, std::size_t>& map_species_nb)
-    : initialized_(false), nbs_(), part_range_(), glo2iat_(), glo2loc_()
+    : initialized_(false), nbs_(), part_range_(), glo2iat_(), glo2loc_(), l_shells_()
 {
     set(atom_species, map_species_nb);
     initialize();
 }
 
 AtomicBasis::AtomicBasis(const std::vector<std::size_t>& nbs)
-    : initialized_(false), nbs_(nbs), part_range_(), n_atoms(0), nb_total(0)
+    : initialized_(false), nbs_(nbs), part_range_(), l_shells_(), n_atoms(0), nb_total(0)
 {
     initialize();
 }
 
 AtomicBasis::AtomicBasis(const std::map<size_t, std::size_t>& iatom_nbs)
-    : initialized_(false), nbs_(), part_range_(), n_atoms(0), nb_total(0)
+    : initialized_(false), nbs_(), part_range_(), l_shells_(), n_atoms(0), nb_total(0)
 {
     // sort atom index first
     // std::function<bool(const std::pair<std::size_t, std::size_t>&,
@@ -61,6 +61,7 @@ AtomicBasis::AtomicBasis(const std::map<size_t, std::size_t>& iatom_nbs)
 void AtomicBasis::set(const std::vector<std::size_t>& nbs)
 {
     nbs_.clear();
+    l_shells_.clear();
     nbs_ = nbs;
     // std::cout << "nbs_ " << nbs_ << std::endl;
     initialize();
@@ -70,6 +71,7 @@ void AtomicBasis::set(const std::vector<int>& atom_species,
                       const std::map<int, std::size_t>& map_species_nb)
 {
     nbs_.clear();
+    l_shells_.clear();
     for (const auto &atom: atom_species)
     {
         if (map_species_nb.count(atom))
@@ -93,9 +95,40 @@ void AtomicBasis::set(const std::map<std::size_t, std::size_t>& iatom_nbs)
     std::sort(v_ianb.begin(), v_ianb.end(), sortfn);
     std::vector<std::size_t> nbs;
     nbs_.clear();
+    l_shells_.clear();
     for (const auto &nb: v_ianb)
         nbs_.push_back(nb.second);
     initialize();
+}
+
+void AtomicBasis::set_l_shells(const std::vector<std::vector<int>>& l_shells)
+{
+    if (l_shells.empty())
+    {
+        l_shells_.clear();
+        return;
+    }
+    if (!initialized_ || l_shells.size() != n_atoms)
+    {
+        throw std::invalid_argument("l-shell metadata is inconsistent with atomic basis");
+    }
+    for (std::size_t iat = 0; iat < l_shells.size(); ++iat)
+    {
+        std::size_t nb = 0;
+        for (const int l : l_shells[iat])
+        {
+            if (l < 0)
+            {
+                throw std::invalid_argument("negative angular momentum in l-shell metadata");
+            }
+            nb += static_cast<std::size_t>(2 * l + 1);
+        }
+        if (nb != nbs_[iat])
+        {
+            throw std::invalid_argument("l-shell metadata dimension does not match atomic basis");
+        }
+    }
+    l_shells_ = l_shells;
 }
 
 std::vector<std::size_t> AtomicBasis::get_global_indices(const int& i_atom) const
