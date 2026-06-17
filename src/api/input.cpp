@@ -73,67 +73,6 @@ std::vector<std::vector<int>> parse_l_shells(const int natoms,
     return parsed;
 }
 
-bool same_species_basis_layout(const librpa_int::SpeciesBasisLayout &lhs,
-                               const librpa_int::SpeciesBasisLayout &rhs)
-{
-    if (lhs.n_ao != rhs.n_ao)
-    {
-        return false;
-    }
-    if (lhs.is_shell_available() != rhs.is_shell_available())
-    {
-        return false;
-    }
-    return !lhs.is_shell_available() || lhs.l_shells == rhs.l_shells;
-}
-
-librpa_int::SpeciesBasisLayout species_basis_layout_from_atom(
-    const librpa_int::AtomicBasis &basis,
-    const librpa_int::atom_t atom,
-    const int atom_type)
-{
-    librpa_int::SpeciesBasisLayout layout;
-    layout.label = std::to_string(atom_type + 1);
-    if (basis.has_l_shells())
-    {
-        layout.set(basis.get_l_shells(static_cast<int>(atom)));
-    }
-    else
-    {
-        layout.n_ao = static_cast<int>(basis.get_atom_nb(static_cast<int>(atom)));
-    }
-    return layout;
-}
-
-void condense_species_basis_layouts(
-    const librpa_int::AtomicBasis &basis,
-    const std::map<librpa_int::atom_t, int> &atom_to_type,
-    std::map<int, librpa_int::SpeciesBasisLayout> &layouts)
-{
-    layouts.clear();
-    if (!basis.initialized() || atom_to_type.empty())
-    {
-        return;
-    }
-
-    for (const auto &entry : atom_to_type)
-    {
-        const auto atom = entry.first;
-        const int atom_type = entry.second;
-        if (atom_type < 0 || atom >= basis.n_atoms)
-        {
-            throw LIBRPA_RUNTIME_ERROR("Atomic basis shell metadata is inconsistent with atom types");
-        }
-
-        const auto layout = species_basis_layout_from_atom(basis, atom, atom_type);
-        const auto inserted = layouts.emplace(atom_type, layout);
-        if (!inserted.second && !same_species_basis_layout(inserted.first->second, layout))
-        {
-            throw LIBRPA_RUNTIME_ERROR("Atomic basis shell metadata differs within one atom type");
-        }
-    }
-}
-
 } // namespace
 
 void librpa_set_scf_dimension(LibrpaHandler* h, int nspins, int nkpts, int nstates, int nbasis, int nspinor)

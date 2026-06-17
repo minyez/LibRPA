@@ -3,6 +3,7 @@
  * @brief Utilities for handling atomic basis functions
  */
 #pragma once
+#include <algorithm>
 #include <cassert>
 #include <map>
 #include <stdexcept>
@@ -225,6 +226,19 @@ public:
     inline const std::vector<std::size_t>& get_part_range() const noexcept { return part_range_; }
     inline bool initialized() const noexcept { return initialized_; }
 };
+
+bool same_species_basis_layout(const SpeciesBasisLayout &lhs,
+                               const SpeciesBasisLayout &rhs);
+
+SpeciesBasisLayout species_basis_layout_from_atom(const AtomicBasis &basis,
+                                                  atom_t atom,
+                                                  int atom_type);
+
+void condense_species_basis_layouts(const AtomicBasis &basis,
+                                    const std::map<atom_t, int> &atom_to_type,
+                                    std::map<int, SpeciesBasisLayout> &layouts);
+
+bool type_layouts_have_shells(const std::map<int, SpeciesBasisLayout> &layouts);
 
 inline bool operator==(const AtomicBasis &ab1, const AtomicBasis &ab2)
 {

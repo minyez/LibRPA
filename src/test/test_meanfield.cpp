@@ -130,7 +130,7 @@ void test_input_symmetry_kstar_restored_dmat_uses_full_star_phases()
     librpa_int::InputSymmetryContext ctx;
     ctx.available = true;
     ctx.ao_shell_layout_available = true;
-    ctx.ao_type_layouts.push_back({"X", "X.orb", {1}, 1});
+    ctx.ao_type_layouts.push_back({"X", {0}});
     ctx.atom_to_type[0] = 0;
     ctx.input_coord_frac[0] = {0.0, 0.0, 0.0};
     librpa_int::InputSymmetryOperation identity_operation;
@@ -191,7 +191,7 @@ void test_input_symmetry_kstar_restored_dmat_uses_target_kpoint_gauge()
     ctx.ao_lmax = 0;
     ctx.atom_to_type[0] = 0;
     ctx.atom_to_type[1] = 0;
-    ctx.ao_type_layouts.push_back({"X", "X.orb", {1}, 1});
+    ctx.ao_type_layouts.push_back({"X", {0}});
 
     librpa_int::InputSymmetryOperation identity_operation;
     identity_operation.rotation.Identity();

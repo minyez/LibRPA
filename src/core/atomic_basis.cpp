@@ -11,6 +11,74 @@
 
 namespace librpa_int {
 
+bool same_species_basis_layout(const SpeciesBasisLayout &lhs,
+                               const SpeciesBasisLayout &rhs)
+{
+    if (lhs.n_ao != rhs.n_ao)
+    {
+        return false;
+    }
+    if (lhs.is_shell_available() != rhs.is_shell_available())
+    {
+        return false;
+    }
+    return !lhs.is_shell_available() || lhs.l_shells == rhs.l_shells;
+}
+
+SpeciesBasisLayout species_basis_layout_from_atom(const AtomicBasis &basis,
+                                                  const atom_t atom,
+                                                  const int atom_type)
+{
+    SpeciesBasisLayout layout;
+    layout.label = std::to_string(atom_type + 1);
+    if (basis.has_l_shells())
+    {
+        layout.set(basis.get_l_shells(static_cast<int>(atom)));
+    }
+    else
+    {
+        layout.n_ao = static_cast<int>(basis.get_atom_nb(static_cast<int>(atom)));
+    }
+    return layout;
+}
+
+void condense_species_basis_layouts(const AtomicBasis &basis,
+                                    const std::map<atom_t, int> &atom_to_type,
+                                    std::map<int, SpeciesBasisLayout> &layouts)
+{
+    layouts.clear();
+    if (!basis.initialized() || atom_to_type.empty())
+    {
+        return;
+    }
+
+    for (const auto &entry : atom_to_type)
+    {
+        const auto atom = entry.first;
+        const int atom_type = entry.second;
+        if (atom_type < 0 || atom >= basis.n_atoms)
+        {
+            throw std::runtime_error("Atomic basis shell metadata is inconsistent with atom types");
+        }
+
+        const auto layout = species_basis_layout_from_atom(basis, atom, atom_type);
+        const auto inserted = layouts.emplace(atom_type, layout);
+        if (!inserted.second && !same_species_basis_layout(inserted.first->second, layout))
+        {
+            throw std::runtime_error("Atomic basis shell metadata differs within one atom type");
+        }
+    }
+}
+
+bool type_layouts_have_shells(const std::map<int, SpeciesBasisLayout> &layouts)
+{
+    return !layouts.empty()
+           && std::all_of(layouts.begin(), layouts.end(),
+                          [](const auto &entry) {
+                              return entry.second.is_shell_available();
+                          });
+}
+
 void AtomicBasis::initialize()
 {
     n_atoms = nbs_.size();

@@ -56,7 +56,7 @@ void validate_input_symmetry_kstar_meanfield_restore(
         {
             throw std::runtime_error("ABACUS k-star restore missing fractional coordinates for an atom");
         }
-        if (ctx.get_ao_type_layout(type_iter->second).nao != static_cast<int>(atom_entry.second))
+        if (ctx.get_ao_type_layout(type_iter->second).n_ao != static_cast<int>(atom_entry.second))
         {
             throw std::runtime_error("ABACUS k-star restore AO layout is inconsistent with atom_nw");
         }

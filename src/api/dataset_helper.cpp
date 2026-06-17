@@ -5,10 +5,172 @@
 #include "../utils/error.h"
 #include "../utils/profiler.h"
 #include "../io/global_io.h"
+#include "../math/rsh.h"
+#include "../math/symmetry.h"
 #include "dataset_helper.h"
+
+#include <algorithm>
 
 namespace librpa_int
 {
+
+namespace
+{
+
+std::vector<SpeciesBasisLayout> type_layouts_from_map(
+    const std::map<int, SpeciesBasisLayout> &layouts)
+{
+    int max_type = -1;
+    for (const auto &entry : layouts)
+    {
+        if (entry.first < 0)
+        {
+            throw LIBRPA_RUNTIME_ERROR("Atomic basis shell layout uses a negative atom type");
+        }
+        max_type = std::max(max_type, entry.first);
+    }
+    std::vector<SpeciesBasisLayout> by_type(static_cast<std::size_t>(max_type + 1));
+    for (const auto &entry : layouts)
+    {
+        by_type[static_cast<std::size_t>(entry.first)] = entry.second;
+    }
+    return by_type;
+}
+
+bool append_type_layout_candidates(std::vector<std::vector<SpeciesBasisLayout>> &candidates,
+                                   const std::map<int, SpeciesBasisLayout> &layouts)
+{
+    bool appended_any = false;
+    for (const auto &entry : layouts)
+    {
+        if (!entry.second.is_shell_available())
+        {
+            continue;
+        }
+        const int atom_type = entry.first;
+        if (atom_type < 0)
+        {
+            throw LIBRPA_RUNTIME_ERROR("Atomic basis shell layout uses a negative atom type");
+        }
+        if (candidates.size() <= static_cast<std::size_t>(atom_type))
+        {
+            candidates.resize(static_cast<std::size_t>(atom_type + 1));
+        }
+        auto &type_candidates = candidates[static_cast<std::size_t>(atom_type)];
+        const auto duplicate = std::find_if(
+            type_candidates.begin(), type_candidates.end(),
+            [&entry](const SpeciesBasisLayout &candidate) {
+                return same_species_basis_layout(candidate, entry.second);
+            });
+        if (duplicate == type_candidates.end())
+        {
+            type_candidates.push_back(entry.second);
+            appended_any = true;
+        }
+    }
+    return appended_any;
+}
+
+void sync_input_symmetry_shell_layouts_from_cached_layouts(Dataset &ds)
+{
+    auto &ctx = ds.input_symmetry_ctx;
+    if (!ds.atoms.types.empty())
+    {
+        ctx.atom_to_type = ds.atoms.types;
+    }
+    if (ctx.atom_to_type.empty())
+    {
+        return;
+    }
+
+    if (type_layouts_have_shells(ds.basis_wfc_layouts))
+    {
+        ctx.ao_type_layouts = type_layouts_from_map(ds.basis_wfc_layouts);
+        ctx.ao_shell_layout_available = !ctx.ao_type_layouts.empty();
+        ctx.ao_lmax = ds.basis_wfc.get_max_l();
+    }
+
+    const bool has_basis_abf_layouts =
+        type_layouts_have_shells(ds.basis_aux_layouts)
+        || type_layouts_have_shells(ds.basis_aux_shrink_layouts);
+    if (has_basis_abf_layouts)
+    {
+        ctx.abf_type_layout_candidates.clear();
+        ctx.abf_shell_layout_available = false;
+        ctx.abf_lmax = -1;
+    }
+
+    int abf_lmax = -1;
+    bool updated_abf_layouts = false;
+    if (type_layouts_have_shells(ds.basis_aux_layouts))
+    {
+        updated_abf_layouts =
+            append_type_layout_candidates(ctx.abf_type_layout_candidates, ds.basis_aux_layouts)
+            || updated_abf_layouts;
+        abf_lmax = std::max(abf_lmax, ds.basis_aux.get_max_l());
+    }
+    if (type_layouts_have_shells(ds.basis_aux_shrink_layouts))
+    {
+        updated_abf_layouts =
+            append_type_layout_candidates(ctx.abf_type_layout_candidates,
+                                          ds.basis_aux_shrink_layouts)
+            || updated_abf_layouts;
+        abf_lmax = std::max(abf_lmax, ds.basis_aux_shrink.get_max_l());
+    }
+    if (updated_abf_layouts)
+    {
+        ctx.abf_shell_layout_available = !ctx.abf_type_layout_candidates.empty();
+        ctx.abf_lmax = abf_lmax;
+    }
+}
+
+} // namespace
+
+void initialize_input_symmetry_context(Dataset &ds)
+{
+    auto &ctx = ds.input_symmetry_ctx;
+    if (ctx.rspace_operations.empty())
+    {
+        return;
+    }
+
+    sync_input_symmetry_shell_layouts_from_cached_layouts(ds);
+
+    const int lmax = std::max(ctx.ao_lmax, ctx.abf_lmax);
+    if (lmax < 0)
+    {
+        return;
+    }
+    if (!ctx.lattice_available)
+    {
+        throw LIBRPA_RUNTIME_ERROR("Cannot generate input symmetry shell rotations without lattice vectors");
+    }
+
+    auto basis_convention =
+        is_basis_convention_set(ctx.basis_convention) ? ctx.basis_convention : ds.basis_convention;
+    if (!is_basis_convention_set(basis_convention))
+    {
+        throw LIBRPA_RUNTIME_ERROR("Cannot initialize input symmetry context without basis convention");
+    }
+    ctx.basis_convention = basis_convention;
+    ds.basis_convention = basis_convention;
+
+    for (auto &op : ctx.rspace_operations)
+    {
+        const auto cartesian_rotation =
+            fractional_rotation_to_cartesian(op, ctx.lattice_vectors).Inverse();
+        for (int l = 0; l <= lmax; ++l)
+        {
+            op.shell_rotations[l] =
+                real_spherical_harmonic_rotation_matrix(
+                    cartesian_rotation,
+                    l,
+                    basis_convention.order,
+                    basis_convention.coeff_m_negative,
+                    basis_convention.coeff_m_positive);
+        }
+    }
+}
 
 void initialize_ds_tfgrids(Dataset &ds, const LibrpaOptions &opts)
 {
@@ -74,6 +236,8 @@ static void collect_atpairs_all(Dataset &ds)
 void initialize_ds_atpairs_local(Dataset &ds, LibrpaParallelRouting routing)
 {
     global::profiler.start(__FUNCTION__);
+
+    initialize_input_symmetry_context(ds);
 
     ds.atpairs_local.clear();
     const int n_atoms_basis_wfc = ds.basis_wfc.n_atoms;

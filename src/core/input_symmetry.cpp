@@ -193,14 +193,34 @@ int shell_symbol_to_l(const char symbol)
     return static_cast<int>(pos);
 }
 
-int compute_nao_from_shell_counts(const std::vector<int>& shell_counts)
+std::vector<int> l_shells_from_shell_counts(const std::vector<int>& shell_counts)
 {
-    int nao = 0;
+    std::vector<int> l_shells;
     for (int l = 0; l < static_cast<int>(shell_counts.size()); ++l)
     {
-        nao += shell_counts[l] * (2 * l + 1);
+        for (int ishell = 0; ishell < shell_counts[l]; ++ishell)
+        {
+            l_shells.push_back(l);
+        }
     }
-    return nao;
+    return l_shells;
+}
+
+std::vector<int> radial_shell_offsets(const SpeciesBasisLayout& layout)
+{
+    std::vector<int> offsets;
+    offsets.reserve(layout.l_shells.size());
+    int offset = 0;
+    for (const int l : layout.l_shells)
+    {
+        offsets.push_back(offset);
+        offset += 2 * l + 1;
+    }
+    if (offset != layout.n_ao)
+    {
+        throw std::runtime_error("Species basis layout has inconsistent nao");
+    }
+    return offsets;
 }
 
 std::vector<int> build_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
@@ -552,119 +572,10 @@ void load_irreducible_sector_file(const std::string& file_path,
     }
 }
 
-void load_symrot_R_file(const std::string& file_path, InputSymmetryContext& ctx)
-{
-    std::ifstream ifs(file_path);
-    if (!ifs.good())
-    {
-        throw std::runtime_error("Failed to open " + file_path);
-    }
+bool append_unique_abf_layout(std::vector<SpeciesBasisLayout>& candidates,
+                              const SpeciesBasisLayout& layout);
 
-    std::vector<std::string> lines;
-    std::string line;
-    while (std::getline(ifs, line))
-    {
-        lines.push_back(line);
-    }
-
-    std::size_t index = 0;
-    while (index < lines.size() && !starts_with(trim(lines[index]), "Lmax of AOs:"))
-    {
-        ++index;
-    }
-    if (index >= lines.size())
-    {
-        throw std::runtime_error("Missing AO Lmax header in " + file_path);
-    }
-    ctx.ao_lmax = static_cast<int>(extract_integers(lines[index]).front());
-    ++index;
-
-    while (index < lines.size() && !starts_with(trim(lines[index]), "Lmax of ABFs:"))
-    {
-        ++index;
-    }
-    if (index >= lines.size())
-    {
-        throw std::runtime_error("Missing ABF Lmax header in " + file_path);
-    }
-    ctx.abf_lmax = static_cast<int>(extract_integers(lines[index]).front());
-    ++index;
-
-    while (index < lines.size() && !is_integer_line(lines[index]))
-    {
-        ++index;
-    }
-
-    const int lmax = std::max(ctx.ao_lmax, ctx.abf_lmax);
-    while (index < lines.size())
-    {
-        while (index < lines.size() && trim(lines[index]).empty())
-        {
-            ++index;
-        }
-        if (index >= lines.size())
-        {
-            break;
-        }
-        if (!is_integer_line(lines[index]))
-        {
-            throw std::runtime_error("Expected symmetry index in " + file_path + ": " + lines[index]);
-        }
-
-        ++index;
-
-        InputSymmetryOperation op;
-        std::array<std::array<double, 3>, 3> rotation_rows{{{{0.0, 0.0, 0.0}},
-                                                            {{0.0, 0.0, 0.0}},
-                                                            {{0.0, 0.0, 0.0}}}};
-        for (int row = 0; row < 3; ++row)
-        {
-            while (index < lines.size() && trim(lines[index]).empty())
-            {
-                ++index;
-            }
-            if (index >= lines.size())
-            {
-                throw std::runtime_error("Unexpected end of file while reading rotation matrix");
-            }
-            const auto values = extract_doubles(lines[index]);
-            if (values.size() != 3)
-            {
-                throw std::runtime_error("Failed to parse symmetry rotation matrix row: " + lines[index]);
-            }
-            for (int col = 0; col < 3; ++col)
-            {
-                rotation_rows[row][col] = values[col];
-            }
-            ++index;
-        }
-        op.rotation = build_matrix3_from_array(rotation_rows);
-
-        while (index < lines.size() && trim(lines[index]).empty())
-        {
-            ++index;
-        }
-        if (index >= lines.size())
-        {
-            throw std::runtime_error("Unexpected end of file while reading symmetry translation");
-        }
-        op.translation = parse_vec3_double(lines[index], file_path);
-        ++index;
-
-        for (int l = 0; l <= lmax; ++l)
-        {
-            const int nm = 2 * l + 1;
-            op.shell_rotations[l] =
-                parse_shell_rotation(lines, index, nm, "symrot_R l=" + std::to_string(l));
-        }
-        ctx.rspace_operations.push_back(std::move(op));
-    }
-}
-
-bool append_unique_abf_layout(std::vector<InputSymmetryAOTypeLayout>& candidates,
-                              const InputSymmetryAOTypeLayout& layout);
-
-InputSymmetryAOTypeLayout parse_symrot_type_layout_line(const std::string& line,
+SpeciesBasisLayout parse_symrot_type_layout_line(const std::string& line,
                                                  int& atom_type,
                                                  const std::string& file_path,
                                                  const std::string& layout_kind)
@@ -685,9 +596,9 @@ InputSymmetryAOTypeLayout parse_symrot_type_layout_line(const std::string& line,
                                  + file_path + ": " + line);
     }
 
-    InputSymmetryAOTypeLayout layout;
+    SpeciesBasisLayout layout;
     layout.label = fields[3];
-    layout.nao = std::stoi(fields[5]);
+    layout.n_ao = std::stoi(fields[5]);
     const int lmax = std::stoi(fields[7]);
     if (lmax < 0)
     {
@@ -695,18 +606,27 @@ InputSymmetryAOTypeLayout parse_symrot_type_layout_line(const std::string& line,
                                  + file_path + ": " + line);
     }
 
-    layout.shell_counts.reserve(static_cast<std::size_t>(lmax + 1));
+    std::vector<int> shell_counts;
+    shell_counts.reserve(static_cast<std::size_t>(lmax + 1));
     for (std::size_t index = 9; index < fields.size(); ++index)
     {
-        layout.shell_counts.push_back(std::stoi(fields[index]));
+        const int count = std::stoi(fields[index]);
+        if (count < 0)
+        {
+            throw std::runtime_error(layout_kind + " shell-layout header uses a negative count in "
+                                     + file_path + ": " + line);
+        }
+        shell_counts.push_back(count);
     }
-    if (static_cast<int>(layout.shell_counts.size()) != lmax + 1)
+    if (static_cast<int>(shell_counts.size()) != lmax + 1)
     {
         throw std::runtime_error(layout_kind
                                  + " shell-layout header has inconsistent shell_counts in "
                                  + file_path + ": " + line);
     }
-    if (compute_nao_from_shell_counts(layout.shell_counts) != layout.nao)
+    const int header_nao = layout.n_ao;
+    layout.set(l_shells_from_shell_counts(shell_counts));
+    if (layout.n_ao != header_nao)
     {
         throw std::runtime_error(layout_kind + " shell-layout header has inconsistent nao in "
                                  + file_path + ": " + line);
@@ -717,7 +637,7 @@ InputSymmetryAOTypeLayout parse_symrot_type_layout_line(const std::string& line,
 
 void parse_symrot_ao_layout_header(const std::vector<std::string>& lines,
                                    const std::string& file_path,
-                                   std::vector<InputSymmetryAOTypeLayout>& layouts_by_type)
+                                   std::vector<SpeciesBasisLayout>& layouts_by_type)
 {
     layouts_by_type.clear();
 
@@ -770,7 +690,7 @@ void parse_symrot_ao_layout_header(const std::vector<std::string>& lines,
 void parse_symrot_abf_layout_header(
     const std::vector<std::string>& lines,
     const std::string& file_path,
-    std::vector<std::vector<InputSymmetryAOTypeLayout>>& candidates_by_type)
+    std::vector<std::vector<SpeciesBasisLayout>>& candidates_by_type)
 {
     candidates_by_type.clear();
 
@@ -826,8 +746,8 @@ void parse_symrot_k_file(const std::string& file_path,
                          std::map<std::pair<int, int>, Vector3_Order<int>>* kspace_return_lattice = nullptr,
                          std::map<std::pair<int, int>, Vector3_Order<int>>* kstar_member_fold_G = nullptr,
                          const int nsym_space = -1,
-                         std::vector<InputSymmetryAOTypeLayout>* ao_layouts = nullptr,
-                         std::vector<std::vector<InputSymmetryAOTypeLayout>>* abf_layout_candidates = nullptr)
+                         std::vector<SpeciesBasisLayout>* ao_layouts = nullptr,
+                         std::vector<std::vector<SpeciesBasisLayout>>* abf_layout_candidates = nullptr)
 {
     std::ifstream ifs(file_path);
     if (!ifs.good())
@@ -1443,7 +1363,7 @@ void try_load_input_symmetry_coord_frac(const std::string& dir_path,
     }
 }
 
-InputSymmetryAOTypeLayout parse_input_symmetry_orbital_file(const std::string& orbital_file,
+SpeciesBasisLayout parse_input_symmetry_orbital_file(const std::string& orbital_file,
                                              const std::string& species_label)
 {
     std::ifstream ifs(orbital_file);
@@ -1452,11 +1372,11 @@ InputSymmetryAOTypeLayout parse_input_symmetry_orbital_file(const std::string& o
         throw std::runtime_error("Failed to open orbital file " + orbital_file);
     }
 
-    InputSymmetryAOTypeLayout layout;
+    SpeciesBasisLayout layout;
     layout.label = species_label;
-    layout.orbital_file = orbital_file;
 
     int lmax = -1;
+    std::vector<int> shell_counts;
     std::string line;
     while (std::getline(ifs, line))
     {
@@ -1473,7 +1393,11 @@ InputSymmetryAOTypeLayout parse_input_symmetry_orbital_file(const std::string& o
                 throw std::runtime_error("Failed to parse Lmax in orbital file " + orbital_file);
             }
             lmax = static_cast<int>(values.front());
-            layout.shell_counts.resize(static_cast<std::size_t>(lmax + 1), 0);
+            if (lmax < 0)
+            {
+                throw std::runtime_error("Negative Lmax in orbital file " + orbital_file);
+            }
+            shell_counts.resize(static_cast<std::size_t>(lmax + 1), 0);
             continue;
         }
         if (starts_with(cleaned, "Number of "))
@@ -1495,11 +1419,16 @@ InputSymmetryAOTypeLayout parse_input_symmetry_orbital_file(const std::string& o
             {
                 continue;
             }
-            if (static_cast<int>(layout.shell_counts.size()) <= l)
+            if (static_cast<int>(shell_counts.size()) <= l)
             {
-                layout.shell_counts.resize(static_cast<std::size_t>(l + 1), 0);
+                shell_counts.resize(static_cast<std::size_t>(l + 1), 0);
             }
-            layout.shell_counts[static_cast<std::size_t>(l)] = static_cast<int>(values.back());
+            const int count = static_cast<int>(values.back());
+            if (count < 0)
+            {
+                throw std::runtime_error("Negative shell count in orbital file " + orbital_file);
+            }
+            shell_counts[static_cast<std::size_t>(l)] = count;
         }
         if (starts_with(cleaned, "SUMMARY"))
         {
@@ -1507,12 +1436,12 @@ InputSymmetryAOTypeLayout parse_input_symmetry_orbital_file(const std::string& o
         }
     }
 
-    if (lmax >= 0 && static_cast<int>(layout.shell_counts.size()) < lmax + 1)
+    if (lmax >= 0 && static_cast<int>(shell_counts.size()) < lmax + 1)
     {
-        layout.shell_counts.resize(static_cast<std::size_t>(lmax + 1), 0);
+        shell_counts.resize(static_cast<std::size_t>(lmax + 1), 0);
     }
-    layout.nao = compute_nao_from_shell_counts(layout.shell_counts);
-    if (layout.nao <= 0)
+    layout.set(l_shells_from_shell_counts(shell_counts));
+    if (layout.n_ao <= 0)
     {
         throw std::runtime_error("Parsed zero AO functions from orbital file " + orbital_file);
     }
@@ -1542,14 +1471,14 @@ std::string resolve_input_symmetry_file(const std::string& file_name,
     return file_exists(file_name) ? file_name : "";
 }
 
-bool append_unique_abf_layout(std::vector<InputSymmetryAOTypeLayout>& candidates,
-                              const InputSymmetryAOTypeLayout& layout)
+bool append_unique_abf_layout(std::vector<SpeciesBasisLayout>& candidates,
+                              const SpeciesBasisLayout& layout)
 {
     const auto duplicate = std::find_if(candidates.begin(), candidates.end(),
-                                        [&layout](const InputSymmetryAOTypeLayout& candidate) {
+                                        [&layout](const SpeciesBasisLayout& candidate) {
                                             return candidate.label == layout.label
-                                                   && candidate.shell_counts == layout.shell_counts
-                                                   && candidate.nao == layout.nao;
+                                                   && candidate.l_shells == layout.l_shells
+                                                   && candidate.n_ao == layout.n_ao;
                                         });
     if (duplicate != candidates.end())
     {
@@ -1651,14 +1580,16 @@ bool append_unique_abf_layout(std::vector<InputSymmetryAOTypeLayout>& candidates
             {
                 const auto& layout = ctx.ao_type_layouts[itype];
                 (*log) << "|   type " << itype << " (" << layout.label << ")"
-                       << " nao=" << layout.nao << " shell_counts=";
-                for (std::size_t l = 0; l < layout.shell_counts.size(); ++l)
+                       << " nao=" << layout.n_ao << " shell_counts=";
+                const int lmax = layout.shell_counts.empty() ? -1 : layout.shell_counts.rbegin()->first;
+                for (int l = 0; l <= lmax; ++l)
                 {
                     if (l != 0)
                     {
                         (*log) << ",";
                     }
-                    (*log) << layout.shell_counts[l];
+                    const auto count = layout.shell_counts.find(l);
+                    (*log) << (count == layout.shell_counts.end() ? 0 : count->second);
                 }
                 (*log) << "\n";
             }
@@ -1802,7 +1733,7 @@ std::size_t InputSymmetryContext::count_abf_layout_candidates() const
     return count;
 }
 
-const InputSymmetryAOTypeLayout& InputSymmetryContext::get_ao_type_layout(const int atom_type) const
+const SpeciesBasisLayout& InputSymmetryContext::get_ao_type_layout(const int atom_type) const
 {
     if (atom_type < 0 || atom_type >= static_cast<int>(ao_type_layouts.size()))
     {
@@ -1811,7 +1742,7 @@ const InputSymmetryAOTypeLayout& InputSymmetryContext::get_ao_type_layout(const 
     return ao_type_layouts[static_cast<std::size_t>(atom_type)];
 }
 
-const InputSymmetryAOTypeLayout& InputSymmetryContext::find_abf_type_layout(const int atom_type,
+const SpeciesBasisLayout& InputSymmetryContext::find_abf_type_layout(const int atom_type,
                                                                       const int nao_hint) const
 {
     if (atom_type < 0 || atom_type >= static_cast<int>(abf_type_layout_candidates.size()))
@@ -1829,8 +1760,8 @@ const InputSymmetryAOTypeLayout& InputSymmetryContext::find_abf_type_layout(cons
     if (nao_hint > 0)
     {
         const auto matched = std::find_if(candidates.begin(), candidates.end(),
-                                          [nao_hint](const InputSymmetryAOTypeLayout& candidate) {
-                                              return candidate.nao == nao_hint;
+                                          [nao_hint](const SpeciesBasisLayout& candidate) {
+                                              return candidate.n_ao == nao_hint;
                                           });
         if (matched != candidates.end())
         {
@@ -1848,7 +1779,7 @@ const InputSymmetryAOTypeLayout& InputSymmetryContext::find_abf_type_layout(cons
         << " with nao_hint=" << nao_hint << ". Candidate dimensions:";
     for (const auto& candidate : candidates)
     {
-        oss << " " << candidate.nao;
+        oss << " " << candidate.n_ao;
     }
     throw std::runtime_error(oss.str());
 }
@@ -1875,7 +1806,6 @@ bool load_input_symmetry_context(const std::string& dir_path,
     for (const auto& dir : candidate_dirs)
     {
         if (file_exists(join_path(dir, "irreducible_sector.txt"))
-            || file_exists(join_path(dir, "symrot_R.txt"))
             || file_exists(join_path(dir, "symrot_k.txt"))
             || file_exists(join_path(dir, "symrot_abf_k.txt")))
         {
@@ -1885,33 +1815,30 @@ bool load_input_symmetry_context(const std::string& dir_path,
     }
 
     const std::string irreducible_sector_file = join_path(sidecar_dir, "irreducible_sector.txt");
-    const std::string symrot_R_file = join_path(sidecar_dir, "symrot_R.txt");
     const std::string symrot_k_file = join_path(sidecar_dir, "symrot_k.txt");
     const std::string symrot_abf_k_file = join_path(sidecar_dir, "symrot_abf_k.txt");
 
     const bool has_irreducible_sector = !sidecar_dir.empty() && file_exists(irreducible_sector_file);
-    const bool has_symrot_R = !sidecar_dir.empty() && file_exists(symrot_R_file);
     const bool has_symrot_k = !sidecar_dir.empty() && file_exists(symrot_k_file);
     const bool has_symrot_abf_k = !sidecar_dir.empty() && file_exists(symrot_abf_k_file);
 
-    if (!has_irreducible_sector && !has_symrot_R && !has_symrot_k)
+    if (!has_irreducible_sector && !has_symrot_k && !has_symrot_abf_k)
     {
         ctx.clear();
         return false;
     }
 
-    if (!(has_irreducible_sector && has_symrot_R && has_symrot_k))
+    if (!(has_irreducible_sector && has_symrot_k))
     {
         std::ostringstream oss;
         oss << "Incomplete ABACUS symmetry sidecar set near " << dir_path
-            << ". Expected irreducible_sector.txt, symrot_R.txt and symrot_k.txt together.";
+            << ". Expected irreducible_sector.txt and symrot_k.txt together.";
         throw std::runtime_error(oss.str());
     }
 
     ctx.clear();
     ctx.convention = InputSymmetryConvention::ABACUS;
     load_irreducible_sector_file(irreducible_sector_file, ctx.irreducible_sector);
-    load_symrot_R_file(symrot_R_file, ctx);
     load_symrot_k_file(symrot_k_file, ctx);
     try_load_input_symmetry_coord_frac(dir_path, ctx, log);
     if (has_symrot_abf_k)
@@ -1961,14 +1888,16 @@ bool load_input_symmetry_context(const std::string& dir_path,
             {
                 const auto& layout = ctx.ao_type_layouts[itype];
                 (*log) << "|   type " << itype << " (" << layout.label << ")"
-                       << " nao=" << layout.nao << " shell_counts=";
-                for (std::size_t l = 0; l < layout.shell_counts.size(); ++l)
+                       << " nao=" << layout.n_ao << " shell_counts=";
+                const int lmax = layout.shell_counts.empty() ? -1 : layout.shell_counts.rbegin()->first;
+                for (int l = 0; l <= lmax; ++l)
                 {
                     if (l != 0)
                     {
                         (*log) << ",";
                     }
-                    (*log) << layout.shell_counts[l];
+                    const auto count = layout.shell_counts.find(l);
+                    (*log) << (count == layout.shell_counts.end() ? 0 : count->second);
                 }
                 (*log) << "\n";
             }
@@ -1995,17 +1924,13 @@ ComplexMatrix build_input_symmetry_ao_rotation_matrix(const InputSymmetryContext
                                               const std::map<int, ComplexMatrix>& shell_rotations)
 {
     const auto& layout = ctx.get_ao_type_layout(atom_type);
-    ComplexMatrix rotation(layout.nao, layout.nao);
+    ComplexMatrix rotation(layout.n_ao, layout.n_ao);
+    const auto shell_offsets = radial_shell_offsets(layout);
 
-    int offset = 0;
-    for (int l = 0; l < static_cast<int>(layout.shell_counts.size()); ++l)
+    int filled_nao = 0;
+    for (const auto& entry : layout.shell_indices)
     {
-        const int shell_count = layout.shell_counts[static_cast<std::size_t>(l)];
-        if (shell_count == 0)
-        {
-            continue;
-        }
-
+        const int l = entry.first;
         const auto rotation_iter = shell_rotations.find(l);
         if (rotation_iter == shell_rotations.end())
         {
@@ -2020,8 +1945,13 @@ ComplexMatrix build_input_symmetry_ao_rotation_matrix(const InputSymmetryContext
                                      + std::to_string(l));
         }
 
-        for (int ishell = 0; ishell < shell_count; ++ishell)
+        for (const int ishell : entry.second)
         {
+            if (ishell < 0 || ishell >= static_cast<int>(shell_offsets.size()))
+            {
+                throw std::runtime_error("Species basis layout has invalid shell index");
+            }
+            const int offset = shell_offsets[static_cast<std::size_t>(ishell)];
             for (int row = 0; row < nm; ++row)
             {
                 for (int col = 0; col < nm; ++col)
@@ -2029,11 +1959,11 @@ ComplexMatrix build_input_symmetry_ao_rotation_matrix(const InputSymmetryContext
                     rotation(offset + row, offset + col) = shell_rotation(row, col);
                 }
             }
-            offset += nm;
+            filled_nao += nm;
         }
     }
 
-    if (offset != layout.nao)
+    if (filled_nao != layout.n_ao)
     {
         throw std::runtime_error("Failed to assemble the full AO rotation matrix for atom type "
                                  + std::to_string(atom_type));
@@ -2049,17 +1979,13 @@ ComplexMatrix build_input_symmetry_abf_rotation_matrix(
     const Matrix3& direct_rotation)
 {
     const auto& layout = ctx.find_abf_type_layout(atom_type, nao_hint);
-    ComplexMatrix rotation(layout.nao, layout.nao);
+    ComplexMatrix rotation(layout.n_ao, layout.n_ao);
+    const auto shell_offsets = radial_shell_offsets(layout);
 
-    int offset = 0;
-    for (int l = 0; l < static_cast<int>(layout.shell_counts.size()); ++l)
+    int filled_nao = 0;
+    for (const auto& entry : layout.shell_indices)
     {
-        const int shell_count = layout.shell_counts[static_cast<std::size_t>(l)];
-        if (shell_count == 0)
-        {
-            continue;
-        }
-
+        const int l = entry.first;
         ComplexMatrix shell_rotation;
         const auto rotation_iter = shell_rotations.find(l);
         if (rotation_iter != shell_rotations.end())
@@ -2079,8 +2005,13 @@ ComplexMatrix build_input_symmetry_abf_rotation_matrix(
                                      + std::to_string(l));
         }
 
-        for (int ishell = 0; ishell < shell_count; ++ishell)
+        for (const int ishell : entry.second)
         {
+            if (ishell < 0 || ishell >= static_cast<int>(shell_offsets.size()))
+            {
+                throw std::runtime_error("Species basis layout has invalid shell index");
+            }
+            const int offset = shell_offsets[static_cast<std::size_t>(ishell)];
             for (int row = 0; row < nm; ++row)
             {
                 for (int col = 0; col < nm; ++col)
@@ -2088,11 +2019,11 @@ ComplexMatrix build_input_symmetry_abf_rotation_matrix(
                     rotation(offset + row, offset + col) = shell_rotation(row, col);
                 }
             }
-            offset += nm;
+            filled_nao += nm;
         }
     }
 
-    if (offset != layout.nao)
+    if (filled_nao != layout.n_ao)
     {
         throw std::runtime_error("Failed to assemble the full ABF rotation matrix for atom type "
                                  + std::to_string(atom_type));

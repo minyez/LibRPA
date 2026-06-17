@@ -104,20 +104,6 @@ struct InputSymmetryFullKpointMemberEntry
 };
 
 /*!
- * @brief AO shell layout of one input symmetry atom type.
- *
- * The shell multiplicities follow the selected input symmetry orbital ordering:
- * increasing angular momentum `l`, then zeta index, then magnetic index.
- */
-struct InputSymmetryAOTypeLayout
-{
-    std::string label;
-    std::string orbital_file;
-    std::vector<int> shell_counts;
-    int nao = 0;
-};
-
-/*!
  * @brief One full real-space member generated from an irreducible {atom pair, R}.
  */
 struct InputSymmetryRSpaceRestoreMember
@@ -151,8 +137,8 @@ struct InputSymmetryContext
     SpaceGroupSymOps<InputSymmetryOperation> rspace_operations;
     std::vector<InputSymmetryKStar> kstars;
     std::vector<InputSymmetryKStar> abf_kstars;
-    std::vector<InputSymmetryAOTypeLayout> ao_type_layouts;
-    std::vector<std::vector<InputSymmetryAOTypeLayout>> abf_type_layout_candidates;
+    std::vector<SpeciesBasisLayout> ao_type_layouts;
+    std::vector<std::vector<SpeciesBasisLayout>> abf_type_layout_candidates;
     std::map<atom_t, int> atom_to_type;
     std::map<atom_t, std::array<double, 3>> input_coord_frac;
     Matrix3 lattice_vectors;
@@ -170,8 +156,8 @@ struct InputSymmetryContext
     std::size_t count_kstar_members() const;
     std::size_t count_atoms_with_layout() const;
     std::size_t count_abf_layout_candidates() const;
-    const InputSymmetryAOTypeLayout& get_ao_type_layout(int atom_type) const;
-    const InputSymmetryAOTypeLayout& find_abf_type_layout(int atom_type, int nao_hint) const;
+    const SpeciesBasisLayout& get_ao_type_layout(int atom_type) const;
+    const SpeciesBasisLayout& find_abf_type_layout(int atom_type, int nao_hint) const;
 };
 
 bool load_input_symmetry_context(const std::string& dir_path,
