@@ -1,7 +1,9 @@
 #include "read_data.h"
-#include "librpa_enums.h"
+#include <librpa_enums.h>
+
 #include "reader_lri.h"
 #include "reader_coulomb.h"
+#include "reader_structure.h"
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -30,7 +32,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../include/librpa.hpp"
+#include <librpa.hpp>
 
 #include "driver.h"
 #include "../src/mpi/global_mpi.h"
@@ -1235,61 +1237,7 @@ void erase_Cs_from_local_atp(atpair_R_mat_t &Cs, std::vector<atpair_t> &local_at
 
 void read_stru(const std::string &file_path)
 {
-    using namespace librpa_int;
-    global::lib_printf_root("Reading structure file: %s\n", file_path.c_str());
-
-    ifstream infile;
-    infile.open(file_path);
-    if (!infile.good())
-        throw LIBRPA_RUNTIME_ERROR("Fail to open structure file " + file_path);
-    string x, y, z, tmp;
-
-    std::vector<double> lat_mat(9);
-    std::vector<double> G_mat(9);
-
-    for (int i = 0; i < 3; i++)
-    {
-        infile >> x >> y >> z;
-        lat_mat[i * 3] = stod(x);
-        lat_mat[i * 3 + 1] = stod(y);
-        lat_mat[i * 3 + 2] = stod(z);
-    }
-
-    for (int i = 0; i < 3; i++)
-    {
-        infile >> x >> y >> z;
-        G_mat[i * 3] = stod(x);
-        G_mat[i * 3 + 1] = stod(y);
-        G_mat[i * 3 + 2] = stod(z);
-    }
-
-    driver::h.set_latvec_and_G(lat_mat.data(), G_mat.data());
-
-    // Read coordinates of atoms
-    infile >> driver::n_atoms;
-    const auto n_atoms = driver::n_atoms;
-    driver::atom_types.resize(n_atoms);
-    std::vector<double> coords(n_atoms * 3);
-    int type;
-    for (size_t iat = 0; iat < n_atoms; iat++)
-    {
-        for (int i = 0; i < 3; i++) infile >> coords[3 * iat + i];
-        infile >> type;
-        driver::atom_types[iat] = type - 1;
-    }
-    // Parsed after lattice is set, so that the fractional coordinates are calculated
-    driver::h.set_atoms(driver::atom_types, coords);
-    {
-        auto pds = api::get_dataset_instance(driver::h);
-        pds->input_symmetry_ctx.set_lattice(pds->pbc.latvec, pds->pbc.G);
-    }
-
-    // // Internal check
-    // const auto ds = api::get_dataset_instance(driver::h.get_c_handler());
-    // const auto &pbc = ds->pbc;
-    // Matrix3 latG = pbc.latvec * pbc.G.Transpose();
-    // cout << " lat * G^T" << endl;
-    // latG.print(5);
+    reader_structure(file_path);
 }
 
 void read_bz_sampling(const std::string &file_path)
