@@ -1,9 +1,11 @@
 import pathlib
+import shlex
+import sys
 import tarfile
 import tempfile
 import unittest
 
-from regression_tests.backend.driver import _prepare_librpa_workspace
+from regression_tests.backend.driver import TestDriver, _prepare_librpa_workspace
 
 
 class TestPrepareLibrpaWorkspace(unittest.TestCase):
@@ -40,6 +42,49 @@ class TestPrepareLibrpaWorkspace(unittest.TestCase):
 
             with self.assertRaises(FileNotFoundError):
                 _prepare_librpa_workspace(src, dst)
+
+
+class TestDriverRunFailure(unittest.TestCase):
+
+    def test_run_failure_is_reported_by_analysis(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            src = root / "testcases" / "case"
+            refs = root / "refs"
+            workspace = root / "workspace"
+            (src / "librpa").mkdir(parents=True)
+            (src / "librpa" / "librpa.in").write_text("input_dir = ../dataset\n")
+            (refs / "case").mkdir(parents=True)
+            TestPrepareLibrpaWorkspace()._write_archive(src, "dataset.tar.gz", "dataset")
+
+            tc = {
+                "directory": "case",
+                "name": "failing case",
+                "build": {"require_libri": False},
+                "run": {
+                    "ntasks_disable": [],
+                    "nthreads_disable": [],
+                    "ntasks_enable": [],
+                    "nthreads_enable": [],
+                },
+                "labels": {},
+                "validates": [],
+            }
+            driver = TestDriver(root / "testcases", refs, workspace, {"group": [tc]})
+            driver.initialize(1, 1, False)
+            mpiexec = "{} -c {}".format(
+                shlex.quote(sys.executable),
+                shlex.quote("import sys; sys.exit(3)"),
+            )
+
+            driver.run(sys.executable, mpiexec, force=True)
+
+            self.assertEqual(
+                (workspace / "testcases" / "case" / "librpa" / "librpa.exitcode").read_text(),
+                "3\n",
+            )
+            self.assertEqual(driver.analyze(), 1)
+            self.assertIn("exit code 3", tc["run_failure"])
 
 
 if __name__ == "__main__":

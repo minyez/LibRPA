@@ -13,6 +13,7 @@ from .validate import Validate
 __all__ = ["TestDriver"]
 
 PASS_FAIL = {True: "PASS", False: "FAIL"}
+EXITCODE_FILE = "librpa.exitcode"
 
 
 def _has_mpi_task_option(args):
@@ -270,9 +271,21 @@ class TestDriver:
             print("Running {} [{}]".format(tc["name"], dname))
             if verbose:
                 print("Command: {}".format(_format_command(args)))
-            run_librpa(args, run_dir, out, err)
+            return_code = run_librpa(args, run_dir, out, err)
+            (run_dir / EXITCODE_FILE).write_text("{:d}\n".format(return_code))
         print("Finished test calculations")
         print()
+
+    def _run_failure(self, dname):
+        run_dir = self._dir_testcase / dname / "librpa"
+        exitcode = run_dir / EXITCODE_FILE
+        if not exitcode.is_file():
+            return None
+        return_code = int(exitcode.read_text().strip())
+        if return_code == 0:
+            return None
+        return "calculation failed with exit code {:d}; see {}".format(
+            return_code, run_dir / "librpa.err")
 
     def analyze(self):
         status = 0
@@ -280,6 +293,12 @@ class TestDriver:
         for tc in self._testcases_filtered:
             # name = tc["name"]
             dname = tc["directory"]
+            run_failure = self._run_failure(dname)
+            tc["run_failure"] = run_failure
+            if run_failure is not None:
+                good_all.append(False)
+                tc["results"] = []
+                continue
             test = self._dir_testcase / dname
             refr = self._dir_ref / dname
             results = []
@@ -317,6 +336,10 @@ class TestDriver:
                     print(s.format(tc["name"], tc["directory"], good_all))
                     for v, e in zip(tc["validates"], results):
                         print("- {:4s}: {:s}, {:s}".format(PASS_FAIL[e[0]], v["name"].strip(), e[1]))
+                elif tc.get("run_failure"):
+                    s = "Validate results for {} [directory: {}]: FAIL"
+                    print(s.format(tc["name"], tc["directory"]))
+                    print("- FAIL: calculation, {:s}".format(tc["run_failure"]))
                 else:
                     s = "No results to validate for {} [directory: {}]"
                     print(s.format(tc["name"], tc["directory"]))
