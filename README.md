@@ -102,6 +102,8 @@ If you use LibRPA in published work, please consider citing the following papers
   *Phys. Rev. B* **109**, 035103 (2024).
 - R. Shi, M.-Y. Zhang, P. Lin, L. He, and X. Ren,
   *Comput. Phys. Commun.* **309**, 109496 (2025).
+- M.-Y. Zhang, P. Lin, R. Shi, and X. Ren,
+  *J. Chem. Theory Comput.* **22**, 5770 (2026).
 
 ## Licensing
 

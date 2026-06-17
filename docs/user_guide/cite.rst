@@ -38,3 +38,20 @@ If you use LibRPA in your work, please consider citing:
        doi = {10.1016/j.cpc.2024.109496},
      }
 
+- M.-Y. Zhang, P. Lin, R. Shi, and X. Ren,
+  Low-scaling GW calculations of quasi-particle energies for extended systems within the numerical atomic orbital framework,
+  *J. Chem. Theory Comput.* **22**, 5770 (2026).
+
+  .. code-block:: bibtex
+
+     @article{ZhangMY26LibRPA,
+       title = {Low-scaling {{GW}} calculations of quasi-particle energies for extended systems within the numerical atomic orbital framework},
+       author = {Zhang, Min-Ye and Lin, Peize and Shi, Rong and Ren, Xinguo},
+       date = {2026-05-20},
+       year = 2026,
+       journal = {J. Chem. Theory Comput.},
+       volume = {22},
+       number = {11},
+       pages = {5770--5788},
+       doi = {10.1021/acs.jctc.6c00618},
+     }
