@@ -35,4 +35,7 @@ ComplexMatrix wigner_D_matrix(const Vector3<double>& euler_angle,
 Vector3<double> rotation_matrix_to_euler_angles_zyz(const Matrix3& rotation_matrix,
                                                     const double threshold = 1e-5);
 
+//! Get a proper Cartesian rotation matrix from ZYZ Euler angles.
+Matrix3 euler_angles_zyz_to_rotation_matrix(const Vector3<double>& euler_angles_zyz);
+
 }

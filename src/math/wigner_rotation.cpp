@@ -1,10 +1,10 @@
 #include "wigner_rotation.h"
 
-#include "../utils/constants.h"
-
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+
+#include "../utils/constants.h"
 
 namespace librpa_int {
 
@@ -159,6 +159,23 @@ Vector3<double> rotation_matrix_to_euler_angles_zyz(const Matrix3& rotation_matr
         }
     }
     return {alpha, beta, gamma};
+}
+
+Matrix3 euler_angles_zyz_to_rotation_matrix(const Vector3<double>& euler_angles_zyz)
+{
+    const double alpha = euler_angles_zyz.x;
+    const double beta = euler_angles_zyz.y;
+    const double gamma = euler_angles_zyz.z;
+    const double ca = std::cos(alpha);
+    const double sa = std::sin(alpha);
+    const double cb = std::cos(beta);
+    const double sb = std::sin(beta);
+    const double cg = std::cos(gamma);
+    const double sg = std::sin(gamma);
+
+    return {cg * cb * ca - sg * sa, cg * cb * sa + sg * ca, -cg * sb,
+            -sg * cb * ca - cg * sa, -sg * cb * sa + cg * ca, sg * sb,
+            sb * ca, sb * sa, cb};
 }
 
 }

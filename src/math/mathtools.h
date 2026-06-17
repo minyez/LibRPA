@@ -4,11 +4,15 @@
  * @note Most functions are adapted from Gauss_Quadrature.cpp
  */
 #pragma once
+#include <cmath>
 #include <cstddef>
 
 namespace librpa_int {
 
-bool nearly_integer(double value, double tol = 1e-8);
+inline bool nearly_integer(double value, double tol = 1e-8) noexcept
+{
+    return std::abs(value - std::round(value)) < tol;
+}
 
 //! Get the Gauss-Chebyshev quadrature based on Chebyshev points of the first type (kind)
 /*!
