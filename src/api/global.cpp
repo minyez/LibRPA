@@ -62,6 +62,16 @@ void librpa_init_global(LibrpaSwitch switch_redirect_stdout,
     ::librpa_init_global_common(MPI_COMM_WORLD, switch_redirect_stdout, redirect_path, switch_process_output);
 }
 
+void librpa_set_output_level(LibrpaVerbose output_level)
+{
+    librpa_int::global::set_output_level(output_level);
+}
+
+LibrpaVerbose librpa_get_output_level(void)
+{
+    return librpa_int::global::get_output_level();
+}
+
 // Only for Fortran binding
 void librpa_init_global_fortran(MPI_Fint *f_comm, LibrpaSwitch switch_redirect_stdout,
                                 const char *redirect_path, LibrpaSwitch switch_process_output)

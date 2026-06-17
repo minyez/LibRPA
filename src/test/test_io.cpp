@@ -2,11 +2,27 @@
 #include <fstream>
 
 #include "../src/io/fs.h"
+#include "../src/io/global_io.h"
 #include "../src/io/stl_io_helper.h"
 
 int main (int argc, char *argv[])
 {
     using namespace librpa_int;
+
+    global::set_output_level(LIBRPA_VERBOSE_WARN);
+    assert(!global::should_output(LIBRPA_VERBOSE_INFO));
+    assert(global::should_output(LIBRPA_VERBOSE_WARN));
+    assert(global::should_output(LIBRPA_VERBOSE_CRITICAL));
+    global::lib_printf(LIBRPA_VERBOSE_INFO, "");
+    global::lib_printf(LIBRPA_VERBOSE_WARN, "");
+
+    global::set_output_level(LIBRPA_VERBOSE_CRITICAL);
+    assert(!global::should_output(LIBRPA_VERBOSE_WARN));
+    assert(global::should_output(LIBRPA_VERBOSE_CRITICAL));
+    global::lib_printf(LIBRPA_VERBOSE_CRITICAL, "");
+
+    global::set_output_level(LIBRPA_VERBOSE_DEBUG);
+    assert(global::should_output(LIBRPA_VERBOSE_INFO));
 
     int myid = 0;
     create_directories("librpa.d", myid);

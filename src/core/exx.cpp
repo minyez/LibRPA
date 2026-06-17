@@ -274,7 +274,7 @@ static ComplexMatrix extract_dmat_cplx_R_IJblock(const ComplexMatrix& dmat_cplx,
 static void warn_dmat_IJR_nonzero_imag(const ComplexMatrix& dmat_cplx, const int& ispin, const atom_t& I, const atom_t& J, const Vector3_Order<int> R)
 {
     if (dmat_cplx.get_max_abs_imag() > 1e-2)
-        global::lib_printf("Warning: complex-valued density matrix, spin %d IJR %zu %zu (%d, %d, %d)\n", ispin, I, J, R.x, R.y, R.z);
+        global::lib_printf(LIBRPA_VERBOSE_WARN, "Warning: complex-valued density matrix, spin %d IJR %zu %zu (%d, %d, %d)\n", ispin, I, J, R.x, R.y, R.z);
 }
 
 
@@ -973,7 +973,7 @@ void Exx::build(const LibrpaParallelRouting routing,
 #else
     if (comm_h.is_root())
     {
-        global::lib_printf("Error: trying build EXX orbital energy with LibRI, but the program is not compiled against LibRI\n");
+        global::lib_printf(LIBRPA_VERBOSE_CRITICAL, "Error: trying build EXX orbital energy with LibRI, but the program is not compiled against LibRI\n");
     }
     throw std::logic_error("compilation");
     comm_h.barrier();
@@ -1004,7 +1004,7 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
     // Reset k-space matrices built from last call
     if (this->is_kspace_built_)
     {
-        global::lib_printf("Warning: reset EXX k-space matrices\n");
+        global::lib_printf(LIBRPA_VERBOSE_WARN, "Warning: reset EXX k-space matrices\n");
         this->reset_kspace();
     }
 

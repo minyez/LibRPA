@@ -761,6 +761,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
         if (W[i] < 0 && !is_int_power)
         {
             global::lib_printf(
+                LIBRPA_VERBOSE_WARN,
                 "Warning! unfiltered negative eigenvalue with non-integer power: # %d ev = %f , "
                 "pow = %f\n",
                 i, W[i], power);
@@ -768,6 +769,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
         if (fabs(W[i]) < 1e-10 && power < 0)
         {
             global::lib_printf(
+                LIBRPA_VERBOSE_WARN,
                 "Warning! unfiltered nearly-singular eigenvalue with negative power: # %d ev = %f "
                 ", pow = %f\n",
                 i, W[i], power);
@@ -910,6 +912,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_desc(matrix_m<std::complex<T>> &A_lo
         if (W[i] < 0 && !is_int_power)
         {
             global::lib_printf(
+                LIBRPA_VERBOSE_WARN,
                 "Warning! unfiltered negative eigenvalue with non-integer power: # %zu ev = %f , "
                 "pow = %f\n",
                 i, W[i], power);
@@ -917,6 +920,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_desc(matrix_m<std::complex<T>> &A_lo
         if (fabs(W[i]) < 1e-10 && power < 0)
         {
             global::lib_printf(
+                LIBRPA_VERBOSE_WARN,
                 "Warning! unfiltered nearly-singular eigenvalue with negative power: # %zu ev = %f "
                 ", pow = %f\n",
                 i, W[i], power);
@@ -1049,6 +1053,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
         if (W[i] < 0 && !is_int_power)
         {
             global::lib_printf(
+                LIBRPA_VERBOSE_WARN,
                 "Warning! unfiltered negative eigenvalue with non-integer power: # %zu ev = %f , "
                 "pow = %f\n",
                 i, W[i], power);
@@ -1056,6 +1061,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
         if (fabs(W[i]) < 1e-10 && power < 0)
         {
             global::lib_printf(
+                LIBRPA_VERBOSE_WARN,
                 "Warning! unfiltered nearly-singular eigenvalue with negative power: # %zu ev = %f "
                 ", pow = %f\n",
                 i, W[i], power);

@@ -24,6 +24,7 @@
 #include "../core/meanfield.h"
 #include "../core/qpe_solver.h"
 #include "../io/fs.h"
+#include "../io/global_io.h"
 #include "../math/complexmatrix.h"
 #include "../math/utils_matrix_m_mpi.h"
 #include "../utils/constants.h"
@@ -464,7 +465,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
-    const bool debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
+    const bool debug = global::should_output(LIBRPA_VERBOSE_DEBUG);
     pds->is_band_calc_done = false;
 
     profiler.start("api_build_g0w0_sigma");
@@ -615,7 +616,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     }
     profiler.stop("g0w0_wc");
 
-    if (opts.output_level >= LIBRPA_VERBOSE_DEBUG)
+    if (global::should_output(LIBRPA_VERBOSE_DEBUG))
     { // debug, check Wc
         for (const auto &[freq, q_Wc]: Wc_freq_q)
         {
@@ -659,7 +660,7 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
-    const bool debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
+    const bool debug = global::should_output(LIBRPA_VERBOSE_DEBUG);
     i_state_low = std::max(0, i_state_low);
     i_state_high = std::min(pds->mf.get_n_states(), i_state_high);
     if (n_spins != pds->mf.get_n_spins())
@@ -856,7 +857,7 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
-    const bool debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
+    const bool debug = global::should_output(LIBRPA_VERBOSE_DEBUG);
     if (!pds->is_band_data_set || pds->mf_band.get_n_spins() == 0)
         throw LIBRPA_RUNTIME_ERROR("Meanfield data for band calculation is not set");
     i_state_low = std::max(0, i_state_low);

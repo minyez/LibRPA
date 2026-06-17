@@ -21,6 +21,8 @@ struct DriverParams
     std::string input_dir;
     std::string input_symmetry_convention;
 
+    LibrpaVerbose output_level;
+
     bool use_spinor_wfc;
 
     // Input file prefixes and file names

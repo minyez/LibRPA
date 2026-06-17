@@ -125,6 +125,18 @@ void init_global(Switch switch_redirect_stdout = LIBRPA_SWITCH_OFF, const char *
                  Switch switch_process_output = LIBRPA_SWITCH_ON);
 
 /**
+ * @brief Set the global LibRPA stdout verbosity.
+ * @see librpa_set_output_level
+ */
+void set_output_level(Verbose output_level);
+
+/**
+ * @brief Get the global LibRPA stdout verbosity.
+ * @see librpa_get_output_level
+ */
+Verbose get_output_level(void);
+
+/**
  * @brief Finalize the global LibRPA environment.
  *
  * Must be called after all LibRPA operations are complete.

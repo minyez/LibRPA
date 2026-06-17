@@ -18,7 +18,6 @@ void librpa_init_options(LibrpaOptions *opts)
     librpa_set_output_dir(opts, "librpa.d");
 
     opts->parallel_routing = LIBRPA_ROUTING_AUTO;
-    opts->output_level = LIBRPA_VERBOSE_INFO;
     opts->vq_threshold = 0.0e0;
     opts->use_kpara_scf_eigvec = LIBRPA_SWITCH_OFF;
 

@@ -1167,7 +1167,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         n_basis, n_states, n_spin, headwing_basis_aux.nb_total, pds->pbc, pds->comm_h, pds->blacs_h);
     pds->p_headwing->use_2d_dielectric = driver::get_bool(driver::opts.use_2d_dielectric);
     pds->p_headwing->use_soc = mf.get_n_spinor() > 1;
-    pds->p_headwing->debug = driver::opts.output_level >= LIBRPA_VERBOSE_DEBUG;
+    pds->p_headwing->debug = librpa_int::global::should_output(LIBRPA_VERBOSE_DEBUG);
     pds->p_headwing->init(driver::opts.sqrt_coulomb_threshold, pds->vq);
     pds->p_headwing->cal_head();
     pds->epsmacs_imagfreq = pds->p_headwing->get_head_vec();
@@ -1178,7 +1178,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         const auto &headwing_cs =
             driver::get_bool(driver::opts.use_shrink_abfs) ? pds->cs_data_shrink : pds->cs_data;
         pds->p_headwing->cal_wing(headwing_cs, driver::opts.sqrt_coulomb_threshold, pds->vq);
-        if (driver::opts.output_level >= LIBRPA_VERBOSE_DEBUG)
+        if (librpa_int::global::should_output(LIBRPA_VERBOSE_DEBUG))
             pds->p_headwing->test_wing();
     }
 }
@@ -2223,7 +2223,7 @@ size_t read_shrink_sinvS(const string &dir_path, const string &vq_fprefix,
         }
         if (retcode != 0)
         {
-            lib_printf("Error encountered when reading %s, return code %d",
+            lib_printf(LIBRPA_VERBOSE_CRITICAL, "Error encountered when reading %s, return code %d",
                        file_path.c_str(), retcode);
             throw LIBRPA_RUNTIME_ERROR("Failed to read shrink_sinvS file " + file_path +
                                       ", return code " + std::to_string(retcode));

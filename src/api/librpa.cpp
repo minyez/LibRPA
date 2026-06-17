@@ -29,6 +29,10 @@ void init_global(LibrpaSwitch switch_redirect_stdout, const char *redirect_path,
     ::librpa_init_global(switch_redirect_stdout, redirect_path, switch_process_output);
 }
 
+void set_output_level(Verbose output_level) { ::librpa_set_output_level(output_level); }
+
+Verbose get_output_level(void) { return ::librpa_get_output_level(); }
+
 void finalize_global(void) { ::librpa_finalize_global(); }
 
 void test(void) { ::librpa_test(); }

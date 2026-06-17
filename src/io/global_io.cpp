@@ -15,6 +15,7 @@ namespace global
 
 std::ofstream ofs_myid;
 FILE *pfile_redirect = nullptr;
+LibrpaVerbose output_level = LIBRPA_VERBOSE_INFO;
 
 /* ==============================================
  * Private variables starts
@@ -26,6 +27,16 @@ static bool librpa_io_initialized = false;
 /*
  * Private variables ends
  ============================================== */
+
+void set_output_level(const LibrpaVerbose level) noexcept
+{
+    output_level = level;
+}
+
+LibrpaVerbose get_output_level() noexcept
+{
+    return output_level;
+}
 
 void init_global_io(bool redirect_stdout, const char *redirect_path, bool enable_task_output)
 {

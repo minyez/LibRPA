@@ -62,6 +62,7 @@ computation functions. They are managed by the environment setup APIs (C/C++/For
 
 - {librpa}`librpa_init_global` / {librpa}`librpa::init_global`
 - {librpa}`librpa_finalize_global` / {librpa}`librpa::finalize_global`
+- {librpa}`librpa_set_output_level` / {librpa}`librpa::set_output_level`
 - {librpa}`librpa_init_options` / {librpa}`librpa::Options`
 - {librpa}`librpa_set_output_dir` / {librpa}`librpa::Options::set_output_dir`
 
@@ -78,7 +79,7 @@ librpa_init_options(&opts);
 opts.tfgrids_type = LIBRPA_TFGRID_MINIMAX;
 opts.nfreq = 16;
 opts.gf_threshold = 1.e-3;
-opts.output_level = LIBRPA_VERBOSE_INFO;
+librpa_set_output_level(LIBRPA_VERBOSE_INFO);
 ```
 
 ```cpp
@@ -87,7 +88,7 @@ librpa::Options opts;
 opts.tfgrids_type = LIBRPA_TFGRID_MINIMAX;
 opts.nfreq = 16;
 opts.gf_threshold = 1.e-3;
-opts.output_level = LIBRPA_VERBOSE_INFO;
+librpa::set_output_level(LIBRPA_VERBOSE_INFO);
 ```
 
 ```fortran
@@ -97,7 +98,7 @@ call opts%init()
 opts%tfgrids_type = LIBRPA_TFGRID_MINIMAX
 opts%nfreq = 16
 opts%gf_threshold = 1.0d-3
-opts%output_level = LIBRPA_VERBOSE_INFO
+call librpa_set_output_level(LIBRPA_VERBOSE_INFO)
 ```
 
 The API uses enum/integer constants from the public headers, while the driver reads string values
@@ -202,7 +203,7 @@ int main()
     opts.tfgrids_type = LIBRPA_TFGRID_MINIMAX;
     opts.nfreq = 16;
     opts.gf_threshold = 1e-3;
-    opts.output_level = LIBRPA_VERBOSE_INFO;
+    librpa::set_output_level(LIBRPA_VERBOSE_INFO);
 
     // *** Create handler ***
     librpa::Handler h(MPI_COMM_WORLD);

@@ -49,7 +49,7 @@ void driver::task_exx_band()
     {
         if (mpi_comm_global_h.myid == 0)
         {
-            lib_printf("Error in reading Vxc on kgrid, task failed!\n");
+            lib_printf(LIBRPA_VERBOSE_CRITICAL, "Error in reading Vxc on kgrid, task failed!\n");
         }
         profiler.stop("exx_band");
         return;
@@ -65,7 +65,7 @@ void driver::task_exx_band()
 
     mpi_comm_global_h.barrier();
     const std::string banner(90, '-');
-    if (mpi_comm_global_h.is_root())
+    if (mpi_comm_global_h.is_root() && should_output())
     {
         cout << banner << endl;
         cout << "Printing orbital energy [unit: eV]" << endl << endl;
@@ -88,7 +88,7 @@ void driver::task_exx_band()
             memcpy(exx_sp_collected.data() + index_collect, exx_ks.data() + index, n_states_calc * sizeof(double));
         }
         mpi_comm_global_h.reduce(MPI_IN_PLACE, exx_sp_collected.data(), n_states_calc * n_kpoints, 0, MPI_SUM);
-        if (mpi_comm_global_h.myid == 0)
+        if (mpi_comm_global_h.myid == 0 && should_output())
         {
             for (int ik = 0; ik < n_kpoints; ik++)
             {
@@ -121,7 +121,7 @@ void driver::task_exx_band()
     profiler.start("exx_band_load_band_mf");
     read_band_kpath_info(driver_params.input_dir + "band_kpath_info");
     const int nkpts_band = kfrac_band.size();
-    if (mpi_comm_global_h.is_root())
+    if (mpi_comm_global_h.is_root() && should_output())
     {
         std::cout << "Band k-points to compute:\n";
         for (int ik = 0; ik < nkpts_band; ik++)

@@ -69,7 +69,7 @@ void driver::task_exx()
             memcpy(exx_sp_collected.data() + index_collect, exx_ks.data() + index, n_states_calc * sizeof(double));
         }
         mpi_comm_global_h.reduce(MPI_IN_PLACE, exx_sp_collected.data(), n_states_calc * n_kpoints, 0, MPI_SUM);
-        if (mpi_comm_global_h.myid == 0)
+        if (mpi_comm_global_h.myid == 0 && should_output())
         {
             cout << "Spin channel " << isp+1 << endl;
             for (int ik = 0; ik < n_kpoints; ik++)

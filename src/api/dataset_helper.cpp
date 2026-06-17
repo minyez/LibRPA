@@ -4,6 +4,7 @@
 // Internal headers
 #include "../utils/error.h"
 #include "../utils/profiler.h"
+#include "../io/global_io.h"
 #include "dataset_helper.h"
 
 namespace librpa_int
@@ -182,7 +183,7 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
         const auto &headwing_cs =
             opts.use_shrink_abfs == LIBRPA_SWITCH_ON ? ds.cs_data_shrink : ds.cs_data;
         ds.p_headwing->cal_wing(headwing_cs, opts.sqrt_coulomb_threshold, ds.vq);
-        if (opts.output_level >= LIBRPA_VERBOSE_DEBUG)
+        if (global::should_output(LIBRPA_VERBOSE_DEBUG))
             ds.p_headwing->test_wing();
         global::profiler.stop("initialize_ds_headwing");
         return;
@@ -213,7 +214,7 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
         mf.get_n_spins(), headwing_basis_aux.nb_total, ds.pbc, ds.comm_h, ds.blacs_h);
     ds.p_headwing->use_2d_dielectric = opts.use_2d_dielectric == LIBRPA_SWITCH_ON;
     ds.p_headwing->use_soc = mf.get_n_spinor() > 1;
-    ds.p_headwing->debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
+    ds.p_headwing->debug = global::should_output(LIBRPA_VERBOSE_DEBUG);
     ds.p_headwing->init(opts.sqrt_coulomb_threshold, ds.vq);
     ds.p_headwing->cal_head();
     ds.epsmacs_imagfreq = ds.p_headwing->get_head_vec();
@@ -225,7 +226,7 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
         const auto &headwing_cs =
             opts.use_shrink_abfs == LIBRPA_SWITCH_ON ? ds.cs_data_shrink : ds.cs_data;
         ds.p_headwing->cal_wing(headwing_cs, opts.sqrt_coulomb_threshold, ds.vq);
-        if (opts.output_level >= LIBRPA_VERBOSE_DEBUG)
+        if (global::should_output(LIBRPA_VERBOSE_DEBUG))
             ds.p_headwing->test_wing();
     }
 

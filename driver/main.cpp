@@ -31,9 +31,10 @@ static void initialize(int argc, char **argv)
     MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
     if (MPI_THREAD_FUNNELED != provided)
     {
-        librpa_int::global::lib_printf("Warning: MPI_Init_thread provide %d != required %d", provided, MPI_THREAD_FUNNELED);
+        librpa_int::global::lib_printf(LIBRPA_VERBOSE_WARN, "Warning: MPI_Init_thread provide %d != required %d", provided, MPI_THREAD_FUNNELED);
     }
 
+    set_output_level(driver::driver_params.output_level);
     librpa::init_global(LIBRPA_SWITCH_OFF);
 
     // Global profiler begins right after MPI is initialized
@@ -81,11 +82,11 @@ static void finalize(bool success)
         librpa::print_profile();
         if (success)
         {
-            printf("libRPA finished successfully\n");
+            lib_printf("libRPA finished successfully\n");
         }
         else
         {
-            printf("libRPA failed\n");
+            lib_printf(LIBRPA_VERBOSE_CRITICAL, "Error: libRPA failed\n");
         }
     }
 
@@ -98,11 +99,11 @@ int main(int argc, char **argv)
     using namespace librpa_int::global;
     using librpa_int::get_node_free_mem;
 
+    parse_inputfile_to_params(input_filename);
     initialize(argc, argv);
 
-    // Parse input file with runtime options
+    // Echo input file runtime options.
     profiler.start("driver_read_params", "Driver Read Input Parameters");
-    parse_inputfile_to_params(input_filename);
     if (mpi_comm_global_h.is_root())
     {
         lib_printf("===== Begin driver parameters  =====\n");
@@ -136,7 +137,7 @@ int main(int argc, char **argv)
                 driver_params.input_dir,
                 input_symmetry_convention,
                 pds->input_symmetry_ctx,
-                mpi_comm_global_h.is_root() ? &std::cout : nullptr);
+                mpi_comm_global_h.is_root() && should_output() ? &std::cout : nullptr);
         }
         else
         {
@@ -186,11 +187,12 @@ int main(int argc, char **argv)
         {
             if (ret_eigenvec > 0)
             {
-                lib_printf_root("Error in reading eigenvector files (retcode %d)\n", ret_eigenvec);
+                lib_printf_root(LIBRPA_VERBOSE_CRITICAL, "Error in reading eigenvector files (retcode %d)\n", ret_eigenvec);
             }
             else
             {
                 lib_printf_root(
+                    LIBRPA_VERBOSE_CRITICAL,
                     "Error!!! No eigenvector files is found at directory, check if you "
                     "have input files KS_eigenvector\n");
             }

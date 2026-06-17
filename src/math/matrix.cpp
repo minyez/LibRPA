@@ -474,9 +474,9 @@ matrix power_symat(matrix &mat, double power, double threshold)
     for ( int i = 0; i != mat.nc; i++ )
     {
         if (w[i] < 0 && !is_int_power)
-            librpa_int::global::lib_printf("Warning! negative eigenvalue with non-integer power: # %d ev = %f , pow = %f", i, w[i], power);
+            librpa_int::global::lib_printf(LIBRPA_VERBOSE_WARN, "Warning! negative eigenvalue with non-integer power: # %d ev = %f , pow = %f", i, w[i], power);
         if (fabs(w[i]) < 1e-10 && power < 0)
-            librpa_int::global::lib_printf("Warning! nearly-zero eigenvalue with negative power: # %d ev = %f , pow = %f", i, w[i], power);
+            librpa_int::global::lib_printf(LIBRPA_VERBOSE_WARN, "Warning! nearly-zero eigenvalue with negative power: # %d ev = %f , pow = %f", i, w[i], power);
         if (w[i] < threshold)
             w[i] = 0;
         else

@@ -1539,7 +1539,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
 
     if (this->is_kspace_built_)
     {
-        global::lib_printf("Warning: reset Sigmac_c k-space matrices\n");
+        global::lib_printf(LIBRPA_VERBOSE_WARN, "Warning: reset Sigmac_c k-space matrices\n");
         this->reset_kspace();
     }
 

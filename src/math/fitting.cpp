@@ -105,7 +105,7 @@ void LevMarqFitting::fit(
     const std::size_t n = xs.size();
     if (n != ys.size())
     {
-        global::lib_printf("Warning: inconsistent x and y size of data\n");
+        global::lib_printf(LIBRPA_VERBOSE_WARN, "Warning: inconsistent x and y size of data\n");
     }
     int nit = d_maxiter;
     double lambda = d_init_lambda;
@@ -186,7 +186,7 @@ void LevMarqFitting::fit(
         {
             lib_printf("%f:", par[i]);
         }
-        lib_printf("Error: %f\n", derr);
+        lib_printf(LIBRPA_VERBOSE_CRITICAL, "Error: %f\n", derr);
 #endif
         if ((!ill) && (-derr < target_derr))
         {

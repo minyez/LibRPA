@@ -42,9 +42,6 @@ typedef struct
     //! Scheme of parallelization.
     LibrpaParallelRouting parallel_routing;
 
-    //! Verbose level for output
-    LibrpaVerbose output_level;
-
     //! Threshold for real-space Coulomb matrices
     double vq_threshold;
 

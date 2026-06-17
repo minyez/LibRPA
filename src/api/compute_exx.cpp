@@ -4,6 +4,7 @@
 // Internal headers
 #include "../core/coulmat.h"
 #include "../io/fs.h"
+#include "../io/global_io.h"
 #include "../io/stl_io_helper.h"
 #include "../utils/error.h"
 #include "../utils/profiler.h"
@@ -169,6 +170,7 @@ void librpa_get_exx_pot_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, con
     using librpa_int::global::lib_printf;
 
     auto pds = librpa_int::api::get_dataset_instance(h);
+    const auto &opts = *p_opts; // TODO: add a flag to control whether to use blacs or lapack
     i_state_low = std::max(0, i_state_low);
     i_state_high = std::min(pds->mf.get_n_states(), i_state_high);
     if (n_spins != pds->mf.get_n_spins())
@@ -186,7 +188,6 @@ void librpa_get_exx_pot_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, con
         librpa_build_exx(h, p_opts);
     }
 
-    const auto &opts = *p_opts; // TODO: add a flag to control whether to use blacs or lapack
     // const bool debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
 
     profiler.start("api_get_exx_pot_kgrid");
@@ -215,6 +216,7 @@ void librpa_get_exx_pot_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, co
     using librpa_int::global::lib_printf;
 
     auto pds = librpa_int::api::get_dataset_instance(h);
+    const auto &opts = *p_opts; // TODO: add a flag to control whether to use blacs or lapack
 
     if (!pds->is_band_data_set || pds->mf_band.get_n_spins() == 0)
         throw LIBRPA_RUNTIME_ERROR("Meanfield data for band calculation is not set");
@@ -236,7 +238,6 @@ void librpa_get_exx_pot_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, co
         librpa_build_exx(h, p_opts);
     }
 
-    const auto &opts = *p_opts; // TODO: add a flag to control whether to use blacs or lapack
     // const bool debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
 
     profiler.start("api_get_exx_pot_band_k");

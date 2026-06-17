@@ -19,7 +19,7 @@
 !>
 !> ! Initialize options
 !> call opts%init()
-!> opts%output_level = LIBRPA_VERBOSE_INFO
+!> call librpa_set_output_level(LIBRPA_VERBOSE_INFO)
 !>
 !> ! Create handler
 !> call h%init(MPI_COMM_WORLD)
@@ -116,6 +116,8 @@ module librpa_f03
 
    public :: librpa_init_global
    public :: librpa_finalize_global
+   public :: librpa_set_output_level
+   public :: librpa_get_output_level
    public :: librpa_get_major_version
    public :: librpa_get_minor_version
    public :: librpa_get_patch_version
@@ -149,7 +151,6 @@ module librpa_f03
       ! Common runtime control
       character(kind=c_char, len=1) :: output_dir(LIBRPA_MAX_STRLEN)
       integer(c_int) :: parallel_routing
-      integer(c_int) :: output_level
       real(c_double) :: vq_threshold
       integer(c_int) :: use_kpara_scf_eigvec
       integer(c_int) :: tfgrids_type
@@ -238,8 +239,6 @@ module librpa_f03
       character(len=LIBRPA_MAX_STRLEN) :: output_dir
       !> Parallel distribution strategy; use LIBRPA_ROUTING_* constants.
       integer :: parallel_routing
-      !> Verbosity level; use LIBRPA_VERBOSE_* constants.
-      integer :: output_level
       !> Real-space Coulomb matrix screening threshold.
       real(dp) :: vq_threshold
       !> Experimental: use k-point-parallel distribution of SCF eigenvectors.
@@ -405,6 +404,16 @@ module librpa_f03
 
       subroutine librpa_finalize_global_c() bind(c, name="librpa_finalize_global")
       end subroutine librpa_finalize_global_c
+
+      subroutine librpa_set_output_level_c(output_level) bind(c, name="librpa_set_output_level")
+         import :: c_int
+         integer(c_int), value :: output_level
+      end subroutine librpa_set_output_level_c
+
+      function librpa_get_output_level_c() bind(c, name="librpa_get_output_level")
+         import :: c_int
+         integer(c_int) :: librpa_get_output_level_c
+      end function librpa_get_output_level_c
 
       subroutine librpa_test_c() bind(c, name="librpa_test")
       end subroutine librpa_test_c
@@ -1055,7 +1064,6 @@ contains
 
       call sync_opt(opts%output_dir,              opts%opts_c%output_dir,              direction)
       call sync_opt(opts%parallel_routing,        opts%opts_c%parallel_routing,        direction)
-      call sync_opt(opts%output_level,            opts%opts_c%output_level,            direction)
       call sync_opt(opts%vq_threshold,            opts%opts_c%vq_threshold,            direction)
       call sync_opt(opts%use_kpara_scf_eigvec,    opts%opts_c%use_kpara_scf_eigvec,    direction)
       call sync_opt(opts%tfgrids_type,            opts%opts_c%tfgrids_type,            direction)
@@ -1206,6 +1214,19 @@ contains
       call librpa_finalize_global_c()
       if (allocated(redirect_path_buf)) deallocate(redirect_path_buf)
    end subroutine librpa_finalize_global
+
+   !> @brief Set global LibRPA stdout verbosity.
+   subroutine librpa_set_output_level(output_level)
+      implicit none
+      integer, intent(in) :: output_level
+      call librpa_set_output_level_c(int(output_level, c_int))
+   end subroutine librpa_set_output_level
+
+   !> @brief Get global LibRPA stdout verbosity.
+   integer function librpa_get_output_level() result(output_level)
+      implicit none
+      output_level = librpa_get_output_level_c()
+   end function librpa_get_output_level
 
    !> @brief Get major version number.
    !> @return Major version (X in X.Y.Z).

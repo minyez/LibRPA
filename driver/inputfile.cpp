@@ -240,10 +240,11 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_string_post(opts, parallel_routing, get_parallel_routing);
 
     parser.parse_bool("debug", btmp, false, flag);  // backward-compatible
-    if (btmp) opts.output_level = LIBRPA_VERBOSE_DEBUG;
+    if (btmp) driver_params.output_level = LIBRPA_VERBOSE_DEBUG;
 
     parser.parse_string("output_level", stmp, "info", flag);
-    if (flag == 0) opts.output_level = get_verbose(stmp);
+    if (flag == 0) driver_params.output_level = get_verbose(stmp);
+    librpa::set_output_level(driver_params.output_level);
 
     _parse_double(opts, vq_threshold);
 

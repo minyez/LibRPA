@@ -64,6 +64,18 @@ void librpa_init_global(LibrpaSwitch switch_redirect_stdout = LIBRPA_SWITCH_OFF,
                         LibrpaSwitch switch_process_output = LIBRPA_SWITCH_ON);
 
 /**
+ * @brief Set the global LibRPA stdout verbosity.
+ *
+ * This affects informational output from input and compute APIs.
+ */
+void librpa_set_output_level(LibrpaVerbose output_level);
+
+/**
+ * @brief Get the global LibRPA stdout verbosity.
+ */
+LibrpaVerbose librpa_get_output_level(void);
+
+/**
  * @brief Finalize the global LibRPA environment.
  *
  * Must be called after all LibRPA operations are complete and before MPI_Finalize().

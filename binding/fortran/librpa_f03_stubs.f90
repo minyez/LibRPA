@@ -19,7 +19,7 @@
 !>
 !> ! Initialize options
 !> call opts%init()
-!> opts%output_level = LIBRPA_VERBOSE_INFO
+!> call librpa_set_output_level(LIBRPA_VERBOSE_INFO)
 !>
 !> ! Create handler
 !> call h%init(MPI_COMM_WORLD)
@@ -113,6 +113,8 @@ module librpa_f03
 
    public :: librpa_init_global
    public :: librpa_finalize_global
+   public :: librpa_set_output_level
+   public :: librpa_get_output_level
    public :: librpa_get_major_version
    public :: librpa_get_minor_version
    public :: librpa_get_patch_version
@@ -131,8 +133,6 @@ module librpa_f03
       character(len=LIBRPA_MAX_STRLEN) :: output_dir
       !> Parallel distribution strategy; use LIBRPA_ROUTING_* constants.
       integer :: parallel_routing
-      !> Verbosity level; use LIBRPA_VERBOSE_* constants.
-      integer :: output_level
       !> Real-space Coulomb matrix screening threshold.
       real(dp) :: vq_threshold
       !> Experimental: use k-point-parallel distribution of SCF eigenvectors.
@@ -380,6 +380,20 @@ contains
       implicit none
       call error_on_call("librpa_finalize_global")
    end subroutine librpa_finalize_global
+
+   !> @brief Set global LibRPA stdout verbosity.
+   subroutine librpa_set_output_level(output_level)
+      implicit none
+      integer, intent(in) :: output_level
+      call error_on_call("librpa_set_output_level")
+   end subroutine librpa_set_output_level
+
+   !> @brief Get global LibRPA stdout verbosity.
+   integer function librpa_get_output_level() result(output_level)
+      implicit none
+      output_level = -1
+      call error_on_call("librpa_get_output_level")
+   end function librpa_get_output_level
 
    !> @brief Get major version number.
    !> @return Major version (X in X.Y.Z).

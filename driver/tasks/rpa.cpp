@@ -39,7 +39,7 @@ void driver::task_rpa()
     corr = h.get_rpa_correlation_energy(driver::opts, corr_irk);
 
     mpi_comm_global_h.barrier();
-    if (mpi_comm_global_h.is_root())
+    if (mpi_comm_global_h.is_root() && librpa_int::global::should_output())
     {
         lib_printf("RPA correlation energy (Hartree)\n");
         lib_printf("| Weighted contribution from each k:\n");
@@ -49,11 +49,14 @@ void driver::task_rpa()
             std::cout << "| " << ibz_kpoints[i_irk] << ": " << corr_irk[i_irk] << std::endl;
         }
         lib_printf("| Total EcRPA: %18.9f\n", corr);
+    }
+    if (mpi_comm_global_h.is_root())
+    {
         for (int i_irk = 0; i_irk < n_ibz_kpoints; i_irk++)
         {
             const auto &im = corr_irk[i_irk].imag();
             if (std::abs(im) > 1.e-3)
-                lib_printf("Warning: considerable imaginary part of EcRPA = %f\n at IBZ k-point %d\n", im, i_irk + 1);
+                lib_printf(LIBRPA_VERBOSE_WARN, "Warning: considerable imaginary part of EcRPA = %f\n at IBZ k-point %d\n", im, i_irk + 1);
         }
     }
     mpi_comm_global_h.barrier();

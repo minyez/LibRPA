@@ -526,11 +526,11 @@ ComplexMatrix power_hemat(ComplexMatrix &cmat, double power, bool keep_ev, bool 
         // lib_printf("%3d%22.12f\n", i+1, w[i]);
         if (w[i] < 0 && w[i] > threshold && !is_int_power)
 	{
-	    librpa_int::global::lib_printf("Warning! kept negative eigenvalue with non-integer power: # %d ev = %f , pow = %f\n", i, w[i], power);
+	    librpa_int::global::lib_printf(LIBRPA_VERBOSE_WARN, "Warning! kept negative eigenvalue with non-integer power: # %d ev = %f , pow = %f\n", i, w[i], power);
 	}
         if (fabs(w[i]) < 1e-10 && power < 0)
 	{
-            librpa_int::global::lib_printf("Warning! nearly-zero eigenvalue with negative power: # %d ev = %f , pow = %f\n", i, w[i], power);
+            librpa_int::global::lib_printf(LIBRPA_VERBOSE_WARN, "Warning! nearly-zero eigenvalue with negative power: # %d ev = %f , pow = %f\n", i, w[i], power);
 	}
         if (w[i] < threshold)
         {
@@ -577,9 +577,9 @@ void power_hemat_onsite(ComplexMatrix &cmat, double power, double threshold)
     for (int i = 0; i != cmat.nc; i++)
     {
         if (w[i] < 0 && w[i] > threshold && !is_int_power)
-            librpa_int::global::lib_printf("Warning! kept negative eigenvalue with non-integer power: # %d ev = %f , pow = %f\n", i, w[i], power);
+            librpa_int::global::lib_printf(LIBRPA_VERBOSE_WARN, "Warning! kept negative eigenvalue with non-integer power: # %d ev = %f , pow = %f\n", i, w[i], power);
         if (fabs(w[i]) < 1e-10 && power < 0)
-            librpa_int::global::lib_printf("Warning! nearly-zero eigenvalue with negative power: # %d ev = %f , pow = %f\n", i, w[i], power);
+            librpa_int::global::lib_printf(LIBRPA_VERBOSE_WARN, "Warning! nearly-zero eigenvalue with negative power: # %d ev = %f , pow = %f\n", i, w[i], power);
         if (w[i] < threshold)
             w[i] = 0;
         else

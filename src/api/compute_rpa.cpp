@@ -5,6 +5,7 @@
 // Internal headers
 #include "../core/epsilon.h"
 #include "../io/fs.h"
+#include "../io/global_io.h"
 // #include "../io/stl_io_helper.h"
 #include "../math/complexmatrix.h"
 #include "../utils/profiler.h"
@@ -63,7 +64,7 @@ double librpa_get_rpa_correlation_energy(LibrpaHandler *h, const LibrpaOptions *
         }
     }
 
-    const bool debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
+    const bool debug = global::should_output(LIBRPA_VERBOSE_DEBUG);
 
     // Prepare time-frequency grids
     initialize_ds_tfgrids(*pds, opts);

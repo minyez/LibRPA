@@ -5,6 +5,7 @@
 #include <sstream>
 #include <string>
 #include "librpa_enums.h"
+#include "../src/io/global_io.h"
 
 namespace driver
 {
@@ -14,6 +15,7 @@ DriverParams::DriverParams():
     constants_choice("internal"),
     input_dir("./"),
     input_symmetry_convention("auto"),
+    output_level(LIBRPA_VERBOSE_INFO),
     use_spinor_wfc(false),
     prefix_lri_coeff("Cs_data"),
     prefix_lri_coeff_shrink("Cs_shrinked_data"),
@@ -74,6 +76,7 @@ std::string DriverParams::format()
         };
     for (const auto &[k, v]: str_params)
         ss << k << " = " << v << std::endl;
+    ss << "output_level = " << get_verbose_string(output_level) << std::endl;
 
     const std::vector<std::pair<std::string, bool>> bool_params
         {
@@ -181,14 +184,13 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
     const std::vector<std::pair<std::string, std::string>> str_params
         {
             {"output_dir", opts.output_dir},
-            {"output_level", get_verbose_string(opts.output_level)},
             {"tfgrids_type", get_tfgrid_string(opts.tfgrids_type)},
             {"parallel_routing", get_routing_string(opts.parallel_routing)},
         };
 
     const std::vector<std::pair<std::string, bool>> bool_params
         {
-            {"debug", opts.output_level >= LIBRPA_VERBOSE_DEBUG},
+            {"debug", librpa_int::global::should_output(LIBRPA_VERBOSE_DEBUG)},
             bool_pair(replace_w_head),
             bool_pair(use_fullcoul_eps),
             bool_pair(use_fullcoul_exx),

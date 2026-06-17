@@ -1,5 +1,7 @@
 #pragma once
+#include <cstdio>
 #include <fstream>
+#include <utility>
 
 #include "../mpi/global_mpi.h"
 #include "librpa_enums.h"
@@ -15,6 +17,27 @@ extern std::ofstream ofs_myid;
 
 //! File stream used by fprintf when stdout is redirected
 extern FILE *pfile_redirect;
+
+//! Current stdout verbosity. Plain lib_printf messages are informational.
+extern LibrpaVerbose output_level;
+
+void set_output_level(const LibrpaVerbose level) noexcept;
+
+LibrpaVerbose get_output_level() noexcept;
+
+inline int verbose_rank(const LibrpaVerbose level) noexcept
+{
+    if (level == LIBRPA_VERBOSE_DEBUG) return 4;
+    if (level == LIBRPA_VERBOSE_INFO) return 3;
+    if (level == LIBRPA_VERBOSE_WARN) return 2;
+    if (level == LIBRPA_VERBOSE_CRITICAL) return 1;
+    return 0;
+}
+
+inline bool should_output(const LibrpaVerbose verbose_level = LIBRPA_VERBOSE_INFO) noexcept
+{
+    return verbose_rank(output_level) >= verbose_rank(verbose_level);
+}
 
 //! Initialize the IO environment of LibRPA
 /*!
@@ -35,8 +58,9 @@ void finalize_global_io();
 
 //! printf that handles the stdout redirect
 template <typename... Args>
-void lib_printf(const char* s, Args&&... args) noexcept
+void lib_printf(const LibrpaVerbose verbose_level, const char* s, Args&&... args) noexcept
 {
+    if (!should_output(verbose_level)) return;
     if (pfile_redirect != nullptr)
     {
         std::fprintf(pfile_redirect, s, std::forward<Args>(args)...);
@@ -48,9 +72,16 @@ void lib_printf(const char* s, Args&&... args) noexcept
     }
 }
 
-// raw string, no formatting at all
-inline void lib_printf(const char* s) noexcept
+template <typename... Args>
+void lib_printf(const char* s, Args&&... args) noexcept
 {
+    lib_printf(LIBRPA_VERBOSE_INFO, s, std::forward<Args>(args)...);
+}
+
+// raw string, no formatting at all
+inline void lib_printf(const LibrpaVerbose verbose_level, const char* s) noexcept
+{
+    if (!should_output(verbose_level)) return;
     if (pfile_redirect)
     {
         std::fprintf(pfile_redirect, "%s", s);
@@ -62,35 +93,52 @@ inline void lib_printf(const char* s) noexcept
     }
 }
 
+inline void lib_printf(const char* s) noexcept
+{
+    lib_printf(LIBRPA_VERBOSE_INFO, s);
+}
+
 //! simlar to global::printf, but only proc 0 of global communicator will dump
 template <typename... Args>
-void lib_printf_root(const char* s, Args&&... args) noexcept
+void lib_printf_root(const LibrpaVerbose verbose_level, const char* s, Args&&... args) noexcept
 {
     if (myid_global == 0)
     {
-        lib_printf(s, std::forward<Args>(args)...);
+        lib_printf(verbose_level, s, std::forward<Args>(args)...);
     }
+}
+
+template <typename... Args>
+void lib_printf_root(const char* s, Args&&... args) noexcept
+{
+    lib_printf_root(LIBRPA_VERBOSE_INFO, s, std::forward<Args>(args)...);
 }
 
 //! simlar to global::printf, but all processes will print in the order of myid
 template <typename... Args>
-void lib_printf_coll(const char* s, Args&&... args) noexcept
+void lib_printf_coll(const LibrpaVerbose verbose_level, const char* s, Args&&... args) noexcept
 {
     for (int i = 0; i < size_global; i++)
     {
         if (myid_global == i)
         {
-            lib_printf(s, std::forward<Args>(args)...);
+            lib_printf(verbose_level, s, std::forward<Args>(args)...);
         }
         MPI_Barrier(mpi_comm_global);
     }
 }
 
+template <typename... Args>
+void lib_printf_coll(const char* s, Args&&... args) noexcept
+{
+    lib_printf_coll(LIBRPA_VERBOSE_INFO, s, std::forward<Args>(args)...);
+}
+
 } /* end of namespace global */
 
-inline bool verbalize(LibrpaVerbose current_level, LibrpaVerbose verbose_level) noexcept
+inline bool verbalize(const LibrpaVerbose current_level, const LibrpaVerbose verbose_level) noexcept
 {
-    return current_level >= verbose_level;
+    return global::verbose_rank(current_level) >= global::verbose_rank(verbose_level);
 }
 
 //! Similar to lib_printf_root, but one can specify any communicator

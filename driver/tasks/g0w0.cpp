@@ -57,7 +57,7 @@ void driver::task_g0w0()
     }
     else if (driver::get_bool(opts.replace_w_head) && librpa_int::path_exists(file_df.c_str()))
     {
-        if (mpi_comm_global_h.is_root())
+        if (mpi_comm_global_h.is_root() && should_output())
             std::cout << "Reading dielectric function for head correction" << std::endl;
         std::vector<double> omegas_dielect;
         std::vector<double> dielect_func;
@@ -94,7 +94,7 @@ void driver::task_g0w0()
     int flag_read_vxc = read_vxc(driver_params.input_dir + driver_params.fn_vxc_scf, vxc);
     if (flag_read_vxc == 0)
     {
-        if (mpi_comm_global_h.is_root())
+        if (mpi_comm_global_h.is_root() && should_output())
             std::cout << "* Success: Read DFT xc potential, solve quasi-particle equation" << std::endl;
     }
     else
@@ -252,7 +252,7 @@ void driver::task_g0w0()
                         const int i_state = i + i_state_low;
                         if (std::isnan(sigc_all[start_k+i].real()))
                         {
-                            lib_printf("Warning! QPE solver failed for spin %d, kpoint %d, state %d\n",
+                            lib_printf(LIBRPA_VERBOSE_WARN, "Warning! QPE solver failed for spin %d, kpoint %d, state %d\n",
                                        i_spin+1, i_kpoint+1, i_state+1);
                         }
                     }

@@ -985,7 +985,7 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
             int retcode = handle_Vq_full_file(file_path, Vq_full, binary);
             if (retcode != 0)
             {
-                librpa_int::global::lib_printf("Error encountered when reading %s, return code %d", fm.c_str(), retcode);
+                librpa_int::global::lib_printf(LIBRPA_VERBOSE_CRITICAL, "Error encountered when reading %s, return code %d", fm.c_str(), retcode);
             }
         }
     }
