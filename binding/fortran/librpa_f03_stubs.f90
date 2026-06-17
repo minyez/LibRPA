@@ -289,6 +289,7 @@ module librpa_f03
          procedure :: set_wfc_spinor => librpa_set_wfc_spinor
          procedure :: set_ao_basis_wfc => librpa_set_ao_basis_wfc
          procedure :: set_ao_basis_aux => librpa_set_ao_basis_aux
+         procedure :: set_ao_basis_aux_shrink => librpa_set_ao_basis_aux_shrink
          procedure :: set_basis_convention => librpa_set_basis_convention
          procedure :: set_latvec_and_G => librpa_set_latvec_and_G
          procedure :: set_atoms => librpa_set_atoms
@@ -558,6 +559,21 @@ contains
       integer, intent(in), optional :: l_shells(*)
       call error_on_call("librpa_set_ao_basis_aux")
    end subroutine librpa_set_ao_basis_aux
+
+   !> @brief Set the shrink auxiliary atomic basis
+   !>
+   !> @param[in,out] this            Handler.
+   !> @param[in]     natoms          Number of atoms.
+   !> @param[in]     nbs_aux_shrink  Number of shrink auxiliary basis functions on each atom.
+   subroutine librpa_set_ao_basis_aux_shrink(this, natoms, nbs_aux_shrink, nshells, l_shells)
+      implicit none
+      class(LibrpaHandler), intent(inout) :: this
+      integer, intent(in) :: natoms
+      integer, intent(in) :: nbs_aux_shrink(natoms)
+      integer, intent(in), optional :: nshells(natoms)
+      integer, intent(in), optional :: l_shells(*)
+      call error_on_call("librpa_set_ao_basis_aux_shrink")
+   end subroutine librpa_set_ao_basis_aux_shrink
 
    !> @brief Set basis convention metadata used by symmetry-based reductions
    !>

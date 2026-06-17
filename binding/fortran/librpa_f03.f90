@@ -467,6 +467,7 @@ module librpa_f03
          procedure :: set_wfc_spinor => librpa_set_wfc_spinor
          procedure :: set_ao_basis_wfc => librpa_set_ao_basis_wfc
          procedure :: set_ao_basis_aux => librpa_set_ao_basis_aux
+         procedure :: set_ao_basis_aux_shrink => librpa_set_ao_basis_aux_shrink
          procedure :: set_basis_convention => librpa_set_basis_convention
          procedure :: set_latvec_and_G => librpa_set_latvec_and_G
          procedure :: set_atoms => librpa_set_atoms
@@ -582,6 +583,15 @@ module librpa_f03
          integer(c_size_t), dimension(*), intent(in) :: nbs_aux
          type(c_ptr), value :: nshells, l_shells
       end subroutine librpa_set_ao_basis_aux_c
+
+      subroutine librpa_set_ao_basis_aux_shrink_c(h, natoms, nbs_aux_shrink, nshells, l_shells) &
+            bind(c, name="librpa_set_ao_basis_aux_shrink")
+         import :: c_ptr, c_int, c_size_t
+         type(c_ptr), value :: h
+         integer(c_int), value :: natoms
+         integer(c_size_t), dimension(*), intent(in) :: nbs_aux_shrink
+         type(c_ptr), value :: nshells, l_shells
+      end subroutine librpa_set_ao_basis_aux_shrink_c
 
       subroutine librpa_set_basis_convention_c(h, bloch_phase, bloch_ratom, order, nega_m, posi_m) &
             bind(c, name="librpa_set_basis_convention")
@@ -1462,12 +1472,12 @@ contains
       end if
    end subroutine librpa_set_wfc_spinor
 
-   subroutine set_ao_basis(h, natoms, nbs, is_aux, nshells, l_shells)
+   subroutine set_ao_basis(h, natoms, nbs, basis_kind, nshells, l_shells)
       implicit none
       type(LibrpaHandler), intent(inout) :: h
       integer, intent(in) :: natoms
       integer, intent(in) :: nbs(natoms)
-      logical, intent(in) :: is_aux
+      integer, intent(in) :: basis_kind
       integer, intent(in), optional :: nshells(natoms)
       integer, intent(in), optional :: l_shells(*)
 
@@ -1498,7 +1508,9 @@ contains
          end if
       end if
 
-      if (is_aux) then
+      if (basis_kind == 2) then
+         call librpa_set_ao_basis_aux_shrink_c(h%ptr_c_handle, natoms_c, nbs_c, nshells_ptr, l_shells_ptr)
+      else if (basis_kind == 1) then
          call librpa_set_ao_basis_aux_c(h%ptr_c_handle, natoms_c, nbs_c, nshells_ptr, l_shells_ptr)
       else
          call librpa_set_ao_basis_wfc_c(h%ptr_c_handle, natoms_c, nbs_c, nshells_ptr, l_shells_ptr)
@@ -1521,7 +1533,7 @@ contains
       integer, intent(in), optional :: nshells(natoms)
       integer, intent(in), optional :: l_shells(*)
 
-      call set_ao_basis(this, natoms, nbs_wfc, .false., nshells, l_shells)
+      call set_ao_basis(this, natoms, nbs_wfc, 0, nshells, l_shells)
    end subroutine librpa_set_ao_basis_wfc
 
    !> @brief Set the auxiliary atomic basis
@@ -1537,8 +1549,24 @@ contains
       integer, intent(in), optional :: nshells(natoms)
       integer, intent(in), optional :: l_shells(*)
 
-      call set_ao_basis(this, natoms, nbs_aux, .true., nshells, l_shells)
+      call set_ao_basis(this, natoms, nbs_aux, 1, nshells, l_shells)
    end subroutine librpa_set_ao_basis_aux
+
+   !> @brief Set the shrink auxiliary atomic basis
+   !>
+   !> @param[in,out] this            Handler.
+   !> @param[in]     natoms          Number of atoms.
+   !> @param[in]     nbs_aux_shrink  Number of shrink auxiliary basis functions on each atom.
+   subroutine librpa_set_ao_basis_aux_shrink(this, natoms, nbs_aux_shrink, nshells, l_shells)
+      implicit none
+      class(LibrpaHandler), intent(inout) :: this
+      integer, intent(in) :: natoms
+      integer, intent(in) :: nbs_aux_shrink(natoms)
+      integer, intent(in), optional :: nshells(natoms)
+      integer, intent(in), optional :: l_shells(*)
+
+      call set_ao_basis(this, natoms, nbs_aux_shrink, 2, nshells, l_shells)
+   end subroutine librpa_set_ao_basis_aux_shrink
 
    !> @brief Set basis convention metadata used by symmetry-based reductions
    !>

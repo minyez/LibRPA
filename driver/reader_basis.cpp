@@ -423,12 +423,7 @@ void reader_basis_aux_shrink(const std::string &file_path)
     librpa_int::global::lib_printf_root("Reading shrink auxiliary basis information file: %s\n",
                                         file_path.c_str());
     const auto basis_info = read_basis_info_from_basis_file(file_path, BasisKind::Aux, "ABF");
-    auto pds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
-    pds->basis_aux_shrink.set(basis_info.nbs);
-    if (!basis_info.l_shells.empty())
-    {
-        pds->basis_aux_shrink.set_l_shells(basis_info.l_shells);
-    }
+    driver::h.set_ao_basis_aux_shrink(basis_info.nbs, basis_info.l_shells);
 }
 
 void reader_basis(const std::string &file_path)

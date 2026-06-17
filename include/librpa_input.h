@@ -113,6 +113,19 @@ void librpa_set_ao_basis_aux(LibrpaHandler* h, int natoms, const size_t* nbs_aux
                              const int* nshells = nullptr, const int* l_shells = nullptr);
 
 /**
+ * @brief Set shrink auxiliary atomic orbital basis size.
+ * @param[in] h               Handler.
+ * @param[in] natoms          Number of atoms.
+ * @param[in] nbs_aux_shrink  Number of shrink auxiliary basis functions per atom.
+ * @param[in] nshells         Optional number of angular shells per atom.
+ * @param[in] l_shells        Optional concatenated angular momenta, grouped by atom.
+ */
+void librpa_set_ao_basis_aux_shrink(LibrpaHandler* h, int natoms,
+                                    const size_t* nbs_aux_shrink,
+                                    const int* nshells = nullptr,
+                                    const int* l_shells = nullptr);
+
+/**
  * @brief Set basis convention metadata used by symmetry-based reductions.
  *
  * This metadata is optional for calculations that do not use input symmetry.

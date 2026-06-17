@@ -203,6 +203,19 @@ void Handler::set_ao_basis_aux(const std::vector<size_t> &nbs_aux,
                               nshells_ptr, l_shells_ptr);
 }
 
+void Handler::set_ao_basis_aux_shrink(const std::vector<size_t> &nbs_aux_shrink,
+                                      const std::vector<std::vector<int>> &l_shells)
+{
+    std::vector<int> nshells;
+    std::vector<int> flat_l_shells;
+    const int *nshells_ptr = nullptr;
+    const int *l_shells_ptr = nullptr;
+    basis_l_shell_ptrs(nbs_aux_shrink.size(), l_shells, nshells, flat_l_shells,
+                       nshells_ptr, l_shells_ptr);
+    ::librpa_set_ao_basis_aux_shrink(this->h_, static_cast<int>(nbs_aux_shrink.size()),
+                                     nbs_aux_shrink.data(), nshells_ptr, l_shells_ptr);
+}
+
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
     set_basis_convention,
     (int bloch_phase, int bloch_ratom, LibrpaAngularOrder order, LibrpaRshCoeff nega_m, LibrpaRshCoeff posi_m),

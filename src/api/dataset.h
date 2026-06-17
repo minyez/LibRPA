@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include <unordered_map>
 
@@ -69,6 +70,10 @@ public:
     AtomicBasis basis_aux;
     //! Handling object for shrinked auxiliary basis functions for RI
     AtomicBasis basis_aux_shrink;
+    //! Species shell layouts
+    std::map<int, SpeciesBasisLayout> basis_wfc_layouts;
+    std::map<int, SpeciesBasisLayout> basis_aux_layouts;
+    std::map<int, SpeciesBasisLayout> basis_aux_shrink_layouts;
     //! Basis ordering and real-spherical-harmonic convention.
     BasisConvention basis_convention;
     //! Optional input-code symmetry sidecar data.

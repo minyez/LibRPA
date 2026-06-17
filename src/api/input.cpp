@@ -5,7 +5,9 @@
 // Standard headers
 #include <complex>
 #include <cstring>
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 // Internal headers
@@ -69,6 +71,67 @@ std::vector<std::vector<int>> parse_l_shells(const int natoms,
         }
     }
     return parsed;
+}
+
+bool same_species_basis_layout(const librpa_int::SpeciesBasisLayout &lhs,
+                               const librpa_int::SpeciesBasisLayout &rhs)
+{
+    if (lhs.n_ao != rhs.n_ao)
+    {
+        return false;
+    }
+    if (lhs.is_shell_available() != rhs.is_shell_available())
+    {
+        return false;
+    }
+    return !lhs.is_shell_available() || lhs.l_shells == rhs.l_shells;
+}
+
+librpa_int::SpeciesBasisLayout species_basis_layout_from_atom(
+    const librpa_int::AtomicBasis &basis,
+    const librpa_int::atom_t atom,
+    const int atom_type)
+{
+    librpa_int::SpeciesBasisLayout layout;
+    layout.label = std::to_string(atom_type + 1);
+    if (basis.has_l_shells())
+    {
+        layout.set(basis.get_l_shells(static_cast<int>(atom)));
+    }
+    else
+    {
+        layout.n_ao = static_cast<int>(basis.get_atom_nb(static_cast<int>(atom)));
+    }
+    return layout;
+}
+
+void condense_species_basis_layouts(
+    const librpa_int::AtomicBasis &basis,
+    const std::map<librpa_int::atom_t, int> &atom_to_type,
+    std::map<int, librpa_int::SpeciesBasisLayout> &layouts)
+{
+    layouts.clear();
+    if (!basis.initialized() || atom_to_type.empty())
+    {
+        return;
+    }
+
+    for (const auto &entry : atom_to_type)
+    {
+        const auto atom = entry.first;
+        const int atom_type = entry.second;
+        if (atom_type < 0 || atom >= basis.n_atoms)
+        {
+            throw LIBRPA_RUNTIME_ERROR("Atomic basis shell metadata is inconsistent with atom types");
+        }
+
+        const auto layout = species_basis_layout_from_atom(basis, atom, atom_type);
+        const auto inserted = layouts.emplace(atom_type, layout);
+        if (!inserted.second && !same_species_basis_layout(inserted.first->second, layout))
+        {
+            throw LIBRPA_RUNTIME_ERROR("Atomic basis shell metadata differs within one atom type");
+        }
+    }
 }
 
 } // namespace
@@ -297,6 +360,22 @@ void librpa_set_wfc_spinor_packed(LibrpaHandler* h, int ik, int nstates_local, i
     profiler.stop(tname);
 }
 
+static void set_ao_basis(librpa_int::AtomicBasis& ab, const int natoms, const size_t* nbs,
+                         const int* nshells, const int* l_shells,
+                         const std::map<librpa_int::atom_t, int>& types,
+                         std::map<int, librpa_int::SpeciesBasisLayout>& layouts)
+{
+    std::vector<size_t> v_nbs(natoms);
+    for (int i = 0; i < natoms; i++) v_nbs[i] = librpa_int::as_size(nbs[i]);
+
+    ab.set(v_nbs);
+    if (nshells != nullptr || l_shells != nullptr)
+    {
+        ab.set_l_shells(parse_l_shells(natoms, nshells, l_shells));
+    }
+    condense_species_basis_layouts(ab, types, layouts);
+}
+
 void librpa_set_ao_basis_wfc(LibrpaHandler* h,
                              const int natoms,
                              const size_t *nbs_wfc,
@@ -309,15 +388,8 @@ void librpa_set_ao_basis_wfc(LibrpaHandler* h,
     const std::string tname = "api_set_ao_basis_wfc";
     profiler.start(tname);
 
-    std::vector<size_t> nbs(natoms);
-    for (int i = 0; i < natoms; i++) nbs[i] = librpa_int::as_size(nbs_wfc[i]);
-
     auto pds = librpa_int::api::get_dataset_instance(h);
-    pds->basis_wfc.set(nbs);
-    if (nshells != nullptr || l_shells != nullptr)
-    {
-        pds->basis_wfc.set_l_shells(parse_l_shells(natoms, nshells, l_shells));
-    }
+    set_ao_basis(pds->basis_wfc, natoms, nbs_wfc, nshells, l_shells, pds->atoms.types, pds->basis_wfc_layouts);
     pds->desc_wfc.reset_handler(pds->blacs_h);
     const auto n = pds->basis_wfc.nb_total;
     pds->desc_wfc.init_1b1p(n, n, 0, 0);
@@ -346,21 +418,8 @@ void librpa_set_ao_basis_aux(LibrpaHandler* h,
     const std::string tname = "api_set_ao_basis_aux";
     profiler.start(tname);
 
-    std::vector<size_t> nbs(natoms);
-    // ofs_myid << "Parsing auxiliary basis: ";
-    for (int i = 0; i < natoms; i++)
-    {
-        nbs[i] = librpa_int::as_size(nbs_aux[i]);
-        // librpa_int::global::ofs_myid << nbs[i] << " ";
-    }
-    // ofs_myid << std::endl;
-
     auto pds = librpa_int::api::get_dataset_instance(h);
-    pds->basis_aux.set(nbs);
-    if (nshells != nullptr || l_shells != nullptr)
-    {
-        pds->basis_aux.set_l_shells(parse_l_shells(natoms, nshells, l_shells));
-    }
+    set_ao_basis(pds->basis_aux, natoms, nbs_aux, nshells, l_shells, pds->atoms.types, pds->basis_aux_layouts);
 
     // After auxiliary basis is set, we can initialize the global (continous) array descriptor for N_abf size basis.
     pds->desc_abf.reset_handler(pds->blacs_h);
@@ -372,6 +431,36 @@ void librpa_set_ao_basis_aux(LibrpaHandler* h,
     {
         lib_printf("Auxiliary basis functions set:\n");
         lib_printf("| total number of basis: %lu\n", pds->basis_aux.nb_total);
+    }
+    pds->comm_h.barrier();
+
+    profiler.stop(tname);
+}
+
+void librpa_set_ao_basis_aux_shrink(LibrpaHandler* h,
+                                    int natoms,
+                                    const size_t *nbs_aux_shrink,
+                                    const int *nshells,
+                                    const int *l_shells)
+{
+    using librpa_int::global::lib_printf;
+    using librpa_int::global::profiler;
+
+    const std::string tname = "api_set_ao_basis_aux_shrink";
+    profiler.start(tname);
+
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    set_ao_basis(pds->basis_aux_shrink, natoms, nbs_aux_shrink, nshells, l_shells, pds->atoms.types, pds->basis_aux_shrink_layouts);
+
+    pds->desc_abf_shrink.reset_handler(pds->blacs_h);
+    const auto n = pds->basis_aux_shrink.nb_total;
+    pds->desc_abf_shrink.init_1b1p(n, n, 0, 0);
+
+    pds->comm_h.barrier();
+    if (pds->comm_h.is_root())
+    {
+        lib_printf("Shrink auxiliary basis functions set:\n");
+        lib_printf("| total number of basis: %lu\n", pds->basis_aux_shrink.nb_total);
     }
     pds->comm_h.barrier();
 
@@ -566,6 +655,14 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
         }
         pds->comm_h.barrier();
     }
+
+    if (pds->basis_wfc.initialized())
+        condense_species_basis_layouts(pds->basis_wfc, pds->atoms.types, pds->basis_wfc_layouts);
+    if (pds->basis_aux.initialized())
+        condense_species_basis_layouts(pds->basis_aux, pds->atoms.types, pds->basis_aux_layouts);
+    if (pds->basis_aux_shrink.initialized())
+        condense_species_basis_layouts(pds->basis_aux_shrink, pds->atoms.types, pds->basis_aux_shrink_layouts);
+
     profiler.stop(tname);
 }
 
