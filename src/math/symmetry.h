@@ -60,6 +60,24 @@ struct SpaceGroupSymOps
     auto cend() const { return operations.cend(); }
 };
 
+/*!
+ * @brief Mapping from one atom to its inequivalent representative.
+ *
+ * For the atom at index `atom`, stored implicitly by the vector position of this
+ * entry, the mapped operation satisfies:
+ *
+ * atom_positions[atom] * operations[isym].rotation + operations[isym].translation
+ *   = atom_positions[inequivalent_atom] + return_lattice
+ *
+ * `isym == -1` is used only when no operation is available for a self mapping.
+ */
+struct AtomInequivalentSymmetryMapping
+{
+    int inequivalent_atom = -1;
+    int isym = -1;
+    Vector3_Order<int> return_lattice{0, 0, 0};
+};
+
 Matrix3 multiply_space_group_rotation_matrices(const Matrix3& lhs,
                                                const Matrix3& rhs);
 
@@ -73,5 +91,32 @@ SpaceGroupSymOp compose_space_group_symmetry_operations(
 Vector3_Order<double> apply_space_group_symmetry_operation(
     const SpaceGroupSymOp& operation,
     const Vector3_Order<double>& coord);
+
+std::vector<AtomInequivalentSymmetryMapping> build_atom_to_inequivalent_symmetry_mapping(
+    const std::vector<Vector3_Order<double>>& atom_positions,
+    const SpaceGroupSymOps<SpaceGroupSymOp>& operations,
+    double tol = 1e-5);
+
+template <typename OperationType>
+std::vector<AtomInequivalentSymmetryMapping> build_atom_to_inequivalent_symmetry_mapping(
+    const std::vector<Vector3_Order<double>>& atom_positions,
+    const SpaceGroupSymOps<OperationType>& operations,
+    const double tol = 1e-5)
+{
+    SpaceGroupSymOps<SpaceGroupSymOp> base_operations;
+    base_operations.reserve(operations.size());
+    for (const auto& operation : operations)
+    {
+        SpaceGroupSymOp base_operation;
+        base_operation.isym = operation.isym;
+        base_operation.rotation = operation.rotation;
+        base_operation.translation = operation.translation;
+        base_operations.push_back(base_operation);
+    }
+    return build_atom_to_inequivalent_symmetry_mapping(atom_positions, base_operations, tol);
+}
+
+std::vector<int> collect_inequivalent_atoms(
+    const std::vector<AtomInequivalentSymmetryMapping>& mappings);
 
 } // namespace librpa_int

@@ -238,11 +238,6 @@ bool starts_with_integer_token(const std::string& text)
            || std::isspace(static_cast<unsigned char>(stripped[index])) != 0;
 }
 
-bool nearly_integer(const double value, const double tol = kInputSymmetryCoordTol)
-{
-    return std::abs(value - std::round(value)) < tol;
-}
-
 int shell_symbol_to_l(const char symbol)
 {
     const std::string shells = "SPDFGHIJKLMNO";
@@ -280,20 +275,6 @@ std::vector<int> build_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
     }
     offsets.back() = running;
     return offsets;
-}
-
-Vector3_Order<double> restrict_fractional_coordinate(const Vector3_Order<double>& vec,
-                                                     const double tol = kInputSymmetryCoordTol)
-{
-    auto wrap = [tol](const double x) {
-        double wrapped = std::fmod(x + 100.0 + tol, 1.0) - tol;
-        if (std::abs(wrapped) < tol)
-        {
-            wrapped = 0.0;
-        }
-        return wrapped;
-    };
-    return {wrap(vec.x), wrap(vec.y), wrap(vec.z)};
 }
 
 bool nearly_same_kpoint(const Vector3_Order<double>& lhs,
@@ -353,19 +334,6 @@ bool is_identity_rotation(const Matrix3& matrix,
            && std::abs(matrix.e22 - 1.0) < tol && std::abs(matrix.e23) < tol
            && std::abs(matrix.e31) < tol && std::abs(matrix.e32) < tol
            && std::abs(matrix.e33 - 1.0) < tol;
-}
-
-Vector3_Order<int> round_vec3_to_int(const Vector3_Order<double>& vec)
-{
-    return {static_cast<int>(std::lround(vec.x)),
-            static_cast<int>(std::lround(vec.y)),
-            static_cast<int>(std::lround(vec.z))};
-}
-
-bool is_nearly_integer_vec3(const Vector3_Order<double>& vec,
-                            const double tol = kInputSymmetryCoordTol)
-{
-    return nearly_integer(vec.x, tol) && nearly_integer(vec.y, tol) && nearly_integer(vec.z, tol);
 }
 
 ComplexMatrix extract_atom_block(const ComplexMatrix& matrix,
@@ -458,7 +426,7 @@ std::vector<InputSymmetryRSpaceOperationInfo> build_rspace_operation_info(
                                                    atom_map_tol);
                 const Vector3_Order<double> diff =
                     transformed - coord_to_vec;
-                if (!is_nearly_integer_vec3(diff, atom_map_tol))
+                if (!nearly_integer_vector(diff, atom_map_tol))
                 {
                     continue;
                 }
@@ -467,7 +435,7 @@ std::vector<InputSymmetryRSpaceOperationInfo> build_rspace_operation_info(
                     throw std::runtime_error("ABACUS real-space symmetry atom mapping is ambiguous");
                 }
                 matched_atom = atom_to;
-                matched_return = round_vec3_to_int(diff);
+                matched_return = round_to_integer_vector(diff);
             }
 
             if (matched_atom == static_cast<atom_t>(-1))
@@ -499,7 +467,8 @@ std::vector<int> build_rspace_inverse_map(
                                     ctx.rspace_operations[jsym].rotation)
                 + ctx.rspace_operations[jsym].translation;
             const bool is_inverse =
-                is_identity_rotation(composed_rotation) && is_nearly_integer_vec3(composed_translation);
+                is_identity_rotation(composed_rotation)
+                && nearly_integer_vector(composed_translation, kInputSymmetryCoordTol);
 
             if (is_inverse)
             {
@@ -532,13 +501,13 @@ Vector3_Order<int> rotate_rspace_vector(
         - Vector3_Order<double>(static_cast<double>(op_info.return_lattice[atom_from_i].x),
                                 static_cast<double>(op_info.return_lattice[atom_from_i].y),
                                 static_cast<double>(op_info.return_lattice[atom_from_i].z));
-    if (!is_nearly_integer_vec3(rotated_double))
+    if (!nearly_integer_vector(rotated_double, kInputSymmetryCoordTol))
     {
         throw std::runtime_error("ABACUS real-space symmetry generated a non-integer lattice vector");
     }
     // Keep the raw rotated lattice vector returned by the ABACUS formula.
     // The caller is responsible for filtering against the explicit R list.
-    return round_vec3_to_int(rotated_double);
+    return round_to_integer_vector(rotated_double);
 }
 
 Vector3_Order<double> parse_vec3_double(const std::string& line, const std::string& context)
@@ -2443,19 +2412,22 @@ Vector3_Order<int> build_input_symmetry_kspace_return_lattice(
     const Vector3_Order<double> coord_from =
         restrict_fractional_coordinate({coord_from_iter->second[0],
                                         coord_from_iter->second[1],
-                                        coord_from_iter->second[2]});
+                                        coord_from_iter->second[2]},
+                                       kInputSymmetryCoordTol);
     const Vector3_Order<double> coord_to =
         restrict_fractional_coordinate({coord_to_iter->second[0],
                                         coord_to_iter->second[1],
-                                        coord_to_iter->second[2]});
+                                        coord_to_iter->second[2]},
+                                       kInputSymmetryCoordTol);
     const Vector3_Order<double> transformed =
-        multiply_row_vector(coord_from, op.rotation) + restrict_fractional_coordinate(op.translation);
+        multiply_row_vector(coord_from, op.rotation)
+        + restrict_fractional_coordinate(op.translation, kInputSymmetryCoordTol);
     const Vector3_Order<double> return_lattice = transformed - coord_to;
-    if (!is_nearly_integer_vec3(return_lattice))
+    if (!nearly_integer_vector(return_lattice, kInputSymmetryCoordTol))
     {
         throw std::runtime_error("ABACUS k-space phase correction produced a non-integer return lattice");
     }
-    return round_vec3_to_int(return_lattice);
+    return round_to_integer_vector(return_lattice);
 }
 
 Vector3_Order<int> build_input_symmetry_equivalent_kpoint_shift(
@@ -2467,12 +2439,12 @@ Vector3_Order<int> build_input_symmetry_equivalent_kpoint_shift(
         k_bz_target.y - k_bz_source.y,
         k_bz_target.z - k_bz_source.z,
     };
-    if (!is_nearly_integer_vec3(k_shift))
+    if (!nearly_integer_vector(k_shift, kInputSymmetryCoordTol))
     {
         throw std::runtime_error(
             "ABACUS symmetry restore encountered non-equivalent full-k representatives");
     }
-    return round_vec3_to_int(k_shift);
+    return round_to_integer_vector(k_shift);
 }
 
 std::pair<atom_t, atom_t> canonicalize_input_symmetry_upper_atom_pair(const atom_t atom_i,
@@ -2564,7 +2536,8 @@ std::complex<double> build_input_symmetry_reciprocal_gauge_phase(
     const Vector3_Order<double> tau =
         restrict_fractional_coordinate({coord_iter->second[0],
                                         coord_iter->second[1],
-                                        coord_iter->second[2]});
+                                        coord_iter->second[2]},
+                                       kInputSymmetryCoordTol);
     const double phase_arg =
         TWO_PI * (static_cast<double>(k_shift.x) * tau.x
                   + static_cast<double>(k_shift.y) * tau.y

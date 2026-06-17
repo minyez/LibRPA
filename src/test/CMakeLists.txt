@@ -56,7 +56,9 @@ foreach(target
     test_qpe_solver
     test_rsh
     test_rpa_headwing
+    test_symmetry
     test_timefreq
+    test_vector3
     test_wigner_rotation
     )
   config_test(${target} 1)

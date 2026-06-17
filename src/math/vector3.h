@@ -13,6 +13,8 @@
 #include <iomanip>
 #include <iostream>
 
+#include "mathtools.h"
+
 namespace librpa_int {
 
 template <class T>
@@ -62,6 +64,33 @@ template <class T> Vector3<T> operator*( const Vector3<T> &u, const T &s        
 template <class T> Vector3<T> operator/( const Vector3<T> &u, const T &s          ) { return Vector3<T>( u.x/s, u.y/s, u.z/s ); }
 //u.v=(ux*vx)+(uy*vy)+(uz*vz)
 template <class T> T          dot      ( const Vector3<T> &u, const Vector3<T> &v ) { return ( u.x*v.x + u.y*v.y + u.z*v.z ); }
+template <class T> bool nearly_integer_vector(const Vector3<T> &u, const double tol = 1e-8)
+{
+	return nearly_integer(static_cast<double>(u.x), tol)
+	    && nearly_integer(static_cast<double>(u.y), tol)
+	    && nearly_integer(static_cast<double>(u.z), tol);
+}
+template <class T> Vector3<int> round_to_integer_vector(const Vector3<T> &u)
+{
+	return Vector3<int>(static_cast<int>(std::lround(static_cast<double>(u.x))),
+	                    static_cast<int>(std::lround(static_cast<double>(u.y))),
+	                    static_cast<int>(std::lround(static_cast<double>(u.z))));
+}
+inline Vector3<double> restrict_fractional_coordinate(const Vector3<double> &u, const double tol = 1e-8)
+{
+	const auto wrap = [tol](const double component) {
+		const double wrapped = component - std::floor(component);
+		return (std::abs(wrapped) < tol || std::abs(wrapped - 1.0) < tol) ? 0.0 : wrapped;
+	};
+	return Vector3<double>(wrap(u.x), wrap(u.y), wrap(u.z));
+}
+template <class T> Vector3<double> restrict_fractional_coordinate(const Vector3<T> &u, const double tol = 1e-8)
+{
+	return restrict_fractional_coordinate(Vector3<double>(static_cast<double>(u.x),
+	                                                      static_cast<double>(u.y),
+	                                                      static_cast<double>(u.z)),
+	                                      tol);
+}
 // | i  j  k  |
 // | ux uy uz |
 // | vx vy vz |

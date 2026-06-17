@@ -6,6 +6,11 @@
 
 namespace librpa_int {
 
+bool nearly_integer(const double value, const double tol)
+{
+    return std::abs(value - std::round(value)) < tol;
+}
+
 /*!
  * The nodes are zeros of order-N Chebyshev polynomials of first kind \f$T_N(x)\f$ in \f$[-1,1]\f$:
  * \f[

@@ -31,6 +31,12 @@ Vector3_Order<T> operator-(const Vector3_Order<T> &v1)
 }
 
 template<typename T>
+Vector3_Order<double> restrict_fractional_coordinate(const Vector3_Order<T> &v, const double tol = 1e-8)
+{
+	return restrict_fractional_coordinate(static_cast<const Vector3<T>&>(v), tol);
+}
+
+template<typename T>
 bool operator== ( const Vector3_Order<T> &v1, const Vector3_Order<T> &v2 );
 /*
 template<typename T>

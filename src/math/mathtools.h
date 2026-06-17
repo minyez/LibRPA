@@ -8,6 +8,8 @@
 
 namespace librpa_int {
 
+bool nearly_integer(double value, double tol = 1e-8);
+
 //! Get the Gauss-Chebyshev quadrature based on Chebyshev points of the first type (kind)
 /*!
  * @param N Number of grid points
