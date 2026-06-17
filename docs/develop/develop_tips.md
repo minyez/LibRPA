@@ -49,6 +49,40 @@ For naming, follow these general conventions:
 - Use `snake_case` for variables, object instances, functions, and namespaces.
 - Use `SCREAMING_SNAKE_CASE` for constants.
 
+## Source code structure of LibRPA
+
+```
+.
+|-- binding
+|   `-- fortran       : Fortran bindings and binding tests
+|-- cmake             : CMake find modules and build helper scripts
+|-- docs              : Sphinx/MyST user and developer documentation
+|-- driver            : Command-line driver, input parsing, and data readers
+|   `-- tasks         : Driver task implementations
+|-- examples
+|   `-- build         : Example build scripts for common platforms
+|-- include           : Public C and C++ API headers
+|-- regression_tests  : Regression suite definitions, test cases, and references
+|-- src               : Source code for the library target
+|   |-- api           : Public API implementation and handler/dataset glue
+|   |-- core          : Physics objects and algorithms: basis, RPA, EXX, GW, symmetry
+|   |-- elpa          : ELPA eigensolver integration
+|   |-- gpu           : Optional CUDA/HIP device and linear-algebra adapters
+|   |-- interface     : Thin interfaces to external codes, e.g. BLAS, LAPACK, and ScaLAPACK 
+|   |-- io            : Filesystem, ELSI/GW I/O, and stream-printing helpers
+|   |-- math          : Utilities of matrix, vector, interpolation, fitting, etc.
+|   |-- mpi           : MPI, BLACS, and k-point/process-grid helpers
+|   |-- utils         : Constants, errors, profiling, memory, and configured build information
+|   `-- test          : C++ unit and MPI tests for library components
+|-- thirdparty        : Bundled external libraries used when not supplied by the user
+`-- utilities         : Standalone conversion, consistency-check, and maintenance tools
+```
+
+The public API path is `include/librpa*.h(pp)`, implemented under `src/api`.
+The driver path is `driver/main.cpp` with tasks implemented under `driver/tasks`
+and input data coming from `driver/read_data.cpp`. Library code (`src/`)
+should stay independent of the command-line driver (`driver/`).
+
 ## A few C++ guidelines
 
 - Avoid forward declarations for concrete classes and structs; include the
