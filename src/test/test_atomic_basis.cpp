@@ -65,6 +65,7 @@ void test_l_shell_metadata()
     ab.set_l_shells(l_shells);
     assert(ab.has_l_shells());
     assert(ab.get_l_shells() == l_shells);
+    assert(ab.get_max_l() == 2);
 
     bool caught = false;
     try
@@ -79,6 +80,7 @@ void test_l_shell_metadata()
 
     ab.set({1});
     assert(!ab.has_l_shells());
+    assert(ab.get_max_l() == -1);
 }
 
 void test_get_2d_indices()

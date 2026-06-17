@@ -45,6 +45,20 @@ struct BasisConvention
     LibrpaRshCoeff coeff_m_positive = LIBRPA_RSH_COEFF_UNSET;
 };
 
+inline bool is_basis_rsh_convention_set(const BasisConvention &bconv)
+{
+    return bconv.order != LIBRPA_ANGULAR_ORDER_UNSET
+           && bconv.coeff_m_negative != LIBRPA_RSH_COEFF_UNSET
+           && bconv.coeff_m_positive != LIBRPA_RSH_COEFF_UNSET;
+}
+
+inline bool is_basis_convention_set(const BasisConvention &bconv)
+{
+    return bconv.bloch_phase != LIBRPA_UNSET
+           && bconv.bloch_ratom != LIBRPA_UNSET
+           && is_basis_rsh_convention_set(bconv);
+}
+
 /*! @class
  * @brief Object to handle atomic basis
  */
@@ -59,6 +73,7 @@ private:
     std::vector<int> glo2iat_;
     std::vector<std::size_t> glo2loc_;
     std::vector<std::vector<int>> l_shells_;
+    int max_l_;
     // std::vector<int> irad_;
     // std::vector<int> l_;
     // std::vector<int> m_;
@@ -72,7 +87,7 @@ public:
 
     // Constructors
     AtomicBasis(): initialized_(false),
-                   nbs_(), part_range_(), glo2iat_(), glo2loc_(), l_shells_(),
+                   nbs_(), part_range_(), glo2iat_(), glo2loc_(), l_shells_(), max_l_(-1),
                    n_atoms(0), nb_total(0) {};
     AtomicBasis(const std::vector<std::size_t>& nbs);
     AtomicBasis(const std::vector<int>& atom_species,
@@ -138,6 +153,7 @@ public:
     inline bool has_l_shells() const noexcept { return l_shells_.size() == n_atoms && n_atoms > 0; }
     inline const std::vector<std::vector<int>>& get_l_shells() const noexcept { return l_shells_; }
     inline const std::vector<int>& get_l_shells(int i_atom) const noexcept { return l_shells_.at(i_atom); }
+    inline int get_max_l() const noexcept { return max_l_; }
     inline const std::vector<std::size_t>& get_part_range() const noexcept { return part_range_; }
     inline bool initialized() const noexcept { return initialized_; }
 };
