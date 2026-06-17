@@ -208,10 +208,10 @@ void test_headwing_spin_weights()
     assert(std::abs(librpa_int::headwing_spin_prefactor(1, false) - 2.0) < 1e-12);
 }
 
-void test_headwing_velocity_initialization()
+void test_velocity_matrix_initialization()
 {
-    librpa_int::headwing_velocity_t velocity;
-    librpa_int::initialize_headwing_velocity(velocity, 2, 3, 4);
+    librpa_int::velocity_matrix_t velocity;
+    librpa_int::initialize_velocity_matrix(velocity, 2, 3, 4);
 
     assert(velocity.size() == 2);
     for (int ispin = 0; ispin != 2; ++ispin)
@@ -247,7 +247,7 @@ int main(int argc, char *argv[])
         test_rpa_trace_log_average_uses_directional_head_and_wing();
         test_rpa_headwing_regular_body_start_channel();
         test_headwing_spin_weights();
-        test_headwing_velocity_initialization();
+        test_velocity_matrix_initialization();
     }
 
     librpa_int::global::finalize_global_io();

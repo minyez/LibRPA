@@ -238,13 +238,13 @@ LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
 )
 
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
-    set_headwing_velocity_matrix,
+    set_velocity_matrix,
     (int n_spins, int n_kpts, int n_states, const double *velocity_real, const double *velocity_imag),
     (n_spins, n_kpts, n_states, velocity_real, velocity_imag)
 )
 
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
-    set_headwing_velocity_matrix_packed,
+    set_velocity_matrix_packed,
     (int n_spins, int n_kpts, int n_states, const std::complex<double> *velocity),
     (n_spins, n_kpts, n_states, reinterpret_cast<const double*>(velocity))
 )

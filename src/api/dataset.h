@@ -89,10 +89,11 @@ public:
     // Input data.
     //! Mean-field starting point
     MeanField mf;
-    //! Internal velocity matrix used only for analytic head/wing construction.
+    //! Velocity/momentum matrix input.
+    //! Currently consumed by analytic head/wing construction.
     //! File readers may convert producer-specific momentum/velocity files before
     //! storing them here; public API setters store values as provided.
-    headwing_velocity_t headwing_velocity;
+    velocity_matrix_t velocity_matrix;
     //! Mean-field object for band calculation
     MeanField mf_band;
     //! Whether band-path input data has been provided through set_band_* APIs.

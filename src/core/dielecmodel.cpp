@@ -81,8 +81,8 @@ double headwing_spin_prefactor(const int n_spin, const bool spin_orbit_coupled)
     return 2.0 / static_cast<double>(n_spin);
 }
 
-void initialize_headwing_velocity(headwing_velocity_t &velocity, const int n_spins,
-                                  const int n_kpoints, const int n_states)
+void initialize_velocity_matrix(velocity_matrix_t &velocity, const int n_spins,
+                                const int n_kpoints, const int n_states)
 {
     velocity.clear();
     velocity.resize(n_spins);
@@ -146,20 +146,20 @@ void diele_func::init(double coulomb_eigen_threshold, const librpa_int::atpair_k
     this->n_abf = atomic_basis_abf_.nb_total;
     this->nk = this->kfrac_band.size();
     if (static_cast<int>(velocity_.size()) != n_spin)
-        throw LIBRPA_RUNTIME_ERROR("head/wing velocity spin dimension is inconsistent with meanfield");
+        throw LIBRPA_RUNTIME_ERROR("velocity matrix spin dimension is inconsistent with meanfield");
     for (int ispin = 0; ispin != n_spin; ++ispin)
     {
         if (static_cast<int>(velocity_[ispin].size()) != nk)
-            throw LIBRPA_RUNTIME_ERROR("head/wing velocity k-point dimension is inconsistent with k path");
+            throw LIBRPA_RUNTIME_ERROR("velocity matrix k-point dimension is inconsistent with k path");
         for (int ik = 0; ik != nk; ++ik)
         {
             if (velocity_[ispin][ik].size() != 3)
-                throw LIBRPA_RUNTIME_ERROR("head/wing velocity must contain three Cartesian components");
+                throw LIBRPA_RUNTIME_ERROR("velocity matrix must contain three Cartesian components");
             for (int alpha = 0; alpha != 3; ++alpha)
             {
                 const auto &vmat = velocity_[ispin][ik][alpha];
                 if (vmat.nr != n_states || vmat.nc != n_states)
-                    throw LIBRPA_RUNTIME_ERROR("head/wing velocity matrix size is inconsistent with bands");
+                    throw LIBRPA_RUNTIME_ERROR("velocity matrix size is inconsistent with bands");
             }
         }
     }

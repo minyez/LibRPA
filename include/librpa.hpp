@@ -309,14 +309,13 @@ public:
     void set_dielect_func_imagfreq(const std::vector<double> &omegas_imag,
                                    const std::vector<double> &dielect_func);
 
-    /** @brief Set analytic head/wing velocity matrix (separated real/imag arrays). */
-    void set_headwing_velocity_matrix(int n_spins, int n_kpts, int n_states,
-                                      const double *velocity_real,
-                                      const double *velocity_imag);
+    /** @brief Set velocity matrix (separated real/imag arrays). */
+    void set_velocity_matrix(int n_spins, int n_kpts, int n_states,
+                             const double *velocity_real, const double *velocity_imag);
 
-    /** @brief Set analytic head/wing velocity matrix (packed complex array). */
-    void set_headwing_velocity_matrix_packed(int n_spins, int n_kpts, int n_states,
-                                             const std::complex<double> *velocity);
+    /** @brief Set velocity matrix (packed complex array). */
+    void set_velocity_matrix_packed(int n_spins, int n_kpts, int n_states,
+                                    const std::complex<double> *velocity);
 
     /** @brief Set k-points for band structure calculations. */
     void set_band_kvec(int n_kpts_band, const double *kfrac_band);

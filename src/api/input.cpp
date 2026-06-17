@@ -962,45 +962,45 @@ void librpa_set_dielect_func_imagfreq(LibrpaHandler* h, int nfreq, const double 
     pds->epsmacs_imagfreq = std::vector<double>(dielect_func, dielect_func + nfreq);
 }
 
-static std::size_t _headwing_velocity_flat_index(const int ispin, const int ik,
-                                                 const int alpha, const int i_state,
-                                                 const int j_state, const int n_kpts,
-                                                 const int n_states)
+static std::size_t _velocity_matrix_flat_index(const int ispin, const int ik,
+                                               const int alpha, const int i_state,
+                                               const int j_state, const int n_kpts,
+                                               const int n_states)
 {
     return (((static_cast<std::size_t>(ispin) * n_kpts + ik) * 3 + alpha) * n_states
             + i_state) * n_states + j_state;
 }
 
-void librpa_set_headwing_velocity_matrix(LibrpaHandler* h, int n_spins, int n_kpts,
-                                         int n_states, const double* velocity_real,
-                                         const double* velocity_imag)
+void librpa_set_velocity_matrix(LibrpaHandler* h, int n_spins, int n_kpts,
+                                int n_states, const double* velocity_real,
+                                const double* velocity_imag)
 {
     using namespace librpa_int;
     using librpa_int::global::profiler;
 
-    const std::string tname = "api_set_headwing_velocity_matrix";
+    const std::string tname = "api_set_velocity_matrix";
     profiler.start(tname);
     if (n_spins <= 0 || n_kpts <= 0 || n_states <= 0)
-        throw LIBRPA_RUNTIME_ERROR("head/wing velocity dimensions must be positive");
+        throw LIBRPA_RUNTIME_ERROR("velocity matrix dimensions must be positive");
     if (velocity_real == nullptr || velocity_imag == nullptr)
-        throw LIBRPA_RUNTIME_ERROR("head/wing velocity real/imag arrays must not be null");
+        throw LIBRPA_RUNTIME_ERROR("velocity matrix real/imag arrays must not be null");
 
     auto pds = librpa_int::api::get_dataset_instance(h);
-    initialize_headwing_velocity(pds->headwing_velocity, n_spins, n_kpts, n_states);
+    initialize_velocity_matrix(pds->velocity_matrix, n_spins, n_kpts, n_states);
     for (int ispin = 0; ispin != n_spins; ++ispin)
     {
         for (int ik = 0; ik != n_kpts; ++ik)
         {
             for (int alpha = 0; alpha != 3; ++alpha)
             {
-                auto &vmat = pds->headwing_velocity[ispin][ik][alpha];
+                auto &vmat = pds->velocity_matrix[ispin][ik][alpha];
                 for (int i = 0; i != n_states; ++i)
                 {
                     for (int j = 0; j != n_states; ++j)
                     {
                         const auto idx =
-                            _headwing_velocity_flat_index(ispin, ik, alpha, i, j,
-                                                          n_kpts, n_states);
+                            _velocity_matrix_flat_index(ispin, ik, alpha, i, j,
+                                                        n_kpts, n_states);
                         vmat(i, j) = std::complex<double>(velocity_real[idx],
                                                           velocity_imag[idx]);
                     }
@@ -1013,35 +1013,35 @@ void librpa_set_headwing_velocity_matrix(LibrpaHandler* h, int n_spins, int n_kp
     profiler.stop(tname);
 }
 
-void librpa_set_headwing_velocity_matrix_packed(LibrpaHandler* h, int n_spins, int n_kpts,
-                                                int n_states, const double* velocity_ri)
+void librpa_set_velocity_matrix_packed(LibrpaHandler* h, int n_spins, int n_kpts,
+                                       int n_states, const double* velocity_ri)
 {
     using namespace librpa_int;
     using librpa_int::global::profiler;
 
-    const std::string tname = "api_set_headwing_velocity_matrix_packed";
+    const std::string tname = "api_set_velocity_matrix_packed";
     profiler.start(tname);
     if (n_spins <= 0 || n_kpts <= 0 || n_states <= 0)
-        throw LIBRPA_RUNTIME_ERROR("head/wing velocity dimensions must be positive");
+        throw LIBRPA_RUNTIME_ERROR("velocity matrix dimensions must be positive");
     if (velocity_ri == nullptr)
-        throw LIBRPA_RUNTIME_ERROR("head/wing velocity packed array must not be null");
+        throw LIBRPA_RUNTIME_ERROR("velocity matrix packed array must not be null");
 
     auto pds = librpa_int::api::get_dataset_instance(h);
-    initialize_headwing_velocity(pds->headwing_velocity, n_spins, n_kpts, n_states);
+    initialize_velocity_matrix(pds->velocity_matrix, n_spins, n_kpts, n_states);
     for (int ispin = 0; ispin != n_spins; ++ispin)
     {
         for (int ik = 0; ik != n_kpts; ++ik)
         {
             for (int alpha = 0; alpha != 3; ++alpha)
             {
-                auto &vmat = pds->headwing_velocity[ispin][ik][alpha];
+                auto &vmat = pds->velocity_matrix[ispin][ik][alpha];
                 for (int i = 0; i != n_states; ++i)
                 {
                     for (int j = 0; j != n_states; ++j)
                     {
                         const auto idx =
-                            _headwing_velocity_flat_index(ispin, ik, alpha, i, j,
-                                                          n_kpts, n_states);
+                            _velocity_matrix_flat_index(ispin, ik, alpha, i, j,
+                                                        n_kpts, n_states);
                         vmat(i, j) = std::complex<double>(velocity_ri[2 * idx],
                                                           velocity_ri[2 * idx + 1]);
                     }

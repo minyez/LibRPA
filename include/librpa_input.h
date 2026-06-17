@@ -321,10 +321,10 @@ void librpa_set_dielect_func_imagfreq(LibrpaHandler* h, int nfreq, const double*
                                       const double* dielect_func);
 
 /**
- * @brief Set velocity/momentum matrix for analytic head/wing correction.
+ * @brief Set velocity/momentum matrix.
  *
  * The flattened matrix order is [spin][k][cartesian][row band][column band].
- * Values are used as-is in LibRPA's internal analytic head/wing convention; code-specific
+ * Values are currently used by LibRPA's internal analytic head/wing convention; code-specific
  * conversions from ABACUS or FHI-aims file formats are intentionally not applied here.
  *
  * @param[in] h              Handler.
@@ -334,18 +334,17 @@ void librpa_set_dielect_func_imagfreq(LibrpaHandler* h, int nfreq, const double*
  * @param[in] velocity_real  Real parts of the flattened velocity matrices.
  * @param[in] velocity_imag  Imaginary parts of the flattened velocity matrices.
  */
-void librpa_set_headwing_velocity_matrix(LibrpaHandler* h, int n_spins, int n_kpts,
-                                         int n_states, const double* velocity_real,
-                                         const double* velocity_imag);
+void librpa_set_velocity_matrix(LibrpaHandler* h, int n_spins, int n_kpts, int n_states,
+                                const double* velocity_real, const double* velocity_imag);
 
 /**
- * @brief Set velocity/momentum matrix for analytic head/wing correction.
+ * @brief Set velocity/momentum matrix.
  *
  * The flattened matrix order is [spin][k][cartesian][row band][column band], with
  * interleaved real/imaginary values.
  */
-void librpa_set_headwing_velocity_matrix_packed(LibrpaHandler* h, int n_spins, int n_kpts,
-                                                int n_states, const double* velocity_ri);
+void librpa_set_velocity_matrix_packed(LibrpaHandler* h, int n_spins, int n_kpts, int n_states,
+                                       const double* velocity_ri);
 
 /**
  * @brief Set k-points for band structure calculations.

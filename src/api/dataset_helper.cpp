@@ -189,10 +189,10 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
         return;
     }
 
-    if (ds.headwing_velocity.empty())
+    if (ds.velocity_matrix.empty())
     {
         throw LIBRPA_RUNTIME_ERROR(
-            "analytic head/wing requested but headwing velocity matrix is not set");
+            "analytic head/wing requested but velocity matrix is not set");
     }
 
     MeanField &mf = ds.mf;
@@ -209,7 +209,7 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
 
     const auto &freqs = ds.tfg.get_freq_nodes();
     ds.p_headwing = std::make_unique<diele_func>(
-        mf, ds.headwing_velocity, ds.pbc.kfrac_list, ds.basis_wfc,
+        mf, ds.velocity_matrix, ds.pbc.kfrac_list, ds.basis_wfc,
         headwing_basis_aux, freqs, mf.get_n_aos(), mf.get_n_states(),
         mf.get_n_spins(), headwing_basis_aux.nb_total, ds.pbc, ds.comm_h, ds.blacs_h);
     ds.p_headwing->use_2d_dielectric = opts.use_2d_dielectric == LIBRPA_SWITCH_ON;

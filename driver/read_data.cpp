@@ -886,7 +886,7 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
     mpi_comm_global_h.barrier();
 }
 
-void read_velocity(const string &file_path, const MeanField &mf, headwing_velocity_t &velocity)
+void read_velocity(const string &file_path, const MeanField &mf, velocity_matrix_t &velocity)
 {
     using librpa_int::global::mpi_comm_global_h;
     using librpa_int::ANG2BOHR;
@@ -912,7 +912,7 @@ void read_velocity(const string &file_path, const MeanField &mf, headwing_veloci
         throw std::logic_error(ss.str());
     }
 
-    initialize_headwing_velocity(velocity, n_spins, n_kpoints, n_bands);
+    initialize_velocity_matrix(velocity, n_spins, n_kpoints, n_bands);
     for (int is = 0; is != n_spins; is++)
     {
         for (int ik = 0; ik != n_kpoints; ik++)
@@ -943,7 +943,7 @@ void read_velocity(const string &file_path, const MeanField &mf, headwing_veloci
 }
 
 void read_velocity_aims(const MeanField &mf, const string &file_path,
-                        headwing_velocity_t &velocity)
+                        velocity_matrix_t &velocity)
 {
     using std::complex;
     using std::vector;
@@ -954,7 +954,7 @@ void read_velocity_aims(const MeanField &mf, const string &file_path,
     int nk = mf.get_n_kpoints();
     int n_spins = mf.get_n_spins();
     int nbands = mf.get_n_bands();
-    initialize_headwing_velocity(velocity, n_spins, nk, nbands);
+    initialize_velocity_matrix(velocity, n_spins, nk, nbands);
 
     for (int ik = 0; ik < nk; ik++)
     {
@@ -1044,8 +1044,8 @@ void read_headwing_input(const string &dir_path, bool need_wing)
 
     auto pds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
     auto &mf = pds->mf;
-    auto &headwing_velocity = pds->headwing_velocity;
-    headwing_velocity.clear();
+    auto &velocity_matrix = pds->velocity_matrix;
+    velocity_matrix.clear();
     struct MfRestore
     {
         MeanField &mf;
@@ -1084,8 +1084,8 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     {
         // Temporarily load the PyATB mean-field data into Dataset::mf for the
         // head/wing construction, then restore the SCF mean field before the
-        // downstream GW path continues. The velocity/momentum matrices remain
-        // separate because they are head/wing-specific inputs.
+        // downstream GW path continues. The velocity/momentum matrix remains
+        // separate from the mean-field data.
         if (mpi_comm_global_h.is_root())
         {
             std::cout << "Reading head/wing input from " << pyatb_dir << std::endl;
@@ -1098,7 +1098,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         {
             throw std::runtime_error("Failed to read pyatb head/wing eigenvectors from " + pyatb_dir);
         }
-        read_velocity(pyatb_velocity, mf, headwing_velocity);
+        read_velocity(pyatb_velocity, mf, velocity_matrix);
         kfrac_headwing = read_headwing_k_path_info(pyatb_dir + "k_path_info",
                                                    n_basis, n_states, n_spin);
         if (use_spinor_wfc)
@@ -1116,7 +1116,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     else
     {
         // ABACUS/FHI-aims package outputs use the SCF k grid for head/wing.
-        // Only the velocity/momentum matrix is head/wing-specific here.
+        // Only the velocity/momentum matrix needs an extra reader here.
         kfrac_headwing = pds->pbc.kfrac_list;
         n_basis = mf.get_n_aos();
         n_states = mf.get_n_states();
@@ -1126,11 +1126,11 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         const string file_aims = path_as_directory(dir_path) + "mommat_ks_kpt_000001.dat";
         if (path_exists(file_abacus.c_str()))
         {
-            read_velocity(file_abacus, mf, headwing_velocity);
+            read_velocity(file_abacus, mf, velocity_matrix);
         }
         else if (path_exists(file_aims.c_str()))
         {
-            read_velocity_aims(mf, path_as_directory(dir_path), headwing_velocity);
+            read_velocity_aims(mf, path_as_directory(dir_path), velocity_matrix);
         }
         else
         {
@@ -1162,7 +1162,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     if (!headwing_basis_aux.initialized())
         throw std::runtime_error("Head/wing auxiliary basis is not initialized");
     pds->p_headwing = std::make_unique<diele_func>(
-        mf, headwing_velocity, pds->pbc.kfrac_list, pds->basis_wfc,
+        mf, velocity_matrix, pds->pbc.kfrac_list, pds->basis_wfc,
         headwing_basis_aux, freqs,
         n_basis, n_states, n_spin, headwing_basis_aux.nb_total, pds->pbc, pds->comm_h, pds->blacs_h);
     pds->p_headwing->use_2d_dielectric = driver::get_bool(driver::opts.use_2d_dielectric);

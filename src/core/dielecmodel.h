@@ -34,11 +34,11 @@ struct RpaHeadwingSettings
     double sqrt_coulomb_threshold = 0.0;
 };
 
-//! Velocity/momentum matrix for analytic head/wing, indexed as [spin][k][cartesian].
-using headwing_velocity_t = std::vector<std::vector<std::vector<ComplexMatrix>>>;
+//! Velocity/momentum matrix, indexed as [spin][k][cartesian].
+using velocity_matrix_t = std::vector<std::vector<std::vector<ComplexMatrix>>>;
 
-void initialize_headwing_velocity(headwing_velocity_t &velocity, int n_spins, int n_kpoints,
-                                  int n_states);
+void initialize_velocity_matrix(velocity_matrix_t &velocity, int n_spins, int n_kpoints,
+                                int n_states);
 
 double headwing_transition_weight(double occupied_weight, double unoccupied_weight, int n_spin,
                                   bool spin_orbit_coupled);
@@ -88,7 +88,7 @@ private:
     const PeriodicBoundaryData &pbc_;
     const AtomicBasis &atomic_basis_wfc_;
     const AtomicBasis &atomic_basis_abf_;
-    const headwing_velocity_t &velocity_;
+    const velocity_matrix_t &velocity_;
     const MpiCommHandler &comm_h;
     const BlacsCtxtHandler &blacs_h;
     size_t n_nonsingular;
@@ -105,7 +105,7 @@ public:
     bool debug = false;
 
 public:
-    diele_func(const MeanField &mf, const headwing_velocity_t &velocity,
+    diele_func(const MeanField &mf, const velocity_matrix_t &velocity,
                const std::vector<Vector3_Order<double>> &kfrac,
                const AtomicBasis &atomic_basis_wfc,
                const AtomicBasis &atomic_basis_abf,
