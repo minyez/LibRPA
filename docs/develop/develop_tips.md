@@ -99,7 +99,8 @@ should stay independent of the command-line driver (`driver/`).
   utility components such as `src/math`, `src/mpi`, `src/io`, or `src/utils`;
   implement those pieces in the appropriate place and assemble the core
   algorithm under `src/core`.
-- Source files outside `src/core` should not include headers from `src/core`.
+- Source files outside `src/core` should not include headers from `src/core`,
+  except for those in `src/api`.
 - Files in `src/interface` should not include internal headers outside
   `src/interface`.
 - Use `src/io/stl_io_helper.h` when printing STL containers.
