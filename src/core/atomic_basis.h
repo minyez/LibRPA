@@ -5,6 +5,8 @@
 #pragma once
 #include <cassert>
 #include <map>
+#include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -58,6 +60,72 @@ inline bool is_basis_convention_set(const BasisConvention &bconv)
            && bconv.bloch_ratom != LIBRPA_UNSET
            && is_basis_rsh_convention_set(bconv);
 }
+
+/*!
+ * @brief Basis shell layout of one atomic species.
+ *
+ * l_shells[ishell] is the angular momentum of radial shell ishell in basis order.
+ * shell_indices[l] stores the radial-shell indices with angular momentum l.
+ * This does not describe a universal basis order. Current rotation assembly
+ * groups by shell_indices and uses l_shells to place each radial-shell block.
+ */
+struct SpeciesBasisLayout
+{
+    std::string label;
+    std::vector<int> l_shells;
+    std::map<int, std::vector<int>> shell_indices;
+    std::map<int, int> shell_counts;
+    int n_shell = 0;
+    int n_ao = 0;
+    int max_l = 0;
+
+    SpeciesBasisLayout()
+        : label(), l_shells(), shell_indices(), shell_counts(), n_shell(0), n_ao(0), max_l(0) {};
+    SpeciesBasisLayout(const std::string& label_in, const std::vector<int>& l_shells_in): label(label_in), l_shells(l_shells_in)
+    {
+        compute_map();
+    }
+
+    void set(const std::vector<int> &l_shells_in)
+    {
+        l_shells = l_shells_in;
+        compute_map();
+    }
+
+    bool is_shell_available() const noexcept { return n_shell > 0; }
+
+private:
+    void compute_map()
+    {
+        shell_indices.clear();
+        shell_counts.clear();
+        n_shell = 0;
+        n_ao = 0;
+        max_l = 0;
+        for (std::size_t ishell = 0; ishell < l_shells.size(); ++ishell)
+        {
+            const int l = l_shells[ishell];
+            if (l < 0)
+            {
+                throw std::invalid_argument("SpeciesBasisLayout cannot contain negative l");
+            }
+            max_l = std::max(l, max_l);
+            shell_indices[l].push_back(static_cast<int>(ishell));
+            ++shell_counts[l];
+            n_ao += 2 * l + 1;
+        }
+        // populate missing l channels, just for convenience
+        for (int l = 0; l <= max_l; l++)
+        {
+            if (shell_indices.find(l) == shell_indices.cend())
+            {
+                shell_indices[l] = {};
+                shell_counts[l] = 0;
+            }
+        }
+        n_shell = l_shells.size();
+    }
+};
 
 /*! @class
  * @brief Object to handle atomic basis
