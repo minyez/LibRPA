@@ -267,6 +267,13 @@
                 rows="8"
                 comparison="cmp_table.abs_diff(1e-4)"
       />
+      <validate name="energy_qp output"
+                file="librpa/energy_qp"
+                regex="K_point\s+\d+ :"
+                headers="2"
+                rows="8"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
       <validate name="Non-SCF EXX band structure"
                 file="librpa/EXX_band_spin_*.dat"
                 comparison="cmp_table.abs_diff(1e-4)"
