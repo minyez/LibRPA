@@ -317,7 +317,7 @@ ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
     }
 
     const Matrix3 cartesian_matrix =
-        ctx.lattice_vectors.Inverse() * direct_rotation * ctx.lattice_vectors;
+        row_fractional_rotation_to_cartesian(direct_rotation, ctx.lattice_vectors);
     return real_spherical_harmonic_rotation_matrix(cartesian_matrix,
                                                    l,
                                                    basis_convention.order,
@@ -409,8 +409,7 @@ std::vector<InputSymmetryRSpaceOperationInfo> build_rspace_operation_info(
             // Keep the unwrapped rotated position so that the integer return lattice is preserved
             // exactly as in the ABACUS irreducible-sector construction.
             const Vector3_Order<double> transformed =
-                multiply_row_vector(coord_from_vec, op.rotation)
-                + restrict_fractional_coordinate(op.translation, atom_map_tol);
+                apply_space_group_symmetry_operation(op, coord_from_vec);
 
             atom_t matched_atom = static_cast<atom_t>(-1);
             Vector3_Order<int> matched_return{0, 0, 0};
@@ -460,15 +459,11 @@ std::vector<int> build_rspace_inverse_map(
     {
         for (std::size_t jsym = 0; jsym < ctx.rspace_operations.size(); ++jsym)
         {
-            const auto composed_rotation = multiply_space_group_rotation_matrices(
-                ctx.rspace_operations[isym].rotation, ctx.rspace_operations[jsym].rotation);
-            const auto composed_translation =
-                multiply_row_vector(ctx.rspace_operations[isym].translation,
-                                    ctx.rspace_operations[jsym].rotation)
-                + ctx.rspace_operations[jsym].translation;
+            const auto composed = compose_space_group_symmetry_operations(
+                ctx.rspace_operations[isym], ctx.rspace_operations[jsym]);
             const bool is_inverse =
-                is_identity_rotation(composed_rotation)
-                && nearly_integer_vector(composed_translation, kInputSymmetryCoordTol);
+                is_identity_rotation(composed.rotation)
+                && nearly_integer_vector(composed.translation, kInputSymmetryCoordTol);
 
             if (is_inverse)
             {
@@ -672,10 +667,9 @@ void load_symrot_R_file(const std::string& file_path, InputSymmetryContext& ctx)
             throw std::runtime_error("Expected symmetry index in " + file_path + ": " + lines[index]);
         }
 
-        InputSymmetryOperation op;
-        op.isym = std::stoi(trim(lines[index]));
         ++index;
 
+        InputSymmetryOperation op;
         std::array<std::array<double, 3>, 3> rotation_rows{{{{0.0, 0.0, 0.0}},
                                                             {{0.0, 0.0, 0.0}},
                                                             {{0.0, 0.0, 0.0}}}};
@@ -2420,8 +2414,7 @@ Vector3_Order<int> build_input_symmetry_kspace_return_lattice(
                                         coord_to_iter->second[2]},
                                        kInputSymmetryCoordTol);
     const Vector3_Order<double> transformed =
-        multiply_row_vector(coord_from, op.rotation)
-        + restrict_fractional_coordinate(op.translation, kInputSymmetryCoordTol);
+        apply_space_group_symmetry_operation(op, coord_from);
     const Vector3_Order<double> return_lattice = transformed - coord_to;
     if (!nearly_integer_vector(return_lattice, kInputSymmetryCoordTol))
     {

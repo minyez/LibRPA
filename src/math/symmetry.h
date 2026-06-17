@@ -17,15 +17,25 @@ namespace librpa_int
 /*!
  * @brief Space-group operation in fractional coordinates.
  *
- * Coordinates are treated as row vectors: r' = r * rotation + translation.
+ * This follows the LibRPA row-fractional convention of lattice vectors
+ * and atom positions:
+ *
+ * x' = x * rotation + translation.
+ *
+ * Set use_row_convention=false for column-fractional operations:
+ *
+ * x' = rotation * x + translation.
+ *
+ * The latter convention is used, e.g. in Spglib.
  */
 struct SpaceGroupSymOp
 {
-    int isym = -1;
     Matrix3 rotation{0.0, 0.0, 0.0,
                      0.0, 0.0, 0.0,
                      0.0, 0.0, 0.0};
     Vector3_Order<double> translation{0.0, 0.0, 0.0};
+    //! Whether to treat lattice vectors and fractional coordinates as row vectors.
+    bool use_row_convention = true;
 };
 
 /*!
@@ -63,10 +73,10 @@ struct SpaceGroupSymOps
 /*!
  * @brief Mapping from one atom to its inequivalent representative.
  *
- * For the atom at index `atom`, stored implicitly by the vector position of this
- * entry, the mapped operation satisfies:
+ * For the fractional atom at index `atom`, stored implicitly by the vector
+ * position of this entry, the mapped fractional operation satisfies:
  *
- * atom_positions[atom] * operations[isym].rotation + operations[isym].translation
+ * apply_space_group_symmetry_operation(operations[isym], atom_positions[atom])
  *   = atom_positions[inequivalent_atom] + return_lattice
  *
  * `isym == -1` is used only when no operation is available for a self mapping.
@@ -92,28 +102,51 @@ Vector3_Order<double> apply_space_group_symmetry_operation(
     const SpaceGroupSymOp& operation,
     const Vector3_Order<double>& coord);
 
+inline Matrix3 row_fractional_rotation_to_cartesian(const Matrix3& row_fractional_rotation,
+                                                    const Matrix3& row_lattice_vectors)
+{
+    return row_lattice_vectors.Transpose() * row_fractional_rotation.Transpose() *
+           row_lattice_vectors.Inverse().Transpose();
+}
+
+inline Matrix3 col_fractional_rotation_to_cartesian(const Matrix3& col_fractional_rotation,
+                                                    const Matrix3& col_lattice_vectors)
+{
+    return col_lattice_vectors * col_fractional_rotation * col_lattice_vectors.Inverse();
+}
+
+inline Matrix3 fractional_rotation_to_cartesian(const SpaceGroupSymOp& symop,
+                                                const Matrix3& lattice_vectors)
+{
+    return symop.use_row_convention
+               ? row_fractional_rotation_to_cartesian(symop.rotation, lattice_vectors)
+               : col_fractional_rotation_to_cartesian(symop.rotation, lattice_vectors);
+}
+
+//! Build atom mapping from fractional atom positions and fractional symmetry operations.
 std::vector<AtomInequivalentSymmetryMapping> build_atom_to_inequivalent_symmetry_mapping(
-    const std::vector<Vector3_Order<double>>& atom_positions,
-    const SpaceGroupSymOps<SpaceGroupSymOp>& operations,
-    double tol = 1e-5);
+    const std::vector<Vector3_Order<double>>& atom_positions_frac, const Matrix3& lattice_vectors,
+    const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations, double tol = 1e-5);
 
 template <typename OperationType>
 std::vector<AtomInequivalentSymmetryMapping> build_atom_to_inequivalent_symmetry_mapping(
-    const std::vector<Vector3_Order<double>>& atom_positions,
-    const SpaceGroupSymOps<OperationType>& operations,
+    const std::vector<Vector3_Order<double>>& atom_positions_frac,
+    const Matrix3& lattice_vectors,
+    const SpaceGroupSymOps<OperationType>& fractional_operations,
     const double tol = 1e-5)
 {
     SpaceGroupSymOps<SpaceGroupSymOp> base_operations;
-    base_operations.reserve(operations.size());
-    for (const auto& operation : operations)
+    base_operations.reserve(fractional_operations.size());
+    for (const auto& operation : fractional_operations)
     {
         SpaceGroupSymOp base_operation;
-        base_operation.isym = operation.isym;
         base_operation.rotation = operation.rotation;
         base_operation.translation = operation.translation;
+        base_operation.use_row_convention = operation.use_row_convention;
         base_operations.push_back(base_operation);
     }
-    return build_atom_to_inequivalent_symmetry_mapping(atom_positions, base_operations, tol);
+    return build_atom_to_inequivalent_symmetry_mapping(
+        atom_positions_frac, lattice_vectors, base_operations, tol);
 }
 
 std::vector<int> collect_inequivalent_atoms(
