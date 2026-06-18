@@ -5,12 +5,6 @@
 #include "../interface/blacs_scalapack.h"
 #include "lapack_connector.h"
 
-#if defined(__CUDACC__) || defined(__HIP_DEVICE_COMPILE__)
-#define __HOST__DEVICE__ __host__ __device__
-#else
-#define __HOST__DEVICE__
-#endif
-
 namespace librpa_int {
 
 class ScalapackConnector
@@ -18,33 +12,28 @@ class ScalapackConnector
 public:
     // indexing functions adapted from ScaLAPACK TOOLS
 
-    __HOST__DEVICE__
     inline static int indxg2p(const int &indxglob, const int &nb, const int &iproc,
                               const int &isrcproc, const int &nprocs)
     {
         return (isrcproc + indxglob / nb) % nprocs;
     }
 
-    __HOST__DEVICE__
     inline static int indxg2p(const int &indxglob, const int &nb, const int &isrcproc, const int &nprocs)
     {
         return (isrcproc + indxglob / nb) % nprocs;
     }
 
-    __HOST__DEVICE__
     inline static int indxg2l(const int &indxglob, const int &nb, const int &iproc,
                               const int &isrcproc, const int &nprocs)
     {
         return nb * (indxglob / (nb * nprocs)) + indxglob % nb;
     }
 
-    __HOST__DEVICE__
     inline static int indxg2l(const int &indxglob, const int &nb, const int &isrcproc, const int &nprocs)
     {
         return nb * (indxglob / (nb * nprocs)) + indxglob % nb;
     }
 
-    __HOST__DEVICE__
     inline static int indxl2g(const int &indxloc, const int &nb, const int &iproc,
                               const int &isrcproc, const int &nprocs)
     {

@@ -92,11 +92,6 @@ else()
   enable_language(CXX Fortran)
 endif()
 
-if(LIBRPA_USE_CUDA)
-  enable_language(CUDA)
-  set(CMAKE_CUDA_STANDARD ${CMAKE_CXX_STANDARD})
-endif()
-
 # NOTE: Enabling HIP here may result in compiler inconsistency for the modules in test.
 #       Switch off temporarily. Instead, HIP flags are appended manually.
 # if(LIBRPA_USE_HIP)

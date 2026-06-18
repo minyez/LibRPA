@@ -151,29 +151,12 @@ if(LIBRPA_USE_LIBRI)
   )
 endif()
 
-if(LIBRPA_USE_CUDA)
+if(LIBRPA_USE_CUDA OR LIBRPA_USE_HIP)
   list(APPEND lib_sources 
     gpu/device_connector.cpp
   )
-  set_source_files_properties(
-    mpi/base_blacs.cpp
-    gpu/device_connector.cpp
-    PROPERTIES
-    LANGUAGE CUDA
-  )
 endif()
 
-if(LIBRPA_USE_HIP)
-  list(APPEND lib_sources
-    gpu/device_connector.cpp
-  )
-#  set_source_files_properties(
- #   base_blacs.cpp
-  #  device_connector.cpp
-   # PROPERTIES
-    #LANGUAGE HIP
- # )
-endif()
 
 if(LIBRPA_USE_EXTERNAL_ELPA OR LIBRPA_USE_BUNDLED_ELPA)
   list(APPEND lib_sources

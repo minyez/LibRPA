@@ -86,9 +86,7 @@ inline void pdam(const T1& num, T2* A, const ArrayDesc& array_desc)
     }
     #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if(DeviceConnector::check_device_ptr((void*)A)){
-        DeviceConnector::pdam(
-            num, A, array_desc
-        );
+        ddla::pdam(num, A, array_desc.ddla_desc());
     }else
     #endif
     {

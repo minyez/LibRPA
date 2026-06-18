@@ -103,6 +103,7 @@ static void pgemm_wfc_scaled_wfc_h(const int n_aos, const int n_cols,
                                    WfcGemmWorkspace &workspace,
                                    Matz &out, const ArrayDesc &desc_out)
 {
+    global::profiler.start(__FUNCTION__);
     const cplxdb *wfc_bra_gemm_ptr = wfc_bra_ptr;
     const cplxdb *scaled_wfc_ket_gemm_ptr = scaled_wfc_ket_ptr;
     const int *desc_wfc_gemm = desc_wfc.desc;
@@ -121,11 +122,13 @@ static void pgemm_wfc_scaled_wfc_h(const int n_aos, const int n_cols,
         scaled_wfc_ket_gemm_ptr = workspace.scaled_wfc_ket_opt.ptr();
         desc_wfc_gemm = workspace.desc_opt.desc;
     }
-
+    global::profiler.start("pgemm");
     ScalapackConnector::pgemm_f('N', 'C', n_aos, n_aos, n_cols, C_ONE,
                                 wfc_bra_gemm_ptr, 1, 1, desc_wfc_gemm,
                                 scaled_wfc_ket_gemm_ptr, 1, 1, desc_wfc_gemm,
                                 C_ZERO, out.ptr(), 1, 1, desc_out.desc);
+    global::profiler.stop("pgemm");
+    global::profiler.stop(__FUNCTION__);
 }
 
 std::map<Vector3_Order<int>, ComplexMatrix> get_dmat_cplx_Rs_kpara(

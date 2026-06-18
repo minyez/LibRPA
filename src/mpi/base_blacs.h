@@ -11,14 +11,6 @@
 #include <ddla/ddla_stream.h>
 #endif
 
-#if defined(__CUDACC__) || defined(__HIP_DEVICE_COMPILE__)
-#define __HOST__DEVICE__ __host__ __device__
-// #pragma message("define hip")
-#else
-#define __HOST__DEVICE__
-// #pragma message("not define hip")
-#endif
-
 #ifdef LIBRPA_USE_ELPA
 #include <elpa/elpa.h>
 #endif
@@ -185,20 +177,20 @@ public:
     inline int myid() const noexcept { return myid_; }
     inline int ictxt() const noexcept { return ictxt_; }
     inline MPI_Comm comm() const noexcept { return comm_; }
-    __HOST__DEVICE__ inline int m() const noexcept { return m_; }
-    __HOST__DEVICE__ inline int n() const noexcept { return n_; }
-    __HOST__DEVICE__ inline int mb() const noexcept { return mb_; }
-    __HOST__DEVICE__ inline int nb() const noexcept { return nb_; }
-    __HOST__DEVICE__ inline int lld() const noexcept { return lld_; }
-    __HOST__DEVICE__ inline int irsrc() const noexcept { return irsrc_; }
-    __HOST__DEVICE__ inline int icsrc() const noexcept { return icsrc_; }
-    __HOST__DEVICE__ inline int m_loc() const noexcept { return m_local_; }
-    __HOST__DEVICE__ inline int n_loc() const noexcept { return n_local_; }
-    __HOST__DEVICE__ inline int myprow() const noexcept { return myprow_; }
-    __HOST__DEVICE__ inline int mypcol() const noexcept { return mypcol_; }
-    __HOST__DEVICE__ inline int nprocs() const noexcept { return nprocs_; }
-    __HOST__DEVICE__ inline int nprows() const noexcept { return nprows_; }
-    __HOST__DEVICE__ inline int npcols() const noexcept { return npcols_; }
+    inline int m() const noexcept { return m_; }
+    inline int n() const noexcept { return n_; }
+    inline int mb() const noexcept { return mb_; }
+    inline int nb() const noexcept { return nb_; }
+    inline int lld() const noexcept { return lld_; }
+    inline int irsrc() const noexcept { return irsrc_; }
+    inline int icsrc() const noexcept { return icsrc_; }
+    inline int m_loc() const noexcept { return m_local_; }
+    inline int n_loc() const noexcept { return n_local_; }
+    inline int myprow() const noexcept { return myprow_; }
+    inline int mypcol() const noexcept { return mypcol_; }
+    inline int nprocs() const noexcept { return nprocs_; }
+    inline int nprows() const noexcept { return nprows_; }
+    inline int npcols() const noexcept { return npcols_; }
     inline void get_pcoord(int pid, int &prow, int &pcol) const { Cblacs_pcoord(ictxt_, myid_, &prow, &pcol); };
     inline pcoord_t get_pcoord(int pid) const { int prow, pcol; Cblacs_pcoord(ictxt_, myid_, &prow, &pcol); return {prow, pcol}; };
     inline int get_pnum(int prow, int pcol) const { return Cblacs_pnum(ictxt_, prow, pcol); };
