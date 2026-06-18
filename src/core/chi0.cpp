@@ -1637,7 +1637,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                 profiler.start("chi0_libri_routing_ft_tw");
                 chi_libri_ft_tw(isp, mf.get_n_spins(), it, tfg, chi0_tau_q, qlist, atpairs_ABF,
                                 chi0_q);
-                profiler.start("chi0_libri_routing_ft_tw");
+                profiler.stop("chi0_libri_routing_ft_tw");
                 chi0_tau_q.clear();
             }
             else
