@@ -315,11 +315,18 @@ void generate_input_symmetry_kstars_from_pbc(SymmetryContext &ctx,
 {
     const auto full_kpoints = full_kpoints_frac_from_pbc(pbc);
     const auto coul_kpoints = coul_kpoints_frac_from_pbc(pbc);
+    const bool scf_kpoints_cover_full_grid =
+        static_cast<int>(pbc.kfrac_list.size()) == pbc.get_n_cells_bvk();
     const auto generated_stars = build_kpoint_stars(
         full_kpoints, build_kstar_operations_with_time_reversal(ctx.rspace_operations),
         coul_kpoints, 1e-5);
     if (generated_stars.size() != coul_kpoints.size())
     {
+        if (scf_kpoints_cover_full_grid)
+        {
+            build_input_symmetry_pbc_index_kstars(ctx, pbc.kfrac_list);
+            return;
+        }
         if (coul_kpoints.size() == full_kpoints.size())
         {
             build_input_symmetry_pbc_index_kstars(ctx, coul_kpoints);
@@ -351,6 +358,11 @@ void generate_input_symmetry_kstars_from_pbc(SymmetryContext &ctx,
         }
         if (matched_star_index < 0)
         {
+            if (scf_kpoints_cover_full_grid)
+            {
+                build_input_symmetry_pbc_index_kstars(ctx, pbc.kfrac_list);
+                return;
+            }
             throw std::runtime_error("Failed to order generated input-symmetry k-stars by IBZ k-points");
         }
 
