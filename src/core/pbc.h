@@ -35,24 +35,24 @@ public:
     std::array<int, 3> period_array;
 
     std::vector<Vector3_Order<int>> Rlist;
-    //! Full K-points in Cartesian coordinates
+    //! Loaded SCF k-points in Cartesian coordinates
     std::vector<Vector3_Order<double>> klist;
-    //! Full K-points in fractional coordinates
+    //! Loaded SCF k-points in fractional coordinates
     std::vector<Vector3_Order<double>> kfrac_list;
-    //! Full-BZ K-points expanded from symmetry metadata. For no-symmetry input this equals klist.
+    //! Full-BZ k-points when explicitly expanded; otherwise mirrors klist.
     std::vector<Vector3_Order<double>> klist_full;
-    //! Full-BZ K-points in fractional coordinates. For no-symmetry input this equals kfrac_list.
+    //! Full-BZ k-points in fractional coordinates when explicitly expanded; otherwise mirrors kfrac_list.
     std::vector<Vector3_Order<double>> kfrac_list_full;
 
-    //! Irreducible k-points in Cartesian coordinates
-    std::vector<Vector3_Order<double>> klist_ibz;
-    //! Scalar weight of each irreducible k-points
+    //! K-points where Coulomb matrices are parsed, in Cartesian coordinates
+    std::vector<Vector3_Order<double>> klist_coul;
+    //! Scalar weight of each Coulomb k-point
     std::vector<double> kweight_ibz;
-    //! Same as kweight_ibz, but indexed directly by the k-point
+    //! Same as kweight_ibz, but indexed directly by the Coulomb k-point
     std::map<Vector3_Order<double>, double> map_ibzk_weight;
     std::vector<int> irk_point_id_mapping;
     std::vector<int> isymops;
-    //! Mapping of irreducible k-points to the list of k-points connected by symmetry
+    //! Mapping of Coulomb k-points to loaded SCF k-points using that representative
     std::map<Vector3_Order<double>, std::vector<Vector3_Order<double>>> map_irk_ks;
 
     PeriodicBoundaryData();
@@ -64,16 +64,17 @@ public:
                           const std::vector<double> &recp_mat);
     //! Set BvK periodicity and rebuild the corresponding R-grid.
     void set_period(int nk1, int nk2, int nk3);
-    //! Set the full k-points list. kvecs should be in Bohr^-1 unit.
+    //! Set the loaded SCF k-point list. kvecs should be in Bohr^-1 unit.
     void set_kgrids_kvec(int nk1, int nk2, int nk3, const std::vector<double> &kvecs);
     //! Set an irreducible loaded k-point list plus full-BZ star members in internal units.
     void set_irreducible_kgrids_kvec(
         int nk1, int nk2, int nk3,
         const std::vector<double> &kvecs_ibz,
         const std::vector<std::vector<Vector3_Order<double>>> &full_kstars);
-    //! Set the mapping of full k-points to irreducible k-points
+    //! Set the mapping of loaded SCF k-points to Coulomb-matrix k-points.
     void set_ibz_mapping(const std::vector<int> &irk_point_id_mapping_in,
-                         const std::vector<int> &isymops_in = {});
+                         const std::vector<int> &isymops_in = {},
+                         const std::vector<double> &kweights = {});
 
     // Getting
     int get_R_index(const Vector3_Order<int> &R) const;
@@ -192,7 +193,7 @@ private:
 // //! reciprocal lattice vectors as a 3D-matrix, each row as a reciprocal vector. Unit: 2pi/Bohr
 // extern Matrix3 G;
 // extern std::vector<Vector3_Order<double>> klist;
-// extern std::vector<Vector3_Order<double>> klist_ibz;
+// extern std::vector<Vector3_Order<double>> klist_coul;
 // extern std::vector<Vector3_Order<double>> kfrac_list;
 // extern std::vector<int> irk_point_id_mapping;
 // extern std::map<Vector3_Order<double>, std::vector<Vector3_Order<double>>> map_irk_ks;

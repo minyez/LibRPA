@@ -1538,8 +1538,7 @@ std::vector<InputSymmetryKStarGridMappingEntry> build_input_symmetry_kstar_grid_
     }
 
     auto convert_fractional_to_internal = [&ctx](const Vector3_Order<double>& kfrac) {
-        // Keep the same row-vector convention as `read_data.cpp::convert_fractional_kpoint_to_klist_units`
-        // so the symmetry-derived q/k keys match the keys used in `klist` and `map_irk_ks`.
+        // Keep the row-vector convention used for PeriodicBoundaryData k-point keys.
         const auto& G = ctx.reciprocal_vectors;
         return Vector3_Order<double>{kfrac.x * G.e11 + kfrac.y * G.e21 + kfrac.z * G.e31,
                                      kfrac.x * G.e12 + kfrac.y * G.e22 + kfrac.z * G.e32,

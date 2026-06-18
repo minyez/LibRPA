@@ -41,7 +41,7 @@ a leading substring of the other.
 (stru-out)=
 ## `stru_out`
 
-The file `stru_out` contains structural information and k-point mesh data.
+The file `stru_out` contains structural information.
 
 Its contents are arranged in the following order:
 
@@ -50,8 +50,9 @@ Its contents are arranged in the following order:
 - **Number of atoms**: 1 line containing the number of atoms in the unit cell, `n_atoms`.
 - **Atomic coordinates and types**: `n_atoms` lines, each containing the Cartesian coordinates and the atom type of one atom.
 
-The following entries describe the Brillouin-zone sampling.
-This information is now stored in [`bz_sampling_out`](#bz-sampling-out) and is retained here for backward compatibility.
+Older `stru_out` files may also contain the following Brillouin-zone sampling
+entries. LibRPA no longer reads k-points from `stru_out`; datasets must provide
+[`bz_sampling_out`](#bz-sampling-out).
 
 - **k-point grid dimensions**: 1 line containing three integers, `nkx`, `nky`, and `nkz`. The total number of k-points in the full grid is
   ```text
@@ -167,8 +168,12 @@ For example:
 
 The second line contains two integers:
 
-1. total number of k-points in the full Brillouin-zone grid
-2. number of k-points in the irreducible Brillouin zone
+1. number of SCF k-points, the same value as in `band_out`
+2. number of irreducible k-points for Coulomb matrices
+
+Here "SCF k-points" means the k-point dimension used to store SCF
+eigenvalues, occupation numbers, and Kohn-Sham eigenvectors in
+[`band_out`](#band-out) and [`KS_eigenvector_xxx.txt`](#ks-eigenvector-scf).
 
 For example:
 
@@ -176,20 +181,20 @@ For example:
 27     14
 ```
 
-This means that the full k-point grid contains `27` points, of which `14` belong to the irreducible set.
+This means that the Kohn-Sham SCF data contains `27` k-points, of which `14` are used as Coulomb-matrix representatives.
 
-The next `n_k_points` lines describe all k-points in the full grid. Each line contains ten fields:
+The next `n_k_points` lines describe the SCF k-points. Each line contains ten fields:
 
-1. k-point index in the full set (1-based)
-2. k-point weight
+1. k-point index in the SCF set (1-based)
+2. k-point weight; the sum over the `n_k_points` rows must be `1`
 3. fractional coordinate `k1`
 4. fractional coordinate `k2`
 5. fractional coordinate `k3`
 6. Cartesian coordinate `kx`
 7. Cartesian coordinate `ky`
 8. Cartesian coordinate `kz`
-9. index of the corresponding irreducible k-point in the irreducible set
-10. index of the corresponding irreducible k-point in the full k-point list
+9. index of the corresponding irreducible Coulomb k-point
+10. index of its representative in the SCF k-point list
 
 For example:
 
@@ -197,36 +202,22 @@ For example:
 2   0.37037037037E-01   0.00000000000E+00   0.00000000000E+00   0.33333333333E+00   0.00000000000E+00   0.00000000000E+00   0.35439508162E+00   2   2
 ```
 
-This line indicates that full-grid k-point `2`
+This line indicates that SCF k-point `2`
 
 - has weight `0.037037037037`
 - has fractional coordinates `(0, 0, 1/3)`
 - has Cartesian coordinates `(0, 0, 0.35439508162)`
-- maps to irreducible k-point `2`
-- whose representative in the full k-point list is also point `2`
+- maps to irreducible Coulomb k-point `2`
+- whose representative in the SCF k-point list is also point `2`
 
-After the full k-point list, the file contains `n_irkpoints` lines summarizing the irreducible k-points. Each line contains three fields:
-
-1. irreducible k-point index in the irreducible set (1-based)
-2. index of its representative in the full k-point list
-3. total weight of this irreducible k-point
-
-For example:
-
-```text
-3      4   0.74074074074E-01
-```
-
-This means that irreducible k-point `3`
-
-- is represented by full-grid k-point `4`
-- carries total weight `0.074074074074`
+Older files may contain irreducible-k-point weight summaries after these rows.
+LibRPA ignores those summaries because the row weights above are already authoritative.
 
 A few remarks
 
-- The weights in the full k-point list are the weights assigned to individual points in the full grid.
-- The weights in the irreducible k-point summary are the accumulated weights of the corresponding symmetry-equivalent k-points.
-- The representative index stored in the last field of the full k-point list can be used to identify which full-grid point serves as the representative of the irreducible class.
+- If the SCF k-point count equals `nk1 * nk2 * nk3`, no spatial symmetry was used to shrink the SCF k-list.
+- If that count is larger than the Coulomb irreducible count, time-reversal symmetry was used for Coulomb matrices.
+- If the SCF k-point count is smaller than `nk1 * nk2 * nk3`, spatial symmetry was used and `stru_out` must provide symmetry operations.
 
 (cs-data)=
 ## `Cs_data*`
@@ -420,7 +411,7 @@ n           f_n        e_n_ha      e_n_ev
 ...
 ```
 This block contains the energies and occupation numbers of states $\left|\psi_{n,k\sigma}\right\rangle$
-`i_k_point` marks the index of k-point $k$ in the full k-point set.
+`i_k_point` marks the index of SCF k-point $k$.
 `i_spin` specify the spin channel $\sigma$.
 In each of the following lines, the first integer species the index of state.
 The 3 float numbers stand for the occupation number, the energy in Hartree unit and that in electronvolt
@@ -441,7 +432,7 @@ c(1,1,1)_real c(1,1,1)_imag
 c(i,n,s)_real c(i,n,s)_imag
 ...
 ```
-The first line contains single integer, the index of the k-point of following data.
+The first line contains single integer, the index of the SCF k-point of following data.
 The remaining lines store the data with running index $i$, $n$, $\sigma$ in C-style row-major order,
 i. e., spin index runs fastest, then state index and finally basis index.
 Each line has two float numbers, which are the real and imaginary part of $c^i_{n,k\sigma}$.

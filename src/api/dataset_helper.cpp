@@ -120,16 +120,38 @@ bool same_fractional_kpoint(const Vector3_Order<double> &lhs,
     return nearly_integer_vector(lhs - rhs, tol);
 }
 
-std::vector<Vector3_Order<double>> ibz_kpoints_frac_from_pbc(const PeriodicBoundaryData &pbc)
+std::vector<Vector3_Order<double>> build_uniform_kmesh_frac(const Vector3_Order<int> &period)
 {
-    if (pbc.klist_ibz.empty())
+    std::vector<Vector3_Order<double>> kpoints;
+    kpoints.reserve(static_cast<std::size_t>(period.x * period.y * period.z));
+    for (int i = 0; i != period.x; ++i)
+        for (int j = 0; j != period.y; ++j)
+            for (int k = 0; k != period.z; ++k)
+                kpoints.push_back({static_cast<double>(i) / period.x,
+                                   static_cast<double>(j) / period.y,
+                                   static_cast<double>(k) / period.z});
+    return kpoints;
+}
+
+std::vector<Vector3_Order<double>> full_kpoints_frac_from_pbc(const PeriodicBoundaryData &pbc)
+{
+    if (static_cast<int>(pbc.klist.size()) < pbc.get_n_cells_bvk())
+    {
+        return build_uniform_kmesh_frac(pbc.period);
+    }
+    return pbc.kfrac_list_full.empty() ? pbc.kfrac_list : pbc.kfrac_list_full;
+}
+
+std::vector<Vector3_Order<double>> coul_kpoints_frac_from_pbc(const PeriodicBoundaryData &pbc)
+{
+    if (pbc.klist_coul.empty())
     {
         return pbc.kfrac_list;
     }
 
     std::vector<Vector3_Order<double>> kpoints;
-    kpoints.reserve(pbc.klist_ibz.size());
-    for (const auto &k : pbc.klist_ibz)
+    kpoints.reserve(pbc.klist_coul.size());
+    for (const auto &k : pbc.klist_coul)
     {
         auto kfrac = pbc.latvec * k;
         if (std::abs(kfrac.x) < 1e-8)
@@ -237,21 +259,20 @@ void populate_input_symmetry_kstar_member_rotations(InputSymmetryContext &ctx,
 void generate_input_symmetry_kstars_from_pbc(InputSymmetryContext &ctx,
                                              const PeriodicBoundaryData &pbc)
 {
-    const auto &full_kpoints =
-        pbc.kfrac_list_full.empty() ? pbc.kfrac_list : pbc.kfrac_list_full;
-    const auto ibz_kpoints = ibz_kpoints_frac_from_pbc(pbc);
+    const auto full_kpoints = full_kpoints_frac_from_pbc(pbc);
+    const auto coul_kpoints = coul_kpoints_frac_from_pbc(pbc);
     const auto generated_stars = build_kpoint_stars(
         full_kpoints, build_kstar_operations_with_time_reversal(ctx.rspace_operations),
-        ibz_kpoints, 1e-5);
-    if (generated_stars.size() != ibz_kpoints.size())
+        coul_kpoints, 1e-5);
+    if (generated_stars.size() != coul_kpoints.size())
     {
-        throw std::runtime_error("Generated input-symmetry k-star count does not match IBZ k-points");
+        throw std::runtime_error("Generated input-symmetry k-star count does not match Coulomb k-points");
     }
 
     ctx.kstars.clear();
     ctx.kstar_member_fold_G.clear();
     std::vector<bool> used(generated_stars.size(), false);
-    for (std::size_t ik_ibz = 0; ik_ibz != ibz_kpoints.size(); ++ik_ibz)
+    for (std::size_t ik_ibz = 0; ik_ibz != coul_kpoints.size(); ++ik_ibz)
     {
         int matched_star_index = -1;
         for (std::size_t istar = 0; istar != generated_stars.size(); ++istar)
@@ -263,7 +284,7 @@ void generate_input_symmetry_kstars_from_pbc(InputSymmetryContext &ctx,
             const auto &star = generated_stars[istar];
             const auto &representative =
                 star.members.at(static_cast<std::size_t>(star.representative_k_index)).kpoint;
-            if (same_fractional_kpoint(representative, ibz_kpoints[ik_ibz], 1e-5))
+            if (same_fractional_kpoint(representative, coul_kpoints[ik_ibz], 1e-5))
             {
                 matched_star_index = static_cast<int>(istar);
                 break;
@@ -278,7 +299,7 @@ void generate_input_symmetry_kstars_from_pbc(InputSymmetryContext &ctx,
         const auto &generated_star = generated_stars[static_cast<std::size_t>(matched_star_index)];
         InputSymmetryKStar star;
         star.star_index = static_cast<int>(ik_ibz);
-        star.k_ibz = ibz_kpoints[ik_ibz];
+        star.k_ibz = coul_kpoints[ik_ibz];
         star.members.reserve(generated_star.members.size());
         for (std::size_t imember = 0; imember != generated_star.members.size(); ++imember)
         {

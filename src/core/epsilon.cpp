@@ -1122,7 +1122,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
     const auto &map_ibzk_weight = chi0.pbc.map_ibzk_weight;
 
     // NOTE: this may change later when q-points are parallelized
-    vector<Vector3_Order<double>> qpts(chi0.pbc.klist_ibz);
+    vector<Vector3_Order<double>> qpts(chi0.pbc.klist_coul);
     // const auto &chi0q = chi0.get_chi0_q();
     // for (const auto &qMuNuchi: chi0q.at(chi0.tfg.get_freq_nodes()[0]))
     //     qpts.push_back(qMuNuchi.first);
@@ -3541,9 +3541,9 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
                 // for (const auto &[q, mat] : map_q_mat)
                 // for (auto it = map_q_mat.begin(); it != map_q_mat.end(); it++)
                 #pragma omp parallel for schedule(dynamic)
-                for (size_t iq = 0; iq < pbc.klist_ibz.size(); iq++)
+                for (size_t iq = 0; iq < pbc.klist_coul.size(); iq++)
                 {
-                    const auto &q = pbc.klist_ibz[iq];
+                    const auto &q = pbc.klist_coul[iq];
                     auto it = map_q_mat.find(q);
                     if (it == map_q_mat.end()) continue;
                     const auto &mat = it->second;

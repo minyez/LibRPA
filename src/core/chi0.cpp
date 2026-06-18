@@ -1306,7 +1306,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         chi0_q_mem_gb += atbasis_abf[Mu] * atbasis_abf[Nu];
     }
 
-    const auto &qlist = this->pbc.klist_ibz;
+    const auto &qlist = this->pbc.klist_coul;
 
     chi0_q_mem_gb *= tfg.get_n_grids() * qlist.size() * 1.6e-8;
     global::ofs_myid << "Estimated chi0_q memory [GB]: " << chi0_q_mem_gb << std::endl;
@@ -1697,7 +1697,7 @@ void Chi0::build_chi0_q_space_time_R_tau_routing(const Cs_LRI &Cs,
                            comm_h.nprocs, true, false);
     map<Vector3_Order<double>,int> qlist2myid;
 
-    const auto &qlist = pbc.klist_ibz;
+    const auto &qlist = pbc.klist_coul;
     auto loc_qlist = librpa_int::dispatch_vector(qlist , comm_h.myid, comm_h.nprocs, true);
     for(int id=0;id!=comm_h.nprocs;id++)
     {
@@ -1839,7 +1839,7 @@ void Chi0::build_chi0_q_space_time_atom_pair_routing(const Cs_LRI &Cs,
     const auto &LRI_Cs = Cs.data_IJR;
 
     const auto &latvec = this->pbc.latvec;
-    const auto &qlist = this->pbc.klist_ibz;
+    const auto &qlist = this->pbc.klist_coul;
     const int nfreq = as_int(tfg.size());
 
     const auto n_spinor = mf.get_n_spinor();

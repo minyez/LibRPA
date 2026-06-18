@@ -1,8 +1,10 @@
 #include "../core/pbc.h"
+#include "../utils/constants.h"
 #include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstddef>
+#include <cmath>
 
 using namespace librpa_int;
 
@@ -47,6 +49,47 @@ static void test_periodic_boundary_data()
 
     pbc.set_latvec_and_G({1, 2, 3, 4, 5, 6, 7, 8, 9},
                          {1, 2, 3, 4, 5, 6, 7, 8, 9});
+}
+
+static void test_kgrids_with_weighted_coulomb_mapping()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1, 0, 0, 0, 1, 0, 0, 0, 1});
+
+    const std::vector<double> kvecs{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI * 0.5, 0.0, 0.0,
+        0.0, librpa_int::TWO_PI * 0.5, 0.0,
+    };
+    pbc.set_kgrids_kvec(3, 1, 1, kvecs);
+    pbc.set_ibz_mapping({0, 0, 2}, {}, {0.25, 0.25, 0.5});
+
+    assert(pbc.klist.size() == 3);
+    assert(pbc.klist_full.size() == 3);
+    assert(pbc.klist_coul.size() == 2);
+    assert(std::abs(pbc.kweight_ibz[0] - 0.5) < 1e-12);
+    assert(std::abs(pbc.kweight_ibz[1] - 0.5) < 1e-12);
+    assert(pbc.map_irk_ks.at(pbc.klist_coul[0]).size() == 2);
+    assert(pbc.map_irk_ks.at(pbc.klist_coul[1]).size() == 1);
+}
+
+static void test_reduced_scf_kgrids()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1, 0, 0, 0, 1, 0, 0, 0, 1});
+
+    const std::vector<double> kvecs{
+        0.0, 0.0, 0.0,
+        0.0, librpa_int::TWO_PI * 0.5, 0.0,
+    };
+    pbc.set_kgrids_kvec(2, 2, 1, kvecs);
+    pbc.set_ibz_mapping({0, 1}, {}, {0.5, 0.5});
+
+    assert(pbc.klist.size() == 2);
+    assert(pbc.klist_full.size() == 2);
+    assert(pbc.klist_coul.size() == 2);
+    assert(std::abs(pbc.kweight_ibz[0] - 0.5) < 1e-12);
+    assert(std::abs(pbc.kweight_ibz[1] - 0.5) < 1e-12);
 }
 
 static void test_atom_pair_bvk_remap()
@@ -98,6 +141,8 @@ int main (int argc, char *argv[])
     test_is_gamma_point();
     test_get_R_index();
     test_periodic_boundary_data();
+    test_kgrids_with_weighted_coulomb_mapping();
+    test_reduced_scf_kgrids();
     test_atom_pair_bvk_remap();
     return 0;
 }

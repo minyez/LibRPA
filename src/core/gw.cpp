@@ -769,7 +769,7 @@ void G0W0::build_spacetime(
                 auto Wc_q = freq_iter->second;
 
                 profiler.start("unfold_Wc_abfs", "Do shrink transformation");
-                unfold_helper.unfold_abfs_Wc_q(*sinvS, Wc_q, pbc.klist_ibz,
+                unfold_helper.unfold_abfs_Wc_q(*sinvS, Wc_q, pbc.klist_coul,
                                                *basis_aux_unfold, *blacs_ctxt_h);
                 profiler.stop("unfold_Wc_abfs");
 
@@ -787,7 +787,7 @@ void G0W0::build_spacetime(
         profiler.start("g0w0_build_spacetime_wt_ft_wc", "Tranform Wc (q,w) -> (q,t)");
         auto Wc_tau_q = CT_Wc_freq2time_q(
             comm_h, *basis_aux_compressed, *Wc_freq_q_atom_pair, tfg, pbc.get_n_cells_bvk(),
-            pbc.Rlist, pbc.klist_ibz);
+            pbc.Rlist, pbc.klist_coul);
         Wc_freq_q_atom_pair->clear();
         release_free_mem();
         profiler.stop("g0w0_build_spacetime_wt_ft_wc");
@@ -803,7 +803,7 @@ void G0W0::build_spacetime(
             auto &Wc_q = Wc_tau_q[tau];
 
             profiler.start("unfold_Wc_abfs", "Do shrink transformation");
-            unfold_helper.unfold_abfs_Wc_q(*sinvS, Wc_q, pbc.klist_ibz,
+            unfold_helper.unfold_abfs_Wc_q(*sinvS, Wc_q, pbc.klist_coul,
                                            *basis_aux_unfold, *blacs_ctxt_h);
             profiler.stop("unfold_Wc_abfs");
 

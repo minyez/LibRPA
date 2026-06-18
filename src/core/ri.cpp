@@ -303,7 +303,7 @@ matrix reshape_mat_21(const size_t n1, const size_t n2, const size_t n3, const m
 //     lib_printf("Begin allreduce_2D_coulomb_to_atompair!\n");
 // 
 //     map<Vector3_Order<double>, ComplexMatrix> Vq_glo;
-//     for(auto &qvec:klist_ibz)
+//     for(auto &qvec:klist_coul)
 //     {
 //         Vq_glo[qvec].create(N_all_mu,N_all_mu);
 //         if(!Vq_block_loc.count(qvec))
@@ -369,7 +369,7 @@ matrix reshape_mat_21(const size_t n1, const size_t n2, const size_t n3, const m
 //     printf("Begin allreduce_atp_coulomb!\n");
 //     // mpi_comm_world_h.barrier();
 //     map<Vector3_Order<double>, ComplexMatrix> Vq_glo;
-//     for(auto &qvec:klist_ibz)
+//     for(auto &qvec:klist_coul)
 //     {
 //         for(int I=0;I!=atom_mu.size();I++)
 //         {

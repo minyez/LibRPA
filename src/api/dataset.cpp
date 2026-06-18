@@ -343,8 +343,8 @@ void Dataset::redistribute_coulomb_blacs2ap()
     // Consistency check
     ofs_myid << "vq_redist size after pzgemr2d    : " << vq_redist.size() << endl;
     ofs_myid << "vq_cut_redist size after pzgemr2d: " << vq_cut_redist.size() << endl;
-    assert(vq_redist.size() == 0 || vq_redist.size() == this->pbc.klist_ibz.size());
-    assert(vq_cut_redist.size() == 0 || vq_cut_redist.size() == this->pbc.klist_ibz.size());
+    assert(vq_redist.size() == 0 || vq_redist.size() == this->pbc.klist_coul.size());
+    assert(vq_cut_redist.size() == 0 || vq_cut_redist.size() == this->pbc.klist_coul.size());
 
     // Step 2: redistribute BLACS 2D layout to atom-pair layout, and copy from column-major Matz to ComplexMatrix
     IndexScheduler sched;

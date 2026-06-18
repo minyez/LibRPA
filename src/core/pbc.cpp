@@ -99,7 +99,11 @@ void PeriodicBoundaryData::set_kgrids_kvec(int nk1, int nk2, int nk3, const std:
     kfrac_list.clear();
     klist_full.clear();
     kfrac_list_full.clear();
-    int n_k_points = nk1 * nk2 * nk3;
+    const int n_k_points = static_cast<int>(kvecs.size() / 3);
+    if (kvecs.size() != static_cast<std::size_t>(3 * n_k_points))
+        throw LIBRPA_RUNTIME_ERROR("invalid k-point vector buffer size");
+    if (n_k_points <= 0)
+        throw LIBRPA_RUNTIME_ERROR("empty k-point vector buffer");
     for (int ik = 0; ik < n_k_points; ik++)
     {
         double kx = kvecs[ik * 3];
@@ -147,7 +151,7 @@ void PeriodicBoundaryData::set_irreducible_kgrids_kvec(
     kfrac_list.clear();
     klist_full.clear();
     kfrac_list_full.clear();
-    klist_ibz.clear();
+    klist_coul.clear();
     kweight_ibz.clear();
     map_ibzk_weight.clear();
     map_irk_ks.clear();
@@ -174,12 +178,12 @@ void PeriodicBoundaryData::set_irreducible_kgrids_kvec(
         append_k(kvec, klist, kfrac_list);
     }
 
-    klist_ibz = klist;
+    klist_coul = klist;
     const double full_count = static_cast<double>(this->get_n_cells_bvk());
     int n_full_members = 0;
     for (int ik_ibz = 0; ik_ibz != n_ibz; ++ik_ibz)
     {
-        const auto &k_ibz = klist_ibz[ik_ibz];
+        const auto &k_ibz = klist_coul[ik_ibz];
         auto &members = map_irk_ks[k_ibz];
         for (const auto &k_member : full_kstars[ik_ibz])
         {
@@ -211,11 +215,12 @@ void PeriodicBoundaryData::set_irreducible_kgrids_kvec(
             + std::to_string(n_full_members) + " != " + std::to_string(this->get_n_cells_bvk()));
     }
 
-    kgrid_no_symmetry_ = klist_ibz.size() == klist_full.size();
+    kgrid_no_symmetry_ = klist_coul.size() == klist_full.size();
 }
 
 void PeriodicBoundaryData::set_ibz_mapping(const std::vector<int> &irk_point_id_mapping_in,
-                                           const std::vector<int> &isymops_in)
+                                           const std::vector<int> &isymops_in,
+                                           const std::vector<double> &kweights)
 {
     const size_t &n_k_points = this->klist.size();
     const double step = 1.0 / n_k_points;
@@ -224,12 +229,16 @@ void PeriodicBoundaryData::set_ibz_mapping(const std::vector<int> &irk_point_id_
     {
         throw LIBRPA_RUNTIME_ERROR("irk_point_id_mapping size not equal to n_k_points: " + std::to_string(n_k_points));
     }
+    if (!kweights.empty() && kweights.size() != n_k_points)
+    {
+        throw LIBRPA_RUNTIME_ERROR("k-point weight count does not match n_k_points");
+    }
     // TODO: implement using symmetry operation mapping
     this->isymops = isymops_in;
 
     irk_point_id_mapping = irk_point_id_mapping_in;
 
-    klist_ibz.clear();
+    klist_coul.clear();
     klist_full = klist;
     kfrac_list_full = kfrac_list;
     map_ibzk_weight.clear();
@@ -237,28 +246,39 @@ void PeriodicBoundaryData::set_ibz_mapping(const std::vector<int> &irk_point_id_
     for (size_t ik = 0; ik < n_k_points; ik++)
     {
         int ik_ibz = irk_point_id_mapping[ik];
+        if (ik_ibz < 0 || ik_ibz >= static_cast<int>(n_k_points))
+        {
+            throw LIBRPA_RUNTIME_ERROR("IBZ mapping index out of k-point range");
+        }
         const auto &k = klist[ik];
         const auto &k_ibz = klist[ik_ibz];
+        const double weight = kweights.empty() ? step : kweights[ik];
+        if (!std::isfinite(weight) || weight < 0.0)
+        {
+            throw LIBRPA_RUNTIME_ERROR("invalid k-point weight");
+        }
         auto it = map_ibzk_weight.find(k_ibz);
         if (it == map_ibzk_weight.end())
         {
-            klist_ibz.emplace_back(k_ibz);
-            map_ibzk_weight.emplace(k_ibz, step);
+            klist_coul.emplace_back(k_ibz);
+            map_ibzk_weight.emplace(k_ibz, weight);
         }
         else
         {
-            it->second += step;
+            it->second += weight;
         }
         map_irk_ks[k_ibz].emplace_back(k);
     }
 
     kweight_ibz.clear();
-    for (const auto &k_ibz: klist_ibz)
+    for (const auto &k_ibz: klist_coul)
     {
         kweight_ibz.emplace_back(map_ibzk_weight.at(k_ibz));
     }
 
-    kgrid_no_symmetry_ = klist_ibz.size() == klist.size();
+    kgrid_no_symmetry_ =
+        static_cast<int>(klist.size()) == this->get_n_cells_bvk()
+        && klist_coul.size() == klist.size();
 }
 
 int PeriodicBoundaryData::get_R_index(const Vector3_Order<int> &R) const
@@ -280,7 +300,7 @@ int PeriodicBoundaryData::get_k_index_full(const Vector3_Order<double> &k) const
 
 int PeriodicBoundaryData::get_k_index_ibz(const Vector3_Order<double> &k) const
 {
-    return get_k_index_(this->klist_ibz, k);
+    return get_k_index_(this->klist_coul, k);
 }
 
 
@@ -391,7 +411,7 @@ std::vector<Vector3_Order<int>> find_nearest_bvk_cells(const Vector3<double> &co
 // int kv_nmp[3] = {1, 1, 1};
 // Vector3<double> *kvec_c;
 // std::vector<Vector3_Order<double>> klist;
-// std::vector<Vector3_Order<double>> klist_ibz;
+// std::vector<Vector3_Order<double>> klist_coul;
 // std::vector<Vector3_Order<double>> kfrac_list;
 // std::vector<int> irk_point_id_mapping;
 // std::map<Vector3_Order<double>, std::vector<Vector3_Order<double>>> map_irk_ks;

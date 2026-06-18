@@ -57,18 +57,8 @@ namespace
 {
 
 constexpr double kInputSymmetryKpointMatchTol = 1e-5;
+constexpr double kBzSamplingWeightSumTol = 1e-6;
 constexpr std::int32_t READER_SHRINK_SINVS_V1_MARKER = -30241621;
-
-bool use_loaded_input_symmetry_sidecars()
-{
-    const auto pds = librpa_int::api::get_dataset_instance(driver::h);
-    const auto& ctx = pds->input_symmetry_ctx;
-    return ctx.available
-           && (!ctx.kstars.empty() || !ctx.rspace_operations.empty())
-           && (driver::get_bool(driver::opts.use_input_gw_symmetry)
-               || driver::get_bool(driver::opts.use_input_rpa_symmetry)
-               || driver::get_bool(driver::opts.use_input_exx_symmetry));
-}
 
 bool nearly_same_kpoint(const librpa_int::Vector3_Order<double> &lhs,
                        const librpa_int::Vector3_Order<double> &rhs,
@@ -77,133 +67,6 @@ bool nearly_same_kpoint(const librpa_int::Vector3_Order<double> &lhs,
     return std::abs(lhs.x - rhs.x) <= tol
            && std::abs(lhs.y - rhs.y) <= tol
            && std::abs(lhs.z - rhs.z) <= tol;
-}
-
-librpa_int::Vector3_Order<double> convert_fractional_kpoint_to_klist_units(
-    const librpa_int::Vector3_Order<double> &kfrac,
-    const librpa_int::PeriodicBoundaryData &pbc)
-{
-    const auto &G = pbc.G;
-    return {kfrac.x * G.e11 + kfrac.y * G.e21 + kfrac.z * G.e31,
-            kfrac.x * G.e12 + kfrac.y * G.e22 + kfrac.z * G.e32,
-            kfrac.x * G.e13 + kfrac.y * G.e23 + kfrac.z * G.e33};
-}
-
-bool same_fractional_kpoint(const librpa_int::Vector3_Order<double> &lhs,
-                            const librpa_int::Vector3_Order<double> &rhs)
-{
-    const auto same = [](const double a, const double b) {
-        const double diff = a - b;
-        return std::abs(diff - std::round(diff)) <= kInputSymmetryKpointMatchTol;
-    };
-    return same(lhs.x, rhs.x) && same(lhs.y, rhs.y) && same(lhs.z, rhs.z);
-}
-
-std::vector<librpa_int::Vector3_Order<double>> build_uniform_kmesh_frac(const int nk0,
-                                                                        const int nk1,
-                                                                        const int nk2)
-{
-    std::vector<librpa_int::Vector3_Order<double>> kpoints;
-    kpoints.reserve(static_cast<std::size_t>(nk0 * nk1 * nk2));
-    for (int i = 0; i != nk0; ++i)
-    {
-        for (int j = 0; j != nk1; ++j)
-        {
-            for (int k = 0; k != nk2; ++k)
-            {
-                kpoints.push_back({static_cast<double>(i) / nk0,
-                                   static_cast<double>(j) / nk1,
-                                   static_cast<double>(k) / nk2});
-            }
-        }
-    }
-    return kpoints;
-}
-
-void generate_input_symmetry_kstars_from_stru_grid(librpa_int::InputSymmetryContext &ctx,
-                                                   const librpa_int::PeriodicBoundaryData &pbc,
-                                                   const int nk0,
-                                                   const int nk1,
-                                                   const int nk2,
-                                                   const std::vector<double> &kvecs_ibz)
-{
-    std::vector<librpa_int::Vector3_Order<double>> ibz_kfrac;
-    ibz_kfrac.reserve(kvecs_ibz.size() / 3);
-    for (std::size_t ik = 0; ik != kvecs_ibz.size() / 3; ++ik)
-    {
-        const librpa_int::Vector3_Order<double> kvec{kvecs_ibz[3 * ik] / librpa_int::TWO_PI,
-                                                     kvecs_ibz[3 * ik + 1] / librpa_int::TWO_PI,
-                                                     kvecs_ibz[3 * ik + 2] / librpa_int::TWO_PI};
-        ibz_kfrac.emplace_back(pbc.latvec * kvec);
-    }
-
-    librpa_int::SpaceGroupSymOps<librpa_int::SpaceGroupSymOp> kstar_operations;
-    kstar_operations.reserve(2 * ctx.rspace_operations.size());
-    for (const auto &op : ctx.rspace_operations)
-    {
-        librpa_int::SpaceGroupSymOp base_op;
-        base_op.rotation = op.rotation;
-        base_op.translation = op.translation;
-        base_op.use_row_convention = op.use_row_convention;
-        kstar_operations.push_back(base_op);
-    }
-    for (const auto &op : ctx.rspace_operations)
-    {
-        librpa_int::SpaceGroupSymOp tr_op;
-        tr_op.rotation = op.rotation * -1.0;
-        tr_op.translation = op.translation;
-        tr_op.use_row_convention = op.use_row_convention;
-        kstar_operations.push_back(tr_op);
-    }
-
-    const auto generated_stars =
-        librpa_int::build_kpoint_stars(build_uniform_kmesh_frac(nk0, nk1, nk2),
-                                       kstar_operations,
-                                       ibz_kfrac,
-                                       kInputSymmetryKpointMatchTol);
-
-    ctx.kstars.clear();
-    ctx.kstar_member_fold_G.clear();
-    std::vector<bool> used(generated_stars.size(), false);
-    for (std::size_t ik_ibz = 0; ik_ibz != ibz_kfrac.size(); ++ik_ibz)
-    {
-        int matched = -1;
-        for (std::size_t istar = 0; istar != generated_stars.size(); ++istar)
-        {
-            if (used[istar])
-            {
-                continue;
-            }
-            const auto &star = generated_stars[istar];
-            const auto &representative =
-                star.members.at(static_cast<std::size_t>(star.representative_k_index)).kpoint;
-            if (same_fractional_kpoint(representative, ibz_kfrac[ik_ibz]))
-            {
-                matched = static_cast<int>(istar);
-                break;
-            }
-        }
-        if (matched < 0)
-        {
-            throw LIBRPA_RUNTIME_ERROR("Failed to generate input-symmetry k-star from stru_out");
-        }
-
-        used[static_cast<std::size_t>(matched)] = true;
-        const auto &generated_star = generated_stars[static_cast<std::size_t>(matched)];
-        librpa_int::InputSymmetryKStar star;
-        star.star_index = static_cast<int>(ik_ibz);
-        star.k_ibz = ibz_kfrac[ik_ibz];
-        for (std::size_t imember = 0; imember != generated_star.members.size(); ++imember)
-        {
-            librpa_int::InputSymmetryKStarMember member;
-            member.isym = generated_star.sym_mappings.at(imember).isym;
-            member.k_bz = generated_star.members.at(imember).kpoint;
-            ctx.kstar_member_fold_G[{star.star_index, static_cast<int>(imember)}] =
-                generated_star.sym_mappings.at(imember).fold_G;
-            star.members.push_back(std::move(member));
-        }
-        ctx.kstars.push_back(std::move(star));
-    }
 }
 
 } // namespace
@@ -1245,177 +1108,132 @@ void read_bz_sampling(const std::string &file_path)
     if (!infile.good())
         throw LIBRPA_RUNTIME_ERROR("Fail to open BZ sampling file " + file_path);
 
-    string x, y, z, tmp;
-
     int nk[3];
     for (int i = 0; i < 3; i++)
     {
         infile >> nk[i];
     }
-    int nk_full, nk_ibz;
-    infile >> nk_full >> nk_ibz;
-    assert(nk_full == nk[0] * nk[1] * nk[2]);
-
-    std::vector<double> kvecs(3 * nk_full);
-    std::vector<int> map_ibzk(nk_full, -1);
-
-    // kvec_c = new Vector3<double>[n_kpoints];
-    for (int i = 0; i != nk_full; i++)
+    if (!infile.good() || nk[0] <= 0 || nk[1] <= 0 || nk[2] <= 0)
     {
-        // id weight kfrac[3] kcart[3] ik_ibz map_ibz
-        infile >> x >> y;
-        infile >> x >> y >> z;
-        // kcart[3]
-        infile >> kvecs[3 * i] >> kvecs[3 * i + 1] >> kvecs[3 * i + 2];
-        // ik_ibz map_ibz
-        infile >> tmp >> map_ibzk[i];
-        map_ibzk[i] -= 1;
-        // Save a copy in the driver for information printing
-        Vector3_Order<double> kvec(kvecs[3 * i], kvecs[3 * i + 1], kvecs[3 * i + 2]);
-        auto it = std::find(driver::ibz_kpoints.cbegin(), driver::ibz_kpoints.cend(), kvec);
-        if (it == driver::ibz_kpoints.cend()) driver::ibz_kpoints.emplace_back(kvec);
-    }
-    infile.close();
-
-    driver::n_ibz_kpoints = driver::ibz_kpoints.size();
-
-    driver::h.set_kgrids_kvec(nk[0], nk[1], nk[2], kvecs.data());
-    driver::h.set_ibz_mapping(map_ibzk);
-}
-
-void read_bz_sampling_from_stru(const std::string &file_path)
-{
-    using namespace librpa_int;
-
-    global::lib_printf_root("Fallback reading Brillouin zone sampling from stru file: %s\n", file_path.c_str());
-
-    ifstream infile;
-    string x;
-    infile.open(file_path);
-    if (!infile.good())
-        throw LIBRPA_RUNTIME_ERROR("Fail to open structure file " + file_path);
-
-    // Skip direct and reciprocal lattice vectors
-    for (int i = 0; i < 6; i++)
-    {
-        infile >> x >> x >> x;
-    }
-    // Skip atom coordinates
-    int n_atoms;
-    infile >> n_atoms;
-    for (int iat = 0; iat < n_atoms; iat++)
-    {
-        for (int i = 0; i < 4; i++) infile >> x;
-    }
-
-    // Begin k-grid information
-    int nk[3];
-    for (int i = 0; i < 3; i++)
-    {
-        infile >> x;
-        nk[i] = stoi(x);
+        throw LIBRPA_RUNTIME_ERROR("Invalid BZ sampling k-grid in " + file_path);
     }
     const int nk_full = nk[0] * nk[1] * nk[2];
-    auto pds = api::get_dataset_instance(driver::h);
-    auto& input_symmetry_ctx = pds->input_symmetry_ctx;
-    const bool use_input_symmetry_kstars =
-        use_loaded_input_symmetry_sidecars()
-        && (input_symmetry_ctx.kstars.size() == static_cast<std::size_t>(driver::n_kpoints)
-            || (input_symmetry_ctx.kstars.empty()
-                && !input_symmetry_ctx.rspace_operations.empty()))
-        && driver::n_kpoints > 0
-        && driver::n_kpoints <= nk_full;
-    const int n_k_rows = use_input_symmetry_kstars ? driver::n_kpoints : nk_full;
-    std::vector<double> kvecs(3 * n_k_rows);
 
-    for (int i = 0; i != 3 * n_k_rows; i++)
+    int n_kpoints_scf, nk_ibz;
+    infile >> n_kpoints_scf >> nk_ibz;
+    if (!infile.good())
     {
-        infile >> x;
+        throw LIBRPA_RUNTIME_ERROR("Fail to read BZ sampling k-point counts from " + file_path);
+    }
+    if (n_kpoints_scf <= 0 || nk_ibz <= 0)
+        throw LIBRPA_RUNTIME_ERROR("BZ sampling k-point counts must be positive");
+    if (n_kpoints_scf > nk_full)
+        throw LIBRPA_RUNTIME_ERROR("SCF k-point count exceeds the full BZ grid size");
+    if (nk_ibz > n_kpoints_scf)
+        throw LIBRPA_RUNTIME_ERROR("Coulomb IBZ k-point count exceeds the SCF k-point count");
+    if (driver::n_kpoints > 0 && n_kpoints_scf != driver::n_kpoints)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "BZ sampling SCF k-point count does not match band_out: "
+            + std::to_string(n_kpoints_scf) + " != " + std::to_string(driver::n_kpoints));
+    }
+
+    std::vector<double> kvecs(3 * n_kpoints_scf);
+    std::vector<double> kweights(n_kpoints_scf);
+    std::vector<int> map_ibzk(n_kpoints_scf, -1);
+    std::vector<int> ibz_label_to_rep(nk_ibz, -1);
+    std::vector<int> ibz_representatives;
+    double weight_sum = 0.0;
+
+    for (int i = 0; i != n_kpoints_scf; i++)
+    {
+        int ik_read, ik_ibz, ik_rep;
+        double kfrac_x, kfrac_y, kfrac_z;
+        infile >> ik_read >> kweights[i];
+        infile >> kfrac_x >> kfrac_y >> kfrac_z;
+        infile >> kvecs[3 * i] >> kvecs[3 * i + 1] >> kvecs[3 * i + 2];
+        infile >> ik_ibz >> ik_rep;
         if (!infile.good())
         {
             throw LIBRPA_RUNTIME_ERROR(
-                "Fail to read k-point rows from " + file_path
-                + ". Input symmetry sidecars are required when stru_out stores only IBZ k-points.");
+                "Fail to read BZ sampling k-point row " + std::to_string(i + 1)
+                + " from " + file_path);
         }
-        kvecs[i] = stod(x);
-    }
-
-    if (use_input_symmetry_kstars)
-    {
-        auto &pbc = pds->pbc;
-        if (input_symmetry_ctx.kstars.empty())
+        if (ik_read != i + 1)
         {
-            generate_input_symmetry_kstars_from_stru_grid(input_symmetry_ctx,
-                                                          pbc,
-                                                          nk[0],
-                                                          nk[1],
-                                                          nk[2],
-                                                          kvecs);
+            throw LIBRPA_RUNTIME_ERROR("BZ sampling k-point index does not match row order");
         }
-        if (input_symmetry_ctx.kstars.size() != static_cast<std::size_t>(driver::n_kpoints))
+        if (!std::isfinite(kweights[i]) || kweights[i] < 0.0
+            || !std::isfinite(kfrac_x) || !std::isfinite(kfrac_y) || !std::isfinite(kfrac_z)
+            || !std::isfinite(kvecs[3 * i])
+            || !std::isfinite(kvecs[3 * i + 1])
+            || !std::isfinite(kvecs[3 * i + 2]))
         {
-            throw LIBRPA_RUNTIME_ERROR("Generated input-symmetry k-star count does not match stru_out");
+            throw LIBRPA_RUNTIME_ERROR("BZ sampling k-point row contains an invalid number");
         }
-        std::vector<std::vector<Vector3_Order<double>>> full_kstars;
-        full_kstars.reserve(input_symmetry_ctx.kstars.size());
-        for (std::size_t istar = 0; istar != input_symmetry_ctx.kstars.size(); ++istar)
+        if (ik_ibz <= 0 || ik_ibz > nk_ibz)
         {
-            const auto &star = input_symmetry_ctx.kstars[istar];
-            const Vector3_Order<double> k_ibz_read{
-                kvecs[3 * istar] / TWO_PI,
-                kvecs[3 * istar + 1] / TWO_PI,
-                kvecs[3 * istar + 2] / TWO_PI};
-            const auto k_ibz_sidecar = convert_fractional_kpoint_to_klist_units(star.k_ibz, pbc);
-            if (!nearly_same_kpoint(k_ibz_read, k_ibz_sidecar))
-            {
-                std::stringstream ss;
-                ss << "Input symmetry k-star " << istar + 1
-                   << " does not match the corresponding stru_out IBZ k-point";
-                throw LIBRPA_RUNTIME_ERROR(ss.str());
-            }
-
-            std::vector<Vector3_Order<double>> star_members;
-            star_members.reserve(star.members.size());
-            for (const auto &member : star.members)
-            {
-                const auto k_member =
-                    convert_fractional_kpoint_to_klist_units(member.k_bz, pbc);
-                if (std::find(star_members.begin(), star_members.end(), k_member)
-                    == star_members.end())
-                {
-                    star_members.emplace_back(k_member);
-                }
-            }
-            full_kstars.emplace_back(std::move(star_members));
+            throw LIBRPA_RUNTIME_ERROR("BZ sampling IBZ index out of range");
         }
-
-        pbc.set_irreducible_kgrids_kvec(nk[0], nk[1], nk[2], kvecs, full_kstars);
-        driver::ibz_kpoints = pbc.klist_ibz;
-        driver::n_ibz_kpoints = static_cast<int>(driver::ibz_kpoints.size());
-        infile.close();
-        return;
-    }
-
-    std::vector<int> map_ibzk(nk_full, -1);
-    for (int i = 0; i != nk_full; i++)
-    {
-        infile >> map_ibzk[i];
-        if (!infile.good())
+        if (ik_rep <= 0 || ik_rep > n_kpoints_scf)
+        {
+            throw LIBRPA_RUNTIME_ERROR("BZ sampling representative k-point index out of range");
+        }
+        map_ibzk[i] = ik_rep - 1;
+        auto &label_rep = ibz_label_to_rep[static_cast<std::size_t>(ik_ibz - 1)];
+        if (label_rep < 0)
+        {
+            label_rep = map_ibzk[i];
+        }
+        else if (label_rep != map_ibzk[i])
         {
             throw LIBRPA_RUNTIME_ERROR(
-                "Fail to read full-to-IBZ k-point mapping from " + file_path);
+                "BZ sampling irreducible Coulomb k-point label maps to multiple representatives");
         }
-        map_ibzk[i] -= 1;
-        Vector3_Order<double> kvec(kvecs[3 * i], kvecs[3 * i + 1], kvecs[3 * i + 2]);
-        auto it = std::find(driver::ibz_kpoints.cbegin(), driver::ibz_kpoints.cend(), kvec);
-        if (it == driver::ibz_kpoints.cend()) driver::ibz_kpoints.emplace_back(kvec);
+        if (std::find(ibz_representatives.cbegin(), ibz_representatives.cend(), map_ibzk[i])
+            == ibz_representatives.cend())
+        {
+            ibz_representatives.emplace_back(map_ibzk[i]);
+        }
+        weight_sum += kweights[i];
     }
     infile.close();
 
-    driver::n_ibz_kpoints = driver::ibz_kpoints.size();
+    if (std::abs(weight_sum - 1.0) > kBzSamplingWeightSumTol)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "BZ sampling SCF k-point weights do not sum to 1: "
+            + std::to_string(weight_sum));
+    }
+    if (ibz_representatives.size() != static_cast<std::size_t>(nk_ibz))
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "BZ sampling representative count does not match Coulomb IBZ count");
+    }
+    if (std::find(ibz_label_to_rep.cbegin(), ibz_label_to_rep.cend(), -1)
+        != ibz_label_to_rep.cend())
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "BZ sampling does not contain every irreducible Coulomb k-point label");
+    }
 
-    driver::h.set_kgrids_kvec(nk[0], nk[1], nk[2], kvecs.data());
-    driver::h.set_ibz_mapping(map_ibzk);
+    auto pds = api::get_dataset_instance(driver::h);
+    auto &pbc = pds->pbc;
+    if (n_kpoints_scf < nk_full)
+    {
+        auto &input_symmetry_ctx = pds->input_symmetry_ctx;
+        if (input_symmetry_ctx.rspace_operations.empty())
+        {
+            throw LIBRPA_RUNTIME_ERROR(
+                "BZ sampling contains a symmetry-reduced SCF k-point list, "
+                "but no symmetry operations were loaded from stru_out");
+        }
+    }
+
+    pbc.set_kgrids_kvec(nk[0], nk[1], nk[2], kvecs);
+    pbc.set_ibz_mapping(map_ibzk, {}, kweights);
+    driver::ibz_kpoints = pbc.klist_coul;
+    driver::n_ibz_kpoints = static_cast<int>(driver::ibz_kpoints.size());
 }
 
 void read_basis(const std::string &file_path)
@@ -1750,7 +1568,7 @@ static int handle_sinvS_file(const std::string &file_path,
 
     if (!infile.good()) return 1;
 
-    const int nk_ibz = pbc.klist_ibz.size();
+    const int nk_ibz = pbc.klist_coul.size();
 
     if (binary)
     {
@@ -1774,7 +1592,7 @@ static int handle_sinvS_file(const std::string &file_path,
             ecol--;
             iq--;
             if ((erow - brow < 0) || (ecol - bcol < 0) || iq < 0 || iq >= nk_ibz) return 4;
-            const auto qvec = pbc.klist_ibz[iq];
+            const auto qvec = pbc.klist_coul[iq];
 
             if (!sinvS.count(qvec))
             {
@@ -1820,7 +1638,7 @@ static int handle_sinvS_file(const std::string &file_path,
 
             // skip empty coulumb_file
             if ((erow - brow < 0) || (ecol - bcol < 0) || iq < 0 || iq >= nk_ibz) return 4;
-            const auto qvec = pbc.klist_ibz[iq];
+            const auto qvec = pbc.klist_coul[iq];
             if (!sinvS.count(qvec))
             {
                 sinvS[qvec].create(mu, nu);
@@ -1903,7 +1721,7 @@ static int handle_sinvS_v1_file(const std::string &file_path,
 
     auto pds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
     auto &pbc = pds->pbc;
-    const int nk_ibz = pbc.klist_ibz.size();
+    const int nk_ibz = pbc.klist_coul.size();
 
     ifstream infile(file_path, std::ios::in | std::ios::binary);
     if (!infile.good())
@@ -1978,7 +1796,7 @@ static int handle_sinvS_v1_file(const std::string &file_path,
             return 8;
         }
 
-        const auto qvec = pbc.klist_ibz[iq];
+        const auto qvec = pbc.klist_coul[iq];
         if (!sinvS.count(qvec))
         {
             sinvS[qvec].create(record.nrow_total, record.ncol_total);
