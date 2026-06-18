@@ -1219,7 +1219,7 @@ bool load_input_symmetry_context(SymmetryContext& ctx,
 
     if (log != nullptr)
     {
-        (*log) << "Detected ABACUS symmetry operations from structure\n"
+        (*log) << "Detected symmetry operations from structure\n"
                << "| irreducible atom pairs : " << ctx.count_irreducible_pairs() << "\n"
                << "| irreducible {pair, R}  : " << ctx.count_irreducible_blocks() << "\n"
                << "| real-space operations  : " << ctx.rspace_operations.size() << "\n"
@@ -2429,6 +2429,7 @@ void build_input_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
             const Vector3_Order<int> ir_R{ir_R_array[0], ir_R_array[1], ir_R_array[2]};
             auto& star_members = sector_stars[ir_pair][ir_R];
             std::vector<std::string> candidate_debug;
+            bool saw_duplicate_member = false;
             for (std::size_t isym = 0; isym < ctx.rspace_operations.size(); ++isym)
             {
                 const int inv = inverse_map[isym];
@@ -2456,6 +2457,7 @@ void build_input_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
                     continue;
                 }
 
+                saw_duplicate_member = saw_duplicate_member || is_duplicate;
                 if (covered.insert(full_key).second)
                 {
                     star_members.push_back(
@@ -2465,6 +2467,10 @@ void build_input_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
 
             if (star_members.empty())
             {
+                if (saw_duplicate_member)
+                {
+                    continue;
+                }
                 std::ostringstream oss;
                 oss << "Failed to build a real-space symmetry star from ABACUS symmetry for "
                     << "irreducible pair (" << ir_pair.first << ", " << ir_pair.second << ")"

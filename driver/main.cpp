@@ -144,16 +144,6 @@ int main(int argc, char **argv)
         profiler.stop("driver_struct");
         lib_printf_root("\n");
 
-        profiler.start("driver_input_symmetry", "Driver Read symmetry context");
-        {
-            auto pds = librpa_int::api::get_dataset_instance(driver::h);
-            librpa_int::load_input_symmetry_context(
-                pds->symmetry_context,
-                mpi_comm_global_h.is_root() && should_output() ? &std::cout : nullptr);
-        }
-        profiler.stop("driver_input_symmetry");
-        lib_printf_root("\n");
-
         profiler.start("driver_bz", "BZ sampling");
         if (!librpa_int::path_exists(path_bz_sampling.c_str()))
         {
@@ -180,6 +170,16 @@ int main(int argc, char **argv)
         }
         lib_printf_root("\n");
         profiler.stop("driver_basis");
+
+        profiler.start("driver_input_symmetry", "Driver Read symmetry context");
+        {
+            auto pds = librpa_int::api::get_dataset_instance(driver::h);
+            librpa_int::load_input_symmetry_context(
+                pds->symmetry_context,
+                mpi_comm_global_h.is_root() && should_output() ? &std::cout : nullptr);
+        }
+        profiler.stop("driver_input_symmetry");
+        lib_printf_root("\n");
 
         profiler.start("driver_read_eigenvector", "SCF eigenvectors");
         int ret_eigenvec = read_eigenvector(driver_params.input_dir);

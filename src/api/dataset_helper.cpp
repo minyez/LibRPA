@@ -540,8 +540,7 @@ void initialize_input_symmetry_context(Dataset &ds, const bool build_shell_rotat
 void require_input_symmetry_shell_layouts(const Dataset &ds, const char *calculation)
 {
     const auto &ctx = ds.symmetry_context;
-    if (!ctx.available || ctx.rspace_operations.empty()
-        || ds.pbc.klist.size() >= static_cast<std::size_t>(ds.pbc.get_n_cells_bvk()))
+    if (!ctx.available || ctx.rspace_operations.empty())
     {
         return;
     }

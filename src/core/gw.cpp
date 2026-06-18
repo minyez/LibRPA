@@ -997,7 +997,6 @@ void G0W0::build_spacetime(
     const bool use_input_sigc_symmetry =
         this->use_symmetry_context
         && symmetry_ctx.available
-        && this->pbc.klist.size() < static_cast<std::size_t>(this->pbc.get_n_cells_bvk())
         && symmetry_ctx.has_ao_shell_layout()
         && !symmetry_ctx.irreducible_sector.empty()
         && !symmetry_ctx.rspace_operations.empty()
