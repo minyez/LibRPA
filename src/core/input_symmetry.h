@@ -278,6 +278,11 @@ ComplexMatrix rotate_input_symmetry_kspace_matrix(const InputSymmetryContext& ct
                                           bool use_time_reversal = false,
                                           const Vector3_Order<double>* k_bz_target = nullptr);
 
+input_symmetry_irreducible_sector_t build_input_symmetry_rspace_irreducible_sector(
+    const InputSymmetryContext& ctx,
+    const std::map<atom_t, std::array<double, 3>>& coord_frac,
+    const std::vector<Vector3_Order<int>>& Rlist);
+
 void build_input_symmetry_rspace_sector_stars(
     const InputSymmetryContext& ctx,
     const std::map<atom_t, std::array<double, 3>>& coord_frac,

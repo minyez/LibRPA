@@ -366,6 +366,15 @@ void initialize_input_symmetry_context(Dataset &ds)
 
     sync_input_symmetry_shell_layouts_from_cached_layouts(ds);
 
+    if (ctx.irreducible_sector.empty()
+        && !ctx.atom_to_type.empty()
+        && !ctx.input_coord_frac.empty()
+        && !ds.pbc.Rlist.empty())
+    {
+        ctx.irreducible_sector =
+            build_input_symmetry_rspace_irreducible_sector(ctx, ctx.input_coord_frac, ds.pbc.Rlist);
+    }
+
     const int lmax = std::max(ctx.ao_lmax, ctx.abf_lmax);
     if (lmax < 0)
     {

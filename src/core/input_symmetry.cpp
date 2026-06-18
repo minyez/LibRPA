@@ -439,6 +439,38 @@ Vector3_Order<int> rotate_rspace_vector(
     return round_to_integer_vector(rotated_double);
 }
 
+using InputSymmetryRSpaceKey = std::tuple<atom_t, atom_t, Vector3_Order<int>>;
+
+input_symmetry_R_t to_input_symmetry_R(const Vector3_Order<int>& R)
+{
+    return {R.x, R.y, R.z};
+}
+
+int rspace_R_l1_norm(const Vector3_Order<int>& R)
+{
+    return std::abs(R.x) + std::abs(R.y) + std::abs(R.z);
+}
+
+bool rspace_representative_less(const InputSymmetryRSpaceKey& lhs,
+                                const InputSymmetryRSpaceKey& rhs)
+{
+    if (std::get<0>(lhs) != std::get<0>(rhs))
+    {
+        return std::get<0>(lhs) < std::get<0>(rhs);
+    }
+    if (std::get<1>(lhs) != std::get<1>(rhs))
+    {
+        return std::get<1>(lhs) < std::get<1>(rhs);
+    }
+    const auto lhs_norm = rspace_R_l1_norm(std::get<2>(lhs));
+    const auto rhs_norm = rspace_R_l1_norm(std::get<2>(rhs));
+    if (lhs_norm != rhs_norm)
+    {
+        return lhs_norm < rhs_norm;
+    }
+    return std::get<2>(lhs) < std::get<2>(rhs);
+}
+
 Vector3_Order<double> parse_vec3_double(const std::string& line, const std::string& context)
 {
     const auto values = extract_doubles(line);
@@ -1755,14 +1787,21 @@ bool load_input_symmetry_context(const std::string& dir_path,
     const bool has_irreducible_sector = !sidecar_dir.empty() && file_exists(irreducible_sector_file);
     const bool has_symrot_k = !sidecar_dir.empty() && file_exists(symrot_k_file);
     const bool has_symrot_abf_k = !sidecar_dir.empty() && file_exists(symrot_abf_k_file);
+    const bool use_generated_symmetry = !ctx.rspace_operations.empty();
 
     if (!has_irreducible_sector && !has_symrot_k && !has_symrot_abf_k)
     {
+        if (use_generated_symmetry)
+        {
+            ctx.convention = InputSymmetryConvention::ABACUS;
+            ctx.available = true;
+            return true;
+        }
         ctx.clear();
         return false;
     }
 
-    if (!has_irreducible_sector)
+    if (!has_irreducible_sector && !use_generated_symmetry)
     {
         std::ostringstream oss;
         oss << "Incomplete ABACUS symmetry sidecar set near " << dir_path
@@ -1770,7 +1809,6 @@ bool load_input_symmetry_context(const std::string& dir_path,
         throw std::runtime_error(oss.str());
     }
 
-    const bool use_generated_symmetry = !ctx.rspace_operations.empty();
     const bool preserve_lattice = ctx.lattice_available;
     const Matrix3 preserved_lattice = ctx.lattice_vectors;
     const Matrix3 preserved_reciprocal = ctx.reciprocal_vectors;
@@ -1783,7 +1821,10 @@ bool load_input_symmetry_context(const std::string& dir_path,
         ctx.set_lattice(preserved_lattice, preserved_reciprocal);
     }
     ctx.rspace_operations = std::move(preserved_operations);
-    load_irreducible_sector_file(irreducible_sector_file, ctx.irreducible_sector);
+    if (has_irreducible_sector)
+    {
+        load_irreducible_sector_file(irreducible_sector_file, ctx.irreducible_sector);
+    }
     if (has_symrot_k && !use_generated_symmetry)
     {
         load_symrot_k_file(symrot_k_file, ctx);
@@ -2925,6 +2966,73 @@ ComplexMatrix rotate_input_symmetry_kspace_matrix(const InputSymmetryContext& ct
     }
 
     return rotated_matrix;
+}
+
+input_symmetry_irreducible_sector_t build_input_symmetry_rspace_irreducible_sector(
+    const InputSymmetryContext& ctx,
+    const std::map<atom_t, std::array<double, 3>>& coord_frac,
+    const std::vector<Vector3_Order<int>>& Rlist)
+{
+    if (ctx.rspace_operations.empty())
+    {
+        throw std::runtime_error("ABACUS real-space symmetry operations are unavailable");
+    }
+    if (ctx.atom_to_type.empty())
+    {
+        throw std::runtime_error("ABACUS atom-to-type mapping is unavailable for real-space symmetry");
+    }
+
+    const auto& rspace_coord_frac =
+        (ctx.input_coord_frac.size() == ctx.atom_to_type.size()) ? ctx.input_coord_frac : coord_frac;
+    const auto op_infos = build_rspace_operation_info(ctx, rspace_coord_frac);
+    const std::set<Vector3_Order<int>> Rset(Rlist.begin(), Rlist.end());
+
+    std::set<InputSymmetryRSpaceKey> uncovered;
+    for (atom_t atom_i = 0; atom_i < static_cast<atom_t>(ctx.atom_to_type.size()); ++atom_i)
+    {
+        for (atom_t atom_j = 0; atom_j < static_cast<atom_t>(ctx.atom_to_type.size()); ++atom_j)
+        {
+            for (const auto& R : Rlist)
+            {
+                uncovered.insert({atom_i, atom_j, R});
+            }
+        }
+    }
+
+    input_symmetry_irreducible_sector_t irreducible_sector;
+    while (!uncovered.empty())
+    {
+        const auto seed = *uncovered.begin();
+        const atom_t seed_i = std::get<0>(seed);
+        const atom_t seed_j = std::get<1>(seed);
+        const Vector3_Order<int> seed_R = std::get<2>(seed);
+
+        std::set<InputSymmetryRSpaceKey> orbit{seed};
+        for (std::size_t isym = 0; isym < ctx.rspace_operations.size(); ++isym)
+        {
+            const auto& op_info = op_infos[isym];
+            const auto full_I = op_info.atom_map[seed_i];
+            const auto full_J = op_info.atom_map[seed_j];
+            const auto full_R = rotate_rspace_vector(
+                seed_R, op_info, ctx.rspace_operations[isym], seed_i, seed_j);
+            if (Rset.count(full_R) != 0)
+            {
+                orbit.insert({full_I, full_J, full_R});
+            }
+        }
+
+        const auto representative =
+            *std::min_element(orbit.begin(), orbit.end(), rspace_representative_less);
+        irreducible_sector[{std::get<0>(representative), std::get<1>(representative)}].insert(
+            to_input_symmetry_R(std::get<2>(representative)));
+
+        for (const auto& member : orbit)
+        {
+            uncovered.erase(member);
+        }
+    }
+
+    return irreducible_sector;
 }
 
 void build_input_symmetry_rspace_sector_stars(const InputSymmetryContext& ctx,
