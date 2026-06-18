@@ -168,9 +168,9 @@ module librpa_f03
       integer(c_int) :: use_fullcoul_exx
       integer(c_int) :: use_fullcoul_eps
       integer(c_int) :: use_fullcoul_wc
-      integer(c_int) :: use_input_exx_symmetry
-      integer(c_int) :: use_input_gw_symmetry
-      integer(c_int) :: use_input_rpa_symmetry
+      integer(c_int) :: use_symmetry_exx
+      integer(c_int) :: use_symmetry_gw
+      integer(c_int) :: use_symmetry_rpa
       integer(c_int) :: output_abacus_gw_gf
 
       integer(c_int) :: n_bands_chi0
@@ -269,12 +269,12 @@ module librpa_f03
       logical :: use_fullcoul_exx
       !> Experimental: use full Coulomb interaction in \f$W^c = (\varepsilon^{-1} - 1) v\f$.
       logical :: use_fullcoul_wc
-      !> Experimental: use input symmetry sidecars in exact-exchange paths.
-      logical :: use_input_exx_symmetry
-      !> Experimental: use input symmetry sidecars in GW paths.
-      logical :: use_input_gw_symmetry
-      !> Experimental: use input symmetry sidecars in RPA/chi0 paths.
-      logical :: use_input_rpa_symmetry
+      !> Experimental: use the symmetry context in exact-exchange paths.
+      logical :: use_symmetry_exx
+      !> Experimental: use the symmetry context in GW paths.
+      logical :: use_symmetry_gw
+      !> Experimental: use the symmetry context in RPA/chi0 paths.
+      logical :: use_symmetry_rpa
       !> Experimental: output ABACUS-compatible GW Green's-function data.
       logical :: output_abacus_gw_gf
       !> Experimental: maximum number of bands for response-function construction.
@@ -1091,9 +1091,9 @@ contains
       call sync_opt(opts%use_fullcoul_eps,        opts%opts_c%use_fullcoul_eps,        direction)
       call sync_opt(opts%use_fullcoul_exx,        opts%opts_c%use_fullcoul_exx,        direction)
       call sync_opt(opts%use_fullcoul_wc,         opts%opts_c%use_fullcoul_wc,         direction)
-      call sync_opt(opts%use_input_exx_symmetry, opts%opts_c%use_input_exx_symmetry, direction)
-      call sync_opt(opts%use_input_gw_symmetry,  opts%opts_c%use_input_gw_symmetry,  direction)
-      call sync_opt(opts%use_input_rpa_symmetry, opts%opts_c%use_input_rpa_symmetry, direction)
+      call sync_opt(opts%use_symmetry_exx, opts%opts_c%use_symmetry_exx, direction)
+      call sync_opt(opts%use_symmetry_gw,  opts%opts_c%use_symmetry_gw,  direction)
+      call sync_opt(opts%use_symmetry_rpa, opts%opts_c%use_symmetry_rpa, direction)
       call sync_opt(opts%output_abacus_gw_gf,     opts%opts_c%output_abacus_gw_gf,     direction)
       call sync_opt(opts%n_bands_chi0,            opts%opts_c%n_bands_chi0,            direction)
       call sync_opt(opts%n_bands_sigc,            opts%opts_c%n_bands_sigc,            direction)

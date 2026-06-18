@@ -125,12 +125,6 @@ int main(int argc, char **argv)
     const string path_basis_aux = driver_params.input_dir + driver_params.fn_basis_aux;
     const string path_eigocc_scf = driver_params.input_dir + driver_params.fn_eigocc_scf;
 
-    const bool may_use_input_symmetry =
-        get_bool(opts.use_input_exx_symmetry)
-        || get_bool(opts.use_input_gw_symmetry)
-        || get_bool(opts.use_input_rpa_symmetry);
-    const auto input_symmetry_convention =
-        librpa_int::parse_input_symmetry_convention(driver_params.input_symmetry_convention);
     {
         auto pds = librpa_int::api::get_dataset_instance(driver::h);
         pds->symmetry_context.clear();
@@ -150,21 +144,12 @@ int main(int argc, char **argv)
         profiler.stop("driver_struct");
         lib_printf_root("\n");
 
-        profiler.start("driver_input_symmetry", "Driver Read input symmetry sidecars");
+        profiler.start("driver_input_symmetry", "Driver Read symmetry context");
         {
             auto pds = librpa_int::api::get_dataset_instance(driver::h);
-            if (may_use_input_symmetry)
-            {
-                librpa_int::load_input_symmetry_context(
-                    driver_params.input_dir,
-                    input_symmetry_convention,
-                    pds->symmetry_context,
-                    mpi_comm_global_h.is_root() && should_output() ? &std::cout : nullptr);
-            }
-            else
-            {
-                pds->symmetry_context.clear();
-            }
+            librpa_int::load_input_symmetry_context(
+                pds->symmetry_context,
+                mpi_comm_global_h.is_root() && should_output() ? &std::cout : nullptr);
         }
         profiler.stop("driver_input_symmetry");
         lib_printf_root("\n");

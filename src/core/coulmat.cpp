@@ -431,7 +431,8 @@ atpair_R_mat_t FT_Vq(const AtomicBasis &basis_abf,
                      const SymmetryContext &symmetry_context,
                      const atpair_k_cplx_mat_t &coulmat_k,
                      const PeriodicBoundaryData &pbc,
-                     bool return_ordered_atom_pair)
+                     bool return_ordered_atom_pair,
+                     const bool use_symmetry_context)
 {
     atpair_R_mat_t coulmat_R;
 
@@ -440,7 +441,8 @@ atpair_R_mat_t FT_Vq(const AtomicBasis &basis_abf,
     const auto &map_irk_ks = pbc.map_irk_ks;
     const auto n_k_points = pbc.get_n_cells_bvk();
 
-    if (can_use_input_symmetry_irreducible_sector_ft_vq(symmetry_context, basis_abf, coulmat_k, pbc))
+    if (use_symmetry_context
+        && can_use_input_symmetry_irreducible_sector_ft_vq(symmetry_context, basis_abf, coulmat_k, pbc))
     {
         global::lib_printf_root(
             "ABACUS EXX symmetry accumulates irreducible-sector `V(R)` directly from IBZ q-stars\n");

@@ -65,7 +65,6 @@ For example, the default `prefix_lri_coeff = Cs_data` matches files such as `Cs_
 | Parameter Name        | Description                                                          | Type   | Default Value (Options)                         | Status       |
 |-----------------------|----------------------------------------------------------------------|--------|-------------------------------------------------|--------------|
 | `input_dir`           | Input directory to find and read the AO dataset                      | string | `./`                                           |              |
-| `input_symmetry_convention` | Convention used to interpret input symmetry sidecars          | string | `auto` (`auto`, `abacus`, `none`)              | Experimental |
 | `fn_stru`             | Structure-data filename                                              | string | `stru_out`                                     |              |
 | `fn_bz_sampling`      | Brillouin-zone sampling filename                                     | string | `bz_sampling_out`                              |              |
 | `fn_basis`            | Deprecated combined basis-set fallback filename                      | string | `basis_out`                                    | Deprecated   |
@@ -90,11 +89,9 @@ file matching the corresponding prefix and reuses that reader for all files with
 Versioned binary files use a negative first integer marker; non-negative first integers are treated
 as legacy input.
 
-When `input_symmetry_convention = auto`, the driver currently detects and uses the ABACUS
-symmetry-sidecar convention if `irreducible_sector.txt`, `symrot_R.txt`, and `symrot_k.txt`
-are present under `input_dir` or `input_dir/OUT.ABACUS`. Set `input_symmetry_convention = abacus`
-to request that convention explicitly, or `none` to disable sidecar loading even when symmetry
-switches are enabled.
+When symmetry operations are present in `stru_out`, the driver builds a symmetry context from
+the structure, basis metadata, and full k-point grids. This context is only used by calculation
+paths whose `use_symmetry_*` switch is enabled.
 
 (common-parameter-settings-for-librpa)=
 ## Common Parameter Settings for LibRPA
@@ -136,6 +133,9 @@ Regular k-grid calculations are not affected by BvK remapping.
 | `use_fullcoul_eps`  | Use full Coulomb interaction in $\varepsilon = 1 - v \chi^0$     | bool | `true`                  |              |
 | `use_fullcoul_exx`  | Use full Coulomb interaction in the exact-exchange operator      | bool | `false`                 |              |
 | `use_fullcoul_wc`   | Use full Coulomb interaction in $W^c = (\varepsilon^{-1} - 1) v$ | bool | `false`                 |              |
+| `use_symmetry_exx`  | Use the symmetry context in exact-exchange paths                 | bool | `false`                 | Experimental |
+| `use_symmetry_gw`   | Use the symmetry context in GW paths                             | bool | `false`                 | Experimental |
+| `use_symmetry_rpa`  | Use the symmetry context in RPA/chi0 paths                       | bool | `false`                 | Experimental |
 | `n_bands_chi0`      | Maximum number of bands for response-function construction       | int  | -1 (< 0 for all bands)  | Experimental |
 | `n_bands_sigc`      | Maximum number of bands for correlation self-energy construction | int  | -1 (< 0 for all bands)  | Experimental |
 
@@ -215,8 +215,5 @@ and may be removed in the future:
 | `option_output_Wc_Rf_mat` | `output_wc_rf`,          | `0` disables output,  |
 |                           | `ifreq_output_wc_start`, | `1` maps to `[0,1)`,  |
 |                           | `ifreq_output_wc_end`    | `2` maps to `[0,all)` |
-| `use_abacus_exx_symmetry` | `use_input_exx_symmetry` | Old spelling for the EXX input-symmetry switch |
-| `use_abacus_gw_symmetry`  | `use_input_gw_symmetry`  | Old spelling for the GW input-symmetry switch |
-| `use_abacus_rpa_symmetry` | `use_input_rpa_symmetry` | Old spelling for the RPA/chi0 input-symmetry switch |
 
 For details on all parameters, you can visit the API documentation of struct {librpa}`LibrpaOptions`.

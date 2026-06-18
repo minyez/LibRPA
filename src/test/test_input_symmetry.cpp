@@ -309,7 +309,6 @@ void test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry()
 void test_abacus_legacy_sidecars_are_ignored_without_generated_symops()
 {
     using librpa_int::SymmetryContext;
-    using librpa_int::InputSymmetryConvention;
     using librpa_int::load_input_symmetry_context;
 
     const auto dir = std::filesystem::temp_directory_path()
@@ -321,7 +320,7 @@ void test_abacus_legacy_sidecars_are_ignored_without_generated_symops()
                "atompair (0, 0), R = (0, 0, 0)\n");
 
     SymmetryContext ctx;
-    assert(!load_input_symmetry_context(dir.string(), InputSymmetryConvention::ABACUS, ctx));
+    assert(!load_input_symmetry_context(ctx));
     assert(ctx.rspace_operations.empty());
     assert(ctx.kstars.empty());
 
@@ -331,7 +330,6 @@ void test_abacus_legacy_sidecars_are_ignored_without_generated_symops()
 void test_abacus_generated_symops_do_not_require_sidecars()
 {
     using librpa_int::SymmetryContext;
-    using librpa_int::InputSymmetryConvention;
     using librpa_int::Matrix3;
     using librpa_int::load_input_symmetry_context;
 
@@ -348,7 +346,7 @@ void test_abacus_generated_symops_do_not_require_sidecars()
                             0.0, 1.0, 0.0,
                             0.0, 0.0, 1.0));
 
-    assert(load_input_symmetry_context(dir.string(), InputSymmetryConvention::ABACUS, ctx));
+    assert(load_input_symmetry_context(ctx));
     assert(ctx.available);
     assert(ctx.rspace_operations.size() == 24);
     assert(ctx.irreducible_sector.empty());
@@ -359,7 +357,6 @@ void test_abacus_generated_symops_do_not_require_sidecars()
 void test_abacus_generated_symops_ignore_legacy_sidecars()
 {
     using librpa_int::SymmetryContext;
-    using librpa_int::InputSymmetryConvention;
     using librpa_int::InputSymmetryOperation;
     using librpa_int::Matrix3;
     using librpa_int::load_input_symmetry_context;
@@ -390,7 +387,7 @@ void test_abacus_generated_symops_ignore_legacy_sidecars()
     op.use_row_convention = true;
     ctx.rspace_operations.push_back(op);
 
-    assert(load_input_symmetry_context(dir.string(), InputSymmetryConvention::ABACUS, ctx));
+    assert(load_input_symmetry_context(ctx));
     assert(ctx.rspace_operations.size() == 1);
     assert(ctx.lattice_available);
     assert(ctx.irreducible_sector.empty());

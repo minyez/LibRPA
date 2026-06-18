@@ -23,6 +23,7 @@ atpair_R_mat_t FT_Vq(const AtomicBasis &basis_abf,
                      const SymmetryContext &symmetry_context,
                      const atpair_k_cplx_mat_t &coulmat_k,
                      const PeriodicBoundaryData &pbc,
-                     bool return_ordered_atom_pair);
+                     bool return_ordered_atom_pair,
+                     bool use_symmetry_context = true);
 
 }

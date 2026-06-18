@@ -41,6 +41,7 @@ class Exx
         const AtomicBasis &atbasis_wfc;
         const PeriodicBoundaryData &pbc;
         const SymmetryContext &symmetry_context;
+        const bool use_symmetry_context;
         const MpiCommHandler &comm_h;
         const KPointBlacsParallelContext &kblacs_ctxt;
 
@@ -62,7 +63,8 @@ class Exx
             const SymmetryContext &symmetry_context_in,
             const KPointBlacsParallelContext &kblacs_ctxt_in,
             const ArrayDesc &desc_wfc_in,
-            bool is_mf_eigvec_k_distributed);
+            bool is_mf_eigvec_k_distributed,
+            bool use_symmetry_context_in = true);
 
         //! Build and store the real-space exchange matrix
         void build(const LibrpaParallelRouting routing,

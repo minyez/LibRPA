@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 namespace librpa_int
 {
@@ -118,6 +119,59 @@ bool same_fractional_kpoint(const Vector3_Order<double> &lhs,
                             const double tol)
 {
     return nearly_integer_vector(lhs - rhs, tol);
+}
+
+bool is_identity_rotation(const Matrix3 &rotation, const double tol)
+{
+    return std::abs(rotation.e11 - 1.0) < tol
+           && std::abs(rotation.e22 - 1.0) < tol
+           && std::abs(rotation.e33 - 1.0) < tol
+           && std::abs(rotation.e12) < tol
+           && std::abs(rotation.e13) < tol
+           && std::abs(rotation.e21) < tol
+           && std::abs(rotation.e23) < tol
+           && std::abs(rotation.e31) < tol
+           && std::abs(rotation.e32) < tol;
+}
+
+int find_identity_input_symmetry_operation(
+    const SpaceGroupSymOps<InputSymmetryOperation> &operations)
+{
+    for (std::size_t isym = 0; isym != operations.size(); ++isym)
+    {
+        const auto &op = operations.at(isym);
+        if (is_identity_rotation(op.rotation, 1e-8)
+            && nearly_integer_vector(op.translation, 1e-8))
+        {
+            return static_cast<int>(isym);
+        }
+    }
+    throw std::runtime_error("Input symmetry operations do not contain the identity operation");
+}
+
+void build_input_symmetry_pbc_index_kstars(
+    SymmetryContext &ctx,
+    const std::vector<Vector3_Order<double>> &kpoints)
+{
+    const int identity_isym = find_identity_input_symmetry_operation(ctx.rspace_operations);
+
+    ctx.kstars.clear();
+    ctx.kstar_member_fold_G.clear();
+    ctx.kstars.reserve(kpoints.size());
+    for (std::size_t ik = 0; ik != kpoints.size(); ++ik)
+    {
+        InputSymmetryKStarMember member;
+        member.isym = identity_isym;
+        member.k_bz = kpoints[ik];
+
+        InputSymmetryKStar star;
+        star.star_index = static_cast<int>(ik);
+        star.k_ibz = kpoints[ik];
+        star.members.push_back(std::move(member));
+
+        ctx.kstar_member_fold_G[{star.star_index, 0}] = {0, 0, 0};
+        ctx.kstars.push_back(std::move(star));
+    }
 }
 
 std::vector<Vector3_Order<double>> build_uniform_kmesh_frac(const Vector3_Order<int> &period)
@@ -266,6 +320,11 @@ void generate_input_symmetry_kstars_from_pbc(SymmetryContext &ctx,
         coul_kpoints, 1e-5);
     if (generated_stars.size() != coul_kpoints.size())
     {
+        if (coul_kpoints.size() == full_kpoints.size())
+        {
+            build_input_symmetry_pbc_index_kstars(ctx, coul_kpoints);
+            return;
+        }
         throw std::runtime_error("Generated input-symmetry k-star count does not match Coulomb k-points");
     }
 
@@ -314,16 +373,12 @@ void generate_input_symmetry_kstars_from_pbc(SymmetryContext &ctx,
     }
 }
 
-void sync_input_symmetry_shell_layouts_from_cached_layouts(Dataset &ds)
+void sync_input_symmetry_structure_from_dataset(Dataset &ds)
 {
     auto &ctx = ds.symmetry_context;
     if (!ds.atoms.types.empty())
     {
         ctx.atom_to_type = ds.atoms.types;
-    }
-    if (ctx.atom_to_type.empty())
-    {
-        return;
     }
     if (!ds.atoms.coords_frac.empty())
     {
@@ -332,6 +387,16 @@ void sync_input_symmetry_shell_layouts_from_cached_layouts(Dataset &ds)
         {
             ctx.input_coord_frac[atom] = coord_frac_array(coord);
         }
+    }
+}
+
+void sync_input_symmetry_shell_layouts_from_cached_layouts(Dataset &ds)
+{
+    auto &ctx = ds.symmetry_context;
+    sync_input_symmetry_structure_from_dataset(ds);
+    if (ctx.atom_to_type.empty())
+    {
+        return;
     }
 
     if (type_layouts_have_shells(ds.basis_wfc_layouts))
@@ -377,15 +442,16 @@ void sync_input_symmetry_shell_layouts_from_cached_layouts(Dataset &ds)
 
 } // namespace
 
-void initialize_input_symmetry_context(Dataset &ds)
+void initialize_input_symmetry_context(Dataset &ds, const bool build_shell_rotations)
 {
     auto &ctx = ds.symmetry_context;
     if (ctx.rspace_operations.empty())
     {
         return;
     }
+    ctx.available = true;
 
-    sync_input_symmetry_shell_layouts_from_cached_layouts(ds);
+    sync_input_symmetry_structure_from_dataset(ds);
 
     if (ctx.irreducible_sector.empty()
         && !ctx.atom_to_type.empty()
@@ -395,6 +461,18 @@ void initialize_input_symmetry_context(Dataset &ds)
         ctx.irreducible_sector =
             build_input_symmetry_rspace_irreducible_sector(ctx, ctx.input_coord_frac, ds.pbc.Rlist);
     }
+
+    if (ctx.kstars.empty())
+    {
+        generate_input_symmetry_kstars_from_pbc(ctx, ds.pbc);
+    }
+
+    if (!build_shell_rotations)
+    {
+        return;
+    }
+
+    sync_input_symmetry_shell_layouts_from_cached_layouts(ds);
 
     const int lmax = std::max(ctx.ao_lmax, ctx.abf_lmax);
     if (lmax < 0)
@@ -435,10 +513,6 @@ void initialize_input_symmetry_context(Dataset &ds)
     {
         return;
     }
-    if (ctx.kstars.empty())
-    {
-        generate_input_symmetry_kstars_from_pbc(ctx, ds.pbc);
-    }
     for (auto &star : ctx.kstars)
     {
         for (auto &member : star.members)
@@ -448,6 +522,23 @@ void initialize_input_symmetry_context(Dataset &ds)
                 populate_input_symmetry_kstar_member_rotations(ctx, star, member, lmax);
             }
         }
+    }
+}
+
+void require_input_symmetry_shell_layouts(const Dataset &ds, const char *calculation)
+{
+    const auto &ctx = ds.symmetry_context;
+    if (!ctx.available || ctx.rspace_operations.empty()
+        || ds.pbc.klist.size() >= static_cast<std::size_t>(ds.pbc.get_n_cells_bvk()))
+    {
+        return;
+    }
+
+    if (!ctx.has_ao_shell_layout() || !ctx.has_abf_shell_layout())
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            std::string("Cannot use ") + calculation
+            + " symmetry without l-shell basis layouts for AO and ABF species");
     }
 }
 
@@ -516,8 +607,6 @@ void initialize_ds_atpairs_local(Dataset &ds, LibrpaParallelRouting routing)
 {
     global::profiler.start(__FUNCTION__);
 
-    initialize_input_symmetry_context(ds);
-
     ds.atpairs_local.clear();
     const int n_atoms_basis_wfc = ds.basis_wfc.n_atoms;
     const int n_atoms_basis_aux = ds.basis_aux.n_atoms;
@@ -546,33 +635,48 @@ void initialize_ds_atpairs_local(Dataset &ds, LibrpaParallelRouting routing)
     global::profiler.stop(__FUNCTION__);
 }
 
-void initialize_ds_exx(Dataset &ds, const LibrpaOptions &opts) noexcept
+void initialize_ds_exx(Dataset &ds, const LibrpaOptions &opts)
 {
     global::profiler.start("initialize_ds_exx");
+    const bool use_symmetry = opts.use_symmetry_exx == LIBRPA_SWITCH_ON;
+    initialize_input_symmetry_context(ds, use_symmetry);
+    if (use_symmetry)
+    {
+        require_input_symmetry_shell_layouts(ds, "EXX");
+    }
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     ds.p_exx = std::make_unique<librpa_int::Exx>(ds.mf, ds.basis_wfc, ds.pbc, ds.symmetry_context,
                                                  ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
-                                                 is_eigvec_k_distributed);
+                                                 is_eigvec_k_distributed,
+                                                 use_symmetry);
     ds.p_exx->libri_threshold_C = opts.libri_exx_threshold_C;
     ds.p_exx->libri_threshold_D = opts.libri_exx_threshold_D;
     ds.p_exx->libri_threshold_V = opts.libri_exx_threshold_V;
     global::profiler.stop("initialize_ds_exx");
 }
 
-void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts) noexcept
+void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts)
 {
     global::profiler.start("initialize_ds_chi0");
+    const bool use_symmetry = opts.use_symmetry_rpa == LIBRPA_SWITCH_ON;
+    initialize_input_symmetry_context(ds, use_symmetry);
+    if (use_symmetry)
+    {
+        require_input_symmetry_shell_layouts(ds, "RPA/chi0");
+    }
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     if (opts.use_shrink_abfs == LIBRPA_SWITCH_ON && opts.use_shrink_chi == LIBRPA_SWITCH_ON)
         ds.p_chi0 = std::make_unique<librpa_int::Chi0>(ds.mf, ds.basis_wfc, ds.basis_aux_shrink, ds.pbc,
                                                        ds.symmetry_context,
                                                        ds.tfg, ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
-                                                       is_eigvec_k_distributed);
+                                                       is_eigvec_k_distributed,
+                                                       use_symmetry);
     else
         ds.p_chi0 = std::make_unique<librpa_int::Chi0>(ds.mf, ds.basis_wfc, ds.basis_aux, ds.pbc,
                                                        ds.symmetry_context,
                                                        ds.tfg, ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
-                                                       is_eigvec_k_distributed);
+                                                       is_eigvec_k_distributed,
+                                                       use_symmetry);
     ds.p_chi0->gf_threshold = opts.gf_threshold;
     ds.p_chi0->libri_collect_s0_chunk = opts.libri_chi0_collect_s0_chunk;
     ds.p_chi0->libri_collect_max_bytes = opts.libri_chi0_collect_max_bytes;
@@ -582,15 +686,22 @@ void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts) noexcept
     global::profiler.stop("initialize_ds_chi0");
 }
 
-void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts) noexcept
+void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts)
 {
     global::profiler.start("initialize_ds_g0w0");
+    const bool use_symmetry = opts.use_symmetry_gw == LIBRPA_SWITCH_ON;
+    initialize_input_symmetry_context(ds, use_symmetry);
+    if (use_symmetry)
+    {
+        require_input_symmetry_shell_layouts(ds, "GW");
+    }
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     // global::ofs_myid << "is_eigvec_k_distributed " << is_eigvec_k_distributed << std::endl;
     ds.p_g0w0 = std::make_unique<librpa_int::G0W0>(ds.mf, ds.basis_wfc, ds.pbc,
                                                    ds.symmetry_context, ds.tfg,
                                                    ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
-                                                   is_eigvec_k_distributed);
+                                                   is_eigvec_k_distributed,
+                                                   use_symmetry);
     ds.p_g0w0->libri_threshold_C = opts.libri_g0w0_threshold_C;
     ds.p_g0w0->libri_threshold_G = opts.libri_g0w0_threshold_G;
     ds.p_g0w0->libri_threshold_Wc = opts.libri_g0w0_threshold_Wc;

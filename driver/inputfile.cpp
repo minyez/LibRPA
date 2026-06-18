@@ -192,7 +192,6 @@ void parse_inputfile_to_params(const std::string &fn)
         librpa_int::set_aims_constants();
     }
     _parse_string_post(driver_params, input_dir, check_dirpath);
-    _parse_string(driver_params, input_symmetry_convention);
     _parse_double(driver_params, cs_threshold);
     _parse_bool(driver_params, output_energy_qp);
     _parse_int(driver_params, i_state_low);
@@ -275,26 +274,10 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_switch(opts, use_fullcoul_eps);
     _parse_switch(opts, use_fullcoul_exx);
     _parse_switch(opts, use_fullcoul_wc);
-    _parse_switch(opts, use_input_exx_symmetry);
-    if (flag != 0)
-    {
-        parser.parse_bool("use_abacus_exx_symmetry", btmp, flag);
-        if (flag == 0) opts.use_input_exx_symmetry = get_switch(btmp);
-    }
-    _parse_switch(opts, use_input_gw_symmetry);
-    if (flag != 0)
-    {
-        parser.parse_bool("use_abacus_gw_symmetry", btmp, flag);
-        if (flag == 0) opts.use_input_gw_symmetry = get_switch(btmp);
-    }
-    parser.parse_bool("use_input_rpa_symmetry", btmp,
-                      driver::get_bool(opts.use_input_gw_symmetry), flag);
-    if (flag != 0)
-    {
-        parser.parse_bool("use_abacus_rpa_symmetry", btmp,
-                          driver::get_bool(opts.use_input_gw_symmetry), flag);
-    }
-    if (flag == 0) opts.use_input_rpa_symmetry = get_switch(btmp);
+    _parse_switch(opts, use_symmetry_exx);
+    _parse_switch(opts, use_symmetry_gw);
+    parser.parse_bool("use_symmetry_rpa", btmp, flag);
+    opts.use_symmetry_rpa = flag == 0 ? get_switch(btmp) : opts.use_symmetry_gw;
     _parse_switch(opts, output_abacus_gw_gf);
 
     _parse_int(opts, n_bands_chi0);

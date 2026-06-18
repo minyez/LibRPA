@@ -102,6 +102,7 @@ public:
     const AtomicBasis &atbasis_abf;
     const PeriodicBoundaryData &pbc;
     const SymmetryContext &symmetry_context;
+    const bool use_symmetry_context;
     const TFGrids &tfg;
     const MpiCommHandler &comm_h;
     const KPointBlacsParallelContext &kblacs_ctxt;
@@ -118,7 +119,8 @@ public:
          const AtomicBasis &atbasis_abf_in, const PeriodicBoundaryData &pbc_in,
          const SymmetryContext &symmetry_context_in,
          const TFGrids &tfg_in, const KPointBlacsParallelContext &kblacs_ctxt_in,
-         const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed);
+         const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed,
+         bool use_symmetry_context_in = true);
     ~Chi0() {};
     //! Build the independent response function in q-omega domain for ABFs on the atom pairs atpair_ABF and q-vectors in qlist
     void build(LibrpaParallelRouting routing,

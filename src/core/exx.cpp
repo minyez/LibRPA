@@ -232,12 +232,14 @@ ComplexMatrix convert_libri_tensor_to_complex_matrix(
 Exx::Exx(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
          const PeriodicBoundaryData &pbc_in, const SymmetryContext &symmetry_context_in,
          const KPointBlacsParallelContext &kblacs_ctxt_in,
-         const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed)
+         const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed,
+         const bool use_symmetry_context_in)
     : mf(mf_in),
       desc_wfc(desc_wfc_in),
       atbasis_wfc(atbasis_wfc_in),
       pbc(pbc_in),
       symmetry_context(symmetry_context_in),
+      use_symmetry_context(use_symmetry_context_in),
       comm_h(kblacs_ctxt_in.comm_global_h),
       kblacs_ctxt(kblacs_ctxt_in)
 {
@@ -285,6 +287,7 @@ static void build_dmat_libri_kserial(
     int ispin, int ispinor_bra, int ispinor_ket,
     const PeriodicBoundaryData &pbc,
     const SymmetryContext &symmetry_context,
+    const bool use_symmetry_context,
     const std::vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs,
     const bool save_cplx,
@@ -304,8 +307,10 @@ static void build_dmat_libri_kserial(
         map_R_IJs[R].push_back(IJR.first);
     }
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
-    const bool restore_input_symmetry_kstars = can_restore_input_symmetry_kstar_meanfield(
-        symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
+    const bool restore_input_symmetry_kstars =
+        use_symmetry_context
+        && can_restore_input_symmetry_kstar_meanfield(
+            symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
     const auto member_kfrac_targets = restore_input_symmetry_kstars
         ? build_input_symmetry_kstar_member_kfrac_targets(symmetry_context, pbc)
         : input_symmetry_kstar_member_kfrac_targets_t{};
@@ -508,8 +513,9 @@ void Exx::build(const LibrpaParallelRouting routing,
         exx_libri.set_parallel(comm_h.comm, atoms_pos, this->pbc.latvec_array, this->pbc.period_array);
 
     const auto& symmetry_ctx = this->symmetry_context;
-    const bool use_input_exx_symmetry =
-        symmetry_ctx.available
+    const bool use_symmetry_exx =
+        this->use_symmetry_context
+        && symmetry_ctx.available
         && this->pbc.klist.size() < static_cast<std::size_t>(this->pbc.get_n_cells_bvk())
         && symmetry_ctx.has_ao_shell_layout()
         && !symmetry_ctx.irreducible_sector.empty()
@@ -517,13 +523,13 @@ void Exx::build(const LibrpaParallelRouting routing,
         && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(n_atoms)
         && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(n_atoms);
     const auto libri_irreducible_sector =
-        use_input_exx_symmetry
+        use_symmetry_exx
             ? convert_input_symmetry_irreducible_sector_to_libri(
                   symmetry_ctx.irreducible_sector, this->pbc.period_array)
             : std::map<std::pair<int, int>, std::set<std::array<int, 3>>>{};
-    const bool use_libri_exx_symmetry_filter = use_input_exx_symmetry;
+    const bool use_libri_exx_symmetry_filter = use_symmetry_exx;
     librpa_int::input_symmetry_rspace_sector_stars_t input_symmetry_sector_stars;
-    if (use_input_exx_symmetry)
+    if (use_symmetry_exx)
     {
         global::lib_printf(
             "Reducing EXX real-space contractions with ABACUS irreducible sectors\n");
@@ -595,7 +601,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     atpair_R_mat_t exx_coul_mat_restored;
     const atpair_R_mat_t* exx_coul_mat_ptr = &coul_mat;
     const bool use_input_exx_coulomb_restore =
-        use_input_exx_symmetry
+        use_symmetry_exx
         && exx_coulomb_uses_input_symmetry_irreducible_sector_layout(coul_mat, symmetry_ctx);
     if (use_input_exx_coulomb_restore)
     {
@@ -818,6 +824,7 @@ void Exx::build(const LibrpaParallelRouting routing,
                 {
                     build_dmat_libri_kserial(mf, atbasis_wfc, isp, ispn_bra, ispn_ket,
                                              this->pbc, this->symmetry_context,
+                                             this->use_symmetry_context,
                                              this->pbc.kfrac_list, dmat_IJRs_local,
                                              use_complex_exx_r, dmat_libri, dmat_libri_cplx);
                 }
@@ -1030,7 +1037,8 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
     desc_nband_nband.init_1b1p(n_bands, n_bands, 0, 0);
     const int n_target_kpoints = static_cast<int>(kfrac_target.size());
     const bool use_root_dense_projection =
-        use_input_symmetry_ibz_root_projection(this->symmetry_context,
+        this->use_symmetry_context
+        && use_input_symmetry_ibz_root_projection(this->symmetry_context,
                                                this->pbc,
                                                n_target_kpoints,
                                                this->mf.get_n_kpoints());

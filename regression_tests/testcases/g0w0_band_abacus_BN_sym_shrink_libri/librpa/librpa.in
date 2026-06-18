@@ -8,5 +8,5 @@ parallel_routing = libri
 vq_threshold = 0
 sqrt_coulomb_threshold = 1e-8
 use_shrink_abfs = t
-use_input_exx_symmetry = t
-use_input_gw_symmetry = t
+use_symmetry_exx = t
+use_symmetry_gw = t

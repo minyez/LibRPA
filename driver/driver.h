@@ -19,7 +19,6 @@ struct DriverParams
     std::string task;
     std::string constants_choice;
     std::string input_dir;
-    std::string input_symmetry_convention;
 
     LibrpaVerbose output_level;
 

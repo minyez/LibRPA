@@ -26,7 +26,7 @@ void validate_input_symmetry_kstar_meanfield_restore(
 {
     if (!ctx.available || !ctx.has_ao_shell_layout() || ctx.kstars.empty())
     {
-        throw std::runtime_error("ABACUS k-star restore requires loaded AO symmetry sidecars");
+        throw std::runtime_error("ABACUS k-star restore requires AO shell layouts in the symmetry context");
     }
     if (mf.get_n_kpoints() != static_cast<int>(kfrac_list.size()))
     {

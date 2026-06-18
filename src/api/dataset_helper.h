@@ -16,17 +16,17 @@ void initialize_ds_tfgrids(Dataset &ds, const LibrpaOptions &opts);
 void initialize_ds_atpairs_local(Dataset &ds, LibrpaParallelRouting routing);
 
 // Initialize response function component
-void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts) noexcept;
+void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts);
 
 // Initialize EXX component
-void initialize_ds_exx(Dataset &ds, const LibrpaOptions &opts) noexcept;
+void initialize_ds_exx(Dataset &ds, const LibrpaOptions &opts);
 
 // Initialize G0W0 component
-void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts) noexcept;
+void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts);
 
 // Initialize analytic dielectric head/wing component from Dataset::velocity_matrix.
 void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, bool need_wing);
 
-void initialize_input_symmetry_context(Dataset &ds);
+void initialize_input_symmetry_context(Dataset &ds, bool build_shell_rotations);
 
 }

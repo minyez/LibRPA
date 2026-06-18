@@ -60,6 +60,13 @@ constexpr double kInputSymmetryKpointMatchTol = 1e-5;
 constexpr double kBzSamplingWeightSumTol = 1e-6;
 constexpr std::int32_t READER_SHRINK_SINVS_V1_MARKER = -30241621;
 
+bool any_symmetry_speedup_enabled()
+{
+    return driver::get_bool(driver::opts.use_symmetry_exx)
+           || driver::get_bool(driver::opts.use_symmetry_gw)
+           || driver::get_bool(driver::opts.use_symmetry_rpa);
+}
+
 bool nearly_same_kpoint(const librpa_int::Vector3_Order<double> &lhs,
                        const librpa_int::Vector3_Order<double> &rhs,
                        const double tol = kInputSymmetryKpointMatchTol)
@@ -1221,6 +1228,12 @@ void read_bz_sampling(const std::string &file_path)
     auto &pbc = pds->pbc;
     if (n_kpoints_scf < nk_full)
     {
+        if (!any_symmetry_speedup_enabled())
+        {
+            throw LIBRPA_RUNTIME_ERROR(
+                "BZ sampling contains a symmetry-reduced SCF k-point list; "
+                "switch on use_symmetry_exx, use_symmetry_gw, or use_symmetry_rpa to use this input");
+        }
         auto &symmetry_context = pds->symmetry_context;
         if (symmetry_context.rspace_operations.empty())
         {

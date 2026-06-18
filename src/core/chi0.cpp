@@ -296,13 +296,15 @@ Chi0::Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const AtomicBasis &atbasis_abf_in, const PeriodicBoundaryData &pbc_in,
            const SymmetryContext &symmetry_context_in,
            const TFGrids &tfg_in, const KPointBlacsParallelContext &kblacs_ctxt_in,
-           const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed)
+           const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed,
+           const bool use_symmetry_context_in)
     : mf(mf_in),
       desc_wfc(desc_wfc_in),
       atbasis_wfc(atbasis_wfc_in),
       atbasis_abf(atbasis_abf_in),
       pbc(pbc_in),
       symmetry_context(symmetry_context_in),
+      use_symmetry_context(use_symmetry_context_in),
       tfg(tfg_in),
       comm_h(kblacs_ctxt_in.comm_global_h),
       kblacs_ctxt(kblacs_ctxt_in)
@@ -570,6 +572,7 @@ static void build_gf_Rt_libri_serial(
     int ispin, int isoc1, int isoc2,
     const PeriodicBoundaryData &pbc,
     const SymmetryContext &symmetry_context,
+    const bool use_symmetry_context,
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs,
     double tau,
@@ -595,7 +598,8 @@ static void build_gf_Rt_libri_serial(
     global::ofs_myid << "map_R_IJs " << map_R_IJs << std::endl;
 
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
-    if (can_restore_input_symmetry_kstar_meanfield(
+    if (use_symmetry_context
+        && can_restore_input_symmetry_kstar_meanfield(
             symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac))
     {
         const auto member_kfrac_targets =
@@ -1483,10 +1487,12 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                     {
                         build_gf_Rt_libri_serial(this->mf, this->nbands_G, this->atbasis_wfc, isp, is1, is2,
                                                  this->pbc, this->symmetry_context,
+                                                 this->use_symmetry_context,
                                                  this->pbc.kfrac_list, this->IJRs_gf_local, tau,
                                                  gf_po_libri);
                         build_gf_Rt_libri_serial(this->mf, this->nbands_G, this->atbasis_wfc, isp, is2, is1,
                                                  this->pbc, this->symmetry_context,
+                                                 this->use_symmetry_context,
                                                  this->pbc.kfrac_list, this->IJRs_gf_local, -tau,
                                                  gf_ne_libri);
                     }

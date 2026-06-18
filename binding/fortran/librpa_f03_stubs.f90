@@ -163,12 +163,12 @@ module librpa_f03
       logical :: use_fullcoul_exx
       !> Experimental: use full Coulomb interaction in \f$W^c = (\varepsilon^{-1} - 1) v\f$.
       logical :: use_fullcoul_wc
-      !> Experimental: use input symmetry sidecars in exact-exchange paths.
-      logical :: use_input_exx_symmetry
-      !> Experimental: use input symmetry sidecars in GW paths.
-      logical :: use_input_gw_symmetry
-      !> Experimental: use input symmetry sidecars in RPA/chi0 paths.
-      logical :: use_input_rpa_symmetry
+      !> Experimental: use the symmetry context in exact-exchange paths.
+      logical :: use_symmetry_exx
+      !> Experimental: use the symmetry context in GW paths.
+      logical :: use_symmetry_gw
+      !> Experimental: use the symmetry context in RPA/chi0 paths.
+      logical :: use_symmetry_rpa
       !> Experimental: output ABACUS-compatible GW Green's-function data.
       logical :: output_abacus_gw_gf
       !> Experimental: maximum number of bands for response-function construction.

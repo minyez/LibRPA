@@ -2756,7 +2756,8 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     const auto &kfrac_list = chi0.pbc.kfrac_list;
     const auto atom_nabf = build_atom_nabf_map(chi0.atbasis_abf);
     const bool use_input_symmetry_dense_chi0_collect =
-        global::mpi_comm_global_h.nprocs > 1
+        chi0.use_symmetry_context
+        && global::mpi_comm_global_h.nprocs > 1
         && can_symmetrize_input_symmetry_chi0_ibz_blocks(chi0.symmetry_context, atom_nabf, chi0.pbc);
 
     vec<double> eigenvalues(n_abf);
@@ -2992,8 +2993,12 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 atom_mapping<ComplexMatrix>::pair_t_old chi0_wq;
                 if (has_local_chi0_q)
                 {
-                    chi0_wq = symmetrize_input_symmetry_chi0_ibz_blocks_if_needed(
-                        chi0.symmetry_context, chi0.get_chi0_q().at(freq).at(q), q, chi0.pbc, atom_nabf);
+                    chi0_wq = chi0.get_chi0_q().at(freq).at(q);
+                    if (chi0.use_symmetry_context)
+                    {
+                        chi0_wq = symmetrize_input_symmetry_chi0_ibz_blocks_if_needed(
+                            chi0.symmetry_context, chi0_wq, q, chi0.pbc, atom_nabf);
+                    }
                 }
                 else if (use_input_symmetry_dense_chi0_collect)
                 {
@@ -4140,7 +4145,8 @@ atom_mapping<std::map<Vector3_Order<int>, matrix_m<complex<double>>>>::pair_t_ol
     const atom_mapping<std::map<Vector3_Order<double>, matrix_m<cplxdb>>>::pair_t_old
         &Wc_q,
     const TFGrids &, const PeriodicBoundaryData &pbc, const vector<Vector3_Order<int>> &Rlist, const bool,
-    const std::string &)
+    const std::string &,
+    const bool use_symmetry_context)
 {
     using global::lib_printf_root;
     using global::lib_printf_coll;
@@ -4157,7 +4163,8 @@ atom_mapping<std::map<Vector3_Order<int>, matrix_m<complex<double>>>>::pair_t_ol
     comm_h.barrier();
 
     const auto atom_nabf = build_atom_nabf_map(atbasis_abf);
-    if (can_use_input_symmetry_irreducible_sector_wr_restore(symmetry_context, atom_nabf, pbc))
+    if (use_symmetry_context
+        && can_use_input_symmetry_irreducible_sector_wr_restore(symmetry_context, atom_nabf, pbc))
     {
         lib_printf_root(
             "ABACUS GW symmetry accumulates irreducible-sector `W(R)` directly from IBZ q-stars\n");

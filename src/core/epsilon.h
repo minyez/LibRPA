@@ -116,7 +116,8 @@ atom_mapping<std::map<Vector3_Order<int>, matrix_m<std::complex<double>>>>::pair
     const atom_mapping<std::map<Vector3_Order<double>, matrix_m<cplxdb>>>::pair_t_old
         &Wc_q,
     const TFGrids &tfg, const PeriodicBoundaryData &pbc, const std::vector<Vector3_Order<int>> &Rlist, const bool is_freq,
-    const std::string &output_dir);
+    const std::string &output_dir,
+    bool use_symmetry_context = true);
 
 ComplexMatrix compute_Pi_freq_q_row_ri(const AtomicBasis &atbasis_abf, const Vector3_Order<double> &ik_vec, const atom_mapping<ComplexMatrix>::pair_t_old &chi0_freq_q, const atpair_k_cplx_mat_t &Vq_loc, const std::vector<atpair_t> &local_atpair, const int &I, const Vector3_Order<double> &q);
 ComplexMatrix compute_Pi_freq_q_row(const AtomicBasis &atbasis_abf, const Vector3_Order<double> &ik_vec,

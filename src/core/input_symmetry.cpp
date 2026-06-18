@@ -951,40 +951,6 @@ bool append_unique_abf_layout(std::vector<SpeciesBasisLayout>& candidates,
 
 } // namespace
 
-InputSymmetryConvention parse_input_symmetry_convention(const std::string& convention)
-{
-    std::string normalized = trim(convention);
-    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
-                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-    if (normalized == "auto" || normalized.empty())
-    {
-        return InputSymmetryConvention::AUTO;
-    }
-    if (normalized == "abacus")
-    {
-        return InputSymmetryConvention::ABACUS;
-    }
-    if (normalized == "none" || normalized == "off" || normalized == "false")
-    {
-        return InputSymmetryConvention::NONE;
-    }
-    throw std::runtime_error("Unknown input symmetry convention: " + convention);
-}
-
-std::string input_symmetry_convention_name(const InputSymmetryConvention convention)
-{
-    switch (convention)
-    {
-    case InputSymmetryConvention::NONE:
-        return "none";
-    case InputSymmetryConvention::AUTO:
-        return "auto";
-    case InputSymmetryConvention::ABACUS:
-        return "abacus";
-    }
-    return "unknown";
-}
-
 ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
     const SpaceGroupSymOp& operation,
     const Matrix3& lattice_vectors,
@@ -1102,7 +1068,6 @@ std::map<int, ComplexMatrix> build_input_symmetry_kspace_shell_rotations(
 
 void SymmetryContext::clear()
 {
-    convention = InputSymmetryConvention::NONE;
     available = false;
     lattice_available = false;
     ao_shell_layout_available = false;
@@ -1241,31 +1206,15 @@ const SpeciesBasisLayout& SymmetryContext::find_abf_type_layout(const int atom_t
     throw std::runtime_error(oss.str());
 }
 
-bool load_input_symmetry_context(const std::string& dir_path,
-                                  const InputSymmetryConvention convention,
-                                  SymmetryContext& ctx,
+bool load_input_symmetry_context(SymmetryContext& ctx,
                                   std::ostream* log)
 {
-    if (convention == InputSymmetryConvention::NONE)
-    {
-        ctx.clear();
-        return false;
-    }
-    if (convention != InputSymmetryConvention::AUTO
-        && convention != InputSymmetryConvention::ABACUS)
-    {
-        throw std::runtime_error("Unsupported input symmetry convention: "
-                                 + input_symmetry_convention_name(convention));
-    }
-
-    (void)dir_path;
     if (ctx.rspace_operations.empty())
     {
         ctx.clear();
         return false;
     }
 
-    ctx.convention = InputSymmetryConvention::ABACUS;
     ctx.available = true;
 
     if (log != nullptr)

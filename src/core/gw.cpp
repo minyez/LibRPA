@@ -431,12 +431,14 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const SymmetryContext &symmetry_context_in,
            const TFGrids &tfg_in,
            const KPointBlacsParallelContext &kblacs_ctxt_in,
-           const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed)
+           const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed,
+           const bool use_symmetry_context_in)
     : mf(mf_in),
       desc_wfc(desc_wfc_in),
       atbasis_wfc(atbasis_wfc_in),
       pbc(pbc_in),
       symmetry_context(symmetry_context_in),
+      use_symmetry_context(use_symmetry_context_in),
       tfg(tfg_in),
       comm_h(kblacs_ctxt_in.comm_global_h),
       kblacs_ctxt(kblacs_ctxt_in)
@@ -553,6 +555,7 @@ static void build_gf_libri_kserial(
     int ispin, int ispinor_bra, int ispinor_ket,
     const PeriodicBoundaryData &pbc,
     const SymmetryContext &symmetry_context,
+    const bool use_symmetry_context,
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<double> &taus,
     const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs,
@@ -566,8 +569,10 @@ static void build_gf_libri_kserial(
     }
     const std::vector<Vector3_Order<int>> Rs_vec{Rs_local.cbegin(), Rs_local.cend()};
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
-    const bool restore_input_symmetry_kstars = can_restore_input_symmetry_kstar_meanfield(
-        symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
+    const bool restore_input_symmetry_kstars =
+        use_symmetry_context
+        && can_restore_input_symmetry_kstar_meanfield(
+            symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
     const auto member_kfrac_targets = restore_input_symmetry_kstars
         ? build_input_symmetry_kstar_member_kfrac_targets(symmetry_context, pbc)
         : input_symmetry_kstar_member_kfrac_targets_t{};
@@ -754,7 +759,7 @@ void G0W0::build_spacetime(
                 "shrink Wc build_spacetime requires sinvS, compressed/full ABF bases, BLACS context, and WFC descriptor");
 
         Chi0 unfold_helper(mf, atbasis_wfc, *basis_aux_compressed, pbc, symmetry_context, tfg, kblacs_ctxt,
-                           *desc_wfc_in, is_mf_eigvec_k_distributed_);
+                           *desc_wfc_in, is_mf_eigvec_k_distributed_, this->use_symmetry_context);
 
         if (output_wc_rf)
         {
@@ -778,7 +783,7 @@ void G0W0::build_spacetime(
                 profiler.stop("construct_Wc_freq_lower_half");
 
                 auto Wc_R = FT_Wc_q2R(comm_h, *basis_aux_unfold, symmetry_context, Wc_q, tfg,
-                                      pbc, pbc.Rlist, true, output_dir);
+                                      pbc, pbc.Rlist, true, output_dir, this->use_symmetry_context);
                 write_wc_rf_atom_blocks(Wc_R, pbc, output_dir, ifreq);
             }
             profiler.stop("write_Wc_freq_R");
@@ -813,7 +818,7 @@ void G0W0::build_spacetime(
 
             profiler.start("g0w0_build_spacetime_Rq_ft_wc", "Tranform Wc (q,t) -> (R,t)");
             auto Wc_R = FT_Wc_q2R(comm_h, *basis_aux_unfold, symmetry_context, Wc_q, tfg,
-                                  pbc, pbc.Rlist, false, output_dir);
+                                  pbc, pbc.Rlist, false, output_dir, this->use_symmetry_context);
             profiler.stop("g0w0_build_spacetime_Rq_ft_wc");
             Wc_q.clear();
 
@@ -990,7 +995,8 @@ void G0W0::build_spacetime(
 
     const auto& symmetry_ctx = this->symmetry_context;
     const bool use_input_sigc_symmetry =
-        symmetry_ctx.available
+        this->use_symmetry_context
+        && symmetry_ctx.available
         && this->pbc.klist.size() < static_cast<std::size_t>(this->pbc.get_n_cells_bvk())
         && symmetry_ctx.has_ao_shell_layout()
         && !symmetry_ctx.irreducible_sector.empty()
@@ -1126,6 +1132,7 @@ void G0W0::build_spacetime(
                         {
                             build_gf_libri_kserial(mf, atbasis_wfc, ispin, ispinor_bra, ispinor_ket, this->pbc,
                                                 this->symmetry_context,
+                                                this->use_symmetry_context,
                                                 this->pbc.kfrac_list,
                                                 taus, IJR_local_gf, tau_gf_libri_cplx);
                         }
@@ -1140,6 +1147,7 @@ void G0W0::build_spacetime(
                         else
                             build_gf_libri_kserial(mf, atbasis_wfc, ispin, ispinor_bra, ispinor_ket, this->pbc,
                                                 this->symmetry_context,
+                                                this->use_symmetry_context,
                                                 this->pbc.kfrac_list,
                                                 taus, IJR_local_gf, tau_gf_libri);
                     }
@@ -1584,7 +1592,8 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     ArrayDesc desc_nband_nband_fb(blacs_ctxt_h);
     const int n_target_kpoints = static_cast<int>(kfrac_target.size());
     const bool use_root_dense_projection =
-        use_input_symmetry_ibz_root_projection(this->symmetry_context,
+        this->use_symmetry_context
+        && use_input_symmetry_ibz_root_projection(this->symmetry_context,
                                                this->pbc,
                                                n_target_kpoints,
                                                this->mf.get_n_kpoints());

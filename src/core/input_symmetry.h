@@ -27,16 +27,6 @@ namespace librpa_int
 using input_symmetry_R_t = std::array<int, 3>;
 using input_symmetry_irreducible_sector_t = std::map<atpair_t, std::set<input_symmetry_R_t>>;
 
-enum class InputSymmetryConvention
-{
-    NONE = 0,
-    AUTO = 1,
-    ABACUS = 2,
-};
-
-InputSymmetryConvention parse_input_symmetry_convention(const std::string& convention);
-std::string input_symmetry_convention_name(InputSymmetryConvention convention);
-
 /*!
  * @brief Real-space symmetry operation exported by an input symmetry convention.
  */
@@ -126,7 +116,6 @@ using input_symmetry_atom_block_matrix_map_t = std::map<atom_t, std::map<atom_t,
  */
 struct SymmetryContext
 {
-    InputSymmetryConvention convention = InputSymmetryConvention::NONE;
     bool available = false;
     bool lattice_available = false;
     bool ao_shell_layout_available = false;
@@ -161,9 +150,7 @@ struct SymmetryContext
     const SpeciesBasisLayout& find_abf_type_layout(int atom_type, int nao_hint) const;
 };
 
-bool load_input_symmetry_context(const std::string& dir_path,
-                                  InputSymmetryConvention convention,
-                                  SymmetryContext& ctx,
+bool load_input_symmetry_context(SymmetryContext& ctx,
                                   std::ostream* log = nullptr);
 
 ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(

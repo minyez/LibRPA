@@ -58,13 +58,6 @@ void require_stru_tail_tokens(const std::vector<std::string> &tokens,
     }
 }
 
-bool may_use_input_symmetry()
-{
-    return driver::get_bool(driver::opts.use_input_gw_symmetry)
-           || driver::get_bool(driver::opts.use_input_rpa_symmetry)
-           || driver::get_bool(driver::opts.use_input_exx_symmetry);
-}
-
 bool is_stru_symop_header_at(const std::vector<std::string> &tokens, const std::size_t pos)
 {
     return pos + 1 < tokens.size() && is_stru_symop_convention(tokens[pos + 1]);
@@ -85,7 +78,7 @@ std::size_t skip_legacy_stru_kpoint_section(const std::vector<std::string> &toke
     }
 
     const int nk_full = nk0 * nk1 * nk2;
-    if (may_use_input_symmetry() && driver::n_kpoints > 0 && driver::n_kpoints <= nk_full)
+    if (driver::n_kpoints > 0 && driver::n_kpoints <= nk_full)
     {
         const auto after_ibz_rows = pos + static_cast<std::size_t>(3 * driver::n_kpoints);
         if (is_stru_symop_header_at(tokens, after_ibz_rows))
@@ -195,7 +188,7 @@ void read_stru_tail_symops(std::ifstream &infile, const std::string &file_path)
     auto &operations = pds->symmetry_context.rspace_operations;
     if (!operations.empty() && operations.size() != stru_symops.size())
     {
-        throw LIBRPA_RUNTIME_ERROR("stru_out symmetry operation count conflicts with input symmetry sidecars");
+        throw LIBRPA_RUNTIME_ERROR("stru_out symmetry operation count conflicts with existing symmetry context");
     }
     if (operations.size() == stru_symops.size())
     {
@@ -209,6 +202,7 @@ void read_stru_tail_symops(std::ifstream &infile, const std::string &file_path)
     {
         operations.push_back(std::move(op));
     }
+    pds->symmetry_context.available = !operations.empty();
 }
 
 } // namespace

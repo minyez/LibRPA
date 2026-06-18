@@ -162,7 +162,8 @@ void driver::task_g0w0_band()
     const auto &mf = pds->mf;
     const auto &symmetry_context = pds->symmetry_context;
     std::vector<librpa_int::InputSymmetryFullKpointMemberEntry> full_k_members;
-    if (symmetry_context.available && !symmetry_context.kstars.empty())
+    if (driver::get_bool(driver::opts.use_symmetry_gw)
+        && symmetry_context.available && !symmetry_context.kstars.empty())
     {
         full_k_members = librpa_int::build_input_symmetry_full_kpoint_member_list(
             symmetry_context, kfrac_list);

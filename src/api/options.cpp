@@ -36,9 +36,9 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->use_fullcoul_eps = LIBRPA_SWITCH_ON;
     opts->use_fullcoul_exx = LIBRPA_SWITCH_OFF;
     opts->use_fullcoul_wc = LIBRPA_SWITCH_OFF;
-    opts->use_input_exx_symmetry = LIBRPA_SWITCH_ON;
-    opts->use_input_gw_symmetry = LIBRPA_SWITCH_ON;
-    opts->use_input_rpa_symmetry = LIBRPA_SWITCH_ON;
+    opts->use_symmetry_exx = LIBRPA_SWITCH_OFF;
+    opts->use_symmetry_gw = LIBRPA_SWITCH_OFF;
+    opts->use_symmetry_rpa = LIBRPA_SWITCH_OFF;
     opts->output_abacus_gw_gf = LIBRPA_SWITCH_OFF;
 
     opts->n_bands_chi0 = -1;

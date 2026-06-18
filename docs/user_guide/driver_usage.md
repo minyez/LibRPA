@@ -63,9 +63,9 @@ prefix_coul_full = coulomb_mat_alt
 prefix_coul_cut = coulomb_cut_alt
 ```
 
-For calculations that use exported symmetry sidecars, `input_symmetry_convention = auto`
-detects the supported ABACUS convention from the sidecar files. You can also set
-`input_symmetry_convention = abacus` explicitly.
+If `stru_out` contains symmetry operations, the driver builds a symmetry context from
+the structure, basis metadata, and k-point grids. Runtime `use_symmetry_*` switches
+then decide whether calculation paths use that context.
 
 ### Run the calculation
 
