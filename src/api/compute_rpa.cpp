@@ -133,7 +133,7 @@ double librpa_get_rpa_correlation_energy(LibrpaHandler *h, const LibrpaOptions *
 
     const bool use_blacs = opts.use_scalapack_ecrpa && (routing == LIBRPA_ROUTING_ATOMPAIR || routing == LIBRPA_ROUTING_LIBRI);
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-    if (opts.use_gpu_gw_wc)
+    if (opts.use_gpu_replace_scalapack)
     {
         pds->blacs_h.init_ddla_handle();
     }
@@ -145,7 +145,7 @@ double librpa_get_rpa_correlation_energy(LibrpaHandler *h, const LibrpaOptions *
     if (use_blacs)
     {
         if(pds->mf.get_n_kpoints() == 1 && !use_rpa_headwing)
-            corr = compute_RPA_correlation_blacs_2d_gamma_only(chi0, pds->vq, pds->atpairs_local, pds->blacs_h, opts.use_gpu_gw_wc);
+            corr = compute_RPA_correlation_blacs_2d_gamma_only(chi0, pds->vq, pds->atpairs_local, pds->blacs_h, opts.use_gpu_replace_scalapack);
         else
         {
             RpaHeadwingSettings headwing_settings;

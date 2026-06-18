@@ -68,11 +68,11 @@ void librpa_init_options(LibrpaOptions *opts)
     int deviceCount = 0;
     auto info = ddla::deviceGetDeviceCount(&deviceCount);
     if(info == ddla::deviceSuccess && deviceCount > 0)
-        opts->use_gpu_gw_wc = LIBRPA_SWITCH_ON;
+        opts->use_gpu_replace_scalapack = LIBRPA_SWITCH_ON;
     else
-        opts->use_gpu_gw_wc = LIBRPA_SWITCH_OFF;
+        opts->use_gpu_replace_scalapack = LIBRPA_SWITCH_OFF;
 #else
-    opts->use_gpu_gw_wc = LIBRPA_SWITCH_OFF;
+    opts->use_gpu_replace_scalapack = LIBRPA_SWITCH_OFF;
 #endif
 #ifdef LIBRPA_USE_ELPA
     opts->use_elpa_sqrt_coulomb = LIBRPA_SWITCH_ON;

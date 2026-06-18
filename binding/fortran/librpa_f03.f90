@@ -198,7 +198,7 @@ module librpa_f03
       real(c_double) :: sf_sigc_omega_shift
       integer(c_int) :: use_scalapack_gw_wc
       integer(c_int) :: use_cholesky_gw_wc
-      integer(c_int) :: use_gpu_gw_wc
+      integer(c_int) :: use_gpu_replace_scalapack
       integer(c_int) :: use_elpa_sqrt_coulomb
       integer(c_int) :: replace_w_head
       integer(c_int) :: option_dielect_func
@@ -318,8 +318,8 @@ module librpa_f03
       logical :: use_scalapack_gw_wc
       !> Experimental: use Cholesky factorization for computing \f$W^c\f$ from \f$\chi^0\f$.
       logical :: use_cholesky_gw_wc
-      !> Experimental: use GPU for computing Wc from chi0
-      logical :: use_gpu_gw_wc
+      !> Experimental: use GPU to replace scalapack for calculation
+      logical :: use_gpu_replace_scalapack
       !> Experimental: use elpa for sqrt coulomb matrix
       logical :: use_elpa_sqrt_coulomb
       !> Experimental: replace dielectric matrix head by the macroscopic dielectric function.
@@ -1119,7 +1119,7 @@ contains
       call sync_opt(opts%load_sigc_from_file,     opts%opts_c%load_sigc_from_file,     direction)
       call sync_opt(opts%use_scalapack_gw_wc,     opts%opts_c%use_scalapack_gw_wc,     direction)
       call sync_opt(opts%use_cholesky_gw_wc,      opts%opts_c%use_cholesky_gw_wc,      direction)
-      call sync_opt(opts%use_gpu_gw_wc,           opts%opts_c%use_gpu_gw_wc,           direction)
+      call sync_opt(opts%use_gpu_replace_scalapack,           opts%opts_c%use_gpu_replace_scalapack,           direction)
       call sync_opt(opts%use_elpa_sqrt_coulomb,   opts%opts_c%use_elpa_sqrt_coulomb,   direction)
       call sync_opt(opts%sqrt_coulomb_threshold,  opts%opts_c%sqrt_coulomb_threshold,  direction)
       call sync_opt(opts%replace_w_head,          opts%opts_c%replace_w_head,          direction)

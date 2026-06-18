@@ -206,7 +206,7 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             bool_pair(use_scalapack_ecrpa),
             bool_pair(use_scalapack_gw_wc),
             bool_pair(use_cholesky_gw_wc),
-            bool_pair(use_gpu_gw_wc),
+            bool_pair(use_gpu_replace_scalapack),
             bool_pair(use_elpa_sqrt_coulomb),
             bool_pair(use_kpara_scf_eigvec),
             bool_pair(output_gw_sigc_ks_if),

@@ -213,6 +213,7 @@ void ensure_band_sigc_ks_blacs(librpa_int::Dataset &ds, const LibrpaOptions &opt
     ds.p_g0w0->build_sigc_matrix_KS_band_blacs(ds.mf_band.get_eigenvectors(),
                                                ds.kfrac_band_list,
                                                bvk_remap, ds.blacs_h,
+                                               opts.use_gpu_replace_scalapack,
                                                &iks_output);
     ds.is_band_calc_done = true;
 }
@@ -587,7 +588,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     {
         bool replace_w_head = opts.replace_w_head == LIBRPA_SWITCH_ON;
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-        if (opts.use_gpu_gw_wc)
+        if (opts.use_gpu_replace_scalapack)
         {
             pds->blacs_h.init_ddla_handle();
         }
@@ -595,7 +596,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
         Wc_freq_q = compute_Wc_freq_q_blacs(chi0, coul_eps, coul_wc, opts.sqrt_coulomb_threshold,
                                             replace_w_head, opts.option_dielect_func,
                                             epsmac_LF_imagfreq, pds->p_headwing.get(), pds->blacs_h, wc_desc_abf,
-                                            debug, opts.output_dir, opts.use_cholesky_gw_wc, opts.use_gpu_gw_wc, opts.use_elpa_sqrt_coulomb);
+                                            debug, opts.output_dir, opts.use_cholesky_gw_wc, opts.use_gpu_replace_scalapack, opts.use_elpa_sqrt_coulomb);
     }
     else
     {
@@ -686,7 +687,7 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
     }
 
     profiler.start("g0w0_sigc_rotate_KS", "Correlation self-energy in K-S space");
-    pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
+    pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h, opts.use_gpu_replace_scalapack);
     pds->is_band_calc_done = false;
     profiler.stop("g0w0_sigc_rotate_KS");
 

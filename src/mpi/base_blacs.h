@@ -218,7 +218,7 @@ public:
     }
 #endif
 #ifdef LIBRPA_USE_ELPA
-    void set_elpa_handle(bool use_gpu_gw_wc = true){
+    void set_elpa_handle(bool use_gpu_replace_scalapack = true){
         int error;
         elpa_handle_ = elpa_allocate(&error);
         if(error != ELPA_OK){
@@ -236,7 +236,7 @@ public:
         elpa_setup(elpa_handle_);
 
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
-        if(use_gpu_gw_wc)
+        if(use_gpu_replace_scalapack)
         {
             elpa_set(elpa_handle_, "use_gpu_id", ddla_desc_.ddla_handle()->local_device, &error);
 #ifdef LIBRPA_USE_HIP

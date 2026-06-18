@@ -36,7 +36,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
                                             diele_func *df_headwing = nullptr);
 CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx_mat_t &coulmat,
                                                        const std::vector<atpair_t> &local_atpair,
-                                                       const BlacsCtxtHandler &blacs_h, bool use_gpu_gw_wc = false);
+                                                       const BlacsCtxtHandler &blacs_h, bool use_gpu_replace_scalapack = false);
 CorrEnergy compute_MP2_correlation(const Chi0 &chi0, const atpair_k_cplx_mat_t &coulmat);
 
 std::map<double, std::map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> compute_Pi_q(
@@ -60,7 +60,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     const std::vector<std::complex<double>> &epsmac_LF_imagfreq, diele_func *df_headwing,
     const BlacsCtxtHandler &blacs_h, const librpa_int::ArrayDesc &ad, bool debug = false,
     const char *output_dir = ".", bool use_cholesky_gw_wc = false, 
-    bool use_gpu_gw_wc = false, bool use_elpa_sqrt_coulomb = false);
+    bool use_gpu_replace_scalapack = false, bool use_elpa_sqrt_coulomb = false);
 
 void unfold_Wc_freq_q_blacs(
     std::map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,

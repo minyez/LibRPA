@@ -775,7 +775,7 @@ abf_rspace_complex_block_map_t accumulate_input_symmetry_full_wr_from_ibz_q(
 
 CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx_mat_t &coulmat,
                                                        const std::vector<atpair_t> &local_atpair,
-                                                       const BlacsCtxtHandler &blacs_h, bool use_gpu_gw_wc)
+                                                       const BlacsCtxtHandler &blacs_h, bool use_gpu_replace_scalapack)
 {
     using librpa_int::ArrayDesc;
     using librpa_int::global::ofs_myid;
@@ -783,7 +783,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
 
     CorrEnergy corr;
     if (blacs_h.myid == 0){
-        if(use_gpu_gw_wc)
+        if(use_gpu_replace_scalapack)
             lib_printf("Calculating EcRPA with BLACS GPU 2D gamma_only\n");
         else
             lib_printf("Calculating EcRPA with BLACS/ScaLAPACK 2D gamma_only\n");
@@ -822,7 +822,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
     double* coul_chi0_block_ptr;
     int* ipiv_ptr;
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-    if(use_gpu_gw_wc)
+    if(use_gpu_replace_scalapack)
     {
         desc_nabf_nabf_opt.set_ddla_desc(blacs_h.ddla_handle);
         DEVICE_CHECK(deviceMallocAsync((void**)&chi0_block_ptr, chi0_block.size() * sizeof(double), blacs_h.ddla_handle->stream));
@@ -974,7 +974,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
                 chi_2d_time = (chi_end_2d - chi_end_comm);
             }
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-            if (use_gpu_gw_wc)
+            if (use_gpu_replace_scalapack)
             {
                 DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr, chi0_block.ptr(), chi0_block.size() * sizeof(double), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
                 DEVICE_CHECK(deviceMemcpyAsync(coul_block_ptr, coul_block.ptr(), coul_block.size() * sizeof(double), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
@@ -989,7 +989,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
             double trace_pi = 0.0;
             double trace_pi_loc = 0.0;
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-            if (use_gpu_gw_wc)
+            if (use_gpu_replace_scalapack)
             {
                 DEVICE_CHECK(deviceMemcpyAsync(coul_chi0_block.ptr(), coul_chi0_block_ptr, coul_chi0_block.size() * sizeof(double), deviceMemcpyDeviceToHost, blacs_h.ddla_handle->stream));
                 DEVICE_CHECK(deviceStreamSynchronize(blacs_h.ddla_handle->stream));
@@ -1006,7 +1006,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
             double det_begin = omp_get_wtime();
             LaConnector::pgetrf_bpiv(n_abf, n_abf, coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt, ipiv_ptr, info);
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-            if (use_gpu_gw_wc)
+            if (use_gpu_replace_scalapack)
             {
                 DEVICE_CHECK(deviceMemcpyAsync(coul_chi0_block.ptr(), coul_chi0_block_ptr, coul_chi0_block.size() * sizeof(double), deviceMemcpyDeviceToHost, blacs_h.ddla_handle->stream));
                 DEVICE_CHECK(deviceStreamSynchronize(blacs_h.ddla_handle->stream));
@@ -1054,7 +1054,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
         }
     }
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-    if(use_gpu_gw_wc){
+    if(use_gpu_replace_scalapack){
         DEVICE_CHECK(deviceFreeAsync(chi0_block_ptr, blacs_h.ddla_handle->stream));
         DEVICE_CHECK(deviceFreeAsync(coul_block_ptr, blacs_h.ddla_handle->stream));
         DEVICE_CHECK(deviceFreeAsync(coul_chi0_block_ptr, blacs_h.ddla_handle->stream));
@@ -2636,7 +2636,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     const double sqrt_coulomb_threshold, const bool replace_w_head, int option_dielect_func,
     const vector<std::complex<double>> &epsmac_LF_imagfreq, diele_func *df_headwing,
     const BlacsCtxtHandler &blacs_h, const ArrayDesc &ad, const bool debug, const char *output_dir,
-    bool use_cholesky_gw_wc, bool use_gpu_gw_wc, bool use_elpa_sqrt_coulomb)
+    bool use_cholesky_gw_wc, bool use_gpu_replace_scalapack, bool use_elpa_sqrt_coulomb)
 {
     using std::cout;
     using std::endl;
@@ -2690,7 +2690,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     std::complex<double>* coulwc_block_ptr;
 
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-    if (use_gpu_gw_wc)
+    if (use_gpu_replace_scalapack)
     {
         desc_nabf_nabf_opt.set_ddla_desc(blacs_h.ddla_handle); // set the descriptor for the device
         DEVICE_CHECK(deviceMallocAsync((void**)&chi0_block_ptr, chi0_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
@@ -2706,7 +2706,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     }
 #if defined(LIBRPA_USE_ELPA)
     if(use_elpa_sqrt_coulomb)
-        desc_nabf_nabf_opt.set_elpa_handle(use_gpu_gw_wc);
+        desc_nabf_nabf_opt.set_elpa_handle(use_gpu_replace_scalapack);
 #endif
 
     const double mem_blocks = (chi0_block.size() + coul_block.size() + coul_eigen_block.size() +
@@ -2853,18 +2853,18 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 LaConnector::power_hemat_la_real(
                     coulwc_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
                     n_singular_coulwc, eigenvalues.c, 0.5, sqrt_coulomb_threshold,
-                    use_gpu_gw_wc, use_elpa_sqrt_coulomb, (double*)chi0_block_ptr + chi0_block.size(), 
+                    use_gpu_replace_scalapack, use_elpa_sqrt_coulomb, (double*)chi0_block_ptr + chi0_block.size(), 
                 (double*)chi0_block_ptr, (double*)coul_chi0_block_ptr);
             }
             else
             {
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
-                if(use_gpu_gw_wc)
+                if(use_gpu_replace_scalapack)
                     DEVICE_CHECK(deviceMallocAsync((void**)&coul_block_ptr, coul_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
 #endif
                 LaConnector::power_hemat_la(
                     coulwc_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
-                    n_singular_coulwc, eigenvalues.c, 0.5, sqrt_coulomb_threshold, use_gpu_gw_wc,
+                    n_singular_coulwc, eigenvalues.c, 0.5, sqrt_coulomb_threshold, use_gpu_replace_scalapack,
                     use_elpa_sqrt_coulomb, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
             }
             global::profiler.stop("epsilon_prepare_coulwc_sqrt_4");
@@ -2943,10 +2943,10 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             sqrtveig_blacs = LaConnector::power_hemat_la_real(
                 coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
                 n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold,
-                use_gpu_gw_wc, use_elpa_sqrt_coulomb, (double*)chi0_block_ptr + chi0_block.size(), 
+                use_gpu_replace_scalapack, use_elpa_sqrt_coulomb, (double*)chi0_block_ptr + chi0_block.size(), 
                 (double*)chi0_block_ptr, (double*)coul_chi0_block_ptr);
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
-            if(use_gpu_gw_wc)
+            if(use_gpu_replace_scalapack)
                 DEVICE_CHECK(deviceMallocAsync((void**)&coul_block_ptr, coul_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
 #endif
             if (replace_w_head && option_dielect_func == 3)
@@ -2960,7 +2960,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         {
             sqrtveig_blacs = LaConnector::power_hemat_la(
                 coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
-                n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold, use_gpu_gw_wc,
+                n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold, use_gpu_replace_scalapack,
                 use_elpa_sqrt_coulomb, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
         }
         ofs_myid << get_timestamp() << " Done power hemat couleps\n";
@@ -2975,7 +2975,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         ofs_myid << get_timestamp() << " Done couleps sqrt\n";
         std::flush(ofs_myid);
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
-        if(use_gpu_gw_wc)
+        if(use_gpu_replace_scalapack)
             DEVICE_CHECK(deviceMallocAsync((void**)&coul_chi0_block_ptr, coul_chi0_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
 #endif    
         for (const auto &freq : chi0.tfg.get_freq_nodes())
@@ -3081,7 +3081,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             global::profiler.stop("epsilon_prepare_chi0_2d");
 
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-            if (use_gpu_gw_wc)
+            if (use_gpu_replace_scalapack)
             {
                 DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr, chi0_block.ptr(), chi0_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
             }
@@ -3092,7 +3092,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 profiler.start("epsilon_compute_eps", "Compute dielectric matrix");
 
 // #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-//                if (use_gpu_gw_wc)
+//                if (use_gpu_replace_scalapack)
 //                {
 //                    sqrtveig_blacs_ptr = coul_block_ptr;
 //                    DEVICE_CHECK(deviceMemcpyAsync(sqrtveig_blacs_ptr, sqrtveig_blacs.ptr(), sqrtveig_blacs.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
@@ -3149,7 +3149,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                         ofs_myid << get_timestamp() << " Perform the head element overwrite" << endl;
                         const std::complex<double> head_correction = epsmac_LF_imagfreq[ifreq] - 1.0;
 // #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-//                     if(use_gpu_gw_wc){
+//                     if(use_gpu_replace_scalapack){
 //                         DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr + ilo + jlo * desc_nabf_nabf_opt.lld(), &head_correction, sizeof(std::complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
 //                     }else
 // #endif
@@ -3159,7 +3159,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 global::profiler.stop("epsilon_compute_eps_pgemm_1");
                 // rotate back to ABF
 // #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-//                 if(use_gpu_gw_wc){
+//                 if(use_gpu_replace_scalapack){
 //                     coul_eigen_block_ptr = coul_block_ptr;
 //                     DEVICE_CHECK(deviceMemcpyAsync(coul_eigen_block_ptr, coul_eigen_block.ptr(), coul_eigen_block.size() * sizeof(std::complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
 //                 }
@@ -3174,7 +3174,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                         coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt, {0.0, 0.0},
                         chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt);
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-                if (use_gpu_gw_wc)
+                if (use_gpu_replace_scalapack)
                     DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr, chi0_block.ptr(), chi0_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
 #endif
                 global::profiler.stop("epsilon_compute_eps_pgemm_2");
@@ -3190,7 +3190,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             else // !(epsmac_LF_imagfreq.size() > 0 && is_gamma_point(q))
             {
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-                if (use_gpu_gw_wc)
+                if (use_gpu_replace_scalapack)
                 {
                     DEVICE_CHECK(deviceMemcpyAsync(coul_block_ptr, coul_block.ptr(), coul_block.size() * sizeof(std::complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
                 }
@@ -3254,7 +3254,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             {
                 // Dielectric matrix is already inverted, only multiply by square root coulwc from both sides
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-                if(use_gpu_gw_wc)
+                if(use_gpu_replace_scalapack)
                 {
                     coulwc_block_ptr = coul_block_ptr;
                     DEVICE_CHECK(deviceMemcpyAsync(coulwc_block_ptr, coulwc_block.ptr(), coulwc_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
@@ -3277,7 +3277,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 // Solve epsilon * X = sqrt(Vc), then form sqrt(Vc) * (X - sqrt(Vc)).
                 global::profiler.start("epsilon_solver_coulwc_1", "epsilon_solver_coulwc");
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-                if (use_gpu_gw_wc)
+                if (use_gpu_replace_scalapack)
                 {
                     coulwc_block_ptr = coul_block_ptr;
                     DEVICE_CHECK(deviceMemcpyAsync(coulwc_block_ptr, coulwc_block.ptr(), coulwc_block.size() * sizeof(std::complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
@@ -3309,7 +3309,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                                    desc_nabf_nabf_opt, {0.0, 0.0}, chi0_block_ptr, 1, 1,
                                    desc_nabf_nabf_opt);
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-                if (use_gpu_gw_wc)
+                if (use_gpu_replace_scalapack)
                 {
                     DEVICE_CHECK(deviceMemcpyAsync(chi0_block.ptr(), chi0_block_ptr,
                                                    chi0_block.size() * sizeof(complex<double>),
@@ -3335,7 +3335,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     global::profiler.get_cpu_time_last("epsilon_wc_work_q_omega"));
         }
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
-        if(use_gpu_gw_wc)
+        if(use_gpu_replace_scalapack)
         {
             DEVICE_CHECK(deviceFreeAsync(coul_chi0_block_ptr, blacs_h.ddla_handle->stream));
             DEVICE_CHECK(deviceFreeAsync(coul_block_ptr, blacs_h.ddla_handle->stream));
@@ -3347,7 +3347,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     throw std::logic_error("need compilation with LibRI");
 #endif
     #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-    if (use_gpu_gw_wc)
+    if (use_gpu_replace_scalapack)
     {
         DEVICE_CHECK(deviceFreeAsync(chi0_block_ptr, blacs_h.ddla_handle->stream));
     }

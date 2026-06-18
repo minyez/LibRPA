@@ -39,7 +39,8 @@ private:
     void build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
                                     const std::vector<Vector3_Order<double>> &kfrac_target,
                                     const AtomPairBvKRemap<atom_t> &bvk_remap,
-                                    const BlacsCtxtHandler &blacs_ctxt_h);
+                                    const BlacsCtxtHandler &blacs_ctxt_h,
+                                    bool use_gpu_replace_scalapack);
 
 public:
     const MeanField &mf;
@@ -123,11 +124,13 @@ public:
                                    const std::vector<Vector3_Order<double>> &kfrac_band,
                                    const AtomPairBvKRemap<atom_t> &bvk_remap,
                                    const std::vector<int> *output_iks = nullptr);
-    void build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h);
+    void build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h,
+                                          bool use_gpu_replace_scalapack = false);
     void build_sigc_matrix_KS_band_blacs(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_band,
                                          const std::vector<Vector3_Order<double>> &kfrac_band,
                                          const AtomPairBvKRemap<atom_t> &bvk_remap,
                                          const BlacsCtxtHandler &blacs_ctxt_h,
+                                         bool use_gpu_replace_scalapack = false,
                                          const std::vector<int> *output_iks = nullptr);
 };
 

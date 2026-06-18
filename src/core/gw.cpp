@@ -26,6 +26,11 @@
 #include "../utils/error.h"
 #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
+#include "../gpu/la_connector.h"
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+#include <ddla/ddla_connector.h>
+using namespace ddla;
+#endif
 #include "../utils/utils_mem.h"
 #include "input_symmetry.h"
 #include "atom.h"
@@ -1539,7 +1544,8 @@ void G0W0::build_sigc_matrix_KS(const std::map<int, std::map<int, std::map<int, 
 void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
                                       const std::vector<Vector3_Order<double>> &kfrac_target,
                                       const AtomPairBvKRemap<atom_t> &bvk_remap,
-                                      const BlacsCtxtHandler &blacs_ctxt_h)
+                                      const BlacsCtxtHandler &blacs_ctxt_h,
+                                      const bool use_gpu_replace_scalapack)
 {
     assert(blacs_ctxt_h.comm() == this->comm_h.comm);
     assert(this->is_rspace_built_);
@@ -1585,6 +1591,37 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     auto wfc_ket_opt = init_local_mat<complex<double>>(desc_nao_nband_opt, MAJOR::COL);
     auto sigc_nao_nao_opt = init_local_mat<complex<double>>(desc_nao_nao_opt, MAJOR::COL);
     auto sigc_nband_nband_opt = init_local_mat<complex<double>>(desc_nband_nband_opt, MAJOR::COL);
+
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+    std::complex<double> *d_wfc_bra = nullptr, *d_wfc_ket = nullptr,
+                         *d_sigc_nao = nullptr, *d_temp = nullptr,
+                         *d_sigc_nband = nullptr;
+    size_t size_wfc = 0, size_sigc_nao = 0, size_temp = 0, size_sigc_nband = 0;
+    if (use_gpu_replace_scalapack)
+    {
+        auto &blacs_ctxt_h_nc = const_cast<BlacsCtxtHandler &>(blacs_ctxt_h);
+        if (blacs_ctxt_h_nc.ddla_handle == nullptr)
+            blacs_ctxt_h_nc.init_ddla_handle();
+        desc_nao_nband_opt.set_ddla_desc(blacs_ctxt_h.ddla_handle);
+        desc_nao_nao_opt.set_ddla_desc(blacs_ctxt_h.ddla_handle);
+        desc_nband_nao_opt.set_ddla_desc(blacs_ctxt_h.ddla_handle);
+        desc_nband_nband_opt.set_ddla_desc(blacs_ctxt_h.ddla_handle);
+
+        size_wfc = static_cast<size_t>(desc_nao_nband_opt.m_loc()) *
+                   desc_nao_nband_opt.n_loc();
+        size_sigc_nao = static_cast<size_t>(desc_nao_nao_opt.m_loc()) *
+                        desc_nao_nao_opt.n_loc();
+        size_temp = static_cast<size_t>(desc_nband_nao_opt.m_loc()) *
+                    desc_nband_nao_opt.n_loc();
+        size_sigc_nband = static_cast<size_t>(desc_nband_nband_opt.m_loc()) *
+                          desc_nband_nband_opt.n_loc();
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_bra, size_wfc * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_ket, size_wfc * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_sigc_nao, size_sigc_nao * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_temp, size_temp * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_sigc_nband, size_sigc_nband * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
+    }
+#endif
 
     ArrayDesc desc_nao_nband_fb(blacs_ctxt_h);  // For k-parallel
     ArrayDesc desc_nao_nao_fb(blacs_ctxt_h);
@@ -1807,60 +1844,65 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                 {
                                     const auto &wfc_bra = wfc_target.at(isp).at(ispn_bra).at(ik);
                                     const auto &wfc_ket = wfc_target.at(isp).at(ispn_ket).at(ik);
+                                    // redistribute the k-point eigenvector at this processes
                                     ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_bra.c, 1, 1, 
                                                                   desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
                                                                   1, 1, desc_nao_nband_opt.desc, blacs_ctxt_h.ictxt);
                                     ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_ket.c, 1, 1, 
                                                                   desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
                                                                   1, 1, desc_nao_nband_opt.desc, blacs_ctxt_h.ictxt);
-                                    // // processing the k-point eigenvector on this process
-                                    // ScalapackConnector::pgemm_f('C', 'N', n_bands, n_aos, n_aos, 1.0,
-                                    //                             wfc_bra.c, 1, 1, desc_nao_nband_fb.desc,
-                                    //                             sigc_nao_nao.ptr(), 1, 1, desc_nao_nao.desc,
-                                    //                             0.0,
-                                    //                             temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc);
-                                    // ScalapackConnector::pgemm_f('N', 'N', n_bands, n_bands, n_aos, 1.0,
-                                    //                             temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc,
-                                    //                             wfc_ket.c, 1, 1, desc_nao_nband_fb.desc,
-                                    //                             0.0,
-                                    //                             sigc_nband_nband_fb.ptr(), 1, 1, desc_nband_nband_fb.desc);
-                                    // auto sigc_freq = find_nested_int_map_2(this->sigc_is_ik_f_KS, isp, ik);
-                                    // if (sigc_freq == nullptr || sigc_freq->count(freq) == 0)
-                                    //     this->sigc_is_ik_f_KS[isp][ik][freq] = Matz(n_bands, n_bands, MAJOR::COL);
-                                    // this->sigc_is_ik_f_KS[isp][ik][freq] += sigc_nband_nband_fb;
                                 }
                                 else
                                 {
+                                    // redistribute the k-point eigenvector at other processes
                                     ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1, 
                                                                   desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
                                                                   1, 1, desc_nao_nband_opt.desc, blacs_ctxt_h.ictxt);
                                     ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1, 
                                                                   desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
                                                                   1, 1, desc_nao_nband_opt.desc, blacs_ctxt_h.ictxt);
-                                    // processing the k-point eigenvector at other processes
-                                    // ScalapackConnector::pgemm_f('C', 'N', n_bands, n_aos, n_aos, 1.0,
-                                    //                             dummy.data(), 1, 1, desc_nao_nband_fb.desc,
-                                    //                             sigc_nao_nao.ptr(), 1, 1, desc_nao_nao.desc,
-                                    //                             0.0,
-                                    //                             temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc);
-                                    // ScalapackConnector::pgemm_f('N', 'N', n_bands, n_bands, n_aos, 1.0,
-                                    //                             temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc,
-                                    //                             dummy.data(), 1, 1, desc_nao_nband_fb.desc,
-                                    //                             0.0,
-                                    //                             sigc_nband_nband_fb.ptr(), 1, 1, desc_nband_nband_fb.desc);
                                 }
                                 release_free_mem();
-                                // processing the k-point eigenvector on this process
-                                ScalapackConnector::pgemm_f('C', 'N', n_bands, n_aos, n_aos, 1.0,
-                                                            wfc_bra_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
-                                                            sigc_nao_nao_opt.ptr(), 1, 1, desc_nao_nao_opt.desc,
-                                                            0.0,
-                                                            temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc);
-                                ScalapackConnector::pgemm_f('N', 'N', n_bands, n_bands, n_aos, 1.0,
-                                                            temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc,
-                                                            wfc_ket_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
-                                                            0.0,
-                                                            sigc_nband_nband_opt.ptr(), 1, 1, desc_nband_nband_opt.desc);
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+                                if (use_gpu_replace_scalapack)
+                                {
+                                    DEVICE_CHECK(deviceMemcpyAsync(d_wfc_bra, wfc_bra_opt.ptr(), size_wfc * sizeof(std::complex<double>),
+                                                                   deviceMemcpyHostToDevice, blacs_ctxt_h.ddla_handle->stream));
+                                    DEVICE_CHECK(deviceMemcpyAsync(d_wfc_ket, wfc_ket_opt.ptr(), size_wfc * sizeof(std::complex<double>),
+                                                                   deviceMemcpyHostToDevice, blacs_ctxt_h.ddla_handle->stream));
+                                    DEVICE_CHECK(deviceMemcpyAsync(d_sigc_nao, sigc_nao_nao_opt.ptr(), size_sigc_nao * sizeof(std::complex<double>),
+                                                                   deviceMemcpyHostToDevice, blacs_ctxt_h.ddla_handle->stream));
+                                    LaConnector::pgemm(
+                                        'C', 'N', n_bands, n_aos, n_aos, std::complex<double>{1.0, 0.0},
+                                        d_wfc_bra, 1, 1, desc_nao_nband_opt,
+                                        d_sigc_nao, 1, 1, desc_nao_nao_opt,
+                                        std::complex<double>{0.0, 0.0},
+                                        d_temp, 1, 1, desc_nband_nao_opt);
+                                    LaConnector::pgemm(
+                                        'N', 'N', n_bands, n_bands, n_aos, std::complex<double>{1.0, 0.0},
+                                        d_temp, 1, 1, desc_nband_nao_opt,
+                                        d_wfc_ket, 1, 1, desc_nao_nband_opt,
+                                        std::complex<double>{0.0, 0.0},
+                                        d_sigc_nband, 1, 1, desc_nband_nband_opt);
+                                    DEVICE_CHECK(deviceMemcpyAsync(sigc_nband_nband_opt.ptr(), d_sigc_nband,
+                                                                   size_sigc_nband * sizeof(std::complex<double>),
+                                                                   deviceMemcpyDeviceToHost, blacs_ctxt_h.ddla_handle->stream));
+                                    DEVICE_CHECK(deviceStreamSynchronize(blacs_ctxt_h.ddla_handle->stream));
+                                }
+                                else
+#endif
+                                {
+                                    ScalapackConnector::pgemm_f('C', 'N', n_bands, n_aos, n_aos, 1.0,
+                                                                wfc_bra_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
+                                                                sigc_nao_nao_opt.ptr(), 1, 1, desc_nao_nao_opt.desc,
+                                                                0.0,
+                                                                temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc);
+                                    ScalapackConnector::pgemm_f('N', 'N', n_bands, n_bands, n_aos, 1.0,
+                                                                temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc,
+                                                                wfc_ket_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
+                                                                0.0,
+                                                                sigc_nband_nband_opt.ptr(), 1, 1, desc_nband_nband_opt.desc);
+                                }
                                 ScalapackConnector::pgemr2d_f(n_aos, n_aos, sigc_nband_nband_opt.ptr(), 1, 1,
                                                               desc_nband_nband_opt.desc, sigc_nband_nband_fb.ptr(),
                                                               1, 1, desc_nband_nband_fb.desc, blacs_ctxt_h.ictxt);
@@ -1992,6 +2034,16 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
             }
         }
     }
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+    if (use_gpu_replace_scalapack)
+    {
+        DEVICE_CHECK(deviceFreeAsync(d_wfc_bra, blacs_ctxt_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_wfc_ket, blacs_ctxt_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_sigc_nao, blacs_ctxt_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_temp, blacs_ctxt_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_sigc_nband, blacs_ctxt_h.ddla_handle->stream));
+    }
+#endif
 #endif
     this->is_kspace_built_ = true;
     global::profiler.stop("g0w0_build_sigc_KS");
@@ -2034,11 +2086,12 @@ void G0W0::build_sigc_matrix_KS_band(const std::map<int, std::map<int, std::map<
     }
 }
 
-void G0W0::build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h)
+void G0W0::build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h,
+                                                   const bool use_gpu_replace_scalapack)
 {
     comm_h.barrier();
     librpa_int::global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid with BLACS" << std::endl;
-    this->build_sigc_matrix_KS_blacs(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {}, blacs_ctxt_h);
+    this->build_sigc_matrix_KS_blacs(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {}, blacs_ctxt_h, use_gpu_replace_scalapack);
     if (this->output_sigc_ks_if)
     {
         const auto fn = path_as_directory(this->output_dir) + "self_energy_omega.dat";
@@ -2052,6 +2105,7 @@ void G0W0::build_sigc_matrix_KS_band_blacs(
     const std::vector<Vector3_Order<double>> &kfrac_band,
     const AtomPairBvKRemap<atom_t> &bvk_remap,
     const BlacsCtxtHandler &blacs_ctxt_h,
+    const bool use_gpu_replace_scalapack,
     const std::vector<int> *output_iks)
 {
     comm_h.barrier();
@@ -2059,7 +2113,7 @@ void G0W0::build_sigc_matrix_KS_band_blacs(
     {
         librpa_int::global::lib_printf("build_sigc_matrix_KS_band: constructing self-energy matrix for band k-path with BLACS\n");
     }
-    this->build_sigc_matrix_KS_blacs(wfc, kfrac_band, bvk_remap, blacs_ctxt_h);
+    this->build_sigc_matrix_KS_blacs(wfc, kfrac_band, bvk_remap, blacs_ctxt_h, use_gpu_replace_scalapack);
     if (this->output_sigc_ks_if)
     {
         const int n_bands = infer_target_n_bands(comm_h, wfc, this->mf.get_n_bands());

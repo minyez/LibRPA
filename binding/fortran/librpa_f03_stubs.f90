@@ -211,8 +211,8 @@ module librpa_f03
       logical :: use_scalapack_gw_wc
       !> Experimental: use Cholesky factorization for computing \f$W^c\f$ from \f$\chi^0\f$.
       logical :: use_cholesky_gw_wc
-      !> Experimental: use GPU for computing Wc from chi0
-      logical :: use_gpu_gw_wc
+      !> Experimental: use GPU to replace scalapack for calculation
+      logical :: use_gpu_replace_scalapack
       !> Experimental: use elpa for sqrt coulomb matrix
       logical :: use_elpa_sqrt_coulomb
       !> Experimental: replace dielectric matrix head by the macroscopic dielectric function.

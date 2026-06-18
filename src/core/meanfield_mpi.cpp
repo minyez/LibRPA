@@ -12,6 +12,12 @@
 #include "../math/scalapack_connector.h"
 #include "../utils/constants.h"
 #include "../utils/profiler.h"
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+#include "../gpu/device_connector.h"
+#include <ddla/ddla.h>
+#include <ddla/ddla_connector.h>
+#include <ddla/ddla_stream.h>
+#endif
 
 namespace librpa_int
 {
@@ -101,7 +107,8 @@ static void pgemm_wfc_scaled_wfc_h(const int n_aos, const int n_cols,
                                    const cplxdb *scaled_wfc_ket_ptr,
                                    const ArrayDesc &desc_wfc,
                                    WfcGemmWorkspace &workspace,
-                                   Matz &out, const ArrayDesc &desc_out)
+                                   Matz &out, const ArrayDesc &desc_out,
+                                   const BlacsCtxtHandler &blacs_h)
 {
     global::profiler.start(__FUNCTION__);
     const cplxdb *wfc_bra_gemm_ptr = wfc_bra_ptr;
@@ -121,6 +128,54 @@ static void pgemm_wfc_scaled_wfc_h(const int n_aos, const int n_cols,
         wfc_bra_gemm_ptr = workspace.wfc_bra_opt.ptr();
         scaled_wfc_ket_gemm_ptr = workspace.scaled_wfc_ket_opt.ptr();
         desc_wfc_gemm = workspace.desc_opt.desc;
+
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+        using namespace ddla;
+        auto &blacs_h_nc = const_cast<BlacsCtxtHandler &>(blacs_h);
+        if (blacs_h_nc.ddla_handle == nullptr)
+            blacs_h_nc.init_ddla_handle();
+        workspace.desc_opt.set_ddla_desc(blacs_h_nc.ddla_handle);
+        ArrayDesc desc_c_opt(blacs_h);
+        desc_c_opt.init(n_aos, n_aos,
+                        workspace.desc_opt.mb(), workspace.desc_opt.nb(),
+                        workspace.desc_opt.irsrc(), workspace.desc_opt.icsrc());
+        desc_c_opt.set_ddla_desc(blacs_h_nc.ddla_handle);
+
+        Matz out_opt(desc_c_opt.m_loc(), desc_c_opt.n_loc(), MAJOR::COL);
+        auto handle = blacs_h_nc.ddla_handle;
+        const size_t size_ab = static_cast<size_t>(workspace.desc_opt.m_loc()) *
+                               workspace.desc_opt.n_loc();
+        const size_t size_c  = static_cast<size_t>(desc_c_opt.m_loc()) *
+                               desc_c_opt.n_loc();
+        cplxdb *d_A = nullptr, *d_B = nullptr, *d_C = nullptr;
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_A, size_ab * sizeof(cplxdb), handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_B, size_ab * sizeof(cplxdb), handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_C, size_c  * sizeof(cplxdb), handle->stream));
+        DEVICE_CHECK(deviceMemcpyAsync(d_A, wfc_bra_gemm_ptr,
+                                       size_ab * sizeof(cplxdb),
+                                       deviceMemcpyHostToDevice, handle->stream));
+        DEVICE_CHECK(deviceMemcpyAsync(d_B, scaled_wfc_ket_gemm_ptr,
+                                       size_ab * sizeof(cplxdb),
+                                       deviceMemcpyHostToDevice, handle->stream));
+        ddla::pgemm('N', 'C', n_aos, n_aos, n_cols, C_ONE,
+                    d_A, workspace.desc_opt.ddla_desc(),
+                    d_B, workspace.desc_opt.ddla_desc(),
+                    C_ZERO, d_C, desc_c_opt.ddla_desc());
+        DEVICE_CHECK(deviceMemcpyAsync(out_opt.ptr(), d_C,
+                                       size_c * sizeof(cplxdb),
+                                       deviceMemcpyDeviceToHost, handle->stream));
+        DEVICE_CHECK(deviceStreamSynchronize(handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_A, handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_B, handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_C, handle->stream));
+
+        ScalapackConnector::pgemr2d_f(n_aos, n_aos,
+                                      out_opt.ptr(), 1, 1, desc_c_opt.desc,
+                                      out.ptr(), 1, 1, desc_out.desc,
+                                      desc_out.ictxt());
+        global::profiler.stop(__FUNCTION__);
+        return;
+#endif
     }
     global::profiler.start("pgemm");
     ScalapackConnector::pgemm_f('N', 'C', n_aos, n_aos, n_cols, C_ONE,
@@ -437,7 +492,8 @@ std::map<Vector3_Order<int>, Matz> get_dmat_cplx_Rs_kblacs_para(
         {
             const cplxdb *wfc_bra_ptr = wfc_bra == nullptr ? dummy.data() : wfc_bra->c;
             pgemm_wfc_scaled_wfc_h(n_aos, nocc, wfc_bra_ptr, scaled_wfc_ket.ptr(),
-                                   desc_wfc, wfc_gemm_workspace, dmat_k, desc_dm);
+                                   desc_wfc, wfc_gemm_workspace, dmat_k, desc_dm,
+                                   kblacs_ctxt.blacs_h);
         }
 
 #pragma omp parallel for schedule(static) if (n_elem > 4096)
@@ -637,7 +693,8 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
             gf_k = C_ZERO;
             const cplxdb *wfc_bra_ptr = wfc_bra == nullptr ? dummy.data() : wfc_bra->c;
             pgemm_wfc_scaled_wfc_h(n_aos, n_states, wfc_bra_ptr, scaled_wfc_ket.ptr(),
-                                   desc_wfc, wfc_gemm_workspace, gf_k, desc_dm);
+                                   desc_wfc, wfc_gemm_workspace, gf_k, desc_dm,
+                                   kblacs_ctxt.blacs_h);
 #pragma omp parallel for schedule(static) if (n_elem > 4096)
             for (int i = 0; i != n_elem; ++i)
             {

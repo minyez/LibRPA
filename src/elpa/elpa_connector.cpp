@@ -45,7 +45,7 @@ template <typename T>
 matrix_m<std::complex<T>> power_hemat_elpa(
     matrix_m<std::complex<T>> &A_local, const ArrayDesc &ad_A, matrix_m<std::complex<T>> &Z_local,
     const ArrayDesc &ad_Z, size_t &n_filtered, T *W, T power, const T &threshold,
-    bool use_gpu_gw_wc, std::complex<T>* d_A, std::complex<T>* d_Z, std::complex<T>* d_C)
+    bool use_gpu_replace_scalapack, std::complex<T>* d_A, std::complex<T>* d_Z, std::complex<T>* d_C)
 {
     using global::ofs_myid;
     using global::profiler;
@@ -69,7 +69,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     auto ddla_handle = ad_A.ddla_desc().ddla_handle();
     T* d_W;
-    if(use_gpu_gw_wc){
+    if(use_gpu_replace_scalapack){
         ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_W, n * sizeof(T), ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, A_local.ptr(), A_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_Z, Z_local.ptr(), Z_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
@@ -91,7 +91,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(
         throw std::runtime_error("elpa eigenvectors error\n");
     }
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
-    if(use_gpu_gw_wc){
+    if(use_gpu_replace_scalapack){
         ddla::DEVICE_CHECK(deviceMemcpyAsync(W, W_uni, n * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(Z_local.ptr(), Z, Z_local.size()*sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
@@ -146,7 +146,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(
     auto scaled = Z_local.copy();
     std::complex<T> *C;
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-    if(use_gpu_gw_wc){
+    if(use_gpu_replace_scalapack){
         ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_C, A_local.size() * sizeof(std::complex<T>), ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
         C = d_C;
@@ -165,7 +165,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(
     }
     LaConnector::pgemm('N', 'C', n, n, n, {(T)1.0, (T)0.0}, Z, 1, 1, ad_Z, A, 1, 1, ad_Z, {(T)0.0, (T)0.0}, C, 1, 1, ad_A);
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-    if(use_gpu_gw_wc){
+    if(use_gpu_replace_scalapack){
         ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled.ptr(), A, scaled.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local.ptr(), C, A_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceFreeAsync(d_C, ddla_handle->stream));
@@ -185,7 +185,7 @@ template <typename T>
 matrix_m<std::complex<T>> power_hemat_elpa_real(
     matrix_m<std::complex<T>> &A_local, const ArrayDesc &ad_A, matrix_m<std::complex<T>> &Z_local,
     const ArrayDesc &ad_Z, size_t &n_filtered, T *W, T power, const T &threshold, 
-    bool use_gpu_gw_wc, T* d_A, T* d_Z, T* d_C)
+    bool use_gpu_replace_scalapack, T* d_A, T* d_Z, T* d_C)
 {
     using global::ofs_myid;
     using global::profiler;
@@ -213,7 +213,7 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     auto ddla_handle = ad_A.ddla_desc().ddla_handle();
     T *d_W;
-    if(use_gpu_gw_wc)
+    if(use_gpu_replace_scalapack)
     {
         ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_W, n * sizeof(T), ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, A_local_real.ptr(), A_local_real.size() * sizeof(T), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
@@ -233,7 +233,7 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
         throw std::runtime_error("elpa eigenvectors error\n");
     }
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
-    if(use_gpu_gw_wc){
+    if(use_gpu_replace_scalapack){
         ddla::DEVICE_CHECK(deviceMemcpyAsync(W, W_uni, n * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(Z_local_real.ptr(), Z, Z_local_real.size()*sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
@@ -290,7 +290,7 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
     auto scaled_real = Z_local_real.copy();
     T* C;
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-    if(use_gpu_gw_wc)
+    if(use_gpu_replace_scalapack)
     {
         ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_C, A_local_real.size() * sizeof(T), ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
@@ -313,7 +313,7 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
     // Compute Z * diag(W_temp) * Z^H
     LaConnector::pgemm('N', 'C', n, n, n, (T)1.0, Z, 1, 1, ad_Z, A, 1, 1, ad_Z, (T)0.0, C, 1, 1, ad_A);
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-    if(use_gpu_gw_wc){
+    if(use_gpu_replace_scalapack){
         ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled_real.ptr(), A, scaled_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local_real.ptr(), C, A_local_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceFreeAsync(d_W, ddla_handle->stream));
@@ -334,21 +334,21 @@ template matrix_m<std::complex<double>> power_hemat_elpa_real<double>(
     matrix_m<std::complex<double>> &A_local, const ArrayDesc &ad_A,
     matrix_m<std::complex<double>> &Z_local, const ArrayDesc &ad_Z,
     size_t &n_filtered, double *W, double power, const double &threshold,
-    bool use_gpu_gw_wc, double* d_A, double* d_Z, double* d_C);
+    bool use_gpu_replace_scalapack, double* d_A, double* d_Z, double* d_C);
 template matrix_m<std::complex<float>> power_hemat_elpa_real<float>(
     matrix_m<std::complex<float>> &A_local, const ArrayDesc &ad_A,
     matrix_m<std::complex<float>> &Z_local, const ArrayDesc &ad_Z,
     size_t &n_filtered, float *W, float power, const float &threshold,
-    bool use_gpu_gw_wc, float* d_A, float* d_Z, float* d_C);
+    bool use_gpu_replace_scalapack, float* d_A, float* d_Z, float* d_C);
 
 template matrix_m<std::complex<double>> power_hemat_elpa<double>(
     matrix_m<std::complex<double>> &A_local, const ArrayDesc &ad_A, matrix_m<std::complex<double>> &Z_local,
      const ArrayDesc &ad_Z, size_t &n_filtered, double *W, double power, const double &threshold,
-     bool use_gpu_gw_wc, std::complex<double>* d_A, std::complex<double>* d_Z, std::complex<double>* d_C);
+     bool use_gpu_replace_scalapack, std::complex<double>* d_A, std::complex<double>* d_Z, std::complex<double>* d_C);
 template matrix_m<std::complex<float>> power_hemat_elpa<float>(
     matrix_m<std::complex<float>> &A_local, const ArrayDesc &ad_A, matrix_m<std::complex<float>> &Z_local,
     const ArrayDesc &ad_Z, size_t &n_filtered, float *W, float power, const float &threshold,
-    bool use_gpu_gw_wc, std::complex<float>* d_A, std::complex<float>* d_Z, std::complex<float>* d_C);
+    bool use_gpu_replace_scalapack, std::complex<float>* d_A, std::complex<float>* d_Z, std::complex<float>* d_C);
 
 } // namespace ElpaConnector
 

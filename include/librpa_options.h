@@ -198,7 +198,7 @@ typedef struct
     LibrpaSwitch use_cholesky_gw_wc;
 
     //! Flag of using GPU for computing Wc from chi0
-    LibrpaSwitch use_gpu_gw_wc;
+    LibrpaSwitch use_gpu_replace_scalapack;
 
     //! Flag of using elpa for sqrt coulomb matrix
     LibrpaSwitch use_elpa_sqrt_coulomb;
