@@ -81,18 +81,55 @@ struct SpaceGroupSymOps
  *
  * `isym == -1` is used only when no operation is available for a self mapping.
  */
-struct AtomInequivalentSymmetryMapping
+struct AtomSymMapping
 {
     int inequivalent_atom = -1;
     int isym = -1;
     Vector3_Order<int> return_lattice{0, 0, 0};
 };
 
-Matrix3 multiply_space_group_rotation_matrices(const Matrix3& lhs,
-                                               const Matrix3& rhs);
+//! Fractional k-point folded by an integer reciprocal-lattice vector.
+struct FoldedKPoint
+{
+    int target_k_index = -1;
+    Vector3_Order<double> kpoint{0.0, 0.0, 0.0};
+    Vector3_Order<int> fold_G{0, 0, 0};
+};
 
-Vector3_Order<double> multiply_row_vector(const Vector3_Order<double>& vec,
-                                          const Matrix3& matrix);
+//! One member of a fractional-k star generated from a full fractional k-grid.
+struct KPointStarMember
+{
+    int full_k_index = -1;
+    Vector3_Order<double> kpoint{0.0, 0.0, 0.0};
+};
+
+//! Symmetry mapping from the representative k-point to the same-index star member.
+struct KPointSymMapping
+{
+    int isym = -1;
+    //! Integer G where rotated representative k equals kpoint + G.
+    Vector3_Order<int> fold_G{0, 0, 0};
+};
+
+//! One fractional-k star generated from a full fractional k-grid.
+struct KPointStar
+{
+    //! Index into members for the representative k-point.
+    int representative_k_index = -1;
+    std::vector<KPointStarMember> members;
+    std::vector<KPointSymMapping> sym_mappings;
+};
+
+inline Matrix3 multiply_space_group_rotation_matrices(const Matrix3& lhs, const Matrix3& rhs)
+{
+    return lhs * rhs;
+}
+
+inline Vector3_Order<double> multiply_row_vector(const Vector3_Order<double>& vec,
+                                                 const Matrix3& matrix)
+{
+    return Vector3_Order<double>(vec * matrix);
+}
 
 SpaceGroupSymOp compose_space_group_symmetry_operations(
     const SpaceGroupSymOp& lhs,
@@ -101,6 +138,16 @@ SpaceGroupSymOp compose_space_group_symmetry_operations(
 Vector3_Order<double> apply_space_group_symmetry_operation(
     const SpaceGroupSymOp& operation,
     const Vector3_Order<double>& coord);
+
+//! Apply the reciprocal-space dual of a fractional direct-space rotation to fractional k.
+Vector3_Order<double> apply_space_group_rotation_to_kpoint(
+    const SpaceGroupSymOp& operation,
+    const Vector3_Order<double>& kpoint);
+
+FoldedKPoint fold_fractional_kpoint_to_targets(
+    const Vector3_Order<double>& kpoint,
+    const std::vector<Vector3_Order<double>>& target_kpoints,
+    double tol = 1e-8);
 
 inline Matrix3 row_fractional_rotation_to_cartesian(const Matrix3& row_fractional_rotation,
                                                     const Matrix3& row_lattice_vectors)
@@ -124,12 +171,12 @@ inline Matrix3 fractional_rotation_to_cartesian(const SpaceGroupSymOp& symop,
 }
 
 //! Build atom mapping from fractional atom positions and fractional symmetry operations.
-std::vector<AtomInequivalentSymmetryMapping> build_atom_to_inequivalent_symmetry_mapping(
+std::vector<AtomSymMapping> build_atom_to_inequivalent_symmetry_mapping(
     const std::vector<Vector3_Order<double>>& atom_positions_frac, const Matrix3& lattice_vectors,
     const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations, double tol = 1e-5);
 
 template <typename OperationType>
-std::vector<AtomInequivalentSymmetryMapping> build_atom_to_inequivalent_symmetry_mapping(
+std::vector<AtomSymMapping> build_atom_to_inequivalent_symmetry_mapping(
     const std::vector<Vector3_Order<double>>& atom_positions_frac,
     const Matrix3& lattice_vectors,
     const SpaceGroupSymOps<OperationType>& fractional_operations,
@@ -150,6 +197,58 @@ std::vector<AtomInequivalentSymmetryMapping> build_atom_to_inequivalent_symmetry
 }
 
 std::vector<int> collect_inequivalent_atoms(
-    const std::vector<AtomInequivalentSymmetryMapping>& mappings);
+    const std::vector<AtomSymMapping>& mappings);
+
+std::vector<KPointStar> build_kpoint_stars(
+    const std::vector<Vector3_Order<double>>& full_kpoints_frac,
+    const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations,
+    double tol = 1e-8);
+
+//! Preferred representatives are tried in order; non-member hints are ignored.
+std::vector<KPointStar> build_kpoint_stars(
+    const std::vector<Vector3_Order<double>>& full_kpoints_frac,
+    const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations,
+    const std::vector<Vector3_Order<double>>& preferred_representative_kpoints,
+    double tol = 1e-8);
+
+template <typename OperationType>
+std::vector<KPointStar> build_kpoint_stars(
+    const std::vector<Vector3_Order<double>>& full_kpoints_frac,
+    const SpaceGroupSymOps<OperationType>& fractional_operations,
+    const double tol = 1e-8)
+{
+    SpaceGroupSymOps<SpaceGroupSymOp> base_operations;
+    base_operations.reserve(fractional_operations.size());
+    for (const auto& operation : fractional_operations)
+    {
+        SpaceGroupSymOp base_operation;
+        base_operation.rotation = operation.rotation;
+        base_operation.translation = operation.translation;
+        base_operation.use_row_convention = operation.use_row_convention;
+        base_operations.push_back(base_operation);
+    }
+    return build_kpoint_stars(full_kpoints_frac, base_operations, tol);
+}
+
+template <typename OperationType>
+std::vector<KPointStar> build_kpoint_stars(
+    const std::vector<Vector3_Order<double>>& full_kpoints_frac,
+    const SpaceGroupSymOps<OperationType>& fractional_operations,
+    const std::vector<Vector3_Order<double>>& preferred_representative_kpoints,
+    const double tol = 1e-8)
+{
+    SpaceGroupSymOps<SpaceGroupSymOp> base_operations;
+    base_operations.reserve(fractional_operations.size());
+    for (const auto& operation : fractional_operations)
+    {
+        SpaceGroupSymOp base_operation;
+        base_operation.rotation = operation.rotation;
+        base_operation.translation = operation.translation;
+        base_operation.use_row_convention = operation.use_row_convention;
+        base_operations.push_back(base_operation);
+    }
+    return build_kpoint_stars(
+        full_kpoints_frac, base_operations, preferred_representative_kpoints, tol);
+}
 
 } // namespace librpa_int

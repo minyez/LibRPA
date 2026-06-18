@@ -58,15 +58,16 @@ void require_stru_tail_tokens(const std::vector<std::string> &tokens,
     }
 }
 
-bool use_loaded_input_symmetry_sidecars()
+bool may_use_input_symmetry()
 {
-    const auto pds = librpa_int::api::get_dataset_instance(driver::h);
-    const auto &ctx = pds->input_symmetry_ctx;
-    return ctx.available
-           && !ctx.kstars.empty()
-           && (driver::get_bool(driver::opts.use_input_gw_symmetry)
-               || driver::get_bool(driver::opts.use_input_rpa_symmetry)
-               || driver::get_bool(driver::opts.use_input_exx_symmetry));
+    return driver::get_bool(driver::opts.use_input_gw_symmetry)
+           || driver::get_bool(driver::opts.use_input_rpa_symmetry)
+           || driver::get_bool(driver::opts.use_input_exx_symmetry);
+}
+
+bool is_stru_symop_header_at(const std::vector<std::string> &tokens, const std::size_t pos)
+{
+    return pos + 1 < tokens.size() && is_stru_symop_convention(tokens[pos + 1]);
 }
 
 std::size_t skip_legacy_stru_kpoint_section(const std::vector<std::string> &tokens,
@@ -84,40 +85,31 @@ std::size_t skip_legacy_stru_kpoint_section(const std::vector<std::string> &toke
     }
 
     const int nk_full = nk0 * nk1 * nk2;
-    const auto pds = librpa_int::api::get_dataset_instance(driver::h);
-    const auto &input_symmetry_ctx = pds->input_symmetry_ctx;
-    const bool use_input_symmetry_kstars =
-        use_loaded_input_symmetry_sidecars()
-        && input_symmetry_ctx.kstars.size() == static_cast<std::size_t>(driver::n_kpoints)
-        && driver::n_kpoints > 0
-        && driver::n_kpoints <= nk_full;
-    const int n_k_rows = use_input_symmetry_kstars ? driver::n_kpoints : nk_full;
-
-    require_stru_tail_tokens(tokens, pos, static_cast<std::size_t>(3 * n_k_rows),
-                             "legacy k-point rows");
-    pos += static_cast<std::size_t>(3 * n_k_rows);
-
-    if (!use_input_symmetry_kstars)
+    if (may_use_input_symmetry() && driver::n_kpoints > 0 && driver::n_kpoints <= nk_full)
     {
-        require_stru_tail_tokens(tokens, pos, static_cast<std::size_t>(nk_full),
-                                 "legacy k-point mapping");
-        return pos + static_cast<std::size_t>(nk_full);
+        const auto after_ibz_rows = pos + static_cast<std::size_t>(3 * driver::n_kpoints);
+        if (is_stru_symop_header_at(tokens, after_ibz_rows))
+        {
+            return after_ibz_rows;
+        }
+        const auto after_ibz_mapping = after_ibz_rows + static_cast<std::size_t>(nk_full);
+        if (is_stru_symop_header_at(tokens, after_ibz_mapping))
+        {
+            return after_ibz_mapping;
+        }
     }
 
-    if (pos + 1 < tokens.size() && is_stru_symop_convention(tokens[pos + 1]))
+    require_stru_tail_tokens(tokens, pos, static_cast<std::size_t>(3 * nk_full),
+                             "legacy k-point rows");
+    pos += static_cast<std::size_t>(3 * nk_full);
+    if (is_stru_symop_header_at(tokens, pos))
     {
         return pos;
     }
 
-    const auto after_mapping = pos + static_cast<std::size_t>(nk_full);
-    if (after_mapping <= tokens.size()
-        && (after_mapping == tokens.size()
-            || (after_mapping + 1 < tokens.size()
-                && is_stru_symop_convention(tokens[after_mapping + 1]))))
-    {
-        return after_mapping;
-    }
-    return pos;
+    require_stru_tail_tokens(tokens, pos, static_cast<std::size_t>(nk_full),
+                             "legacy k-point mapping");
+    return pos + static_cast<std::size_t>(nk_full);
 }
 
 std::size_t read_stru_symops_from_tokens(const std::vector<std::string> &tokens,

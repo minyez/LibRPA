@@ -55,10 +55,15 @@ inline bool is_basis_rsh_convention_set(const BasisConvention &bconv)
            && bconv.coeff_m_positive != LIBRPA_RSH_COEFF_UNSET;
 }
 
-inline bool is_basis_convention_set(const BasisConvention &bconv)
+inline bool is_basis_bloch_convention_set(const BasisConvention &bconv)
 {
     return bconv.bloch_phase != LIBRPA_UNSET
-           && bconv.bloch_ratom != LIBRPA_UNSET
+           && bconv.bloch_ratom != LIBRPA_UNSET;
+}
+
+inline bool is_basis_convention_set(const BasisConvention &bconv)
+{
+    return is_basis_bloch_convention_set(bconv)
            && is_basis_rsh_convention_set(bconv);
 }
 

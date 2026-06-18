@@ -639,7 +639,7 @@ atom_mapping<ComplexMatrix>::pair_t_old symmetrize_input_symmetry_chi0_ibz_block
         if (ctx.abf_kstars.size() != ctx.kstars.size())
         {
             throw std::runtime_error(
-                "ABF k-space symmetry sidecar count is inconsistent with symrot_k.txt");
+                "ABF k-star count is inconsistent with AO/generated k-stars");
         }
         abf_star =
             &librpa_int::find_input_symmetry_kstar_for_kpoint(ctx.abf_kstars, q_ibz_frac, "ABF k-stars");
@@ -691,7 +691,7 @@ abf_rspace_complex_block_map_t accumulate_input_symmetry_full_wr_from_ibz_q(
             if (ctx.abf_kstars.size() != ctx.kstars.size())
             {
                 throw std::runtime_error(
-                    "ABF k-space symmetry sidecar count is inconsistent with symrot_k.txt");
+                    "ABF k-star count is inconsistent with AO/generated k-stars");
             }
             abf_star = &ctx.abf_kstars.at(static_cast<std::size_t>(star_mapping.star_list_index));
         }

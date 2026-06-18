@@ -5,6 +5,7 @@
 #pragma once
 
 #include <array>
+#include <complex>
 #include <cstddef>
 #include <iosfwd>
 #include <map>
@@ -164,6 +165,40 @@ bool load_input_symmetry_context(const std::string& dir_path,
                                   InputSymmetryConvention convention,
                                   InputSymmetryContext& ctx,
                                   std::ostream* log = nullptr);
+
+ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
+    const SpaceGroupSymOp& operation,
+    const Matrix3& lattice_vectors,
+    int l,
+    const BasisConvention& basis_convention,
+    double threshold = 1e-5);
+
+std::map<int, ComplexMatrix> build_input_symmetry_shell_rotations_from_direct_rotation(
+    const SpaceGroupSymOp& operation,
+    const Matrix3& lattice_vectors,
+    int lmax,
+    const BasisConvention& basis_convention,
+    double threshold = 1e-5);
+
+std::complex<double> build_input_symmetry_kspace_phase(
+    const Vector3_Order<double>& k_source,
+    const Vector3_Order<double>& k_target,
+    const Vector3_Order<double>& atom_from_frac,
+    const Vector3_Order<double>& atom_to_frac,
+    const Vector3_Order<int>& return_lattice,
+    const BasisConvention& basis_convention);
+
+std::map<int, ComplexMatrix> build_input_symmetry_kspace_shell_rotations(
+    const SpaceGroupSymOp& operation,
+    const Matrix3& lattice_vectors,
+    int lmax,
+    const BasisConvention& basis_convention,
+    const Vector3_Order<double>& k_source,
+    const Vector3_Order<double>& k_target,
+    const Vector3_Order<double>& atom_from_frac,
+    const Vector3_Order<double>& atom_to_frac,
+    const Vector3_Order<int>& return_lattice,
+    double threshold = 1e-5);
 
 ComplexMatrix build_input_symmetry_ao_rotation_matrix(const InputSymmetryContext& ctx,
                                               int atom_type,

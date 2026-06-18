@@ -85,6 +85,71 @@ void test_abf_rotation_fallback_uses_basis_convention()
     assert_matrix_close(skew_fallback_rotation, skew_expected_rotation);
 }
 
+void test_kspace_shell_rotations_use_direct_rotation()
+{
+    using librpa_int::BasisConvention;
+    using librpa_int::Matrix3;
+    using librpa_int::SpaceGroupSymOp;
+    using librpa_int::Vector3_Order;
+    using librpa_int::build_input_symmetry_kspace_phase;
+    using librpa_int::build_input_symmetry_kspace_shell_rotations;
+    using librpa_int::build_input_symmetry_shell_rotations_from_direct_rotation;
+    using librpa_int::real_spherical_harmonic_rotation_matrix;
+
+    const BasisConvention basis_convention{-1,
+                                           0,
+                                           LIBRPA_ANGULAR_ORDER_NATURAL,
+                                           LIBRPA_RSH_COEFF_1_M,
+                                           LIBRPA_RSH_COEFF_1_M};
+    const Matrix3 cartesian_rotation(0.0, -1.0, 0.0,
+                                     1.0, 0.0, 0.0,
+                                     0.0, 0.0, 1.0);
+    const Matrix3 skew_lattice(2.0, 0.0, 0.0,
+                               0.5, 1.5, 0.0,
+                               0.2, 0.3, 2.0);
+    const Matrix3 fractional_rotation =
+        skew_lattice * cartesian_rotation.Transpose() * skew_lattice.Inverse();
+    const SpaceGroupSymOp op{fractional_rotation, {0.0, 0.0, 0.0}};
+
+    const auto shell_rotations =
+        build_input_symmetry_shell_rotations_from_direct_rotation(
+            op, skew_lattice, 1, basis_convention);
+    assert(shell_rotations.size() == 2);
+
+    const auto expected_p_rotation =
+        real_spherical_harmonic_rotation_matrix(cartesian_rotation,
+                                                1,
+                                                basis_convention.order,
+                                                basis_convention.coeff_m_negative,
+                                                basis_convention.coeff_m_positive);
+    assert_matrix_close(shell_rotations.at(1), expected_p_rotation);
+
+    const Vector3_Order<double> k_source{0.25, 0.0, 0.0};
+    const Vector3_Order<double> k_target{0.25, 0.0, 0.0};
+    const Vector3_Order<double> atom_from{0.0, 0.0, 0.0};
+    const Vector3_Order<double> atom_to{0.0, 0.0, 0.0};
+    const Vector3_Order<int> return_lattice{1, 0, 0};
+    const auto phase = build_input_symmetry_kspace_phase(
+        k_source, k_target, atom_from, atom_to, return_lattice, basis_convention);
+    assert(fequal(phase, std::complex<double>(0.0, -1.0), std::complex<double>(1e-12, 0.0)));
+
+    const auto phased_shell_rotations =
+        build_input_symmetry_kspace_shell_rotations(op,
+                                                    skew_lattice,
+                                                    0,
+                                                    basis_convention,
+                                                    k_source,
+                                                    k_target,
+                                                    atom_from,
+                                                    atom_to,
+                                                    return_lattice);
+    assert(phased_shell_rotations.at(0).nr == 1);
+    assert(phased_shell_rotations.at(0).nc == 1);
+    assert(fequal(phased_shell_rotations.at(0)(0, 0),
+                  phase,
+                  std::complex<double>(1e-12, 0.0)));
+}
+
 void test_species_basis_layout_keeps_shell_order()
 {
     using librpa_int::ComplexMatrix;
@@ -146,12 +211,54 @@ void test_abacus_sidecars_do_not_require_symrot_r()
 
     write_file(dir / "irreducible_sector.txt",
                "atompair (0, 0), R = (0, 0, 0)\n");
-    write_file(dir / "symrot_k.txt",
-               "Number of IBZ k-points (k stars): 0\n");
 
     InputSymmetryContext ctx;
     assert(load_input_symmetry_context(dir.string(), InputSymmetryConvention::ABACUS, ctx));
     assert(ctx.rspace_operations.empty());
+    assert(ctx.kstars.empty());
+
+    std::filesystem::remove_all(dir);
+}
+
+void test_abacus_existing_symops_skip_k_rotation_sidecars()
+{
+    using librpa_int::InputSymmetryContext;
+    using librpa_int::InputSymmetryConvention;
+    using librpa_int::InputSymmetryOperation;
+    using librpa_int::Matrix3;
+    using librpa_int::load_input_symmetry_context;
+
+    const auto dir = std::filesystem::temp_directory_path()
+                     / "librpa_test_input_symmetry_existing_symops_skip_k_rotation_sidecars";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    write_file(dir / "irreducible_sector.txt",
+               "atompair (0, 0), R = (0, 0, 0)\n");
+    write_file(dir / "symrot_k.txt", "this would fail if parsed\n");
+    write_file(dir / "symrot_abf_k.txt", "this would fail if parsed\n");
+
+    InputSymmetryContext ctx;
+    ctx.set_lattice(Matrix3(1.0, 0.0, 0.0,
+                            0.0, 1.0, 0.0,
+                            0.0, 0.0, 1.0),
+                    Matrix3(1.0, 0.0, 0.0,
+                            0.0, 1.0, 0.0,
+                            0.0, 0.0, 1.0));
+    InputSymmetryOperation op;
+    op.rotation = Matrix3(1.0, 0.0, 0.0,
+                          0.0, 1.0, 0.0,
+                          0.0, 0.0, 1.0);
+    op.translation = {0.0, 0.0, 0.0};
+    op.use_row_convention = true;
+    ctx.rspace_operations.push_back(op);
+
+    assert(load_input_symmetry_context(dir.string(), InputSymmetryConvention::ABACUS, ctx));
+    assert(ctx.rspace_operations.size() == 1);
+    assert(ctx.lattice_available);
+    assert(ctx.atom_to_type.empty());
+    assert(ctx.kstars.empty());
+    assert(ctx.abf_kstars.empty());
 
     std::filesystem::remove_all(dir);
 }
@@ -161,6 +268,8 @@ void test_abacus_sidecars_do_not_require_symrot_r()
 int main()
 {
     test_abf_rotation_fallback_uses_basis_convention();
+    test_kspace_shell_rotations_use_direct_rotation();
     test_species_basis_layout_keeps_shell_order();
     test_abacus_sidecars_do_not_require_symrot_r();
+    test_abacus_existing_symops_skip_k_rotation_sidecars();
 }

@@ -155,6 +155,96 @@ static void test_symmetry_mapping_keeps_operations_fractional()
     assert(mappings[1].return_lattice == Vector3_Order<int>(0, -1, 0));
 }
 
+static void test_kpoint_rotation_and_target_fold()
+{
+    const Matrix3 rotation(1.0, 1.0, 0.0,
+                           0.0, 1.0, 0.0,
+                           0.0, 0.0, 1.0);
+    const SpaceGroupSymOp op{rotation, {0.0, 0.0, 0.0}};
+    const Vector3_Order<double> rpoint{0.2, 0.3, 0.0};
+    const Vector3_Order<double> kpoint{0.4, 0.6, 0.0};
+
+    const auto rotated_r = apply_space_group_symmetry_operation(op, rpoint);
+    const auto rotated_k = apply_space_group_rotation_to_kpoint(op, kpoint);
+    assert(fequal(kpoint * rpoint, rotated_k * rotated_r));
+    assert(fequal(rotated_k.x, -0.2));
+    assert(fequal(rotated_k.y, 0.6));
+    assert(fequal(rotated_k.z, 0.0));
+
+    const std::vector<Vector3_Order<double>> target_kpoints{
+        {1.8, 0.6, 0.0},
+        {0.4, 0.6, 0.0},
+    };
+    const auto target_folded = fold_fractional_kpoint_to_targets(rotated_k, target_kpoints);
+    assert(target_folded.target_k_index == 0);
+    assert(target_folded.kpoint == Vector3_Order<double>(1.8, 0.6, 0.0));
+    assert(target_folded.fold_G == Vector3_Order<int>(-2, 0, 0));
+}
+
+static void test_kpoint_stars_from_full_grid()
+{
+    const Matrix3 identity;
+    // Clockwise C4 rotations; check x' = x R
+    const Matrix3 rot90(0.0, -1.0, 0.0,
+                        1.0, 0.0, 0.0,
+                        0.0, 0.0, 1.0);
+    const Matrix3 rot180(-1.0, 0.0, 0.0,
+                         0.0, -1.0, 0.0,
+                         0.0, 0.0, 1.0);
+    const Matrix3 rot270(0.0, 1.0, 0.0,
+                         -1.0, 0.0, 0.0,
+                         0.0, 0.0, 1.0);
+    SpaceGroupSymOps<SpaceGroupSymOp> operations;
+    operations.push_back(SpaceGroupSymOp{identity, {0.0, 0.0, 0.0}});
+    operations.push_back(SpaceGroupSymOp{rot90, {0.0, 0.0, 0.0}});
+    operations.push_back(SpaceGroupSymOp{rot180, {0.0, 0.0, 0.0}});
+    operations.push_back(SpaceGroupSymOp{rot270, {0.0, 0.0, 0.0}});
+
+    const std::vector<Vector3_Order<double>> full_kpoints{
+        {0.0, 0.0, 0.0},
+        {0.5, 0.0, 0.0},
+        {0.0, -0.5, 0.0},
+        {0.5, 0.5, 0.0},
+    };
+
+    const auto rotate_k = apply_space_group_rotation_to_kpoint(operations[1], full_kpoints[1]);
+    assert(fequal(rotate_k.x, 0.0));
+    assert(fequal(rotate_k.y, -0.5));
+    assert(fequal(rotate_k.z, 0.0));
+
+    const auto stars = build_kpoint_stars(full_kpoints, operations);
+    assert(stars.size() == 3);
+    assert(stars[0].members.size() == 1);
+    assert(stars[0].sym_mappings.size() == stars[0].members.size());
+    assert(stars[0].representative_k_index == 0);
+    assert(stars[0].members[stars[0].representative_k_index].full_k_index == 0);
+    assert(stars[1].members.size() == 2);
+    assert(stars[1].sym_mappings.size() == stars[1].members.size());
+    assert(stars[1].representative_k_index == 0);
+    assert(stars[1].members[stars[1].representative_k_index].full_k_index == 1);
+    assert(stars[1].members[0].full_k_index == 1);
+    assert(stars[1].sym_mappings[0].isym == 0);
+    assert(stars[1].sym_mappings[0].fold_G == Vector3_Order<int>(0, 0, 0));
+    assert(stars[1].members[1].full_k_index == 2);
+    assert(stars[1].members[1].kpoint == Vector3_Order<double>(0.0, -0.5, 0.0));
+    assert(stars[1].sym_mappings[1].isym == 1);
+    assert(stars[1].sym_mappings[1].fold_G == Vector3_Order<int>(0, 0, 0));
+    assert(stars[2].members.size() == 1);
+    assert(stars[2].sym_mappings.size() == stars[2].members.size());
+    assert(stars[2].representative_k_index == 0);
+    assert(stars[2].members[stars[2].representative_k_index].full_k_index == 3);
+
+    const std::vector<Vector3_Order<double>> preferred_representatives{{0.0, -0.5, 0.0}};
+    const auto hinted_stars = build_kpoint_stars(full_kpoints, operations, preferred_representatives);
+    assert(hinted_stars[1].members.size() == 2);
+    assert(hinted_stars[1].representative_k_index == 1);
+    assert(hinted_stars[1].members[hinted_stars[1].representative_k_index].full_k_index == 2);
+    assert(hinted_stars[1].sym_mappings[0].isym == 1);
+    assert(hinted_stars[1].sym_mappings[0].fold_G == Vector3_Order<int>(-1, 0, 0));
+    assert(hinted_stars[1].sym_mappings[1].isym == 0);
+    assert(hinted_stars[1].sym_mappings[1].fold_G == Vector3_Order<int>(0, 0, 0));
+}
+
 int main()
 {
     test_rotation();
@@ -163,5 +253,7 @@ int main()
     test_row_fractional_rotation_to_cartesian();
     test_atom_to_inequivalent_symmetry_mapping();
     test_symmetry_mapping_keeps_operations_fractional();
+    test_kpoint_rotation_and_target_fold();
+    test_kpoint_stars_from_full_grid();
     return 0;
 }

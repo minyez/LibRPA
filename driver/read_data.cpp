@@ -64,7 +64,7 @@ bool use_loaded_input_symmetry_sidecars()
     const auto pds = librpa_int::api::get_dataset_instance(driver::h);
     const auto& ctx = pds->input_symmetry_ctx;
     return ctx.available
-           && !ctx.kstars.empty()
+           && (!ctx.kstars.empty() || !ctx.rspace_operations.empty())
            && (driver::get_bool(driver::opts.use_input_gw_symmetry)
                || driver::get_bool(driver::opts.use_input_rpa_symmetry)
                || driver::get_bool(driver::opts.use_input_exx_symmetry));
@@ -87,6 +87,123 @@ librpa_int::Vector3_Order<double> convert_fractional_kpoint_to_klist_units(
     return {kfrac.x * G.e11 + kfrac.y * G.e21 + kfrac.z * G.e31,
             kfrac.x * G.e12 + kfrac.y * G.e22 + kfrac.z * G.e32,
             kfrac.x * G.e13 + kfrac.y * G.e23 + kfrac.z * G.e33};
+}
+
+bool same_fractional_kpoint(const librpa_int::Vector3_Order<double> &lhs,
+                            const librpa_int::Vector3_Order<double> &rhs)
+{
+    const auto same = [](const double a, const double b) {
+        const double diff = a - b;
+        return std::abs(diff - std::round(diff)) <= kInputSymmetryKpointMatchTol;
+    };
+    return same(lhs.x, rhs.x) && same(lhs.y, rhs.y) && same(lhs.z, rhs.z);
+}
+
+std::vector<librpa_int::Vector3_Order<double>> build_uniform_kmesh_frac(const int nk0,
+                                                                        const int nk1,
+                                                                        const int nk2)
+{
+    std::vector<librpa_int::Vector3_Order<double>> kpoints;
+    kpoints.reserve(static_cast<std::size_t>(nk0 * nk1 * nk2));
+    for (int i = 0; i != nk0; ++i)
+    {
+        for (int j = 0; j != nk1; ++j)
+        {
+            for (int k = 0; k != nk2; ++k)
+            {
+                kpoints.push_back({static_cast<double>(i) / nk0,
+                                   static_cast<double>(j) / nk1,
+                                   static_cast<double>(k) / nk2});
+            }
+        }
+    }
+    return kpoints;
+}
+
+void generate_input_symmetry_kstars_from_stru_grid(librpa_int::InputSymmetryContext &ctx,
+                                                   const librpa_int::PeriodicBoundaryData &pbc,
+                                                   const int nk0,
+                                                   const int nk1,
+                                                   const int nk2,
+                                                   const std::vector<double> &kvecs_ibz)
+{
+    std::vector<librpa_int::Vector3_Order<double>> ibz_kfrac;
+    ibz_kfrac.reserve(kvecs_ibz.size() / 3);
+    for (std::size_t ik = 0; ik != kvecs_ibz.size() / 3; ++ik)
+    {
+        const librpa_int::Vector3_Order<double> kvec{kvecs_ibz[3 * ik] / librpa_int::TWO_PI,
+                                                     kvecs_ibz[3 * ik + 1] / librpa_int::TWO_PI,
+                                                     kvecs_ibz[3 * ik + 2] / librpa_int::TWO_PI};
+        ibz_kfrac.emplace_back(pbc.latvec * kvec);
+    }
+
+    librpa_int::SpaceGroupSymOps<librpa_int::SpaceGroupSymOp> kstar_operations;
+    kstar_operations.reserve(2 * ctx.rspace_operations.size());
+    for (const auto &op : ctx.rspace_operations)
+    {
+        librpa_int::SpaceGroupSymOp base_op;
+        base_op.rotation = op.rotation;
+        base_op.translation = op.translation;
+        base_op.use_row_convention = op.use_row_convention;
+        kstar_operations.push_back(base_op);
+    }
+    for (const auto &op : ctx.rspace_operations)
+    {
+        librpa_int::SpaceGroupSymOp tr_op;
+        tr_op.rotation = op.rotation * -1.0;
+        tr_op.translation = op.translation;
+        tr_op.use_row_convention = op.use_row_convention;
+        kstar_operations.push_back(tr_op);
+    }
+
+    const auto generated_stars =
+        librpa_int::build_kpoint_stars(build_uniform_kmesh_frac(nk0, nk1, nk2),
+                                       kstar_operations,
+                                       ibz_kfrac,
+                                       kInputSymmetryKpointMatchTol);
+
+    ctx.kstars.clear();
+    ctx.kstar_member_fold_G.clear();
+    std::vector<bool> used(generated_stars.size(), false);
+    for (std::size_t ik_ibz = 0; ik_ibz != ibz_kfrac.size(); ++ik_ibz)
+    {
+        int matched = -1;
+        for (std::size_t istar = 0; istar != generated_stars.size(); ++istar)
+        {
+            if (used[istar])
+            {
+                continue;
+            }
+            const auto &star = generated_stars[istar];
+            const auto &representative =
+                star.members.at(static_cast<std::size_t>(star.representative_k_index)).kpoint;
+            if (same_fractional_kpoint(representative, ibz_kfrac[ik_ibz]))
+            {
+                matched = static_cast<int>(istar);
+                break;
+            }
+        }
+        if (matched < 0)
+        {
+            throw LIBRPA_RUNTIME_ERROR("Failed to generate input-symmetry k-star from stru_out");
+        }
+
+        used[static_cast<std::size_t>(matched)] = true;
+        const auto &generated_star = generated_stars[static_cast<std::size_t>(matched)];
+        librpa_int::InputSymmetryKStar star;
+        star.star_index = static_cast<int>(ik_ibz);
+        star.k_ibz = ibz_kfrac[ik_ibz];
+        for (std::size_t imember = 0; imember != generated_star.members.size(); ++imember)
+        {
+            librpa_int::InputSymmetryKStarMember member;
+            member.isym = generated_star.sym_mappings.at(imember).isym;
+            member.k_bz = generated_star.members.at(imember).kpoint;
+            ctx.kstar_member_fold_G[{star.star_index, static_cast<int>(imember)}] =
+                generated_star.sym_mappings.at(imember).fold_G;
+            star.members.push_back(std::move(member));
+        }
+        ctx.kstars.push_back(std::move(star));
+    }
 }
 
 } // namespace
@@ -1200,11 +1317,12 @@ void read_bz_sampling_from_stru(const std::string &file_path)
     }
     const int nk_full = nk[0] * nk[1] * nk[2];
     auto pds = api::get_dataset_instance(driver::h);
-    const auto& input_symmetry_ctx = pds->input_symmetry_ctx;
+    auto& input_symmetry_ctx = pds->input_symmetry_ctx;
     const bool use_input_symmetry_kstars =
         use_loaded_input_symmetry_sidecars()
-        && input_symmetry_ctx.kstars.size()
-               == static_cast<std::size_t>(driver::n_kpoints)
+        && (input_symmetry_ctx.kstars.size() == static_cast<std::size_t>(driver::n_kpoints)
+            || (input_symmetry_ctx.kstars.empty()
+                && !input_symmetry_ctx.rspace_operations.empty()))
         && driver::n_kpoints > 0
         && driver::n_kpoints <= nk_full;
     const int n_k_rows = use_input_symmetry_kstars ? driver::n_kpoints : nk_full;
@@ -1225,6 +1343,19 @@ void read_bz_sampling_from_stru(const std::string &file_path)
     if (use_input_symmetry_kstars)
     {
         auto &pbc = pds->pbc;
+        if (input_symmetry_ctx.kstars.empty())
+        {
+            generate_input_symmetry_kstars_from_stru_grid(input_symmetry_ctx,
+                                                          pbc,
+                                                          nk[0],
+                                                          nk[1],
+                                                          nk[2],
+                                                          kvecs);
+        }
+        if (input_symmetry_ctx.kstars.size() != static_cast<std::size_t>(driver::n_kpoints))
+        {
+            throw LIBRPA_RUNTIME_ERROR("Generated input-symmetry k-star count does not match stru_out");
+        }
         std::vector<std::vector<Vector3_Order<double>>> full_kstars;
         full_kstars.reserve(input_symmetry_ctx.kstars.size());
         for (std::size_t istar = 0; istar != input_symmetry_ctx.kstars.size(); ++istar)

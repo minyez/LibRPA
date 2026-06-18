@@ -317,7 +317,7 @@ atpair_R_mat_t accumulate_input_symmetry_abf_irreducible_sector_vr(
             if (ctx.abf_kstars.size() != ctx.kstars.size())
             {
                 throw std::runtime_error(
-                    "ABF k-space symmetry sidecar count is inconsistent with symrot_k.txt");
+                    "ABF k-star count is inconsistent with AO/generated k-stars");
             }
             abf_star = &ctx.abf_kstars.at(static_cast<std::size_t>(star_mapping.star_list_index));
         }

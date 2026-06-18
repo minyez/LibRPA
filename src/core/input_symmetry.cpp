@@ -260,36 +260,6 @@ Matrix3 build_matrix3_from_array(const std::array<std::array<double, 3>, 3>& mat
                    matrix[2][0], matrix[2][1], matrix[2][2]);
 }
 
-ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
-    const InputSymmetryContext& ctx,
-    const int l,
-    const Matrix3& direct_rotation)
-{
-    const auto& basis_convention = ctx.basis_convention;
-    if (l == 0)
-    {
-        return real_spherical_harmonic_rotation_matrix(Vector3<double>{0.0, 0.0, 0.0},
-                                                       0,
-                                                       basis_convention.order,
-                                                       basis_convention.coeff_m_negative,
-                                                       basis_convention.coeff_m_positive);
-    }
-    if (!ctx.lattice_available)
-    {
-        throw std::runtime_error(
-            "ABACUS shell rotation fallback requires lattice vectors from the structure input");
-    }
-
-    const Matrix3 cartesian_matrix =
-        row_fractional_rotation_to_cartesian(direct_rotation, ctx.lattice_vectors);
-    return real_spherical_harmonic_rotation_matrix(cartesian_matrix,
-                                                   l,
-                                                   basis_convention.order,
-                                                   basis_convention.coeff_m_negative,
-                                                   basis_convention.coeff_m_positive,
-                                                   kInputSymmetryCoordTol);
-}
-
 bool is_identity_rotation(const Matrix3& matrix,
                           const double tol = 1e-8)
 {
@@ -1212,157 +1182,6 @@ ParsedInputSymmetryStru parse_input_symmetry_stru_file(const std::string& stru_f
     return parsed;
 }
 
-ParsedInputSymmetryStru parse_input_symmetry_stru_out_file(const std::string& stru_file)
-{
-    std::ifstream ifs(stru_file);
-    if (!ifs.good())
-    {
-        throw std::runtime_error("Failed to open " + stru_file);
-    }
-
-    std::vector<std::string> lines;
-    std::string line;
-    while (std::getline(ifs, line))
-    {
-        const std::string cleaned = strip_comment(line);
-        if (!cleaned.empty())
-        {
-            lines.push_back(cleaned);
-        }
-    }
-    if (lines.size() < 7)
-    {
-        throw std::runtime_error("Incomplete ABACUS stru_out file " + stru_file);
-    }
-
-    std::array<std::array<double, 3>, 3> lattice_rows{{{{0.0, 0.0, 0.0}},
-                                                        {{0.0, 0.0, 0.0}},
-                                                        {{0.0, 0.0, 0.0}}}};
-    for (int row = 0; row < 3; ++row)
-    {
-        const auto values = extract_doubles(lines[static_cast<std::size_t>(row)]);
-        if (values.size() != 3)
-        {
-            throw std::runtime_error("Failed to parse lattice row in " + stru_file);
-        }
-        for (int col = 0; col < 3; ++col)
-        {
-            lattice_rows[static_cast<std::size_t>(row)][static_cast<std::size_t>(col)] =
-                values[static_cast<std::size_t>(col)];
-        }
-    }
-    const Matrix3 lattice_vectors = build_matrix3_from_array(lattice_rows);
-
-    const auto natom_fields = split_fields(lines[6]);
-    if (natom_fields.empty())
-    {
-        throw std::runtime_error("Failed to parse atom count in " + stru_file);
-    }
-    const int natoms = std::stoi(natom_fields.front());
-    if (natoms < 0 || static_cast<std::size_t>(7 + natoms) > lines.size())
-    {
-        throw std::runtime_error("Incomplete atomic coordinate block in " + stru_file);
-    }
-
-    ParsedInputSymmetryStru parsed;
-    for (int iatom = 0; iatom != natoms; ++iatom)
-    {
-        const auto fields = split_fields(lines[static_cast<std::size_t>(7 + iatom)]);
-        if (fields.size() < 3)
-        {
-            throw std::runtime_error("Failed to parse atomic coordinate row in " + stru_file);
-        }
-        const Vector3<double> coord_cart{
-            std::stod(fields[0]), std::stod(fields[1]), std::stod(fields[2])};
-        const Vector3<double> coord_frac_vec = coord_cart * lattice_vectors.Inverse();
-        parsed.coord_frac[static_cast<atom_t>(iatom)] =
-            {coord_frac_vec.x, coord_frac_vec.y, coord_frac_vec.z};
-    }
-    return parsed;
-}
-
-ParsedInputSymmetryStru parse_input_symmetry_coord_source_file(const std::string& file_path)
-{
-    if (base_name(file_path) == "stru_out")
-    {
-        return parse_input_symmetry_stru_out_file(file_path);
-    }
-    return parse_input_symmetry_stru_file(file_path);
-}
-
-void try_load_input_symmetry_coord_frac(const std::string& dir_path,
-                                      InputSymmetryContext& ctx,
-                                      std::ostream* log)
-{
-    const auto candidate_dirs = build_input_symmetry_path_candidates(dir_path);
-    std::vector<std::string> stru_candidates;
-    for (const auto& dir : candidate_dirs)
-    {
-        stru_candidates.push_back(join_path(dir, "STRU"));
-        stru_candidates.push_back(join_path(dir, "stru_out"));
-    }
-
-    std::vector<std::string> existing_candidates;
-    for (const auto& candidate : stru_candidates)
-    {
-        if (!candidate.empty() && file_exists(candidate))
-        {
-            existing_candidates.push_back(candidate);
-        }
-    }
-    if (existing_candidates.empty())
-    {
-        if (log != nullptr)
-        {
-            (*log) << "| Input fractional coords: unavailable (STRU/stru_out not found)\n";
-        }
-        return;
-    }
-
-    std::string last_error;
-    for (const auto& stru_file : existing_candidates)
-    {
-        try
-        {
-            const ParsedInputSymmetryStru parsed = parse_input_symmetry_coord_source_file(stru_file);
-            if (parsed.coord_frac.empty())
-            {
-                throw std::runtime_error("atomic coordinates not found in " + stru_file);
-            }
-            if (!parsed.atom_to_type.empty() && !ctx.atom_to_type.empty()
-                && parsed.atom_to_type.size() != ctx.atom_to_type.size())
-            {
-                throw std::runtime_error("atom count does not match symrot_k.txt in " + stru_file);
-            }
-            for (const auto& atom_type : parsed.atom_to_type)
-            {
-                const auto iter = ctx.atom_to_type.find(atom_type.first);
-                if (iter != ctx.atom_to_type.end() && iter->second != atom_type.second)
-                {
-                    throw std::runtime_error("atom ordering/type mapping is inconsistent with "
-                                             "symrot_k.txt in " + stru_file);
-                }
-            }
-            ctx.input_coord_frac = parsed.coord_frac;
-            if (log != nullptr)
-            {
-                (*log) << "| Input fractional coords: loaded from " << base_name(stru_file)
-                       << " for " << ctx.input_coord_frac.size() << " atoms\n";
-            }
-            return;
-        }
-        catch (const std::exception& ex)
-        {
-            last_error = ex.what();
-        }
-    }
-
-    if (log != nullptr)
-    {
-        (*log) << "| Input fractional coords: unavailable (" << last_error << ")\n";
-    }
-}
-
 SpeciesBasisLayout parse_input_symmetry_orbital_file(const std::string& orbital_file,
                                              const std::string& species_label)
 {
@@ -1643,6 +1462,121 @@ std::string input_symmetry_convention_name(const InputSymmetryConvention convent
     return "unknown";
 }
 
+ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
+    const SpaceGroupSymOp& operation,
+    const Matrix3& lattice_vectors,
+    const int l,
+    const BasisConvention& basis_convention,
+    const double threshold)
+{
+    if (l < 0)
+    {
+        throw std::invalid_argument("angular momentum l must be non-negative");
+    }
+    if (!is_basis_rsh_convention_set(basis_convention))
+    {
+        throw std::invalid_argument("basis real-spherical-harmonic convention is unset");
+    }
+    if (l == 0)
+    {
+        return real_spherical_harmonic_rotation_matrix(Vector3<double>{0.0, 0.0, 0.0},
+                                                       0,
+                                                       basis_convention.order,
+                                                       basis_convention.coeff_m_negative,
+                                                       basis_convention.coeff_m_positive);
+    }
+    if (std::abs(lattice_vectors.Det()) < 1e-14)
+    {
+        throw std::invalid_argument("lattice vectors must be non-singular");
+    }
+
+    const Matrix3 cartesian_rotation = fractional_rotation_to_cartesian(operation, lattice_vectors);
+    return real_spherical_harmonic_rotation_matrix(cartesian_rotation,
+                                                   l,
+                                                   basis_convention.order,
+                                                   basis_convention.coeff_m_negative,
+                                                   basis_convention.coeff_m_positive,
+                                                   threshold);
+}
+
+std::map<int, ComplexMatrix> build_input_symmetry_shell_rotations_from_direct_rotation(
+    const SpaceGroupSymOp& operation,
+    const Matrix3& lattice_vectors,
+    const int lmax,
+    const BasisConvention& basis_convention,
+    const double threshold)
+{
+    std::map<int, ComplexMatrix> shell_rotations;
+    if (lmax < 0)
+    {
+        return shell_rotations;
+    }
+
+    // Eq. (40) uses T_tilde(V), the direct-space rotation part of the
+    // Bloch-sum transform. Atom/k-dependent Bloch phases are applied later.
+    for (int l = 0; l <= lmax; ++l)
+    {
+        shell_rotations[l] =
+            build_input_symmetry_shell_rotation_from_direct_rotation(
+                operation, lattice_vectors, l, basis_convention, threshold);
+    }
+    return shell_rotations;
+}
+
+std::complex<double> build_input_symmetry_kspace_phase(
+    const Vector3_Order<double>& k_source,
+    const Vector3_Order<double>& k_target,
+    const Vector3_Order<double>& atom_from_frac,
+    const Vector3_Order<double>& atom_to_frac,
+    const Vector3_Order<int>& return_lattice,
+    const BasisConvention& basis_convention)
+{
+    if (!is_basis_bloch_convention_set(basis_convention))
+    {
+        throw std::invalid_argument("basis Bloch-sum convention is unset");
+    }
+
+    const Vector3_Order<double> return_lattice_double{
+        static_cast<double>(return_lattice.x),
+        static_cast<double>(return_lattice.y),
+        static_cast<double>(return_lattice.z)};
+    const double bracket =
+        -(k_target * return_lattice_double)
+        + static_cast<double>(basis_convention.bloch_ratom)
+              * ((k_target * atom_to_frac) - (k_source * atom_from_frac));
+    const double phase_arg =
+        -TWO_PI * static_cast<double>(basis_convention.bloch_phase) * bracket;
+    return {std::cos(phase_arg), std::sin(phase_arg)};
+}
+
+std::map<int, ComplexMatrix> build_input_symmetry_kspace_shell_rotations(
+    const SpaceGroupSymOp& operation,
+    const Matrix3& lattice_vectors,
+    const int lmax,
+    const BasisConvention& basis_convention,
+    const Vector3_Order<double>& k_source,
+    const Vector3_Order<double>& k_target,
+    const Vector3_Order<double>& atom_from_frac,
+    const Vector3_Order<double>& atom_to_frac,
+    const Vector3_Order<int>& return_lattice,
+    const double threshold)
+{
+    auto shell_rotations =
+        build_input_symmetry_shell_rotations_from_direct_rotation(
+            operation, lattice_vectors, lmax, basis_convention, threshold);
+    const auto phase = build_input_symmetry_kspace_phase(k_source,
+                                                         k_target,
+                                                         atom_from_frac,
+                                                         atom_to_frac,
+                                                         return_lattice,
+                                                         basis_convention);
+    for (auto& shell_rotation : shell_rotations)
+    {
+        shell_rotation.second *= phase;
+    }
+    return shell_rotations;
+}
+
 void InputSymmetryContext::clear()
 {
     convention = InputSymmetryConvention::NONE;
@@ -1828,20 +1762,33 @@ bool load_input_symmetry_context(const std::string& dir_path,
         return false;
     }
 
-    if (!(has_irreducible_sector && has_symrot_k))
+    if (!has_irreducible_sector)
     {
         std::ostringstream oss;
         oss << "Incomplete ABACUS symmetry sidecar set near " << dir_path
-            << ". Expected irreducible_sector.txt and symrot_k.txt together.";
+            << ". Expected irreducible_sector.txt.";
         throw std::runtime_error(oss.str());
     }
 
+    const bool use_generated_symmetry = !ctx.rspace_operations.empty();
+    const bool preserve_lattice = ctx.lattice_available;
+    const Matrix3 preserved_lattice = ctx.lattice_vectors;
+    const Matrix3 preserved_reciprocal = ctx.reciprocal_vectors;
+    auto preserved_operations = std::move(ctx.rspace_operations);
+
     ctx.clear();
     ctx.convention = InputSymmetryConvention::ABACUS;
+    if (preserve_lattice)
+    {
+        ctx.set_lattice(preserved_lattice, preserved_reciprocal);
+    }
+    ctx.rspace_operations = std::move(preserved_operations);
     load_irreducible_sector_file(irreducible_sector_file, ctx.irreducible_sector);
-    load_symrot_k_file(symrot_k_file, ctx);
-    try_load_input_symmetry_coord_frac(dir_path, ctx, log);
-    if (has_symrot_abf_k)
+    if (has_symrot_k && !use_generated_symmetry)
+    {
+        load_symrot_k_file(symrot_k_file, ctx);
+    }
+    if (has_symrot_abf_k && !use_generated_symmetry)
     {
         parse_symrot_k_file(symrot_abf_k_file, ctx.abf_kstars, nullptr, nullptr, -1, nullptr,
                             &ctx.abf_type_layout_candidates);
@@ -1876,7 +1823,7 @@ bool load_input_symmetry_context(const std::string& dir_path,
                << "| IBZ k-stars            : " << ctx.kstars.size() << "\n"
                << "| total star members     : " << ctx.count_kstar_members() << "\n"
                << "| ABF k rotations        : "
-               << (ctx.abf_kstars.empty() ? std::string("fallback to symrot_k.txt")
+               << (ctx.abf_kstars.empty() ? std::string("fallback to AO/generated rotations")
                                          : std::string("loaded from symrot_abf_k.txt"))
                << "\n"
                << "| AO / ABF lmax          : " << ctx.ao_lmax << " / " << ctx.abf_lmax << "\n";
@@ -1904,7 +1851,7 @@ bool load_input_symmetry_context(const std::string& dir_path,
         }
         else
         {
-            (*log) << "| AO shell layout        : unavailable (missing in symrot_k.txt)\n";
+            (*log) << "| AO shell layout        : unavailable\n";
         }
         if (ctx.has_abf_shell_layout())
         {
@@ -1994,8 +1941,20 @@ ComplexMatrix build_input_symmetry_abf_rotation_matrix(
         }
         else
         {
+            if (l != 0 && !ctx.lattice_available)
+            {
+                throw std::runtime_error(
+                    "ABACUS shell rotation fallback requires lattice vectors from the structure input");
+            }
+            SpaceGroupSymOp operation;
+            operation.rotation = direct_rotation;
             shell_rotation =
-                build_input_symmetry_shell_rotation_from_direct_rotation(ctx, l, direct_rotation);
+                build_input_symmetry_shell_rotation_from_direct_rotation(
+                    operation,
+                    ctx.lattice_vectors,
+                    l,
+                    ctx.basis_convention,
+                    kInputSymmetryCoordTol);
         }
 
         const int nm = 2 * l + 1;
@@ -2817,8 +2776,7 @@ ComplexMatrix rotate_input_symmetry_kspace_matrix(const InputSymmetryContext& ct
                                           const Vector3_Order<double>* k_bz_target)
 {
     // -------------------------------------------------------------------------
-    // Rotate D(k_ibz) to D(k_bz) using the Bloch rotation matrix M from
-    // symrot_k.txt.
+    // Rotate D(k_ibz) to D(k_bz) using the input-convention Bloch rotation matrix M.
     //
     // Important: ABACUS prints the sidecar Bloch phase with k_bz, while the
     // internal restore_dm() path uses k_ibz when constructing M(R, k). We must

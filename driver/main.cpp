@@ -125,7 +125,6 @@ int main(int argc, char **argv)
     const string path_basis_aux = driver_params.input_dir + driver_params.fn_basis_aux;
     const string path_eigocc_scf = driver_params.input_dir + driver_params.fn_eigocc_scf;
 
-    profiler.start("driver_input_symmetry", "Driver Read input symmetry sidecars");
     const bool may_use_input_symmetry =
         get_bool(opts.use_input_exx_symmetry)
         || get_bool(opts.use_input_gw_symmetry)
@@ -134,20 +133,8 @@ int main(int argc, char **argv)
         librpa_int::parse_input_symmetry_convention(driver_params.input_symmetry_convention);
     {
         auto pds = librpa_int::api::get_dataset_instance(driver::h);
-        if (may_use_input_symmetry)
-        {
-            librpa_int::load_input_symmetry_context(
-                driver_params.input_dir,
-                input_symmetry_convention,
-                pds->input_symmetry_ctx,
-                mpi_comm_global_h.is_root() && should_output() ? &std::cout : nullptr);
-        }
-        else
-        {
-            pds->input_symmetry_ctx.clear();
-        }
+        pds->input_symmetry_ctx.clear();
     }
-    profiler.stop("driver_input_symmetry");
 
     profiler.start("driver_read_common_input_data", "Driver Read Task-Common Input Data");
     profiler.start("driver_band_out", "DFT SCF eigenvalues/occupations");
@@ -161,6 +148,25 @@ int main(int argc, char **argv)
         profiler.start("driver_struct", "Structure");
         read_stru(path_stru);
         profiler.stop("driver_struct");
+        lib_printf_root("\n");
+
+        profiler.start("driver_input_symmetry", "Driver Read input symmetry sidecars");
+        {
+            auto pds = librpa_int::api::get_dataset_instance(driver::h);
+            if (may_use_input_symmetry)
+            {
+                librpa_int::load_input_symmetry_context(
+                    driver_params.input_dir,
+                    input_symmetry_convention,
+                    pds->input_symmetry_ctx,
+                    mpi_comm_global_h.is_root() && should_output() ? &std::cout : nullptr);
+            }
+            else
+            {
+                pds->input_symmetry_ctx.clear();
+            }
+        }
+        profiler.stop("driver_input_symmetry");
         lib_printf_root("\n");
 
         profiler.start("driver_bz", "BZ sampling");
