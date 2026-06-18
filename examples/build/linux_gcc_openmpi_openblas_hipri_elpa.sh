@@ -18,6 +18,8 @@ module purge
 
 module load compiler/rocm/dtk/25.04.3
 export CPATH=$ROCM_PATH/include/rocrand:$CPATH
+export LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/lib64:$LIBRARY_PATH
+export LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/lib64:$LD_LIBRARY_PATH
 module load compiler/devtoolset/9.3.1
 module load mpi/hpcx/2.13.1/gcc-9.3.1-wangxh
 module load compiler/cmake/3.24.1
@@ -30,8 +32,14 @@ source $SETUP_DIR/setup_scalapack_extern
 source $SETUP_DIR/setup_cereal_extern
 
 
-source /public/home/hbchen/app/elpa/260226/setup_elpa
+# source /public/home/hbchen/app/elpa/260226/setup_elpa
+source /public/home/hbchen/app/elpa/260611/setup_elpa
 source /public/home/hbchen/app/magma/260311/setup_magma
+
+LibDDLA_PATH=/public/home/hbchen/app/LibDDLA/260603/LibDDLA_install
+export CPATH=$LibDDLA_PATH/include:$CPATH
+export LIBRARY_PATH=$LibDDLA_PATH/lib:$LIBRARY_PATH
+export LD_LIBRARY_PATH=$LibDDLA_PATH/lib:$LD_LIBRARY_PATH
 
 
 
@@ -67,7 +75,7 @@ export LC_ALL=en_US.UTF-8
 export LANG=en_US.UTF-8
 
 cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
-        -DCMAKE_CXX_COMPILER=hipcc \
+        -DCMAKE_CXX_COMPILER=g++ \
         -DMPI_CXX_COMPILER=mpicxx \
         -DCMAKE_Fortran_COMPILER=gfortran \
         -DSCALAPACK_DIR=$SCALAPACK \
@@ -76,11 +84,13 @@ cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
         -DLIBCOMM_INCLUDE_DIR=$LIBCOMM/include \
         -DBUILD_SHARED_LIBS=ON \
         -DLIBRPA_VERBOSE_OUTPUT=ON\
-        -DCMAKE_CXX_FLAGS="-dwarf-4 -g -O2 -fopenmp -fgpu-rdc -Wunused-result -Wno-return-type -Wno-return-stack-address -Wno-format -Wno-unused-command-line-argument -Wno-format-security -Wno-exceptions" \
+        -DCMAKE_CXX_FLAGS="-g -O2 " \
         -DLIBRPA_USE_HIP=ON \
         -DLIBRPA_USE_EXTERNAL_ELPA=ON \
         -DEXTERNAL_ELPA_DIR=${ELPA_DIR} \
         -DUSE_GREENX_API=ON \
+        -DLIBDDLA_PATH=${LibDDLA_PATH} \
+        -DLIBRPA_USE_LIBRI_GPU=ON
 
 
         # -DCMAKE_HIP_FLAGS="-g -O2 -fopenmp -fgpu-rdc -Wno-return-type"
