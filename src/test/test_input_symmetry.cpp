@@ -32,13 +32,13 @@ void assert_matrix_close(const librpa_int::ComplexMatrix& actual,
 
 void test_abf_rotation_fallback_uses_basis_convention()
 {
-    using librpa_int::InputSymmetryContext;
+    using librpa_int::SymmetryContext;
     using librpa_int::Matrix3;
     using librpa_int::SpeciesBasisLayout;
     using librpa_int::build_input_symmetry_abf_rotation_matrix;
     using librpa_int::real_spherical_harmonic_rotation_matrix;
 
-    InputSymmetryContext ctx;
+    SymmetryContext ctx;
     ctx.basis_convention = {-1,
                             0,
                             LIBRPA_ANGULAR_ORDER_NATURAL,
@@ -155,7 +155,7 @@ void test_kspace_shell_rotations_use_direct_rotation()
 void test_species_basis_layout_keeps_shell_order()
 {
     using librpa_int::ComplexMatrix;
-    using librpa_int::InputSymmetryContext;
+    using librpa_int::SymmetryContext;
     using librpa_int::SpeciesBasisLayout;
     using librpa_int::build_input_symmetry_ao_rotation_matrix;
 
@@ -169,7 +169,7 @@ void test_species_basis_layout_keeps_shell_order()
     assert(layout.shell_indices.at(1).front() == 0);
     assert(layout.shell_indices.at(0).front() == 1);
 
-    InputSymmetryContext ctx;
+    SymmetryContext ctx;
     ctx.ao_type_layouts = {layout};
 
     ComplexMatrix p_rotation(3, 3);
@@ -219,9 +219,9 @@ librpa_int::InputSymmetryOperation make_row_symmetry_operation(const std::array<
     return op;
 }
 
-librpa_int::InputSymmetryContext make_bn_shrink_symmetry_context()
+librpa_int::SymmetryContext make_bn_shrink_symmetry_context()
 {
-    librpa_int::InputSymmetryContext ctx;
+    librpa_int::SymmetryContext ctx;
     ctx.atom_to_type = {{0, 0}, {1, 1}};
     ctx.input_coord_frac = {{0, {0.0, 0.0, 0.0}}, {1, {0.25, 0.25, 0.25}}};
 
@@ -308,7 +308,7 @@ void test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry()
 
 void test_abacus_legacy_sidecars_are_ignored_without_generated_symops()
 {
-    using librpa_int::InputSymmetryContext;
+    using librpa_int::SymmetryContext;
     using librpa_int::InputSymmetryConvention;
     using librpa_int::load_input_symmetry_context;
 
@@ -320,7 +320,7 @@ void test_abacus_legacy_sidecars_are_ignored_without_generated_symops()
     write_file(dir / "irreducible_sector.txt",
                "atompair (0, 0), R = (0, 0, 0)\n");
 
-    InputSymmetryContext ctx;
+    SymmetryContext ctx;
     assert(!load_input_symmetry_context(dir.string(), InputSymmetryConvention::ABACUS, ctx));
     assert(ctx.rspace_operations.empty());
     assert(ctx.kstars.empty());
@@ -330,7 +330,7 @@ void test_abacus_legacy_sidecars_are_ignored_without_generated_symops()
 
 void test_abacus_generated_symops_do_not_require_sidecars()
 {
-    using librpa_int::InputSymmetryContext;
+    using librpa_int::SymmetryContext;
     using librpa_int::InputSymmetryConvention;
     using librpa_int::Matrix3;
     using librpa_int::load_input_symmetry_context;
@@ -340,7 +340,7 @@ void test_abacus_generated_symops_do_not_require_sidecars()
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
 
-    InputSymmetryContext ctx = make_bn_shrink_symmetry_context();
+    SymmetryContext ctx = make_bn_shrink_symmetry_context();
     ctx.set_lattice(Matrix3(1.0, 0.0, 0.0,
                             0.0, 1.0, 0.0,
                             0.0, 0.0, 1.0),
@@ -358,7 +358,7 @@ void test_abacus_generated_symops_do_not_require_sidecars()
 
 void test_abacus_generated_symops_ignore_legacy_sidecars()
 {
-    using librpa_int::InputSymmetryContext;
+    using librpa_int::SymmetryContext;
     using librpa_int::InputSymmetryConvention;
     using librpa_int::InputSymmetryOperation;
     using librpa_int::Matrix3;
@@ -375,7 +375,7 @@ void test_abacus_generated_symops_ignore_legacy_sidecars()
     write_file(dir / "symrot_k.txt", "this would fail if parsed\n");
     write_file(dir / "symrot_abf_k.txt", "this would fail if parsed\n");
 
-    InputSymmetryContext ctx;
+    SymmetryContext ctx;
     ctx.set_lattice(Matrix3(1.0, 0.0, 0.0,
                             0.0, 1.0, 0.0,
                             0.0, 0.0, 1.0),

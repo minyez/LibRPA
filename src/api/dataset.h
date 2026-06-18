@@ -76,8 +76,8 @@ public:
     std::map<int, SpeciesBasisLayout> basis_aux_shrink_layouts;
     //! Basis ordering and real-spherical-harmonic convention.
     BasisConvention basis_convention;
-    //! Optional input-code symmetry sidecar data.
-    InputSymmetryContext input_symmetry_ctx;
+    //! Symmetry context built from structure and full k-point grid.
+    SymmetryContext symmetry_context;
     //! Atomic structure
     Atoms atoms;
     //! Periodic boundary setting

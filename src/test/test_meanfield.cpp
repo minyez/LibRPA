@@ -127,7 +127,7 @@ void test_input_symmetry_kstar_restored_dmat_uses_full_star_phases()
 {
     using namespace librpa_int;
 
-    librpa_int::InputSymmetryContext ctx;
+    librpa_int::SymmetryContext ctx;
     ctx.available = true;
     ctx.ao_shell_layout_available = true;
     ctx.ao_type_layouts.push_back({"X", {0}});
@@ -185,7 +185,7 @@ void test_input_symmetry_kstar_restored_dmat_uses_target_kpoint_gauge()
 {
     using namespace librpa_int;
 
-    librpa_int::InputSymmetryContext ctx;
+    librpa_int::SymmetryContext ctx;
     ctx.available = true;
     ctx.ao_shell_layout_available = true;
     ctx.ao_lmax = 0;

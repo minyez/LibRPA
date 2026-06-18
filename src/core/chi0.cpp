@@ -294,7 +294,7 @@ static void accumulate_chi0_collect_map(
 
 Chi0::Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const AtomicBasis &atbasis_abf_in, const PeriodicBoundaryData &pbc_in,
-           const InputSymmetryContext &input_symmetry_ctx_in,
+           const SymmetryContext &symmetry_context_in,
            const TFGrids &tfg_in, const KPointBlacsParallelContext &kblacs_ctxt_in,
            const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed)
     : mf(mf_in),
@@ -302,7 +302,7 @@ Chi0::Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
       atbasis_wfc(atbasis_wfc_in),
       atbasis_abf(atbasis_abf_in),
       pbc(pbc_in),
-      input_symmetry_ctx(input_symmetry_ctx_in),
+      symmetry_context(symmetry_context_in),
       tfg(tfg_in),
       comm_h(kblacs_ctxt_in.comm_global_h),
       kblacs_ctxt(kblacs_ctxt_in)
@@ -569,7 +569,7 @@ static void build_gf_Rt_libri_serial(
     const AtomicBasis &atbasis_wfc,
     int ispin, int isoc1, int isoc2,
     const PeriodicBoundaryData &pbc,
-    const InputSymmetryContext &input_symmetry_ctx,
+    const SymmetryContext &symmetry_context,
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs,
     double tau,
@@ -596,10 +596,10 @@ static void build_gf_Rt_libri_serial(
 
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
     if (can_restore_input_symmetry_kstar_meanfield(
-            input_symmetry_ctx, mf, kfrac_list, atom_nw, input_symmetry_ctx.input_coord_frac))
+            symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac))
     {
         const auto member_kfrac_targets =
-            build_input_symmetry_kstar_member_kfrac_targets(input_symmetry_ctx, pbc);
+            build_input_symmetry_kstar_member_kfrac_targets(symmetry_context, pbc);
         std::vector<Vector3_Order<int>> Rs_this;
         Rs_this.reserve(map_R_IJs.size());
         for (const auto &R_IJs : map_R_IJs)
@@ -607,8 +607,8 @@ static void build_gf_Rt_libri_serial(
             Rs_this.push_back(R_IJs.first);
         }
         const auto gf_cplx_R = get_input_symmetry_restored_gf_cplx_imagtimes_Rs(
-            input_symmetry_ctx, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, Rs_this, atom_nw,
-            input_symmetry_ctx.input_coord_frac, nbands_G, &member_kfrac_targets).at(tau);
+            symmetry_context, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, Rs_this, atom_nw,
+            symmetry_context.input_coord_frac, nbands_G, &member_kfrac_targets).at(tau);
 
         for (const auto &R_IJs : map_R_IJs)
         {
@@ -1482,11 +1482,11 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                     else
                     {
                         build_gf_Rt_libri_serial(this->mf, this->nbands_G, this->atbasis_wfc, isp, is1, is2,
-                                                 this->pbc, this->input_symmetry_ctx,
+                                                 this->pbc, this->symmetry_context,
                                                  this->pbc.kfrac_list, this->IJRs_gf_local, tau,
                                                  gf_po_libri);
                         build_gf_Rt_libri_serial(this->mf, this->nbands_G, this->atbasis_wfc, isp, is2, is1,
-                                                 this->pbc, this->input_symmetry_ctx,
+                                                 this->pbc, this->symmetry_context,
                                                  this->pbc.kfrac_list, this->IJRs_gf_local, -tau,
                                                  gf_ne_libri);
                     }

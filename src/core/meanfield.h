@@ -139,18 +139,18 @@ public:
 };
 
 bool can_restore_input_symmetry_kstar_meanfield(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac);
 
 input_symmetry_kstar_member_kfrac_targets_t build_input_symmetry_kstar_member_kfrac_targets(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     const PeriodicBoundaryData& pbc);
 
 ComplexMatrix get_input_symmetry_restored_dmat_cplx_R(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     const MeanField& mf,
     int ispin, int ispinor_bra, int ispinor_ket,
     const std::vector<Vector3_Order<double>>& kfrac_list,
@@ -161,7 +161,7 @@ ComplexMatrix get_input_symmetry_restored_dmat_cplx_R(
 
 std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>>
 get_input_symmetry_restored_gf_cplx_imagtimes_Rs(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     const MeanField& mf,
     int ispin, int ispinor_bra, int ispinor_ket,
     const std::vector<Vector3_Order<double>>& kfrac_list,

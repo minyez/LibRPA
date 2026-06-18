@@ -118,7 +118,7 @@ void parse_basis_convention(const std::string &convention)
             {bloch_phase, bloch_ratom, order, coeff_m_nega, coeff_m_posi};
         driver::basis_convention_name = convention;
         auto pds = librpa_int::api::get_dataset_instance(driver::h);
-        pds->input_symmetry_ctx.basis_convention = driver::basis_convention;
+        pds->symmetry_context.basis_convention = driver::basis_convention;
         driver::h.set_basis_convention(bloch_phase, bloch_ratom, order,
                                        coeff_m_nega, coeff_m_posi);
         return;

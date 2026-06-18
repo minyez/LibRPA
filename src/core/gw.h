@@ -47,7 +47,7 @@ public:
     const ArrayDesc &desc_wfc;
     const AtomicBasis& atbasis_wfc;
     const PeriodicBoundaryData &pbc;
-    const InputSymmetryContext &input_symmetry_ctx;
+    const SymmetryContext &symmetry_context;
     const TFGrids &tfg;
     const MpiCommHandler &comm_h;
     const KPointBlacsParallelContext &kblacs_ctxt;
@@ -77,7 +77,7 @@ public:
     G0W0(const MeanField &mf_in,
          const AtomicBasis& atbasis_wfc_in,
          const PeriodicBoundaryData &pbc_in,
-         const InputSymmetryContext &input_symmetry_ctx_in,
+         const SymmetryContext &symmetry_context_in,
          const TFGrids &tfg_in, const KPointBlacsParallelContext &kblacs_ctxt_in,
          const ArrayDesc &desc_wfc_in,
          bool is_mf_eigvec_k_distributed);

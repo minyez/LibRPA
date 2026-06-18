@@ -133,7 +133,7 @@ int main(int argc, char **argv)
         librpa_int::parse_input_symmetry_convention(driver_params.input_symmetry_convention);
     {
         auto pds = librpa_int::api::get_dataset_instance(driver::h);
-        pds->input_symmetry_ctx.clear();
+        pds->symmetry_context.clear();
     }
 
     profiler.start("driver_read_common_input_data", "Driver Read Task-Common Input Data");
@@ -158,12 +158,12 @@ int main(int argc, char **argv)
                 librpa_int::load_input_symmetry_context(
                     driver_params.input_dir,
                     input_symmetry_convention,
-                    pds->input_symmetry_ctx,
+                    pds->symmetry_context,
                     mpi_comm_global_h.is_root() && should_output() ? &std::cout : nullptr);
             }
             else
             {
-                pds->input_symmetry_ctx.clear();
+                pds->symmetry_context.clear();
             }
         }
         profiler.stop("driver_input_symmetry");

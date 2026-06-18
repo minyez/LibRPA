@@ -171,7 +171,7 @@ std::vector<Vector3_Order<double>> coul_kpoints_frac_from_pbc(const PeriodicBoun
     return kpoints;
 }
 
-atom_t find_input_symmetry_atom_target(const InputSymmetryContext &ctx,
+atom_t find_input_symmetry_atom_target(const SymmetryContext &ctx,
                                        const atom_t atom_from,
                                        const int spatial_isym,
                                        Vector3_Order<int> &return_lattice)
@@ -210,7 +210,7 @@ atom_t find_input_symmetry_atom_target(const InputSymmetryContext &ctx,
     return matched_atom;
 }
 
-void populate_input_symmetry_kstar_member_rotations(InputSymmetryContext &ctx,
+void populate_input_symmetry_kstar_member_rotations(SymmetryContext &ctx,
                                                     const InputSymmetryKStar &star,
                                                     InputSymmetryKStarMember &member,
                                                     const int lmax)
@@ -256,7 +256,7 @@ void populate_input_symmetry_kstar_member_rotations(InputSymmetryContext &ctx,
     }
 }
 
-void generate_input_symmetry_kstars_from_pbc(InputSymmetryContext &ctx,
+void generate_input_symmetry_kstars_from_pbc(SymmetryContext &ctx,
                                              const PeriodicBoundaryData &pbc)
 {
     const auto full_kpoints = full_kpoints_frac_from_pbc(pbc);
@@ -316,7 +316,7 @@ void generate_input_symmetry_kstars_from_pbc(InputSymmetryContext &ctx,
 
 void sync_input_symmetry_shell_layouts_from_cached_layouts(Dataset &ds)
 {
-    auto &ctx = ds.input_symmetry_ctx;
+    auto &ctx = ds.symmetry_context;
     if (!ds.atoms.types.empty())
     {
         ctx.atom_to_type = ds.atoms.types;
@@ -379,7 +379,7 @@ void sync_input_symmetry_shell_layouts_from_cached_layouts(Dataset &ds)
 
 void initialize_input_symmetry_context(Dataset &ds)
 {
-    auto &ctx = ds.input_symmetry_ctx;
+    auto &ctx = ds.symmetry_context;
     if (ctx.rspace_operations.empty())
     {
         return;
@@ -550,7 +550,7 @@ void initialize_ds_exx(Dataset &ds, const LibrpaOptions &opts) noexcept
 {
     global::profiler.start("initialize_ds_exx");
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
-    ds.p_exx = std::make_unique<librpa_int::Exx>(ds.mf, ds.basis_wfc, ds.pbc, ds.input_symmetry_ctx,
+    ds.p_exx = std::make_unique<librpa_int::Exx>(ds.mf, ds.basis_wfc, ds.pbc, ds.symmetry_context,
                                                  ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
                                                  is_eigvec_k_distributed);
     ds.p_exx->libri_threshold_C = opts.libri_exx_threshold_C;
@@ -565,12 +565,12 @@ void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts) noexcept
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     if (opts.use_shrink_abfs == LIBRPA_SWITCH_ON && opts.use_shrink_chi == LIBRPA_SWITCH_ON)
         ds.p_chi0 = std::make_unique<librpa_int::Chi0>(ds.mf, ds.basis_wfc, ds.basis_aux_shrink, ds.pbc,
-                                                       ds.input_symmetry_ctx,
+                                                       ds.symmetry_context,
                                                        ds.tfg, ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
                                                        is_eigvec_k_distributed);
     else
         ds.p_chi0 = std::make_unique<librpa_int::Chi0>(ds.mf, ds.basis_wfc, ds.basis_aux, ds.pbc,
-                                                       ds.input_symmetry_ctx,
+                                                       ds.symmetry_context,
                                                        ds.tfg, ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
                                                        is_eigvec_k_distributed);
     ds.p_chi0->gf_threshold = opts.gf_threshold;
@@ -588,7 +588,7 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts) noexcept
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     // global::ofs_myid << "is_eigvec_k_distributed " << is_eigvec_k_distributed << std::endl;
     ds.p_g0w0 = std::make_unique<librpa_int::G0W0>(ds.mf, ds.basis_wfc, ds.pbc,
-                                                   ds.input_symmetry_ctx, ds.tfg,
+                                                   ds.symmetry_context, ds.tfg,
                                                    ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
                                                    is_eigvec_k_distributed);
     ds.p_g0w0->libri_threshold_C = opts.libri_g0w0_threshold_C;

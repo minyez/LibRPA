@@ -160,12 +160,12 @@ void driver::task_g0w0_band()
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &kfrac_list = pds->pbc.kfrac_list;
     const auto &mf = pds->mf;
-    const auto &input_symmetry_ctx = pds->input_symmetry_ctx;
+    const auto &symmetry_context = pds->symmetry_context;
     std::vector<librpa_int::InputSymmetryFullKpointMemberEntry> full_k_members;
-    if (input_symmetry_ctx.available && !input_symmetry_ctx.kstars.empty())
+    if (symmetry_context.available && !symmetry_context.kstars.empty())
     {
         full_k_members = librpa_int::build_input_symmetry_full_kpoint_member_list(
-            input_symmetry_ctx, kfrac_list);
+            symmetry_context, kfrac_list);
     }
     const bool output_full_kgrid_from_input_symmetry = full_k_members.size() > kfrac_list.size();
     const int n_kpoints_output = output_full_kgrid_from_input_symmetry

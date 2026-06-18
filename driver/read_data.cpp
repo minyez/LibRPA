@@ -1221,8 +1221,8 @@ void read_bz_sampling(const std::string &file_path)
     auto &pbc = pds->pbc;
     if (n_kpoints_scf < nk_full)
     {
-        auto &input_symmetry_ctx = pds->input_symmetry_ctx;
-        if (input_symmetry_ctx.rspace_operations.empty())
+        auto &symmetry_context = pds->symmetry_context;
+        if (symmetry_context.rspace_operations.empty())
         {
             throw LIBRPA_RUNTIME_ERROR(
                 "BZ sampling contains a symmetry-reduced SCF k-point list, "

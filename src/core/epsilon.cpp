@@ -425,7 +425,7 @@ struct InputSymmetryIrreducibleWRPlan
 };
 
 InputSymmetryIrreducibleWRPlan build_input_symmetry_irreducible_wr_plan(
-    const librpa_int::InputSymmetryContext& ctx,
+    const librpa_int::SymmetryContext& ctx,
     const std::set<std::pair<atom_t, atom_t>>& local_target_pairs,
     const PeriodicBoundaryData& pbc,
     const std::vector<Vector3_Order<int>>& Rlist)
@@ -515,7 +515,7 @@ abf_rspace_complex_block_map_t convert_dense_rspace_blocks_to_row_major(
 
 abf_rspace_dense_block_map_t restore_input_symmetry_abf_rspace_dense_blocks(
     const abf_rspace_dense_block_map_t& tensors_ir,
-    const librpa_int::InputSymmetryContext& symmetry_ctx,
+    const librpa_int::SymmetryContext& symmetry_ctx,
     const librpa_int::input_symmetry_rspace_sector_stars_t& sector_stars)
 {
     abf_rspace_dense_block_map_t tensors_full;
@@ -578,7 +578,7 @@ std::complex<double> build_ft_wq_phase(const PeriodicBoundaryData& pbc,
 }
 
 bool can_use_input_symmetry_irreducible_sector_wr_restore(
-    const librpa_int::InputSymmetryContext& ctx,
+    const librpa_int::SymmetryContext& ctx,
     const std::map<atom_t, size_t>& atom_nabf,
     const PeriodicBoundaryData& pbc)
 {
@@ -596,7 +596,7 @@ bool can_use_input_symmetry_irreducible_sector_wr_restore(
 }
 
 bool can_symmetrize_input_symmetry_chi0_ibz_blocks(
-    const librpa_int::InputSymmetryContext& ctx,
+    const librpa_int::SymmetryContext& ctx,
     const std::map<atom_t, size_t>& atom_nabf,
     const PeriodicBoundaryData& pbc)
 {
@@ -609,7 +609,7 @@ bool can_symmetrize_input_symmetry_chi0_ibz_blocks(
 }
 
 atom_mapping<ComplexMatrix>::pair_t_old symmetrize_input_symmetry_chi0_ibz_blocks_if_needed(
-    const librpa_int::InputSymmetryContext& ctx,
+    const librpa_int::SymmetryContext& ctx,
     const atom_mapping<ComplexMatrix>::pair_t_old& blocks_ibz,
     const Vector3_Order<double>& q_ibz_internal,
     const PeriodicBoundaryData& pbc,
@@ -666,7 +666,7 @@ atom_mapping<ComplexMatrix>::pair_t_old symmetrize_input_symmetry_chi0_ibz_block
 }
 
 abf_rspace_complex_block_map_t accumulate_input_symmetry_full_wr_from_ibz_q(
-    const librpa_int::InputSymmetryContext& ctx,
+    const librpa_int::SymmetryContext& ctx,
     const abf_qspace_complex_block_map_t& Wc_q,
     const PeriodicBoundaryData& pbc,
     const std::vector<Vector3_Order<int>>& Rlist,
@@ -2757,7 +2757,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     const auto atom_nabf = build_atom_nabf_map(chi0.atbasis_abf);
     const bool use_input_symmetry_dense_chi0_collect =
         global::mpi_comm_global_h.nprocs > 1
-        && can_symmetrize_input_symmetry_chi0_ibz_blocks(chi0.input_symmetry_ctx, atom_nabf, chi0.pbc);
+        && can_symmetrize_input_symmetry_chi0_ibz_blocks(chi0.symmetry_context, atom_nabf, chi0.pbc);
 
     vec<double> eigenvalues(n_abf);
     global::profiler.stop("compute_Wc_freq_q_blacs_init");
@@ -2993,12 +2993,12 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 if (has_local_chi0_q)
                 {
                     chi0_wq = symmetrize_input_symmetry_chi0_ibz_blocks_if_needed(
-                        chi0.input_symmetry_ctx, chi0.get_chi0_q().at(freq).at(q), q, chi0.pbc, atom_nabf);
+                        chi0.symmetry_context, chi0.get_chi0_q().at(freq).at(q), q, chi0.pbc, atom_nabf);
                 }
                 else if (use_input_symmetry_dense_chi0_collect)
                 {
                     chi0_wq = symmetrize_input_symmetry_chi0_ibz_blocks_if_needed(
-                        chi0.input_symmetry_ctx, chi0_wq, q, chi0.pbc, atom_nabf);
+                        chi0.symmetry_context, chi0_wq, q, chi0.pbc, atom_nabf);
                 }
 
                 if (use_input_symmetry_dense_chi0_collect)
@@ -4136,7 +4136,7 @@ CT_Wc_freq2time_q(
 atom_mapping<std::map<Vector3_Order<int>, matrix_m<complex<double>>>>::pair_t_old FT_Wc_q2R(
     const MpiCommHandler &comm_h,
     const AtomicBasis &atbasis_abf,
-    const InputSymmetryContext &input_symmetry_ctx,
+    const SymmetryContext &symmetry_context,
     const atom_mapping<std::map<Vector3_Order<double>, matrix_m<cplxdb>>>::pair_t_old
         &Wc_q,
     const TFGrids &, const PeriodicBoundaryData &pbc, const vector<Vector3_Order<int>> &Rlist, const bool,
@@ -4157,11 +4157,11 @@ atom_mapping<std::map<Vector3_Order<int>, matrix_m<complex<double>>>>::pair_t_ol
     comm_h.barrier();
 
     const auto atom_nabf = build_atom_nabf_map(atbasis_abf);
-    if (can_use_input_symmetry_irreducible_sector_wr_restore(input_symmetry_ctx, atom_nabf, pbc))
+    if (can_use_input_symmetry_irreducible_sector_wr_restore(symmetry_context, atom_nabf, pbc))
     {
         lib_printf_root(
             "ABACUS GW symmetry accumulates irreducible-sector `W(R)` directly from IBZ q-stars\n");
-        Wc_R = accumulate_input_symmetry_full_wr_from_ibz_q(input_symmetry_ctx, Wc_q, pbc, Rlist, atom_nabf);
+        Wc_R = accumulate_input_symmetry_full_wr_from_ibz_q(symmetry_context, Wc_q, pbc, Rlist, atom_nabf);
         comm_h.barrier();
         lib_printf_root("Done converting Wc q -> R\n");
         return Wc_R;

@@ -146,7 +146,7 @@ void librpa_build_exx(LibrpaHandler* h, const LibrpaOptions *p_opts)
     const auto &cs_data_exx = use_shrink_abfs ? pds->cs_data_shrink : pds->cs_data;
     const auto &coul = opts.use_fullcoul_exx ? pds->vq : pds->vq_cut;
     profiler.start("ft_vq_cut", "Fourier transform truncated Coulomb");
-    const auto VR = librpa_int::FT_Vq(basis_aux_exx, pds->input_symmetry_ctx, coul, pds->pbc, true);
+    const auto VR = librpa_int::FT_Vq(basis_aux_exx, pds->symmetry_context, coul, pds->pbc, true);
     profiler.stop("ft_vq_cut");
 
     profiler.start("exx_real_work");

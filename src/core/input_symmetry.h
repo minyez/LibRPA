@@ -119,12 +119,12 @@ using input_symmetry_rspace_sector_stars_t =
 using input_symmetry_atom_block_matrix_map_t = std::map<atom_t, std::map<atom_t, ComplexMatrix>>;
 
 /*!
- * @brief In-memory representation of input symmetry data.
+ * @brief In-memory representation of the system symmetry.
  *
- * The context is intentionally read-only after loading. It will be used by later
- * EXX/GW symmetry implementations.
+ * Built from the structure and full k-point grid, independent of which k-points
+ * are stored in the PBC object.
  */
-struct InputSymmetryContext
+struct SymmetryContext
 {
     InputSymmetryConvention convention = InputSymmetryConvention::NONE;
     bool available = false;
@@ -163,7 +163,7 @@ struct InputSymmetryContext
 
 bool load_input_symmetry_context(const std::string& dir_path,
                                   InputSymmetryConvention convention,
-                                  InputSymmetryContext& ctx,
+                                  SymmetryContext& ctx,
                                   std::ostream* log = nullptr);
 
 ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
@@ -200,12 +200,12 @@ std::map<int, ComplexMatrix> build_input_symmetry_kspace_shell_rotations(
     const Vector3_Order<int>& return_lattice,
     double threshold = 1e-5);
 
-ComplexMatrix build_input_symmetry_ao_rotation_matrix(const InputSymmetryContext& ctx,
+ComplexMatrix build_input_symmetry_ao_rotation_matrix(const SymmetryContext& ctx,
                                               int atom_type,
                                               const std::map<int, ComplexMatrix>& shell_rotations);
 
 ComplexMatrix build_input_symmetry_abf_rotation_matrix(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     int atom_type,
     int nao_hint,
     const std::map<int, ComplexMatrix>& shell_rotations,
@@ -215,17 +215,17 @@ const InputSymmetryKStar& find_input_symmetry_kstar_for_kpoint(const std::vector
                                                 const Vector3_Order<double>& k_point,
                                                 const std::string& label = "input symmetry k-stars");
 
-const InputSymmetryKStar& find_input_symmetry_kstar_for_ibz_kpoint(const InputSymmetryContext& ctx,
+const InputSymmetryKStar& find_input_symmetry_kstar_for_ibz_kpoint(const SymmetryContext& ctx,
                                                     const Vector3_Order<double>& k_ibz);
 
 std::vector<InputSymmetryKStarGridMappingEntry> build_input_symmetry_kstar_grid_mapping(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     const std::vector<Vector3_Order<double>>& klist_internal,
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::map<Vector3_Order<double>, std::vector<Vector3_Order<double>>>& irk_to_full_kpoints);
 
 std::vector<InputSymmetryFullKpointMemberEntry> build_input_symmetry_full_kpoint_member_list(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     const std::vector<Vector3_Order<double>>& kfrac_list);
 
 std::set<std::pair<atom_t, atom_t>> build_input_symmetry_upper_atom_pair_closure(
@@ -233,7 +233,7 @@ std::set<std::pair<atom_t, atom_t>> build_input_symmetry_upper_atom_pair_closure
     const std::set<std::pair<atom_t, atom_t>>& target_atom_pairs);
 
 input_symmetry_atom_block_matrix_map_t rotate_input_symmetry_abf_kspace_operator_blocks(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     const InputSymmetryKStarMember& member,
     const input_symmetry_atom_block_matrix_map_t& blocks_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
@@ -244,7 +244,7 @@ input_symmetry_atom_block_matrix_map_t rotate_input_symmetry_abf_kspace_operator
     const Vector3_Order<double>* k_bz_target = nullptr);
 
 input_symmetry_atom_block_matrix_map_t symmetrize_input_symmetry_abf_ibz_kspace_operator_blocks(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     const Vector3_Order<double>& k_ibz,
     const input_symmetry_atom_block_matrix_map_t& blocks_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
@@ -253,7 +253,7 @@ input_symmetry_atom_block_matrix_map_t symmetrize_input_symmetry_abf_ibz_kspace_
     const std::set<std::pair<atom_t, atom_t>>* target_atom_pairs = nullptr);
 
 ComplexMatrix rotate_input_symmetry_abf_kspace_operator_matrix(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     const InputSymmetryKStarMember& member,
     const ComplexMatrix& matrix_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
@@ -263,13 +263,13 @@ ComplexMatrix rotate_input_symmetry_abf_kspace_operator_matrix(
     const Vector3_Order<double>* k_bz_target = nullptr);
 
 ComplexMatrix symmetrize_input_symmetry_abf_ibz_kspace_operator_matrix(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     const Vector3_Order<double>& k_ibz,
     const ComplexMatrix& matrix_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
     const std::map<atom_t, std::array<double, 3>>& coord_frac);
 
-ComplexMatrix rotate_input_symmetry_kspace_matrix(const InputSymmetryContext& ctx,
+ComplexMatrix rotate_input_symmetry_kspace_matrix(const SymmetryContext& ctx,
                                           const InputSymmetryKStarMember& member,
                                           const ComplexMatrix& matrix_ibz,
                                           const std::map<atom_t, size_t>& atom_nw,
@@ -279,25 +279,25 @@ ComplexMatrix rotate_input_symmetry_kspace_matrix(const InputSymmetryContext& ct
                                           const Vector3_Order<double>* k_bz_target = nullptr);
 
 input_symmetry_irreducible_sector_t build_input_symmetry_rspace_irreducible_sector(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const std::vector<Vector3_Order<int>>& Rlist);
 
 void build_input_symmetry_rspace_sector_stars(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const Vector3_Order<int>& period,
     const std::vector<Vector3_Order<int>>& Rlist,
     input_symmetry_rspace_sector_stars_t& sector_stars,
     std::ostream* log = nullptr);
 
-ComplexMatrix rotate_input_symmetry_rspace_matrix(const InputSymmetryContext& ctx,
+ComplexMatrix rotate_input_symmetry_rspace_matrix(const SymmetryContext& ctx,
                                           int isym,
                                           atom_t atom_from_i,
                                           atom_t atom_from_j,
                                           const ComplexMatrix& matrix_source);
 
-ComplexMatrix rotate_input_symmetry_abf_rspace_matrix(const InputSymmetryContext& ctx,
+ComplexMatrix rotate_input_symmetry_abf_rspace_matrix(const SymmetryContext& ctx,
                                               int isym,
                                               atom_t atom_from_i,
                                               atom_t atom_from_j,

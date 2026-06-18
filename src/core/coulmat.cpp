@@ -274,7 +274,7 @@ std::complex<double> build_ft_vq_phase(const PeriodicBoundaryData& pbc,
 }
 
 atpair_R_mat_t accumulate_input_symmetry_abf_irreducible_sector_vr(
-    const InputSymmetryContext& ctx,
+    const SymmetryContext& ctx,
     const AtomicBasis& basis_abf,
     const atpair_k_cplx_mat_t& blocks_by_q_ibz,
     const PeriodicBoundaryData& pbc)
@@ -402,7 +402,7 @@ atpair_R_mat_t accumulate_input_symmetry_abf_irreducible_sector_vr(
     return blocks_by_R_real;
 }
 
-bool can_use_input_symmetry_irreducible_sector_ft_vq(const InputSymmetryContext& ctx,
+bool can_use_input_symmetry_irreducible_sector_ft_vq(const SymmetryContext& ctx,
                                              const AtomicBasis& basis_abf,
                                              const atpair_k_cplx_mat_t& coulmat_k,
                                              const PeriodicBoundaryData& pbc)
@@ -428,7 +428,7 @@ bool can_use_input_symmetry_irreducible_sector_ft_vq(const InputSymmetryContext&
 } // namespace
 
 atpair_R_mat_t FT_Vq(const AtomicBasis &basis_abf,
-                     const InputSymmetryContext &input_symmetry_ctx,
+                     const SymmetryContext &symmetry_context,
                      const atpair_k_cplx_mat_t &coulmat_k,
                      const PeriodicBoundaryData &pbc,
                      bool return_ordered_atom_pair)
@@ -440,11 +440,11 @@ atpair_R_mat_t FT_Vq(const AtomicBasis &basis_abf,
     const auto &map_irk_ks = pbc.map_irk_ks;
     const auto n_k_points = pbc.get_n_cells_bvk();
 
-    if (can_use_input_symmetry_irreducible_sector_ft_vq(input_symmetry_ctx, basis_abf, coulmat_k, pbc))
+    if (can_use_input_symmetry_irreducible_sector_ft_vq(symmetry_context, basis_abf, coulmat_k, pbc))
     {
         global::lib_printf_root(
             "ABACUS EXX symmetry accumulates irreducible-sector `V(R)` directly from IBZ q-stars\n");
-        return accumulate_input_symmetry_abf_irreducible_sector_vr(input_symmetry_ctx, basis_abf, coulmat_k, pbc);
+        return accumulate_input_symmetry_abf_irreducible_sector_vr(symmetry_context, basis_abf, coulmat_k, pbc);
     }
 
     for (auto R: Rlist)

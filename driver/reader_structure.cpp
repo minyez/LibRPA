@@ -192,7 +192,7 @@ void read_stru_tail_symops(std::ifstream &infile, const std::string &file_path)
     }
 
     auto pds = librpa_int::api::get_dataset_instance(driver::h);
-    auto &operations = pds->input_symmetry_ctx.rspace_operations;
+    auto &operations = pds->symmetry_context.rspace_operations;
     if (!operations.empty() && operations.size() != stru_symops.size())
     {
         throw LIBRPA_RUNTIME_ERROR("stru_out symmetry operation count conflicts with input symmetry sidecars");
@@ -258,7 +258,7 @@ void reader_structure(const std::string &file_path)
     driver::h.set_atoms(driver::atom_types, coords);
     {
         auto pds = api::get_dataset_instance(driver::h);
-        pds->input_symmetry_ctx.set_lattice(pds->pbc.latvec, pds->pbc.G);
+        pds->symmetry_context.set_lattice(pds->pbc.latvec, pds->pbc.G);
     }
     read_stru_tail_symops(infile, file_path);
 }
