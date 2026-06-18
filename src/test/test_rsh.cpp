@@ -6,11 +6,15 @@
 #include <cmath>
 #include <complex>
 
+#include "librpa_enums.h"
 #include "testutils.h"
 
 namespace {
 
-void assert_matrix_close_to_identity(const librpa_int::ComplexMatrix& matrix,
+using namespace std;
+using namespace librpa_int;
+
+void assert_matrix_close_to_identity(const ComplexMatrix& matrix,
                                      const double diagonal = 1.0,
                                      const double thres = 1e-12)
 {
@@ -27,9 +31,6 @@ void assert_matrix_close_to_identity(const librpa_int::ComplexMatrix& matrix,
 
 void test_abs_pm_ordering()
 {
-    using librpa_int::rsh_m_to_index;
-    using librpa_int::rsh_abs_pm_m_to_index;
-
     assert(rsh_abs_pm_m_to_index(0) == 0);
     assert(rsh_abs_pm_m_to_index(1) == 1);
     assert(rsh_abs_pm_m_to_index(-1) == 2);
@@ -45,11 +46,6 @@ void test_abs_pm_ordering()
 
 void test_abs_pm_m1_1m_overlap_uses_natural_complex_and_abs_pm_real_indices()
 {
-    using librpa_int::C_IMAG;
-    using librpa_int::complex_to_real_spherical_harmonic_transform;
-    using librpa_int::rsh_abs_pm_m_to_index;
-    using librpa_int::wigner_m_to_index;
-
     const auto transform =
         complex_to_real_spherical_harmonic_transform(1,
                                                      LIBRPA_ANGULAR_ORDER_ABS_PM,
@@ -65,11 +61,6 @@ void test_abs_pm_m1_1m_overlap_uses_natural_complex_and_abs_pm_real_indices()
 
 void test_general_coefficients_and_ordering_are_independent()
 {
-    using librpa_int::C_IMAG;
-    using librpa_int::complex_to_real_spherical_harmonic_transform;
-    using librpa_int::rsh_m_to_index;
-    using librpa_int::wigner_m_to_index;
-
     const auto transform =
         complex_to_real_spherical_harmonic_transform(1,
                                                      LIBRPA_ANGULAR_ORDER_NATURAL,
@@ -87,9 +78,6 @@ void test_general_coefficients_and_ordering_are_independent()
 
 void test_complex_to_real_transform_unitary_for_abs_pm_m1_1m_convention()
 {
-    using librpa_int::complex_to_real_spherical_harmonic_transform;
-    using librpa_int::transpose;
-
     const auto transform =
         complex_to_real_spherical_harmonic_transform(2,
                                                      LIBRPA_ANGULAR_ORDER_ABS_PM,
@@ -101,9 +89,6 @@ void test_complex_to_real_transform_unitary_for_abs_pm_m1_1m_convention()
 
 void test_real_spherical_inversion_parity_for_abs_pm_m1_1m_convention()
 {
-    using librpa_int::Matrix3;
-    using librpa_int::real_spherical_harmonic_rotation_matrix;
-
     const Matrix3 inversion(-1.0, 0.0, 0.0,
                             0.0, -1.0, 0.0,
                             0.0, 0.0, -1.0);
@@ -123,6 +108,45 @@ void test_real_spherical_inversion_parity_for_abs_pm_m1_1m_convention()
         1.0);
 }
 
+void test_aims_rsh()
+{
+    const LibrpaAngularOrder order = LIBRPA_ANGULAR_ORDER_NATURAL;
+    const LibrpaRshCoeff coeff_m_nega = LIBRPA_RSH_COEFF_1_M;
+    const LibrpaRshCoeff coeff_m_posi = LIBRPA_RSH_COEFF_1_M;
+    const Matrix3 rot_c4z(0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+    const auto rotmat = real_spherical_harmonic_rotation_matrix(rot_c4z, 1, order, coeff_m_nega, coeff_m_posi);
+    cout << rotmat << endl;
+}
+
+void test_abacus_rsh()
+{
+    const LibrpaAngularOrder order = LIBRPA_ANGULAR_ORDER_ABS_PM;
+    const LibrpaRshCoeff coeff_m_nega = LIBRPA_RSH_COEFF_M_1;
+    const LibrpaRshCoeff coeff_m_posi = LIBRPA_RSH_COEFF_1_M;
+
+    // C4(z)
+    const Matrix3 rot_c4z(0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+    const Vector3<double> euler_c4z{PI/2.0, 0.0, 0.0};
+    const auto euler_from_rot = rotation_matrix_to_euler_angles_zyz(rot_c4z);
+    assert(fequal(euler_from_rot.x, euler_c4z.x));
+    assert(fequal(euler_from_rot.y, euler_c4z.y));
+    assert(fequal(euler_from_rot.z, euler_c4z.z));
+
+    const auto rotmat_from_euler = real_spherical_harmonic_rotation_matrix(euler_c4z, 1, order, coeff_m_nega, coeff_m_posi);
+    assert(fequal(rotmat_from_euler(0, 0), C_ONE));
+    assert(fequal(rotmat_from_euler(0, 1), C_ZERO));
+    assert(fequal(rotmat_from_euler(0, 2), C_ZERO));
+    assert(fequal(rotmat_from_euler(1, 0), C_ZERO));
+    assert(fequal(rotmat_from_euler(1, 1), C_ZERO));
+    assert(fequal(rotmat_from_euler(1, 2), -C_ONE));
+    assert(fequal(rotmat_from_euler(2, 0), C_ZERO));
+    assert(fequal(rotmat_from_euler(2, 1), C_ONE));
+    assert(fequal(rotmat_from_euler(2, 2), C_ZERO));
+    const auto rotmat = real_spherical_harmonic_rotation_matrix(rot_c4z, 1, order, coeff_m_nega, coeff_m_posi);
+    assert(fequal_array(9, rotmat_from_euler.c, rotmat.c));
+    cout << rotmat << endl;
+}
+
 }
 
 int main()
@@ -132,4 +156,6 @@ int main()
     test_general_coefficients_and_ordering_are_independent();
     test_complex_to_real_transform_unitary_for_abs_pm_m1_1m_convention();
     test_real_spherical_inversion_parity_for_abs_pm_m1_1m_convention();
+    test_aims_rsh();
+    test_abacus_rsh();
 }

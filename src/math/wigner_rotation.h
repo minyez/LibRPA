@@ -31,7 +31,18 @@ std::complex<double> wigner_D(const Vector3<double>& euler_angle,
 ComplexMatrix wigner_D_matrix(const Vector3<double>& euler_angle,
                               const int l);
 
-//! Get ZYZ Euler angles from a proper Cartesian rotation matrix.
+//! Get ZYZ Euler angles from a proper rotation.
+//!
+//! The rotation is represented by the rotation matrix transforming the coordinate system
+//! when it acts upon a vector, i.e. an active rotation. Here we use Cartesian coordinates.
+//! With vector v = (e_x, e_y, e_z) (x, y, z)^T
+//!
+//! \hat{R} v = v' = (e_x, e_y, e_z) (x', y', z')^T = (e_x, e_y, e_z) [R (x, y, z)^T]
+//!                = (e'_x, e'_y, e'_z) (x, y, z)^T = [(e_x, e_y, e_z) R] (x, y, z)^T
+//!                                                 = [\hat{R} (e_x, e_y, e_z)] (x, y, z)^T
+//!
+//! `rotation_matrix` here is R^T.
+//!
 Vector3<double> rotation_matrix_to_euler_angles_zyz(const Matrix3& rotation_matrix,
                                                     const double threshold = 1e-5);
 

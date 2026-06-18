@@ -456,6 +456,7 @@ void librpa_set_basis_convention(LibrpaHandler* h, int bloch_phase, int bloch_ra
 {
     using librpa_int::global::lib_printf;
     using librpa_int::global::profiler;
+    using librpa_int::global::ofs_myid;
 
     const std::string tname = "api_set_basis_convention";
     profiler.start(tname);
@@ -491,6 +492,13 @@ void librpa_set_basis_convention(LibrpaHandler* h, int bloch_phase, int bloch_ra
         lib_printf("| RSH coeff m > 0  : %d\n", pds->basis_convention.coeff_m_positive);
     }
     pds->comm_h.barrier();
+
+    ofs_myid << "Basis convention set:\n";
+    ofs_myid << "| Bloch phase      : " << pds->basis_convention.bloch_phase << "\n";
+    ofs_myid << "| Bloch r_atom     : " << pds->basis_convention.bloch_ratom << "\n";
+    ofs_myid << "| angular order    : " << pds->basis_convention.order << "\n";
+    ofs_myid << "| RSH coeff m < 0  : " << pds->basis_convention.coeff_m_negative << "\n";
+    ofs_myid << "| RSH coeff m > 0  : " << pds->basis_convention.coeff_m_positive << std::endl;
 
     profiler.stop(tname);
 }

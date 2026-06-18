@@ -6,9 +6,13 @@
 
 #include "testutils.h"
 
+
 namespace {
 
-void assert_matrix_close_to_identity(const librpa_int::ComplexMatrix& matrix,
+using namespace librpa_int;
+using namespace std;
+
+void assert_matrix_close_to_identity(const ComplexMatrix& matrix,
                                      const double diagonal = 1.0,
                                      const double thres = 1e-12)
 {
@@ -23,7 +27,7 @@ void assert_matrix_close_to_identity(const librpa_int::ComplexMatrix& matrix,
     }
 }
 
-void assert_matrix_close(const librpa_int::Matrix3& actual, const librpa_int::Matrix3& expected,
+void assert_matrix_close(const Matrix3& actual, const Matrix3& expected,
                          const double thres = 1e-12)
 {
     assert(fequal(actual.e11, expected.e11, thres));
@@ -39,8 +43,6 @@ void assert_matrix_close(const librpa_int::Matrix3& actual, const librpa_int::Ma
 
 void test_magnetic_quantum_number_index()
 {
-    using librpa_int::wigner_m_to_index;
-
     assert(wigner_m_to_index(2, -2) == 0);
     assert(wigner_m_to_index(2, -1) == 1);
     assert(wigner_m_to_index(2, 0) == 2);
@@ -50,51 +52,49 @@ void test_magnetic_quantum_number_index()
 
 void test_wigner_small_d_identity()
 {
-    using librpa_int::wigner_small_d_matrix;
-
     assert_matrix_close_to_identity(wigner_small_d_matrix(0.0, 3));
 }
 
 void test_wigner_small_d_orthogonal()
 {
-    using librpa_int::transpose;
-    using librpa_int::wigner_small_d_matrix;
-
     const auto d_matrix = wigner_small_d_matrix(0.37, 3);
     const auto product = transpose(d_matrix, false) * d_matrix;
     assert_matrix_close_to_identity(product, 1.0, 1e-11);
 }
 
-void test_wigner_D_identity()
+void test_wigner_D()
 {
-    using librpa_int::Vector3;
-    using librpa_int::wigner_D_matrix;
-
     assert_matrix_close_to_identity(wigner_D_matrix(Vector3<double>{0.0, 0.0, 0.0}, 2));
+    const auto c4_l = wigner_D_matrix(Vector3<double>{PI / 2.0, 0.0, 0.0}, 1);
+    assert(fequal(c4_l(0, 0), C_IMAG));
+    assert(fequal(c4_l(1, 1), C_ONE));
+    assert(fequal(c4_l(2, 2), -C_IMAG));
 }
 
-void test_euler_angles_to_rotation_matrix_known_beta_rotation()
+void test_euler_angles_from_rotation_matrix()
 {
-    using librpa_int::euler_angles_zyz_to_rotation_matrix;
-    using librpa_int::Matrix3;
-    using librpa_int::PI;
-    using librpa_int::Vector3;
+    const Matrix3 rot90z(0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+    const auto euler = rotation_matrix_to_euler_angles_zyz(rot90z);
+    cout << euler << endl;
+    assert(fequal(euler.x, PI * 0.5));
+    assert(fequal(euler.y, 0.0));
+    assert(fequal(euler.z, 0.0));
+}
 
+void test_euler_angles_to_rotation_matrix()
+{
     assert_matrix_close(euler_angles_zyz_to_rotation_matrix(Vector3<double>{0.0, PI / 2.0, 0.0}),
                         Matrix3(0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0));
 }
 
 void test_euler_angles_to_rotation_matrix_round_trip()
 {
-    using librpa_int::euler_angles_zyz_to_rotation_matrix;
-    using librpa_int::rotation_matrix_to_euler_angles_zyz;
-    using librpa_int::Vector3;
-
     const auto rotation = euler_angles_zyz_to_rotation_matrix(Vector3<double>{0.37, 1.21, 2.43});
     assert_matrix_close(
         euler_angles_zyz_to_rotation_matrix(rotation_matrix_to_euler_angles_zyz(rotation, 1e-12)),
         rotation);
 }
+
 }
 
 int main()
@@ -102,7 +102,8 @@ int main()
     test_magnetic_quantum_number_index();
     test_wigner_small_d_identity();
     test_wigner_small_d_orthogonal();
-    test_wigner_D_identity();
-    test_euler_angles_to_rotation_matrix_known_beta_rotation();
+    test_wigner_D();
+    test_euler_angles_from_rotation_matrix();
+    test_euler_angles_to_rotation_matrix();
     test_euler_angles_to_rotation_matrix_round_trip();
 }

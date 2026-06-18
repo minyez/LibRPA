@@ -2,6 +2,10 @@
 
 namespace librpa_int {
 
+const Matrix3 Matrix3::IDENTITY{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+
+const Matrix3 Matrix3::NEGATIVE{-1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, -1.0};
+
 Matrix3::Matrix3(const double &r11, const double &r12, const double &r13,
                  const double &r21, const double &r22, const double &r23,
                  const double &r31, const double &r32, const double &r33)
@@ -23,16 +27,6 @@ void Matrix3::Identity(void)
 	e11 = 1.0e0;e12 = 0.0e0;e13 = 0.0e0;
 	e21 = 0.0e0;e22 = 1.0e0;e23 = 0.0e0;
 	e31 = 0.0e0;e32 = 0.0e0;e33 = 1.0e0;
-}
-
-double Matrix3::Det(void) const 
-{
-	return	e11*e22*e33 -
-	        e11*e32*e23 +
-	        e21*e32*e13 -
-	        e21*e12*e33 +
-	        e31*e12*e23 -
-	        e31*e22*e13;
 }
 
 Matrix3 Matrix3::Transpose(void) const

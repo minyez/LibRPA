@@ -264,9 +264,7 @@ ComplexMatrix real_spherical_harmonic_rotation_matrix(
 
     const bool improper_rotation = cartesian_rotation.Det() < 0.0;
     const Matrix3 proper_cartesian =
-        improper_rotation
-            ? (cartesian_rotation * Matrix3(-1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, -1.0))
-            : cartesian_rotation;
+        improper_rotation ? (cartesian_rotation * Matrix3::NEGATIVE) : cartesian_rotation;
     const auto euler_angle = rotation_matrix_to_euler_angles_zyz(proper_cartesian, threshold);
     return real_spherical_harmonic_rotation_matrix(euler_angle, l, angular_order, coeff_m_negative,
                                                    coeff_m_positive, improper_rotation);

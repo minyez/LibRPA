@@ -11,6 +11,9 @@ namespace librpa_int {
 
 class Matrix3
 {
+public:
+	static const Matrix3 IDENTITY;
+	static const Matrix3 NEGATIVE;
 	/* data */
 public:
 	// element eij:i_column,j_row
@@ -23,7 +26,12 @@ public:
 
 	void Reset(void);
 	void Identity(void);
-	double Det(void) const ;
+	inline double Det(void) const
+	{
+		return e11 * e22 * e33 - e11 * e32 * e23 +
+				e21 * e32 * e13 - e21 * e12 * e33 +
+				e31 * e12 * e23 - e31 * e22 * e13;
+    }
 	Matrix3	Transpose(void) const ;
 	Matrix3	Inverse(void) const ;
 
