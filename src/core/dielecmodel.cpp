@@ -1657,6 +1657,16 @@ int rpa_headwing_regular_body_start_channel(const RpaHeadwingSettings &settings)
     return 1;
 }
 
+double rpa_headwing_reciprocal_cell_volume(const PeriodicBoundaryData &pbc,
+                                           const bool use_2d_dielectric)
+{
+    if (use_2d_dielectric)
+    {
+        return std::abs(pbc.G.e11 * pbc.G.e22 - pbc.G.e12 * pbc.G.e21);
+    }
+    return std::abs(pbc.G.Det());
+}
+
 std::complex<double> compute_rpa_chi0v_headwing_trace_log_average(
     const matrix_m<std::complex<double>> &head,
     const matrix_m<std::complex<double>> &schur_l,
@@ -1854,12 +1864,7 @@ std::complex<double> diele_func::compute_rpa_trace_log_average(
     invert_scalapack(this->body_inv, desc_body);
     construct_rpa_trace_log_schur(ifreq, desc_body, wing_row_offset);
 
-    double k_volume;
-    if (settings.use_2d_dielectric)
-        k_volume = std::abs(pbc_.latvec.e11 * pbc_.latvec.e22 - pbc_.latvec.e12 * pbc_.latvec.e21);
-    else
-        k_volume = std::abs(pbc_.latvec.Det());
-    this->vol_gamma = k_volume / nk;
+    this->vol_gamma = rpa_headwing_reciprocal_cell_volume(pbc_, settings.use_2d_dielectric) / nk;
 
     std::vector<double> weights(qw_leb.size());
     for (std::size_t ileb = 0; ileb != qw_leb.size(); ++ileb)

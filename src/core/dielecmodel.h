@@ -208,6 +208,9 @@ public:
 
 int rpa_headwing_regular_body_start_channel(const RpaHeadwingSettings &settings);
 
+double rpa_headwing_reciprocal_cell_volume(const PeriodicBoundaryData &pbc,
+                                           bool use_2d_dielectric);
+
 std::complex<double> compute_rpa_chi0v_headwing_trace_log_average(
     const matrix_m<std::complex<double>> &head,
     const matrix_m<std::complex<double>> &schur_l,

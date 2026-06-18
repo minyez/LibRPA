@@ -1,6 +1,7 @@
 #include <array>
 #include <cassert>
 #include <complex>
+#include <cstdlib>
 #include <iostream>
 
 #include "../core/dielecmodel.h"
@@ -31,6 +32,16 @@ void assert_complex_close(const std::complex<double> &actual,
         std::cerr << "actual=" << actual << " expected=" << expected
                   << " diff=" << std::abs(actual - expected) << std::endl;
         assert(false);
+    }
+}
+
+void require_double_close(const double actual, const double expected, const double tolerance)
+{
+    if (std::abs(actual - expected) >= tolerance)
+    {
+        std::cerr << "actual=" << actual << " expected=" << expected
+                  << " diff=" << std::abs(actual - expected) << std::endl;
+        std::abort();
     }
 }
 
@@ -193,6 +204,24 @@ void test_rpa_headwing_regular_body_start_channel()
     assert(librpa_int::rpa_headwing_regular_body_start_channel(settings) == 4);
 }
 
+void test_rpa_headwing_gamma_cell_volume_uses_reciprocal_lattice()
+{
+    librpa_int::PeriodicBoundaryData pbc;
+    pbc.latvec = librpa_int::Matrix3(2.0, 0.0, 0.0,
+                                     0.0, 3.0, 0.0,
+                                     0.0, 0.0, 5.0);
+    pbc.G = librpa_int::Matrix3(0.5, 0.0, 0.0,
+                                0.0, 1.0 / 3.0, 0.0,
+                                0.0, 0.0, 0.2);
+
+    const double vol_3d = librpa_int::rpa_headwing_reciprocal_cell_volume(pbc, false);
+    require_double_close(vol_3d, std::abs(pbc.G.Det()), 1e-14);
+
+    const double vol_2d = librpa_int::rpa_headwing_reciprocal_cell_volume(pbc, true);
+    const double expected_2d = std::abs(pbc.G.e11 * pbc.G.e22 - pbc.G.e12 * pbc.G.e21);
+    require_double_close(vol_2d, expected_2d, 1e-14);
+}
+
 void test_headwing_spin_weights()
 {
     assert(std::abs(librpa_int::headwing_transition_weight(1.0, 0.25, 2, false) - 0.75) <
@@ -246,6 +275,7 @@ int main(int argc, char *argv[])
         test_replace_rpa_response_headwing_replaces_only_singular_channels(blacs_h);
         test_rpa_trace_log_average_uses_directional_head_and_wing();
         test_rpa_headwing_regular_body_start_channel();
+        test_rpa_headwing_gamma_cell_volume_uses_reciprocal_lattice();
         test_headwing_spin_weights();
         test_velocity_matrix_initialization();
     }
