@@ -6,3 +6,5 @@ nfreq = 6
 option_dielect_func = 0
 replace_w_head = t
 parallel_routing = libri
+use_symmetry_exx = t
+use_symmetry_gw = t
