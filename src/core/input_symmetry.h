@@ -1,6 +1,6 @@
 /*!
  * @file input_symmetry.h
- * @brief Utilities for reading input symmetry sidecar files.
+ * @brief Utilities for generated input symmetry data.
  */
 #pragma once
 
@@ -81,7 +81,7 @@ struct InputSymmetryKStar
  * @brief Explicit mapping between one loaded LibRPA IBZ q-index and one input symmetry k-star.
  *
  * The mapping stores the full-BZ q keys that LibRPA should use for every star member.
- * Input sidecar coordinates are treated as the source of truth; when LibRPA already
+ * Input symmetry coordinates are treated as the source of truth; when LibRPA already
  * has an equivalent internal q key, that exact key is reused to keep later lookups
  * aligned with existing storage.
  */
@@ -119,10 +119,10 @@ using input_symmetry_rspace_sector_stars_t =
 using input_symmetry_atom_block_matrix_map_t = std::map<atom_t, std::map<atom_t, ComplexMatrix>>;
 
 /*!
- * @brief In-memory representation of input symmetry sidecar files.
+ * @brief In-memory representation of input symmetry data.
  *
  * The context is intentionally read-only after loading. It will be used by later
- * EXX/GW symmetry implementations to avoid reparsing the sidecar files.
+ * EXX/GW symmetry implementations.
  */
 struct InputSymmetryContext
 {

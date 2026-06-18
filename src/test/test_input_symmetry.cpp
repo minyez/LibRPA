@@ -306,14 +306,14 @@ void test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry()
     assert(restored_members == 2 * 2 * Rlist.size());
 }
 
-void test_abacus_sidecars_do_not_require_symrot_r()
+void test_abacus_legacy_sidecars_are_ignored_without_generated_symops()
 {
     using librpa_int::InputSymmetryContext;
     using librpa_int::InputSymmetryConvention;
     using librpa_int::load_input_symmetry_context;
 
     const auto dir = std::filesystem::temp_directory_path()
-                     / "librpa_test_input_symmetry_no_symrot_r";
+                     / "librpa_test_input_symmetry_ignored_legacy_sidecars";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
 
@@ -321,7 +321,7 @@ void test_abacus_sidecars_do_not_require_symrot_r()
                "atompair (0, 0), R = (0, 0, 0)\n");
 
     InputSymmetryContext ctx;
-    assert(load_input_symmetry_context(dir.string(), InputSymmetryConvention::ABACUS, ctx));
+    assert(!load_input_symmetry_context(dir.string(), InputSymmetryConvention::ABACUS, ctx));
     assert(ctx.rspace_operations.empty());
     assert(ctx.kstars.empty());
 
@@ -356,7 +356,7 @@ void test_abacus_generated_symops_do_not_require_sidecars()
     std::filesystem::remove_all(dir);
 }
 
-void test_abacus_existing_symops_skip_k_rotation_sidecars()
+void test_abacus_generated_symops_ignore_legacy_sidecars()
 {
     using librpa_int::InputSymmetryContext;
     using librpa_int::InputSymmetryConvention;
@@ -365,12 +365,13 @@ void test_abacus_existing_symops_skip_k_rotation_sidecars()
     using librpa_int::load_input_symmetry_context;
 
     const auto dir = std::filesystem::temp_directory_path()
-                     / "librpa_test_input_symmetry_existing_symops_skip_k_rotation_sidecars";
+                     / "librpa_test_input_symmetry_generated_symops_ignore_legacy_sidecars";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
 
     write_file(dir / "irreducible_sector.txt",
                "atompair (0, 0), R = (0, 0, 0)\n");
+    write_file(dir / "symrot_R.txt", "this would fail if parsed\n");
     write_file(dir / "symrot_k.txt", "this would fail if parsed\n");
     write_file(dir / "symrot_abf_k.txt", "this would fail if parsed\n");
 
@@ -392,6 +393,7 @@ void test_abacus_existing_symops_skip_k_rotation_sidecars()
     assert(load_input_symmetry_context(dir.string(), InputSymmetryConvention::ABACUS, ctx));
     assert(ctx.rspace_operations.size() == 1);
     assert(ctx.lattice_available);
+    assert(ctx.irreducible_sector.empty());
     assert(ctx.atom_to_type.empty());
     assert(ctx.kstars.empty());
     assert(ctx.abf_kstars.empty());
@@ -407,7 +409,7 @@ int main()
     test_kspace_shell_rotations_use_direct_rotation();
     test_species_basis_layout_keeps_shell_order();
     test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry();
-    test_abacus_sidecars_do_not_require_symrot_r();
+    test_abacus_legacy_sidecars_are_ignored_without_generated_symops();
     test_abacus_generated_symops_do_not_require_sidecars();
-    test_abacus_existing_symops_skip_k_rotation_sidecars();
+    test_abacus_generated_symops_ignore_legacy_sidecars();
 }

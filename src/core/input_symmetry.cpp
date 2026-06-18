@@ -1,6 +1,6 @@
 /*!
  * @file input_symmetry.cpp
- * @brief Utilities for reading input symmetry sidecar files.
+ * @brief Utilities for generated input symmetry data.
  */
 #include "input_symmetry.h"
 
@@ -26,9 +26,8 @@ namespace
 {
 
 constexpr double kInputSymmetryCoordTol = 1e-5;
-// Real-space atom mapping is reconstructed from ABACUS text sidecars. When exact fractional
-// coordinates are available from the input `STRU`, LibRPA uses them directly. The looser
-// tolerance below remains as a fallback for text-derived coordinates and lattice-inversion noise.
+// Real-space atom mapping is reconstructed from fractional coordinates. The looser tolerance
+// below remains as a fallback for text-derived coordinates and lattice-inversion noise.
 constexpr double kInputSymmetryRSpaceAtomMapTol = 5e-5;
 
 std::string trim(const std::string& text)
@@ -159,27 +158,6 @@ bool is_integer_line(const std::string& text)
     }
     return std::all_of(stripped.begin() + static_cast<std::ptrdiff_t>(start), stripped.end(),
                        [](unsigned char ch) { return std::isdigit(ch) != 0; });
-}
-
-bool starts_with_integer_token(const std::string& text)
-{
-    const std::string stripped = trim(text);
-    if (stripped.empty())
-    {
-        return false;
-    }
-
-    std::size_t index = (stripped.front() == '+' || stripped.front() == '-') ? 1 : 0;
-    if (index == stripped.size() || std::isdigit(static_cast<unsigned char>(stripped[index])) == 0)
-    {
-        return false;
-    }
-    while (index < stripped.size() && std::isdigit(static_cast<unsigned char>(stripped[index])) != 0)
-    {
-        ++index;
-    }
-    return index == stripped.size()
-           || std::isspace(static_cast<unsigned char>(stripped[index])) != 0;
 }
 
 int shell_symbol_to_l(const char symbol)
@@ -407,7 +385,7 @@ std::vector<int> build_rspace_inverse_map(
         }
         if (inverse_map[isym] < 0)
         {
-            throw std::runtime_error("Failed to build inverse symmetry-operation map for ABACUS sidecars");
+            throw std::runtime_error("Failed to build inverse symmetry-operation map for ABACUS symmetry");
         }
     }
     return inverse_map;
@@ -469,493 +447,6 @@ bool rspace_representative_less(const InputSymmetryRSpaceKey& lhs,
         return lhs_norm < rhs_norm;
     }
     return std::get<2>(lhs) < std::get<2>(rhs);
-}
-
-Vector3_Order<double> parse_vec3_double(const std::string& line, const std::string& context)
-{
-    const auto values = extract_doubles(line);
-    if (values.size() != 3)
-    {
-        throw std::runtime_error("Failed to parse 3-vector in " + context + ": " + line);
-    }
-    return {values[0], values[1], values[2]};
-}
-
-input_symmetry_R_t parse_vec3_int(const std::string& line, const std::string& context)
-{
-    const auto values = extract_integers(line);
-    if (values.size() < 3)
-    {
-        throw std::runtime_error("Failed to parse integer 3-vector in " + context + ": " + line);
-    }
-    return {static_cast<int>(values[values.size() - 3]),
-            static_cast<int>(values[values.size() - 2]),
-            static_cast<int>(values[values.size() - 1])};
-}
-
-ComplexMatrix parse_complex_row_matrix(const std::string& line,
-                                       const int expected_count,
-                                       const std::string& context)
-{
-    const auto values = extract_doubles(line);
-    ComplexMatrix row(1, expected_count);
-    if (static_cast<int>(values.size()) == expected_count)
-    {
-        for (int i = 0; i < expected_count; ++i)
-        {
-            row(0, i) = std::complex<double>(values[i], 0.0);
-        }
-    }
-    else if (static_cast<int>(values.size()) == 2 * expected_count)
-    {
-        for (int i = 0; i < expected_count; ++i)
-        {
-            row(0, i) = std::complex<double>(values[2 * i], values[2 * i + 1]);
-        }
-    }
-    else
-    {
-        throw std::runtime_error("Failed to parse complex row in " + context + ": " + line);
-    }
-    return row;
-}
-
-ComplexMatrix parse_shell_rotation(const std::vector<std::string>& lines,
-                                   std::size_t& index,
-                                   const int nm,
-                                   const std::string& context)
-{
-    ComplexMatrix mat(nm, nm);
-    for (int row = 0; row < nm; ++row)
-    {
-        while (index < lines.size() && trim(lines[index]).empty())
-        {
-            ++index;
-        }
-        if (index >= lines.size())
-        {
-            throw std::runtime_error("Unexpected end of file while reading " + context);
-        }
-        const auto parsed_row = parse_complex_row_matrix(lines[index], nm, context);
-        for (int col = 0; col < nm; ++col)
-        {
-            mat(row, col) = parsed_row(0, col);
-        }
-        ++index;
-    }
-    return mat;
-}
-
-void load_irreducible_sector_file(const std::string& file_path,
-                                  input_symmetry_irreducible_sector_t& irreducible_sector)
-{
-    std::ifstream ifs(file_path);
-    if (!ifs.good())
-    {
-        throw std::runtime_error("Failed to open " + file_path);
-    }
-
-    std::string line;
-    while (std::getline(ifs, line))
-    {
-        if (trim(line).empty())
-        {
-            continue;
-        }
-        const auto values = extract_integers(line);
-        if (values.size() != 5)
-        {
-            throw std::runtime_error("Failed to parse irreducible-sector line: " + line);
-        }
-        const atpair_t atom_pair{static_cast<atom_t>(values[0]), static_cast<atom_t>(values[1])};
-        const input_symmetry_R_t R{static_cast<int>(values[2]), static_cast<int>(values[3]),
-                           static_cast<int>(values[4])};
-        irreducible_sector[atom_pair].insert(R);
-    }
-}
-
-bool append_unique_abf_layout(std::vector<SpeciesBasisLayout>& candidates,
-                              const SpeciesBasisLayout& layout);
-
-SpeciesBasisLayout parse_symrot_type_layout_line(const std::string& line,
-                                                 int& atom_type,
-                                                 const std::string& file_path,
-                                                 const std::string& layout_kind)
-{
-    const auto fields = split_fields(strip_comment(line));
-    if (fields.size() < 10 || fields[0] != "type" || fields[2] != "label" || fields[4] != "nao"
-        || fields[6] != "lmax" || fields[8] != "shell_counts")
-    {
-        throw std::runtime_error("Failed to parse " + layout_kind + " shell-layout header line in "
-                                 + file_path + ": " + line);
-    }
-
-    atom_type = std::stoi(fields[1]) - 1;
-    if (atom_type < 0)
-    {
-        throw std::runtime_error(layout_kind
-                                 + " shell-layout header uses an invalid atom type in "
-                                 + file_path + ": " + line);
-    }
-
-    SpeciesBasisLayout layout;
-    layout.label = fields[3];
-    layout.n_ao = std::stoi(fields[5]);
-    const int lmax = std::stoi(fields[7]);
-    if (lmax < 0)
-    {
-        throw std::runtime_error(layout_kind + " shell-layout header uses a negative lmax in "
-                                 + file_path + ": " + line);
-    }
-
-    std::vector<int> shell_counts;
-    shell_counts.reserve(static_cast<std::size_t>(lmax + 1));
-    for (std::size_t index = 9; index < fields.size(); ++index)
-    {
-        const int count = std::stoi(fields[index]);
-        if (count < 0)
-        {
-            throw std::runtime_error(layout_kind + " shell-layout header uses a negative count in "
-                                     + file_path + ": " + line);
-        }
-        shell_counts.push_back(count);
-    }
-    if (static_cast<int>(shell_counts.size()) != lmax + 1)
-    {
-        throw std::runtime_error(layout_kind
-                                 + " shell-layout header has inconsistent shell_counts in "
-                                 + file_path + ": " + line);
-    }
-    const int header_nao = layout.n_ao;
-    layout.set(l_shells_from_shell_counts(shell_counts));
-    if (layout.n_ao != header_nao)
-    {
-        throw std::runtime_error(layout_kind + " shell-layout header has inconsistent nao in "
-                                 + file_path + ": " + line);
-    }
-
-    return layout;
-}
-
-void parse_symrot_ao_layout_header(const std::vector<std::string>& lines,
-                                   const std::string& file_path,
-                                   std::vector<SpeciesBasisLayout>& layouts_by_type)
-{
-    layouts_by_type.clear();
-
-    std::size_t index = 0;
-    while (index < lines.size() && !starts_with(trim(lines[index]), "Star "))
-    {
-        const std::string cleaned = strip_comment(lines[index]);
-        if (cleaned.empty())
-        {
-            ++index;
-            continue;
-        }
-
-        if (!starts_with(cleaned, "AO shell layouts:"))
-        {
-            ++index;
-            continue;
-        }
-
-        ++index;
-        while (index < lines.size())
-        {
-            const std::string layout_line = strip_comment(lines[index]);
-            if (layout_line.empty())
-            {
-                ++index;
-                continue;
-            }
-            if (starts_with(layout_line, "End AO shell layouts"))
-            {
-                return;
-            }
-
-            int atom_type = -1;
-            const auto layout =
-                parse_symrot_type_layout_line(layout_line, atom_type, file_path, "AO");
-            if (static_cast<int>(layouts_by_type.size()) <= atom_type)
-            {
-                layouts_by_type.resize(static_cast<std::size_t>(atom_type + 1));
-            }
-            layouts_by_type[static_cast<std::size_t>(atom_type)] = layout;
-            ++index;
-        }
-
-        throw std::runtime_error("AO shell-layout header in " + file_path
-                                 + " is missing `End AO shell layouts`");
-    }
-}
-
-void parse_symrot_abf_layout_header(
-    const std::vector<std::string>& lines,
-    const std::string& file_path,
-    std::vector<std::vector<SpeciesBasisLayout>>& candidates_by_type)
-{
-    candidates_by_type.clear();
-
-    std::size_t index = 0;
-    while (index < lines.size() && !starts_with(trim(lines[index]), "Star "))
-    {
-        const std::string cleaned = strip_comment(lines[index]);
-        if (cleaned.empty())
-        {
-            ++index;
-            continue;
-        }
-
-        if (!starts_with(cleaned, "ABF shell layouts:"))
-        {
-            ++index;
-            continue;
-        }
-
-        ++index;
-        while (index < lines.size())
-        {
-            const std::string layout_line = strip_comment(lines[index]);
-            if (layout_line.empty())
-            {
-                ++index;
-                continue;
-            }
-            if (starts_with(layout_line, "End ABF shell layouts"))
-            {
-                return;
-            }
-
-            int atom_type = -1;
-            const auto layout =
-                parse_symrot_type_layout_line(layout_line, atom_type, file_path, "ABF");
-            if (static_cast<int>(candidates_by_type.size()) <= atom_type)
-            {
-                candidates_by_type.resize(static_cast<std::size_t>(atom_type + 1));
-            }
-            append_unique_abf_layout(candidates_by_type[static_cast<std::size_t>(atom_type)],
-                                     layout);
-            ++index;
-        }
-
-        throw std::runtime_error("ABF shell-layout header in " + file_path
-                                 + " is missing `End ABF shell layouts`");
-    }
-}
-
-void parse_symrot_k_file(const std::string& file_path,
-                         std::vector<InputSymmetryKStar>& kstars,
-                         std::map<std::pair<int, int>, Vector3_Order<int>>* kspace_return_lattice = nullptr,
-                         std::map<std::pair<int, int>, Vector3_Order<int>>* kstar_member_fold_G = nullptr,
-                         const int nsym_space = -1,
-                         std::vector<SpeciesBasisLayout>* ao_layouts = nullptr,
-                         std::vector<std::vector<SpeciesBasisLayout>>* abf_layout_candidates = nullptr)
-{
-    std::ifstream ifs(file_path);
-    if (!ifs.good())
-    {
-        throw std::runtime_error("Failed to open " + file_path);
-    }
-
-    std::vector<std::string> lines;
-    std::string line;
-    while (std::getline(ifs, line))
-    {
-        lines.push_back(line);
-    }
-
-    if (ao_layouts != nullptr)
-    {
-        parse_symrot_ao_layout_header(lines, file_path, *ao_layouts);
-    }
-    if (abf_layout_candidates != nullptr)
-    {
-        parse_symrot_abf_layout_header(lines, file_path, *abf_layout_candidates);
-    }
-
-    std::size_t index = 0;
-    while (index < lines.size() && !starts_with(trim(lines[index]), "Star "))
-    {
-        ++index;
-    }
-
-    while (index < lines.size())
-    {
-        while (index < lines.size() && trim(lines[index]).empty())
-        {
-            ++index;
-        }
-        if (index >= lines.size())
-        {
-            break;
-        }
-        if (!starts_with(trim(lines[index]), "Star "))
-        {
-            throw std::runtime_error("Expected star header in " + file_path + ": " + lines[index]);
-        }
-
-        InputSymmetryKStar star;
-        const auto star_numbers = extract_integers(lines[index]);
-        if (star_numbers.empty())
-        {
-            throw std::runtime_error("Failed to parse star index in " + lines[index]);
-        }
-        star.star_index = static_cast<int>(star_numbers.front()) - 1;
-        const auto left = lines[index].find('(');
-        const auto right = lines[index].find(')', left == std::string::npos ? 0 : left);
-        if (left == std::string::npos || right == std::string::npos)
-        {
-            throw std::runtime_error("Failed to parse IBZ k-vector in " + lines[index]);
-        }
-        star.k_ibz = parse_vec3_double(lines[index].substr(left, right - left + 1), file_path);
-        ++index;
-
-        while (index < lines.size())
-        {
-            while (index < lines.size() && trim(lines[index]).empty())
-            {
-                ++index;
-            }
-            if (index >= lines.size() || starts_with(trim(lines[index]), "Star "))
-            {
-                break;
-            }
-            if (!starts_with_integer_token(lines[index]))
-            {
-                throw std::runtime_error("Expected symmetry index in " + file_path + ": " + lines[index]);
-            }
-
-            InputSymmetryKStarMember member;
-            member.isym = std::stoi(trim(lines[index]));
-            ++index;
-
-            while (index < lines.size() && trim(lines[index]).empty())
-            {
-                ++index;
-            }
-            if (index >= lines.size())
-            {
-                throw std::runtime_error("Unexpected end of file while reading k-star member");
-            }
-            member.k_bz = parse_vec3_double(lines[index], file_path);
-            ++index;
-
-            while (index < lines.size() && trim(lines[index]).empty())
-            {
-                ++index;
-            }
-            if (index < lines.size() && starts_with(trim(lines[index]), "fold_G"))
-            {
-                const auto fold_G = parse_vec3_int(lines[index], file_path);
-                if (kstar_member_fold_G != nullptr)
-                {
-                    (*kstar_member_fold_G)[{star.star_index,
-                                            static_cast<int>(star.members.size())}] =
-                        {fold_G[0], fold_G[1], fold_G[2]};
-                }
-                ++index;
-            }
-
-            while (index < lines.size())
-            {
-                while (index < lines.size() && trim(lines[index]).empty())
-                {
-                    ++index;
-                }
-                if (index >= lines.size() || starts_with(trim(lines[index]), "Star ")
-                    || starts_with_integer_token(lines[index]))
-                {
-                    break;
-                }
-                if (!starts_with(trim(lines[index]), "atom "))
-                {
-                    throw std::runtime_error("Expected atom header in " + file_path + ": " + lines[index]);
-                }
-
-                InputSymmetryKAtomRotation atom_rotation;
-                const auto values = extract_integers(lines[index]);
-                if (values.size() < 4)
-                {
-                    throw std::runtime_error("Failed to parse atom symmetry header: " + lines[index]);
-                }
-                atom_rotation.atom_from = static_cast<int>(values[0]) - 1;
-                atom_rotation.atom_to = static_cast<int>(values[1]) - 1;
-                atom_rotation.atom_type = static_cast<int>(values[2]) - 1;
-                atom_rotation.lmax = static_cast<int>(values[3]);
-                ++index;
-
-                while (index < lines.size() && trim(lines[index]).empty())
-                {
-                    ++index;
-                }
-                if (index < lines.size() && starts_with(trim(lines[index]), "return_lattice"))
-                {
-                    const auto return_lattice = parse_vec3_int(lines[index], file_path);
-                    if (kspace_return_lattice != nullptr)
-                    {
-                        int spatial_isym = member.isym;
-                        if (nsym_space > 0 && spatial_isym >= nsym_space)
-                        {
-                            spatial_isym -= nsym_space;
-                        }
-                        (*kspace_return_lattice)[{atom_rotation.atom_from, spatial_isym}] =
-                            {return_lattice[0], return_lattice[1], return_lattice[2]};
-                    }
-                    ++index;
-                }
-
-                for (int l = 0; l <= atom_rotation.lmax; ++l)
-                {
-                    const int nm = 2 * l + 1;
-                    atom_rotation.shell_rotations[l] =
-                        parse_shell_rotation(lines, index, nm, "symrot_k l=" + std::to_string(l));
-                }
-                member.atom_rotations.push_back(std::move(atom_rotation));
-            }
-            star.members.push_back(std::move(member));
-        }
-
-        kstars.push_back(std::move(star));
-    }
-}
-
-void infer_atom_to_type_from_kstars(const std::vector<InputSymmetryKStar>& kstars,
-                                    std::map<atom_t, int>& atom_to_type)
-{
-    atom_to_type.clear();
-    for (const auto& star : kstars)
-    {
-        for (const auto& member : star.members)
-        {
-            for (const auto& atom_rotation : member.atom_rotations)
-            {
-                for (const atom_t atom_index : {atom_rotation.atom_from, atom_rotation.atom_to})
-                {
-                    const auto inserted =
-                        atom_to_type.emplace(atom_index, atom_rotation.atom_type);
-                    if (!inserted.second && inserted.first->second != atom_rotation.atom_type)
-                    {
-                        throw std::runtime_error(
-                            "ABACUS symrot_k.txt contains inconsistent atom-type metadata");
-                    }
-                }
-            }
-        }
-    }
-}
-
-void load_symrot_k_file(const std::string& file_path, InputSymmetryContext& ctx)
-{
-    ctx.kstars.clear();
-    ctx.ao_type_layouts.clear();
-    ctx.kspace_return_lattice.clear();
-    ctx.kstar_member_fold_G.clear();
-    parse_symrot_k_file(file_path, ctx.kstars, &ctx.kspace_return_lattice,
-                        &ctx.kstar_member_fold_G,
-                        static_cast<int>(ctx.rspace_operations.size()),
-                        &ctx.ao_type_layouts, nullptr);
-    ctx.ao_shell_layout_available = !ctx.ao_type_layouts.empty();
-    infer_atom_to_type_from_kstars(ctx.kstars, ctx.atom_to_type);
 }
 
 std::string find_first_existing_file(const std::vector<std::string>& candidates)
@@ -1767,106 +1258,25 @@ bool load_input_symmetry_context(const std::string& dir_path,
                                  + input_symmetry_convention_name(convention));
     }
 
-    const auto candidate_dirs = build_input_symmetry_path_candidates(dir_path);
-    std::string sidecar_dir;
-    for (const auto& dir : candidate_dirs)
+    (void)dir_path;
+    if (ctx.rspace_operations.empty())
     {
-        if (file_exists(join_path(dir, "irreducible_sector.txt"))
-            || file_exists(join_path(dir, "symrot_k.txt"))
-            || file_exists(join_path(dir, "symrot_abf_k.txt")))
-        {
-            sidecar_dir = dir;
-            break;
-        }
-    }
-
-    const std::string irreducible_sector_file = join_path(sidecar_dir, "irreducible_sector.txt");
-    const std::string symrot_k_file = join_path(sidecar_dir, "symrot_k.txt");
-    const std::string symrot_abf_k_file = join_path(sidecar_dir, "symrot_abf_k.txt");
-
-    const bool has_irreducible_sector = !sidecar_dir.empty() && file_exists(irreducible_sector_file);
-    const bool has_symrot_k = !sidecar_dir.empty() && file_exists(symrot_k_file);
-    const bool has_symrot_abf_k = !sidecar_dir.empty() && file_exists(symrot_abf_k_file);
-    const bool use_generated_symmetry = !ctx.rspace_operations.empty();
-
-    if (!has_irreducible_sector && !has_symrot_k && !has_symrot_abf_k)
-    {
-        if (use_generated_symmetry)
-        {
-            ctx.convention = InputSymmetryConvention::ABACUS;
-            ctx.available = true;
-            return true;
-        }
         ctx.clear();
         return false;
     }
 
-    if (!has_irreducible_sector && !use_generated_symmetry)
-    {
-        std::ostringstream oss;
-        oss << "Incomplete ABACUS symmetry sidecar set near " << dir_path
-            << ". Expected irreducible_sector.txt.";
-        throw std::runtime_error(oss.str());
-    }
-
-    const bool preserve_lattice = ctx.lattice_available;
-    const Matrix3 preserved_lattice = ctx.lattice_vectors;
-    const Matrix3 preserved_reciprocal = ctx.reciprocal_vectors;
-    auto preserved_operations = std::move(ctx.rspace_operations);
-
-    ctx.clear();
     ctx.convention = InputSymmetryConvention::ABACUS;
-    if (preserve_lattice)
-    {
-        ctx.set_lattice(preserved_lattice, preserved_reciprocal);
-    }
-    ctx.rspace_operations = std::move(preserved_operations);
-    if (has_irreducible_sector)
-    {
-        load_irreducible_sector_file(irreducible_sector_file, ctx.irreducible_sector);
-    }
-    if (has_symrot_k && !use_generated_symmetry)
-    {
-        load_symrot_k_file(symrot_k_file, ctx);
-    }
-    if (has_symrot_abf_k && !use_generated_symmetry)
-    {
-        parse_symrot_k_file(symrot_abf_k_file, ctx.abf_kstars, nullptr, nullptr, -1, nullptr,
-                            &ctx.abf_type_layout_candidates);
-    }
-    ctx.abf_shell_layout_available = !ctx.abf_type_layout_candidates.empty();
-    if (ctx.has_ao_shell_layout())
-    {
-        if (ctx.abf_type_layout_candidates.size() != ctx.ao_type_layouts.size())
-        {
-            ctx.abf_shell_layout_available = false;
-        }
-        else
-        {
-            for (const auto& candidates : ctx.abf_type_layout_candidates)
-            {
-                if (candidates.empty())
-                {
-                    ctx.abf_shell_layout_available = false;
-                    break;
-                }
-            }
-        }
-    }
     ctx.available = true;
 
     if (log != nullptr)
     {
-        (*log) << "Detected ABACUS symmetry sidecar files\n"
+        (*log) << "Detected ABACUS symmetry operations from structure\n"
                << "| irreducible atom pairs : " << ctx.count_irreducible_pairs() << "\n"
                << "| irreducible {pair, R}  : " << ctx.count_irreducible_blocks() << "\n"
                << "| real-space operations  : " << ctx.rspace_operations.size() << "\n"
                << "| IBZ k-stars            : " << ctx.kstars.size() << "\n"
                << "| total star members     : " << ctx.count_kstar_members() << "\n"
-               << "| ABF k rotations        : "
-               << (ctx.abf_kstars.empty() ? std::string("fallback to AO/generated rotations")
-                                         : std::string("loaded from symrot_abf_k.txt"))
-               << "\n"
+               << "| k rotations            : generated from symmetry operations\n"
                << "| AO / ABF lmax          : " << ctx.ao_lmax << " / " << ctx.abf_lmax << "\n";
         if (ctx.has_ao_shell_layout())
         {
@@ -1896,13 +1306,14 @@ bool load_input_symmetry_context(const std::string& dir_path,
         }
         if (ctx.has_abf_shell_layout())
         {
-            (*log) << "| ABF shell layout       : loaded from symrot_abf_k.txt with "
+            (*log) << "| ABF shell layout       : generated/cached with "
                    << ctx.count_abf_layout_candidates() << " candidate type layouts\n";
         }
         else
         {
             (*log) << "| ABF shell layout       : unavailable\n";
         }
+        (*log) << "| legacy sidecars        : ignored (symrot_R/symrot_k/irreducible_sector)\n";
     }
     return true;
 }
@@ -2041,7 +1452,7 @@ int find_input_symmetry_kstar_index_for_kpoint(const std::vector<InputSymmetryKS
     int matched_index = -1;
 
     // Prefer the canonical IBZ representative when the incoming q-point already uses the same
-    // gauge as the ABACUS sidecar. This keeps the old fast path intact.
+    // gauge as the generated ABACUS k-star.
     for (std::size_t istar = 0; istar < kstars.size(); ++istar)
     {
         if (!nearly_same_kpoint(kstars[istar].k_ibz, k_point))
@@ -2128,7 +1539,7 @@ std::vector<InputSymmetryKStarGridMappingEntry> build_input_symmetry_kstar_grid_
 
     auto convert_fractional_to_internal = [&ctx](const Vector3_Order<double>& kfrac) {
         // Keep the same row-vector convention as `read_data.cpp::convert_fractional_kpoint_to_klist_units`
-        // so the sidecar-derived q/k keys are identical to the keys used in `klist` and `map_irk_ks`.
+        // so the symmetry-derived q/k keys match the keys used in `klist` and `map_irk_ks`.
         const auto& G = ctx.reciprocal_vectors;
         return Vector3_Order<double>{kfrac.x * G.e11 + kfrac.y * G.e21 + kfrac.z * G.e31,
                                      kfrac.x * G.e12 + kfrac.y * G.e22 + kfrac.z * G.e32,
@@ -2178,11 +1589,11 @@ std::vector<InputSymmetryKStarGridMappingEntry> build_input_symmetry_kstar_grid_
                 convert_fractional_to_internal(star.members[imember].k_bz);
             entry.member_q_bz_keys[imember] = member_q_internal;
 
-            // The ABACUS sidecar is the authoritative description of the k-star members,
+            // The generated ABACUS k-star is the authoritative description of the members,
             // including the exact representative chosen after symmetry and BZ folding.
             // LibRPA's `map_irk_ks` is only used here as an optional source of already
             // existing internal q keys. If a member cannot be matched back to that rebuilt
-            // list, keep the sidecar-derived key instead of rejecting the star.
+            // list, keep the symmetry-derived key instead of rejecting the star.
             if (full_q_keys == nullptr)
             {
                 continue;
@@ -2819,7 +2230,7 @@ ComplexMatrix rotate_input_symmetry_kspace_matrix(const InputSymmetryContext& ct
     // -------------------------------------------------------------------------
     // Rotate D(k_ibz) to D(k_bz) using the input-convention Bloch rotation matrix M.
     //
-    // Important: ABACUS prints the sidecar Bloch phase with k_bz, while the
+    // Important: ABACUS defines the Bloch phase with k_bz, while the
     // internal restore_dm() path uses k_ibz when constructing M(R, k). We must
     // therefore rebuild the internal matrix by multiplying the exported block
     // with exp[i (k_ibz - k_bz) · O], where O is the atom-resolved return
@@ -2918,7 +2329,7 @@ ComplexMatrix rotate_input_symmetry_kspace_matrix(const InputSymmetryContext& ct
     // Row-major equivalent:      D(k_bz)   = M^T · D(k_ibz) · M*
     //
     // M[S(I), I] is the internal ABACUS Bloch rotation block reconstructed from
-    // the sidecar shell rotation times the return-lattice phase correction.
+    // the generated shell rotation times the return-lattice phase correction.
     //
     // Block formulas (M_I denotes M[S(I), I]):
     //   non-TRS:  D_bz[I, J] = M_I^T  · D_ibz[S(I), S(J)]  · conj(M_J)
@@ -3107,7 +2518,7 @@ void build_input_symmetry_rspace_sector_stars(const InputSymmetryContext& ctx,
             if (star_members.empty())
             {
                 std::ostringstream oss;
-                oss << "Failed to build a real-space symmetry star from ABACUS sidecars for "
+                oss << "Failed to build a real-space symmetry star from ABACUS symmetry for "
                     << "irreducible pair (" << ir_pair.first << ", " << ir_pair.second << ")"
                     << " and R=(" << ir_R.x << ", " << ir_R.y << ", " << ir_R.z << ")";
                 for (const auto& line : candidate_debug)
