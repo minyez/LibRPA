@@ -100,6 +100,14 @@ General coding guidelines:
 
 Below are a few specific guidelines for LibRPA:
 
+- Library components (non-test code under `src/`) should remain host-agnostic:
+  they must not assume that input data follows the convention of any particular
+  host program. The host should communicate its conventions through the public
+  API, for example via `set_basis_convention`; LibRPA internals should use only the
+  parsed convention values when interpreting input data. The standalone driver follows
+  the same rule by reading conventions from input files and passing them through
+  the API. For user convenience, input files may still provide producer presets,
+  such as a program name, as shorthand for a known set of conventions.
 - When adding code in `src/core`, consider whether reusable pieces belong in
   utility components such as `src/math`, `src/mpi`, `src/io`, or `src/utils`;
   implement those pieces in the appropriate place and assemble the core
