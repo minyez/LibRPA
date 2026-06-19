@@ -1,5 +1,7 @@
 #include <cassert>
 #include <fstream>
+#include <sstream>
+#include <tuple>
 
 #include "../src/io/fs.h"
 #include "../src/io/global_io.h"
@@ -73,6 +75,14 @@ int main (int argc, char *argv[])
         },
     };
     assert(get_num_keys(nested_map) == 6);
+
+    std::ostringstream tuple_out;
+    tuple_out << std::make_tuple(1, 2, 3);
+    assert(tuple_out.str() == "{1,2,3}");
+
+    std::ostringstream empty_tuple_out;
+    empty_tuple_out << std::tuple<>{};
+    assert(empty_tuple_out.str() == "{}");
 
     return 0;
 }

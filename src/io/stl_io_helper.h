@@ -6,6 +6,7 @@
 #include <set>
 #include <vector>
 #include <utility>
+#include <tuple>
 
 namespace librpa_int {
 
@@ -20,6 +21,10 @@ std::ostream& operator<<(std::ostream& os, const std::vector<T> &vector_objs);
 //! Print a pair of objects
 template <typename T1, typename T2>
 std::ostream& operator<<(std::ostream& os, const std::pair<T1, T2> &pair_objs);
+
+//! Print a tuple of objects
+template <typename... T>
+std::ostream& operator<<(std::ostream& os, const std::tuple<T...> &tuple_objs);
 
 //! Print an array containing N objects
 template <typename T, size_t N>

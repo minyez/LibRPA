@@ -5,6 +5,7 @@
 #include <set>
 #include <vector>
 #include <utility>
+#include <tuple>
 
 namespace librpa_int {
 
@@ -45,6 +46,22 @@ template <typename T1, typename T2>
 std::ostream& operator<<(std::ostream& os, const std::pair<T1, T2> &pair_objs)
 {
     os << "{" << pair_objs.first << "," << pair_objs.second << "}";
+    return os;
+}
+
+//! Print a tuple of objects
+template <typename... T>
+std::ostream& operator<<(std::ostream& os, const std::tuple<T...> &tuple_objs)
+{
+    os << "{";
+    if constexpr (sizeof...(T) > 0)
+    {
+        std::apply([&os](const auto& first, const auto&... rest) {
+            os << first;
+            ((os << "," << rest), ...);
+        }, tuple_objs);
+    }
+    os << "}";
     return os;
 }
 
