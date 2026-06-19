@@ -157,31 +157,6 @@ Matrix3 operator *(const double &s, const Matrix3 &m)
 	               m.e31*s, m.e32*s, m.e33*s);
 }
 
-// whether m1==m2
-bool operator==(const Matrix3 &m1, const Matrix3 &m2)
-{
-	if(m1.e11 == m2.e11 &&
-	   m1.e12 == m2.e12 &&
-	   m1.e13 == m2.e13 &&
-	   m1.e21 == m2.e21 &&
-	   m1.e22 == m2.e22 &&
-	   m1.e23 == m2.e23 &&
-	   m1.e31 == m2.e31 &&
-	   m1.e32 == m2.e32 &&
-	   m1.e33 == m2.e33)
-	{
-		return true;
-	}
-	return false;
-}
-
-//whether m1 != m2
-bool operator!=(const Matrix3 &m1, const Matrix3 &m2)
-{
-    return !(m1 == m2); //!= defined in terms of operator ==
-}
-
-
 void Matrix3::print(int width, double eps) const
 {
     using std::cout;

@@ -53,9 +53,41 @@ Matrix3 operator *(double &s, const Matrix3 &m);		//s*m
 template<typename T> Vector3<double> operator *(const Matrix3 &m, const Vector3<T> &u);	//m*u				// Peize Lin change Vector3<T> 2017-01-10
 template<typename T> Vector3<double> operator *(const Vector3<T> &u, const Matrix3 &m);	//u*m				// Peize Lin change Vector3<T> 2017-01-10
 
-bool operator ==(const Matrix3 &m1, const Matrix3 &m2); //whether m1 == m2
-bool operator !=(const Matrix3 &m1, const Matrix3 &m2); //whethor m1 != m2
+inline bool is_same_matrix(const Matrix3 &m1, const Matrix3 &m2, double tol = 1e-10)
+{
+	return std::abs(m1.e11 - m2.e11) < tol &&
+		std::abs(m1.e12 - m2.e12) < tol &&
+		std::abs(m1.e13 - m2.e13) < tol &&
+		std::abs(m1.e21 - m2.e21) < tol &&
+		std::abs(m1.e22 - m2.e22) < tol &&
+		std::abs(m1.e23 - m2.e23) < tol &&
+		std::abs(m1.e31 - m2.e31) < tol &&
+		std::abs(m1.e32 - m2.e32) < tol &&
+		std::abs(m1.e33 - m2.e33) < tol;
+}
 
+//whether m1 == m2
+inline bool operator ==(const Matrix3 &m1, const Matrix3 &m2)
+{
+	if(m1.e11 == m2.e11 &&
+	   m1.e12 == m2.e12 &&
+	   m1.e13 == m2.e13 &&
+	   m1.e21 == m2.e21 &&
+	   m1.e22 == m2.e22 &&
+	   m1.e23 == m2.e23 &&
+	   m1.e31 == m2.e31 &&
+	   m1.e32 == m2.e32 &&
+	   m1.e33 == m2.e33)
+	{
+		return true;
+	}
+	return false;
+}
+
+inline bool operator!=(const Matrix3 &m1, const Matrix3 &m2)
+{
+	return !(m1 == m2);
+}  // whethor m1 != m2
 
 std::ostream & operator <<( std::ostream &os, const Matrix3 &m);
 

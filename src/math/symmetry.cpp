@@ -229,6 +229,15 @@ std::vector<AtomSymMapping> build_fractional_atom_to_inequivalent_symmetry_mappi
 
 } // namespace
 
+const SpaceGroupSymOp SpaceGroupSymOp::IDENTITY{
+    {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0}, {0.0, 0.0, 0.0}, true};
+
+const SpaceGroupSymOp SpaceGroupSymOp::INVERSE{
+    {-1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, -1.0}, {0.0, 0.0, 0.0}, true};
+
+const SpaceGroupSymOp SpaceGroupSymOp::C41_Z{
+    {0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0}, {0.0, 0.0, 0.0}, true};
+
 std::vector<AtomSymMapping> build_atom_to_inequivalent_symmetry_mapping(
     const std::vector<Vector3_Order<double>>& atom_positions_frac,
     const Matrix3& lattice_vectors,

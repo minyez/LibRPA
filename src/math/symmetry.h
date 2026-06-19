@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <utility>
 #include <vector>
+#include <map>
 
 #include "matrix3.h"
 #include "vector3_order.h"
@@ -30,13 +31,25 @@ namespace librpa_int
  */
 struct SpaceGroupSymOp
 {
-    Matrix3 rotation{0.0, 0.0, 0.0,
-                     0.0, 0.0, 0.0,
-                     0.0, 0.0, 0.0};
+    static const SpaceGroupSymOp IDENTITY;
+    static const SpaceGroupSymOp INVERSE;
+    static const SpaceGroupSymOp C41_Z;
+
+    // Default to identity operation
+    Matrix3 rotation{1.0, 0.0, 0.0,
+                     0.0, 1.0, 0.0,
+                     0.0, 0.0, 1.0};
     Vector3_Order<double> translation{0.0, 0.0, 0.0};
     //! Whether to treat lattice vectors and fractional coordinates as row vectors.
     bool use_row_convention = true;
 };
+
+inline bool operator==(const SpaceGroupSymOp &op1, const SpaceGroupSymOp &op2)
+{
+    return (op1.use_row_convention == op2.use_row_convention) &&
+           is_same_matrix(op1.rotation, op2.rotation, 1e-5) &&
+           (op1.translation == op2.translation);
+}
 
 /*!
  * @brief Container for a set of space-group symmetry operations.
@@ -68,6 +81,21 @@ struct SpaceGroupSymOps
     auto end() { return operations.end(); }
     auto end() const { return operations.end(); }
     auto cend() const { return operations.cend(); }
+};
+
+/*!
+ * @brief Atom mapping induced by one space-group operation.
+ *
+ * For the atom at vector index `atom`, applying the operation maps it to
+ * `atom_map[atom] + return_lattice[atom]` in fractional coordinates.
+ */
+template <typename AtomIndex>
+struct SpaceGroupAtomMapping
+{
+    using atom_index_type = AtomIndex;
+
+    std::vector<atom_index_type> atom_map;
+    std::vector<Vector3_Order<int>> return_lattice;
 };
 
 /*!
@@ -249,6 +277,66 @@ std::vector<KPointStar> build_kpoint_stars(
     }
     return build_kpoint_stars(
         full_kpoints_frac, base_operations, preferred_representative_kpoints, tol);
+}
+
+template <typename AtomIndex, typename coord_t, typename AtomType>
+SpaceGroupAtomMapping<AtomIndex> get_space_group_atom_mapping(
+    const SpaceGroupSymOp &op,
+    const std::map<AtomIndex, coord_t>& coord_frac,
+    const std::map<AtomIndex, AtomType> &atom_to_type, double tol = 1e-5)
+{
+    if (coord_frac.size() != atom_to_type.size())
+    {
+        throw std::runtime_error("Fractional coordinates and atom mapping have inconsistent sizes");
+    }
+
+    SpaceGroupAtomMapping<AtomIndex> info;
+    info.atom_map.resize(coord_frac.size(), static_cast<AtomIndex>(-1));
+    info.return_lattice.resize(coord_frac.size(), {0, 0, 0});
+
+    {
+        for (AtomIndex atom_from = 0; atom_from < coord_frac.size(); ++atom_from)
+        {
+            const auto& coord_from = coord_frac.at(atom_from);
+            const Vector3_Order<double> coord_from_vec =
+                restrict_fractional_coordinate(coord_from, tol);
+            // Keep the unwrapped rotated position so that the integer return lattice is preserved
+            // exactly as in the ABACUS irreducible-sector construction.
+            const Vector3_Order<double> transformed =
+                apply_space_group_symmetry_operation(op, coord_from_vec);
+
+            AtomIndex matched_atom;
+            bool matched = false;
+            Vector3_Order<int> matched_return{0, 0, 0};
+            for (AtomIndex atom_to = 0; atom_to < coord_frac.size(); ++atom_to)
+            {
+                if (atom_to_type.at(atom_from) != atom_to_type.at(atom_to))
+                {
+                    continue;
+                }
+                const auto& coord_to = coord_frac.at(atom_to);
+                const Vector3_Order<double> coord_to_vec =
+                    restrict_fractional_coordinate(coord_to, tol);
+                const Vector3_Order<double> diff = transformed - coord_to_vec;
+                if (!nearly_integer_vector(diff, tol))
+                {
+                    continue;
+                }
+                matched = true;
+                matched_atom = atom_to;
+                matched_return = round_to_integer_vector(diff);
+            }
+
+            if (!matched)
+            {
+                throw std::runtime_error("Failed to match real-space symmetry atom mapping");
+            }
+
+            info.atom_map[atom_from] = matched_atom;
+            info.return_lattice[atom_from] = matched_return;
+        }
+    }
+    return info;
 }
 
 } // namespace librpa_int

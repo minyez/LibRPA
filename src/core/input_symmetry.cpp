@@ -8,6 +8,7 @@
 #include "../io/fs.h"
 #include "../math/rsh.h"
 #include "../utils/constants.h"
+#include "../io/stl_io_helper.h"
 
 #include <algorithm>
 #include <cctype>
@@ -19,6 +20,7 @@
 #include <stdexcept>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 namespace librpa_int
 {
@@ -123,81 +125,6 @@ void set_atom_block(ComplexMatrix& matrix,
     }
 }
 
-struct InputSymmetryRSpaceOperationInfo
-{
-    std::vector<atom_t> atom_map;
-    std::vector<Vector3_Order<int>> return_lattice;
-};
-
-std::vector<InputSymmetryRSpaceOperationInfo> build_rspace_operation_info(
-    const SymmetryContext& ctx,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac)
-{
-    if (coord_frac.size() != ctx.atom_to_type.size())
-    {
-        throw std::runtime_error("Fractional coordinates and ABACUS atom mapping have inconsistent sizes");
-    }
-
-    std::vector<InputSymmetryRSpaceOperationInfo> infos(ctx.rspace_operations.size());
-    for (auto& info : infos)
-    {
-        info.atom_map.resize(coord_frac.size(), static_cast<atom_t>(-1));
-        info.return_lattice.resize(coord_frac.size(), {0, 0, 0});
-    }
-
-    for (std::size_t isym = 0; isym < ctx.rspace_operations.size(); ++isym)
-    {
-        const auto& op = ctx.rspace_operations[isym];
-        const double atom_map_tol = kInputSymmetryRSpaceAtomMapTol;
-        for (atom_t atom_from = 0; atom_from < coord_frac.size(); ++atom_from)
-        {
-            const auto& coord_from = coord_frac.at(atom_from);
-            const Vector3_Order<double> coord_from_vec =
-                restrict_fractional_coordinate({coord_from[0], coord_from[1], coord_from[2]},
-                                               atom_map_tol);
-            // Keep the unwrapped rotated position so that the integer return lattice is preserved
-            // exactly as in the ABACUS irreducible-sector construction.
-            const Vector3_Order<double> transformed =
-                apply_space_group_symmetry_operation(op, coord_from_vec);
-
-            atom_t matched_atom = static_cast<atom_t>(-1);
-            Vector3_Order<int> matched_return{0, 0, 0};
-            for (atom_t atom_to = 0; atom_to < coord_frac.size(); ++atom_to)
-            {
-                if (ctx.atom_to_type.at(atom_from) != ctx.atom_to_type.at(atom_to))
-                {
-                    continue;
-                }
-                const auto& coord_to = coord_frac.at(atom_to);
-                const Vector3_Order<double> coord_to_vec =
-                    restrict_fractional_coordinate({coord_to[0], coord_to[1], coord_to[2]},
-                                                   atom_map_tol);
-                const Vector3_Order<double> diff =
-                    transformed - coord_to_vec;
-                if (!nearly_integer_vector(diff, atom_map_tol))
-                {
-                    continue;
-                }
-                if (matched_atom != static_cast<atom_t>(-1))
-                {
-                    throw std::runtime_error("ABACUS real-space symmetry atom mapping is ambiguous");
-                }
-                matched_atom = atom_to;
-                matched_return = round_to_integer_vector(diff);
-            }
-
-            if (matched_atom == static_cast<atom_t>(-1))
-            {
-                throw std::runtime_error("Failed to match ABACUS real-space symmetry atom mapping");
-            }
-
-            infos[isym].atom_map[atom_from] = matched_atom;
-            infos[isym].return_lattice[atom_from] = matched_return;
-        }
-    }
-    return infos;
-}
-
 std::vector<int> build_rspace_inverse_map(
     const SymmetryContext& ctx,
     const std::map<atom_t, std::array<double, 3>>& coord_frac)
@@ -222,7 +149,7 @@ std::vector<int> build_rspace_inverse_map(
         }
         if (inverse_map[isym] < 0)
         {
-            throw std::runtime_error("Failed to build inverse symmetry-operation map for ABACUS symmetry");
+            throw std::runtime_error("Failed to build inverse symmetry-operation map for symmetry");
         }
     }
     return inverse_map;
@@ -230,7 +157,7 @@ std::vector<int> build_rspace_inverse_map(
 
 Vector3_Order<int> rotate_rspace_vector(
     const Vector3_Order<int>& R,
-    const InputSymmetryRSpaceOperationInfo& op_info,
+    const SpaceGroupAtomMapping<atom_t>& op_info,
     const InputSymmetryOperation& op,
     const atom_t atom_from_i,
     const atom_t atom_from_j)
@@ -247,7 +174,7 @@ Vector3_Order<int> rotate_rspace_vector(
                                 static_cast<double>(op_info.return_lattice[atom_from_i].z));
     if (!nearly_integer_vector(rotated_double, kInputSymmetryCoordTol))
     {
-        throw std::runtime_error("ABACUS real-space symmetry generated a non-integer lattice vector");
+        throw std::runtime_error("Real-space symmetry generated a non-integer lattice vector");
     }
     // Keep the raw rotated lattice vector returned by the ABACUS formula.
     // The caller is responsible for filtering against the explicit R list.
@@ -531,7 +458,7 @@ const SpeciesBasisLayout& SymmetryContext::get_ao_type_layout(const int atom_typ
 {
     if (atom_type < 0 || atom_type >= static_cast<int>(ao_type_layouts.size()))
     {
-        throw std::out_of_range("ABACUS atom type is out of range in AO shell layout");
+        throw std::out_of_range("Atom type is out of range in AO shell layout");
     }
     return ao_type_layouts[static_cast<std::size_t>(atom_type)];
 }
@@ -541,13 +468,13 @@ const SpeciesBasisLayout& SymmetryContext::find_abf_type_layout(const int atom_t
 {
     if (atom_type < 0 || atom_type >= static_cast<int>(abf_type_layout_candidates.size()))
     {
-        throw std::out_of_range("ABACUS atom type is out of range in ABF shell layout");
+        throw std::out_of_range("Atom type is out of range in ABF shell layout");
     }
 
     const auto& candidates = abf_type_layout_candidates[static_cast<std::size_t>(atom_type)];
     if (candidates.empty())
     {
-        throw std::runtime_error("ABACUS ABF shell layout is unavailable for atom type "
+        throw std::runtime_error("ABF shell layout is unavailable for atom type "
                                  + std::to_string(atom_type));
     }
 
@@ -717,7 +644,7 @@ ComplexMatrix build_input_symmetry_abf_rotation_matrix(
             if (l != 0 && !ctx.lattice_available)
             {
                 throw std::runtime_error(
-                    "ABACUS shell rotation fallback requires lattice vectors from the structure input");
+                    "Shell rotation fallback requires lattice vectors from the structure input");
             }
             SpaceGroupSymOp operation;
             operation.rotation = direct_rotation;
@@ -850,12 +777,12 @@ std::vector<InputSymmetryKStarGridMappingEntry> build_input_symmetry_kstar_grid_
     if (ctx.kstars.size() != kfrac_list.size())
     {
         throw std::runtime_error(
-            "ABACUS k-star metadata does not match the loaded LibRPA IBZ k-point count");
+            "k-star metadata does not match the loaded LibRPA IBZ k-point count");
     }
     if (!ctx.lattice_available)
     {
         throw std::runtime_error(
-            "ABACUS k-star grid mapping requires reciprocal lattice vectors from the structure input");
+            "k-star grid mapping requires reciprocal lattice vectors from the structure input");
     }
 
     auto convert_fractional_to_internal = [&ctx](const Vector3_Order<double>& kfrac) {
@@ -930,7 +857,7 @@ std::vector<InputSymmetryKStarGridMappingEntry> build_input_symmetry_kstar_grid_
                 if (matched_full_index >= 0)
                 {
                     throw std::runtime_error(
-                        "ABACUS star member to LibRPA full-q matching is ambiguous");
+                        "Star member to LibRPA full-q matching is ambiguous");
                 }
                 matched_full_index = static_cast<int>(ifull);
             }
@@ -949,7 +876,7 @@ std::vector<InputSymmetryKStarGridMappingEntry> build_input_symmetry_kstar_grid_
         if (!matched_stars[istar])
         {
             throw std::runtime_error(
-                "Not every ABACUS k-star could be matched to the loaded LibRPA IBZ grid");
+                "Not every k-star could be matched to the loaded LibRPA IBZ grid");
         }
     }
 
@@ -1000,31 +927,25 @@ Vector3_Order<int> build_input_symmetry_kspace_return_lattice(
     const auto coord_to_iter = coord_frac_map.find(static_cast<atom_t>(atom_rotation.atom_to));
     if (coord_from_iter == coord_frac_map.end() || coord_to_iter == coord_frac_map.end())
     {
-        throw std::runtime_error("Missing fractional coordinate for ABACUS k-space phase correction");
+        throw std::runtime_error("Missing fractional coordinate for k-space phase correction");
     }
 
     if (spatial_isym < 0 || spatial_isym >= static_cast<int>(ctx.rspace_operations.size()))
     {
-        throw std::runtime_error("ABACUS k-space phase correction uses an invalid symmetry index");
+        throw std::runtime_error("K-space phase correction uses an invalid symmetry index");
     }
 
     const auto& op = ctx.rspace_operations[static_cast<std::size_t>(spatial_isym)];
     const Vector3_Order<double> coord_from =
-        restrict_fractional_coordinate({coord_from_iter->second[0],
-                                        coord_from_iter->second[1],
-                                        coord_from_iter->second[2]},
-                                       kInputSymmetryCoordTol);
+        restrict_fractional_coordinate(coord_from_iter->second, kInputSymmetryCoordTol);
     const Vector3_Order<double> coord_to =
-        restrict_fractional_coordinate({coord_to_iter->second[0],
-                                        coord_to_iter->second[1],
-                                        coord_to_iter->second[2]},
-                                       kInputSymmetryCoordTol);
+        restrict_fractional_coordinate(coord_to_iter->second, kInputSymmetryCoordTol);
     const Vector3_Order<double> transformed =
         apply_space_group_symmetry_operation(op, coord_from);
     const Vector3_Order<double> return_lattice = transformed - coord_to;
     if (!nearly_integer_vector(return_lattice, kInputSymmetryCoordTol))
     {
-        throw std::runtime_error("ABACUS k-space phase correction produced a non-integer return lattice");
+        throw std::runtime_error("K-space phase correction produced a non-integer return lattice");
     }
     return round_to_integer_vector(return_lattice);
 }
@@ -1041,7 +962,7 @@ Vector3_Order<int> build_input_symmetry_equivalent_kpoint_shift(
     if (!nearly_integer_vector(k_shift, kInputSymmetryCoordTol))
     {
         throw std::runtime_error(
-            "ABACUS symmetry restore encountered non-equivalent full-k representatives");
+            "Symmetry restore encountered non-equivalent full-k representatives");
     }
     return round_to_integer_vector(k_shift);
 }
@@ -1096,14 +1017,14 @@ std::set<std::pair<atom_t, atom_t>> build_input_symmetry_upper_atom_pair_closure
                     || static_cast<std::size_t>(atom_pair.second) >= rotations_by_from.size())
                 {
                     throw std::runtime_error(
-                        "ABACUS atom-pair closure requested an atom outside the loaded star");
+                        "Atom-pair closure requested an atom outside the loaded star");
                 }
                 const auto* rot_i = rotations_by_from[static_cast<std::size_t>(atom_pair.first)];
                 const auto* rot_j = rotations_by_from[static_cast<std::size_t>(atom_pair.second)];
                 if (rot_i == nullptr || rot_j == nullptr)
                 {
                     throw std::runtime_error(
-                        "ABACUS atom-pair closure found an incomplete atom permutation");
+                        "Atom-pair closure found an incomplete atom permutation");
                 }
                 const auto source_pair = canonicalize_input_symmetry_upper_atom_pair(
                     static_cast<atom_t>(rot_i->atom_to),
@@ -1129,14 +1050,11 @@ std::complex<double> build_input_symmetry_reciprocal_gauge_phase(
     const auto coord_iter = coord_frac_map.find(atom);
     if (coord_iter == coord_frac_map.end())
     {
-        throw std::runtime_error("Missing fractional coordinate for ABACUS reciprocal-gauge phase");
+        throw std::runtime_error("Missing fractional coordinate for reciprocal-gauge phase");
     }
 
     const Vector3_Order<double> tau =
-        restrict_fractional_coordinate({coord_iter->second[0],
-                                        coord_iter->second[1],
-                                        coord_iter->second[2]},
-                                       kInputSymmetryCoordTol);
+        restrict_fractional_coordinate(coord_iter->second, kInputSymmetryCoordTol);
     const double phase_arg =
         TWO_PI * (static_cast<double>(k_shift.x) * tau.x
                   + static_cast<double>(k_shift.y) * tau.y
@@ -1159,7 +1077,7 @@ input_symmetry_atom_block_matrix_map_t rotate_input_symmetry_abf_kspace_operator
 {
     if (!ctx.has_abf_shell_layout())
     {
-        throw std::runtime_error("ABF shell layout is required before rotating ABACUS k-space operators");
+        throw std::runtime_error("ABF shell layout is required before rotating k-space operators");
     }
 
     auto get_block_or_hermitian = [&blocks_ibz](const atom_t atom_i, const atom_t atom_j) {
@@ -1183,7 +1101,7 @@ input_symmetry_atom_block_matrix_map_t rotate_input_symmetry_abf_kspace_operator
             }
         }
 
-        throw std::runtime_error("Missing ABF atom block while rotating the ABACUS q-space operator");
+        throw std::runtime_error("Missing ABF atom block while rotating the q-space operator");
     };
     // The identity member at the IBZ representative is an exact no-op as long as no
     // target-representative gauge shift is requested. Returning the original/hermitian-completed
@@ -1217,7 +1135,7 @@ input_symmetry_atom_block_matrix_map_t rotate_input_symmetry_abf_kspace_operator
         if (atom_rotation.atom_from < 0 || atom_rotation.atom_from >= static_cast<int>(atom_nabf.size())
             || atom_rotation.atom_to < 0 || atom_rotation.atom_to >= static_cast<int>(atom_nabf.size()))
         {
-            throw std::runtime_error("ABACUS k-space atom mapping is out of range for ABF rotation");
+            throw std::runtime_error("K-space atom mapping is out of range for ABF rotation");
         }
         rotations_by_from[static_cast<std::size_t>(atom_rotation.atom_from)] = &atom_rotation;
         visited_to[static_cast<std::size_t>(atom_rotation.atom_to)] = true;
@@ -1226,11 +1144,11 @@ input_symmetry_atom_block_matrix_map_t rotate_input_symmetry_abf_kspace_operator
     {
         if (rotations_by_from[atom] == nullptr)
         {
-            throw std::runtime_error("ABACUS k-space ABF rotations do not cover every atom");
+            throw std::runtime_error("K-space ABF rotations do not cover every atom");
         }
         if (!visited_to[atom])
         {
-            throw std::runtime_error("ABACUS k-space ABF atom mapping is not a full permutation");
+            throw std::runtime_error("K-space ABF atom mapping is not a full permutation");
         }
     }
 
@@ -1238,7 +1156,7 @@ input_symmetry_atom_block_matrix_map_t rotate_input_symmetry_abf_kspace_operator
     const int spatial_isym = use_time_reversal ? member.isym - nsym_space : member.isym;
     if (spatial_isym < 0 || spatial_isym >= nsym_space)
     {
-        throw std::runtime_error("ABACUS q-space operator rotation uses an invalid symmetry index");
+        throw std::runtime_error("q-space operator rotation uses an invalid symmetry index");
     }
     const auto& direct_rotation =
         ctx.rspace_operations.at(static_cast<std::size_t>(spatial_isym)).rotation;
@@ -1301,7 +1219,7 @@ input_symmetry_atom_block_matrix_map_t rotate_input_symmetry_abf_kspace_operator
             catch (const std::exception&)
             {
                 std::ostringstream oss;
-                oss << "Missing ABF atom block while rotating the ABACUS q-space operator: "
+                oss << "Missing ABF atom block while rotating the q-space operator: "
                     << "target_pair=(" << target_i << "," << target_j << "), "
                     << "source_pair=(" << source_i << "," << source_j << "), "
                     << "member_isym=" << member.isym << ", "
@@ -1371,7 +1289,7 @@ input_symmetry_atom_block_matrix_map_t symmetrize_input_symmetry_abf_ibz_kspace_
 {
     if (!ctx.has_abf_shell_layout())
     {
-        throw std::runtime_error("ABF shell layout is required before symmetrizing ABACUS q-space operators");
+        throw std::runtime_error("ABF shell layout is required before symmetrizing q-space operators");
     }
 
     std::set<std::pair<atom_t, atom_t>> inferred_target_pairs;
@@ -1462,7 +1380,7 @@ ComplexMatrix rotate_input_symmetry_abf_kspace_operator_matrix(
 {
     if (!ctx.has_abf_shell_layout())
     {
-        throw std::runtime_error("ABF shell layout is required before rotating ABACUS k-space operators");
+        throw std::runtime_error("ABF shell layout is required before rotating k-space operators");
     }
 
     const auto offsets = build_atom_offsets(atom_nabf);
@@ -1508,7 +1426,7 @@ ComplexMatrix symmetrize_input_symmetry_abf_ibz_kspace_operator_matrix(
 {
     if (!ctx.has_abf_shell_layout())
     {
-        throw std::runtime_error("ABF shell layout is required before symmetrizing ABACUS q-space operators");
+        throw std::runtime_error("ABF shell layout is required before symmetrizing q-space operators");
     }
 
     const auto offsets = build_atom_offsets(atom_nabf);
@@ -1566,7 +1484,7 @@ ComplexMatrix rotate_input_symmetry_kspace_matrix(const SymmetryContext& ctx,
     // -------------------------------------------------------------------------
     if (!ctx.has_ao_shell_layout())
     {
-        throw std::runtime_error("AO shell layout is required before rotating ABACUS k-space matrices");
+        throw std::runtime_error("AO shell layout is required before rotating k-space matrices");
     }
 
     const auto offsets = build_atom_offsets(atom_nw);
@@ -1584,7 +1502,7 @@ ComplexMatrix rotate_input_symmetry_kspace_matrix(const SymmetryContext& ctx,
         if (atom_rotation.atom_from < 0 || atom_rotation.atom_from >= static_cast<int>(atom_nw.size())
             || atom_rotation.atom_to < 0 || atom_rotation.atom_to >= static_cast<int>(atom_nw.size()))
         {
-            throw std::runtime_error("ABACUS k-space atom mapping is out of range");
+            throw std::runtime_error("k-space atom mapping is out of range");
         }
         rotations_by_from[static_cast<std::size_t>(atom_rotation.atom_from)] = &atom_rotation;
         visited_to[static_cast<std::size_t>(atom_rotation.atom_to)] = true;
@@ -1594,11 +1512,11 @@ ComplexMatrix rotate_input_symmetry_kspace_matrix(const SymmetryContext& ctx,
     {
         if (rotations_by_from[atom] == nullptr)
         {
-            throw std::runtime_error("ABACUS k-space atom rotations do not cover every atom");
+            throw std::runtime_error("k-space atom rotations do not cover every atom");
         }
         if (!visited_to[atom])
         {
-            throw std::runtime_error("ABACUS k-space atom mapping is not a full permutation");
+            throw std::runtime_error("k-space atom mapping is not a full permutation");
         }
     }
 
@@ -1609,7 +1527,7 @@ ComplexMatrix rotate_input_symmetry_kspace_matrix(const SymmetryContext& ctx,
     const int spatial_isym = use_time_reversal ? member.isym - nsym_space : member.isym;
     if (spatial_isym < 0 || spatial_isym >= nsym_space)
     {
-        throw std::runtime_error("ABACUS AO k-space rotation uses an invalid symmetry index");
+        throw std::runtime_error("AO k-space rotation uses an invalid symmetry index");
     }
     const Vector3_Order<double> delta_k{k_ibz.x - member.k_bz.x,
                                         k_ibz.y - member.k_bz.y,
@@ -1715,7 +1633,12 @@ input_symmetry_irreducible_sector_t build_input_symmetry_rspace_irreducible_sect
 
     const auto& rspace_coord_frac =
         (ctx.input_coord_frac.size() == ctx.atom_to_type.size()) ? ctx.input_coord_frac : coord_frac;
-    const auto op_infos = build_rspace_operation_info(ctx, rspace_coord_frac);
+    std::vector<SpaceGroupAtomMapping<atom_t>> op_infos;
+    op_infos.reserve(ctx.rspace_operations.size());
+    for (const auto &op: ctx.rspace_operations)
+    {
+        op_infos.push_back(get_space_group_atom_mapping(op, rspace_coord_frac, ctx.atom_to_type, kInputSymmetryRSpaceAtomMapTol));
+    }
     const std::set<Vector3_Order<int>> Rset(Rlist.begin(), Rlist.end());
 
     std::set<InputSymmetryRSpaceKey> uncovered;
@@ -1729,6 +1652,8 @@ input_symmetry_irreducible_sector_t build_input_symmetry_rspace_irreducible_sect
             }
         }
     }
+
+    std::cout << "uncovered\n" << uncovered << std::endl;
 
     input_symmetry_irreducible_sector_t irreducible_sector;
     while (!uncovered.empty())
@@ -1785,7 +1710,12 @@ void build_input_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
 
     const auto& rspace_coord_frac =
         (ctx.input_coord_frac.size() == ctx.atom_to_type.size()) ? ctx.input_coord_frac : coord_frac;
-    const auto op_infos = build_rspace_operation_info(ctx, rspace_coord_frac);
+    std::vector<SpaceGroupAtomMapping<atom_t>> op_infos;
+    op_infos.reserve(ctx.rspace_operations.size());
+    for (const auto &op: ctx.rspace_operations)
+    {
+        op_infos.push_back(get_space_group_atom_mapping(op, rspace_coord_frac, ctx.atom_to_type, kInputSymmetryRSpaceAtomMapTol));
+    }
     const auto inverse_map = build_rspace_inverse_map(ctx, rspace_coord_frac);
 
     sector_stars.clear();

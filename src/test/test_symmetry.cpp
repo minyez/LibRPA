@@ -2,6 +2,7 @@
 
 #include "testutils.h"
 #include <cassert>
+#include <iostream>
 
 using namespace librpa_int;
 
@@ -245,6 +246,51 @@ static void test_kpoint_stars_from_full_grid()
     assert(hinted_stars[1].sym_mappings[1].fold_G == Vector3_Order<int>(0, 0, 0));
 }
 
+static void test_get_space_group_atom_mapping_mgo()
+{
+    // MgO FCC
+    const std::map<size_t, Vector3_Order<double>> coord_frac{{0, {0.0, 0.0, 0.0}},
+                                                             {1, {0.5, 0.5, 0.5}}};
+    const std::map<size_t, int> atom_to_type{{0, 0}, {1, 1}};
+    const auto map_iden = get_space_group_atom_mapping(SpaceGroupSymOp::IDENTITY, coord_frac, atom_to_type);
+    assert(map_iden.atom_map[0] == 0);
+    assert(map_iden.atom_map[1] == 1);
+    {
+        const auto map_inv = get_space_group_atom_mapping(SpaceGroupSymOp::INVERSE, coord_frac, atom_to_type);
+        assert(map_inv.atom_map[0] == 0);
+        assert(map_inv.atom_map[1] == 1);
+        const auto return_lattice = Vector3_Order<int>{-1, -1, -1};
+        std::cout << "map_inv.return_lattice[1] " << map_inv.return_lattice[1] << std::endl;
+        assert(map_inv.return_lattice[1] == return_lattice);
+    }
+    {
+        const auto map_c41z = get_space_group_atom_mapping(SpaceGroupSymOp::C41_Z, coord_frac, atom_to_type);
+        assert(map_c41z.atom_map[0] == 0);
+        assert(map_c41z.atom_map[1] == 1);
+        const auto return_lattice = Vector3_Order<int>{-1, 0, 0};
+        std::cout << "map_c41z.return_lattice[1] " << map_c41z.return_lattice[1] << std::endl;
+        assert(map_c41z.return_lattice[1] == return_lattice);
+    }
+    {
+        SpaceGroupSymOp op;
+        op.rotation = {1, 0, 0, 0, 0, -1, 0, 1, 0};
+        op.use_row_convention = true;
+        const auto map_row = get_space_group_atom_mapping(op, coord_frac, atom_to_type);
+        auto return_lattice = Vector3_Order<int>{0, 0, -1};
+        std::cout << "map_row.return_lattice[1] " << map_row.return_lattice[1] << std::endl;
+        assert(map_row.atom_map[0] == 0);
+        assert(map_row.atom_map[1] == 1);
+        assert(map_row.return_lattice[1] == return_lattice);
+        op.use_row_convention = false;
+        const auto map_col = get_space_group_atom_mapping(op, coord_frac, atom_to_type);
+        std::cout << "map_col.return_lattice[1] " << map_col.return_lattice[1] << std::endl;
+        return_lattice = Vector3_Order<int>{0, -1, 0};
+        assert(map_col.atom_map[0] == 0);
+        assert(map_col.atom_map[1] == 1);
+        assert(map_col.return_lattice[1] == return_lattice);
+    }
+}
+
 int main()
 {
     test_rotation();
@@ -255,5 +301,6 @@ int main()
     test_symmetry_mapping_keeps_operations_fractional();
     test_kpoint_rotation_and_target_fold();
     test_kpoint_stars_from_full_grid();
+    test_get_space_group_atom_mapping_mgo();
     return 0;
 }
