@@ -80,13 +80,14 @@ struct SpeciesBasisLayout
     std::string label;
     std::vector<int> l_shells;
     std::map<int, std::vector<int>> shell_indices;
+    std::vector<int> shell_offsets;
     std::map<int, int> shell_counts;
     int n_shell = 0;
     int n_ao = 0;
     int max_l = 0;
 
     SpeciesBasisLayout()
-        : label(), l_shells(), shell_indices(), shell_counts(), n_shell(0), n_ao(0), max_l(0) {};
+        : label(), l_shells(), shell_indices(), shell_offsets(), shell_counts(), n_shell(0), n_ao(0), max_l(0) {};
     SpeciesBasisLayout(const std::string& label_in, const std::vector<int>& l_shells_in): label(label_in), l_shells(l_shells_in)
     {
         compute_map();
@@ -105,10 +106,14 @@ private:
     {
         shell_indices.clear();
         shell_counts.clear();
-        n_shell = 0;
+        shell_offsets.clear();
+
+        n_shell = l_shells.size();
+        shell_offsets.reserve(n_shell);
         n_ao = 0;
         max_l = 0;
-        for (std::size_t ishell = 0; ishell < l_shells.size(); ++ishell)
+
+        for (int ishell = 0; ishell < n_shell; ++ishell)
         {
             const int l = l_shells[ishell];
             if (l < 0)
@@ -118,6 +123,7 @@ private:
             max_l = std::max(l, max_l);
             shell_indices[l].push_back(static_cast<int>(ishell));
             ++shell_counts[l];
+            shell_offsets.push_back(n_ao);
             n_ao += 2 * l + 1;
         }
         // populate missing l channels, just for convenience
@@ -129,7 +135,6 @@ private:
                 shell_counts[l] = 0;
             }
         }
-        n_shell = l_shells.size();
     }
 };
 
