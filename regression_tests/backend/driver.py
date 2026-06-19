@@ -77,7 +77,7 @@ def _disable_testcase(tc: dict, message):
 
 
 def _validate_scope_filter(testcases, option: str, values):
-    selected = set(values or [])
+    selected = {pathlib.Path(value).name for value in values or []}
     known = {tc["directory"] for tc in testcases}
     unknown = sorted(selected - known)
     if unknown:

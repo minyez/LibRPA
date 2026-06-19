@@ -5,7 +5,11 @@ import tarfile
 import tempfile
 import unittest
 
-from regression_tests.backend.driver import TestDriver, _prepare_librpa_workspace
+from regression_tests.backend.driver import (
+    TestDriver,
+    _prepare_librpa_workspace,
+    _validate_scope_filter,
+)
 
 
 class TestPrepareLibrpaWorkspace(unittest.TestCase):
@@ -85,6 +89,18 @@ class TestDriverRunFailure(unittest.TestCase):
             )
             self.assertEqual(driver.analyze(), 1)
             self.assertIn("exit code 3", tc["run_failure"])
+
+
+class TestScopeFilter(unittest.TestCase):
+
+    def test_accepts_path_like_testcase_values(self):
+        testcases = [{"directory": "case-a"}, {"directory": "case-b"}]
+
+        selected = _validate_scope_filter(
+            testcases, "--only", ["testcases/case-a", pathlib.Path("/tmp/case-b/")]
+        )
+
+        self.assertEqual(selected, {"case-a", "case-b"})
 
 
 if __name__ == "__main__":
