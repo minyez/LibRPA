@@ -69,8 +69,8 @@ void write_self_energy_omega(const char *fn, const G0W0 &s_g0w0,
             std::fill(values.begin(), values.end(), cplxdb{0.0, 0.0});
             std::fill(values_sum.begin(), values_sum.end(), cplxdb{0.0, 0.0});
 
-            const auto it_sp = s_g0w0.sigc_is_ik_f_KS.find(ispin);
-            if (it_sp != s_g0w0.sigc_is_ik_f_KS.cend())
+            const auto it_sp = s_g0w0.sigc_diag_is_ik_f_KS.find(ispin);
+            if (it_sp != s_g0w0.sigc_diag_is_ik_f_KS.cend())
             {
                 const auto it_k = it_sp->second.find(ik);
                 if (it_k != it_sp->second.cend())
@@ -81,14 +81,14 @@ void write_self_energy_omega(const char *fn, const G0W0 &s_g0w0,
                         const auto it_freq = it_k->second.find(freq);
                         if (it_freq == it_k->second.cend()) continue;
 
-                        const auto &sigc_mat = it_freq->second;
-                        if (sigc_mat.nr() != n_bands || sigc_mat.nc() != n_bands)
+                        const auto &sigc_diag = it_freq->second;
+                        if (static_cast<int>(sigc_diag.size()) != n_bands)
                             continue;
 
                         owners[ifreq] = 1;
                         for (int ib = 0; ib != n_bands; ib++)
                         {
-                            values[diag_index(ifreq, ib)] = sigc_mat(ib, ib);
+                            values[diag_index(ifreq, ib)] = sigc_diag[ib];
                         }
                     }
                 }

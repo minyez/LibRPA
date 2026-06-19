@@ -74,6 +74,9 @@ public:
     //! correlation self-energy matrix in the basis of KS states, indices [ispin][ik][freq](n_bands, n_bands)
     std::map<int, std::map<int, std::map<double, Matz>>> sigc_is_ik_f_KS;
 
+    //! correlation self-energy diagonal in the basis of KS states, indices [ispin][ik][freq](n_bands)
+    std::map<int, std::map<int, std::map<double, std::vector<cplxdb>>>> sigc_diag_is_ik_f_KS;
+
 public:
     // Constructors
     G0W0(const MeanField &mf_in,

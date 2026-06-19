@@ -346,7 +346,7 @@ int solve_qpe_with_option(const int option_qpe_solver,
 // Publish SigC diagonal values from the rank that owns each rotated k-block.
 // The caller later uses these values locally with its matching vxc/vexx input.
 std::vector<librpa_int::cplxdb> collect_sigc_diag_to_callers(
-    const std::map<int, std::map<int, std::map<double, librpa_int::Matz>>> &sigc_is_ik_f_KS,
+    const std::map<int, std::map<int, std::map<double, std::vector<librpa_int::cplxdb>>>> &sigc_diag_is_ik_f_KS,
     const std::vector<double> &freqs,
     const librpa_int::MpiCommHandler &comm_h,
     const bool publish_local_values,
@@ -376,8 +376,8 @@ std::vector<librpa_int::cplxdb> collect_sigc_diag_to_callers(
     {
         for (int isp = 0; isp != n_spins; ++isp)
         {
-            const auto it_sp = sigc_is_ik_f_KS.find(isp);
-            if (it_sp == sigc_is_ik_f_KS.cend()) continue;
+            const auto it_sp = sigc_diag_is_ik_f_KS.find(isp);
+            if (it_sp == sigc_diag_is_ik_f_KS.cend()) continue;
             for (int ik_collect = 0; ik_collect != nk_collect; ++ik_collect)
             {
                 const int ik = iks_collect[ik_collect];
@@ -392,16 +392,22 @@ std::vector<librpa_int::cplxdb> collect_sigc_diag_to_callers(
                     if (it_freq == it_k->second.cend())
                     {
                         throw LIBRPA_RUNTIME_ERROR(
-                            "fail to locate sigc at ik = " + std::to_string(ik) +
+                            "fail to locate sigc diagonal at ik = " + std::to_string(ik) +
                             " freq = " + std::to_string(freq));
                     }
-                    const auto &mat = it_freq->second;
+                    const auto &diag = it_freq->second;
+                    if (static_cast<int>(diag.size()) < i_state_low + n_states_calc)
+                    {
+                        throw LIBRPA_RUNTIME_ERROR(
+                            "sigc diagonal size insufficient at ik = " + std::to_string(ik) +
+                            " freq = " + std::to_string(freq));
+                    }
                     for (int i = 0; i != n_states_calc; ++i)
                     {
                         const int idx = sigc_diag_index(isp, ik_collect, ifreq, i,
                                                         nk_collect, nfreq, n_states_calc);
                         const int i_state = i_state_low + i;
-                        values[idx] = mat(i_state, i_state);
+                        values[idx] = diag[i_state];
                     }
                 }
             }
@@ -696,7 +702,7 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
     const bool publish_local_values =
         opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;
     const auto sigc_diag = collect_sigc_diag_to_callers(
-        pds->p_g0w0->sigc_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
+        pds->p_g0w0->sigc_diag_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
         n_spins, pds->mf.get_n_kpoints(), n_kpts_this, iks_this, i_state_low,
         n_states_calc, iks_collect);
     const auto ik_pos = make_ik_pos_map(iks_collect);
@@ -833,7 +839,7 @@ void librpa_get_g0w0_spectral_function_kgrid(
     const bool publish_local_values =
         opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;
     const auto sigc_diag = collect_sigc_diag_to_callers(
-        pds->p_g0w0->sigc_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
+        pds->p_g0w0->sigc_diag_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
         n_spins, pds->mf.get_n_kpoints(), n_kpts_this, iks_this, i_state_low,
         n_states_calc, iks_collect);
 
@@ -899,7 +905,7 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
     const bool publish_local_values =
         opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;
     const auto sigc_diag = collect_sigc_diag_to_callers(
-        pds->p_g0w0->sigc_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
+        pds->p_g0w0->sigc_diag_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
         n_spins, pds->mf_band.get_n_kpoints(), n_kpts_band_this, iks_band_this,
         i_state_low, n_states_calc, iks_collect);
     const auto ik_pos = make_ik_pos_map(iks_collect);
@@ -1046,7 +1052,7 @@ void librpa_get_g0w0_spectral_function_band_k(
     const bool publish_local_values =
         opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;
     const auto sigc_diag = collect_sigc_diag_to_callers(
-        pds->p_g0w0->sigc_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
+        pds->p_g0w0->sigc_diag_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
         n_spins, pds->mf_band.get_n_kpoints(), n_kpts_band_this, iks_band_this,
         i_state_low, n_states_calc, iks_collect);
 

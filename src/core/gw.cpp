@@ -481,7 +481,7 @@ void G0W0::reset_rspace()
 
 void G0W0::reset_kspace()
 {
-    sigc_is_ik_f_KS.clear(); is_kspace_built_ = false;
+    sigc_is_ik_f_KS.clear(); sigc_diag_is_ik_f_KS.clear(); is_kspace_built_ = false;
 }
 
 #ifdef LIBRPA_USE_LIBRI
@@ -1723,7 +1723,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
             throw LIBRPA_RUNTIME_ERROR("has redistributed for non-BLACS");
     }
 
-    sigc_is_ik_f_KS.clear();
+    sigc_is_ik_f_KS.clear(); sigc_diag_is_ik_f_KS.clear();
 
     // local 2D-block submatrices
     auto sigc_nao_nao = init_local_mat<complex<double>>(desc_nao_nao, MAJOR::COL);
@@ -1732,7 +1732,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     for (int isp = 0; isp < n_spins; isp++)
     {
 	// Initialize, make sure the map on every access has the isp key
-        this->sigc_is_ik_f_KS[isp] = {};
+        this->sigc_is_ik_f_KS[isp] = {}; this->sigc_diag_is_ik_f_KS[isp] = {};
 
         for (int ispn_bra = 0; ispn_bra < n_spinor; ispn_bra++)
         {
@@ -1817,9 +1817,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                         if (nk_this == 0) continue;  // no eigenvector on this process
                         auto [irsrc, icsrc] = blacs_ctxt_h.get_pcoord(pid);
                         desc_nao_nband_fb.init(n_aos, n_bands, n_aos, n_bands, irsrc, icsrc);
-                        desc_nband_nband_fb.init(n_bands, n_bands, n_bands, n_bands, irsrc, icsrc);
                         release_free_mem();
-                        auto sigc_nband_nband_fb = init_local_mat<complex<double>>(desc_nband_nband_fb, MAJOR::COL);
                         for (int ik_this = 0; ik_this < nk_this; ik_this++)
                         {
                             const int ik = iks_all[pid * nk_max + ik_this];
@@ -1834,7 +1832,6 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                             for (const auto& freq: this->tfg.get_freq_nodes())
                             {
                                 sigc_nao_nao.zero_out();
-                                sigc_nband_nband_fb.zero_out();
                                 collect_block_from_IJ_storage_matrix_transform(sigc_nao_nao, desc_nao_nao,
                                         this->atbasis_wfc, this->atbasis_wfc, fourier, sigc_isp_local.at(freq));
                                 ScalapackConnector::pgemr2d_f(n_aos, n_aos, sigc_nao_nao.ptr(), 1, 1,
@@ -1903,14 +1900,32 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                                                 0.0,
                                                                 sigc_nband_nband_opt.ptr(), 1, 1, desc_nband_nband_opt.desc);
                                 }
-                                ScalapackConnector::pgemr2d_f(n_aos, n_aos, sigc_nband_nband_opt.ptr(), 1, 1,
-                                                              desc_nband_nband_opt.desc, sigc_nband_nband_fb.ptr(),
-                                                              1, 1, desc_nband_nband_fb.desc, blacs_ctxt_h.ictxt);
-                                if (pid == comm_h.myid){
-                                    auto sigc_freq = find_nested_int_map_2(this->sigc_is_ik_f_KS, isp, ik);
-                                    if (sigc_freq == nullptr || sigc_freq->count(freq) == 0)
-                                        this->sigc_is_ik_f_KS[isp][ik][freq] = Matz(n_bands, n_bands, MAJOR::COL);
-                                    this->sigc_is_ik_f_KS[isp][ik][freq] += sigc_nband_nband_fb;
+                                // Extract the diagonal of the distributed KS self-energy directly,
+                                // avoiding a full-matrix pgemr2d collect to one process.
+                                std::vector<cplxdb> diag_send(n_bands, cplxdb{0.0, 0.0});
+                                for (int ib = 0; ib != n_bands; ++ib)
+                                {
+                                    const int ilo = desc_nband_nband_opt.indx_g2l_r(ib);
+                                    if (ilo < 0) continue;
+                                    const int jlo = desc_nband_nband_opt.indx_g2l_c(ib);
+                                    if (jlo < 0) continue;
+                                    diag_send[ib] = sigc_nband_nband_opt.ptr()[ilo + desc_nband_nband_opt.lld() * jlo];
+                                }
+                                std::vector<cplxdb> diag_recv(n_bands);
+                                blacs_ctxt_h.comm_h().reduce(diag_send.data(), diag_recv.data(), n_bands, pid, MPI_SUM);
+                                if (pid == comm_h.myid)
+                                {
+                                    auto &diag_map = this->sigc_diag_is_ik_f_KS[isp][ik];
+                                    auto it = diag_map.find(freq);
+                                    if (it == diag_map.end())
+                                    {
+                                        diag_map[freq] = std::move(diag_recv);
+                                    }
+                                    else
+                                    {
+                                        for (int ib = 0; ib != n_bands; ++ib)
+                                            it->second[ib] += diag_recv[ib];
+                                    }
                                 }
                                 release_free_mem();
                             }
@@ -1975,19 +1990,18 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                 }
                                 broadcast_ComplexMatrix(
                                     sigc_nband_nband_dense, 0, comm_h.comm);
-                                auto sigc_freq =
-                                    find_nested_int_map_2(this->sigc_is_ik_f_KS, isp, ik);
-                                if (sigc_freq == nullptr || sigc_freq->count(freq) == 0)
+                                if (comm_h.is_root())
                                 {
-                                    this->sigc_is_ik_f_KS[isp][ik][freq] = Matz(
-                                        n_bands, n_bands, sigc_nband_nband_dense.c,
-                                        MAJOR::ROW, MAJOR::COL);
-                                }
-                                else
-                                {
-                                    sigc_freq->at(freq) += Matz(
-                                        n_bands, n_bands, sigc_nband_nband_dense.c,
-                                        MAJOR::ROW, MAJOR::COL);
+                                    std::vector<cplxdb> diag(n_bands);
+                                    for (int ib = 0; ib != n_bands; ++ib)
+                                        diag[ib] = sigc_nband_nband_dense(ib, ib);
+                                    auto &diag_map = this->sigc_diag_is_ik_f_KS[isp][ik];
+                                    auto it = diag_map.find(freq);
+                                    if (it == diag_map.end())
+                                        diag_map[freq] = std::move(diag);
+                                    else
+                                        for (int ib = 0; ib != n_bands; ++ib)
+                                            it->second[ib] += diag[ib];
                                 }
                                 continue;
                             }
@@ -2017,15 +2031,20 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                                           sigc_nband_nband.ptr(), 1, 1, desc_nband_nband.desc,
                                                           sigc_nband_nband_fb.ptr(), 1, 1, desc_nband_nband_fb.desc,
                                                           desc_nband_nband_fb.ictxt());
-                            // NOTE: only the matrices at master process is meaningful
-                            auto sigc_freq = find_nested_int_map_2(this->sigc_is_ik_f_KS, isp, ik);
-                            if (sigc_freq == nullptr || sigc_freq->count(freq) == 0)
+                            // Only the matrix at the master process is meaningful; extract its diagonal
+                            // instead of storing the full n_bands x n_bands matrix.
+                            if (comm_h.is_root())
                             {
-                                this->sigc_is_ik_f_KS[isp][ik][freq] = sigc_nband_nband_fb.copy();
-                            }
-                            else
-                            {
-                                sigc_freq->at(freq) += sigc_nband_nband_fb;
+                                std::vector<cplxdb> diag(n_bands);
+                                for (int ib = 0; ib != n_bands; ++ib)
+                                    diag[ib] = sigc_nband_nband_fb(ib, ib);
+                                auto &diag_map = this->sigc_diag_is_ik_f_KS[isp][ik];
+                                auto it = diag_map.find(freq);
+                                if (it == diag_map.end())
+                                    diag_map[freq] = std::move(diag);
+                                else
+                                    for (int ib = 0; ib != n_bands; ++ib)
+                                        it->second[ib] += diag[ib];
                             }
                         }
                     }
