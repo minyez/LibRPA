@@ -306,12 +306,16 @@ void add_mgo_fractional_symmetry_operations(SymmetryContext& ctx)
                         rotation[3 * permutation[col] + col] = sign[col];
                     }
 
-                    const Matrix3 col_fractional_rotation(
+                    const Matrix3 col_cartesian_rotation(
                         rotation[0], rotation[1], rotation[2],
                         rotation[3], rotation[4], rotation[5],
                         rotation[6], rotation[7], rotation[8]);
+                    const Matrix3 row_cartesian_rotation = col_cartesian_rotation.Transpose();
                     InputSymmetryOperation op;
-                    op.rotation = col_fractional_rotation.Transpose();
+                    op.rotation = ctx.lattice_available
+                                      ? ctx.lattice_vectors * row_cartesian_rotation *
+                                            ctx.lattice_vectors.Inverse()
+                                      : row_cartesian_rotation;
                     op.translation = {0.0, 0.0, 0.0};
                     op.use_row_convention = true;
                     ctx.rspace_operations.push_back(op);
@@ -322,11 +326,56 @@ void add_mgo_fractional_symmetry_operations(SymmetryContext& ctx)
     assert(ctx.rspace_operations.size() == 48);
 }
 
-void test_mgo_k333_irreducible_sector_matches_abacus()
+void set_mgo_primitive_lattice(SymmetryContext& ctx)
+{
+    const Matrix3 lattice(0.0, 0.5, 0.5,
+                          0.5, 0.0, 0.5,
+                          0.5, 0.5, 0.0);
+    ctx.set_lattice(lattice, lattice.Inverse().Transpose());
+}
+
+void test_mgo_k333_irreducible_sector_matches_single()
+{
+    SymmetryContext ctx;
+    ctx.atom_to_type = {{0, 0},};
+    ctx.input_coord_frac = {{0, {0.0, 0.0, 0.0}},};
+    set_mgo_primitive_lattice(ctx);
+    add_mgo_fractional_symmetry_operations(ctx);
+
+    const Vector3_Order<int> period{3, 3, 3};
+    const auto Rlist = construct_R_grid(period);
+    const auto generated_sector =
+        build_input_symmetry_rspace_irreducible_sector(ctx, {}, Rlist);
+
+    input_symmetry_irreducible_sector_t expected_sector;
+    add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1, -1});
+    add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1,  0});
+    add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1,  1});
+    add_irreducible_sector_entry(expected_sector, 0, 0, {-1,  0,  0});
+    add_irreducible_sector_entry(expected_sector, 0, 0, { 0,  0,  0});
+    assert(generated_sector == expected_sector);
+
+    ctx.irreducible_sector = generated_sector;
+    ctx.available = true;
+    input_symmetry_rspace_sector_stars_t sector_stars;
+    build_input_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
+    std::size_t restored_members = 0;
+    for (const auto& pair_stars : sector_stars)
+    {
+        for (const auto& R_star : pair_stars.second)
+        {
+            restored_members += R_star.second.size();
+        }
+    }
+    assert(restored_members == Rlist.size());
+}
+
+void test_mgo_k333_irreducible_sector_matches_both()
 {
     SymmetryContext ctx;
     ctx.atom_to_type = {{0, 0}, {1, 1}};
     ctx.input_coord_frac = {{0, {0.0, 0.0, 0.0}}, {1, {0.5, 0.5, 0.5}}};
+    set_mgo_primitive_lattice(ctx);
     add_mgo_fractional_symmetry_operations(ctx);
 
     const Vector3_Order<int> period{3, 3, 3};
@@ -359,8 +408,6 @@ void test_mgo_k333_irreducible_sector_matches_abacus()
     add_irreducible_sector_entry(expected_sector, 1, 1, {-1, -1,  1});
     add_irreducible_sector_entry(expected_sector, 1, 1, {-1,  0,  0});
     add_irreducible_sector_entry(expected_sector, 1, 1, { 0,  0,  0});
-    cout << "generated_sector" << endl << generated_sector << endl;
-    cout << "expected_sector"  << endl << expected_sector << endl;
     assert(generated_sector == expected_sector);
 
     ctx.irreducible_sector = generated_sector;
@@ -507,7 +554,8 @@ int main()
     test_abf_rotation_fallback_uses_basis_convention();
     test_kspace_shell_rotations_use_direct_rotation();
     test_species_basis_layout_keeps_shell_order();
-    test_mgo_k333_irreducible_sector_matches_abacus();
+    test_mgo_k333_irreducible_sector_matches_single();
+    test_mgo_k333_irreducible_sector_matches_both();
     test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry();
     test_abacus_legacy_sidecars_are_ignored_without_generated_symops();
     test_abacus_generated_symops_do_not_require_sidecars();

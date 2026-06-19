@@ -87,6 +87,15 @@ bool is_identity_rotation(const Matrix3& matrix,
            && std::abs(matrix.e33 - 1.0) < tol;
 }
 
+bool preserves_lattice_metric(const Matrix3& rotation,
+                              const Matrix3& lattice_vectors,
+                              const double tol = 1e-8)
+{
+    const Matrix3 metric = lattice_vectors * lattice_vectors.Transpose();
+    const Matrix3 rotated_metric = rotation * metric * rotation.Transpose();
+    return is_same_matrix(rotated_metric, metric, tol);
+}
+
 ComplexMatrix extract_atom_block(const ComplexMatrix& matrix,
                                  const atom_t atom_i,
                                  const atom_t atom_j,
@@ -162,23 +171,24 @@ Vector3_Order<int> rotate_rspace_vector(
     const atom_t atom_from_i,
     const atom_t atom_from_j)
 {
+    const auto to_double = [](const Vector3_Order<int>& vec) {
+        return Vector3_Order<double>(static_cast<double>(vec.x),
+                                     static_cast<double>(vec.y),
+                                     static_cast<double>(vec.z));
+    };
     const Vector3_Order<double> R_double{static_cast<double>(R.x), static_cast<double>(R.y),
                                          static_cast<double>(R.z)};
-    const Vector3_Order<double> rotated_double =
-        multiply_row_vector(R_double, op.rotation)
-        + Vector3_Order<double>(static_cast<double>(op_info.return_lattice[atom_from_j].x),
-                                static_cast<double>(op_info.return_lattice[atom_from_j].y),
-                                static_cast<double>(op_info.return_lattice[atom_from_j].z))
-        - Vector3_Order<double>(static_cast<double>(op_info.return_lattice[atom_from_i].x),
-                                static_cast<double>(op_info.return_lattice[atom_from_i].y),
-                                static_cast<double>(op_info.return_lattice[atom_from_i].z));
-    if (!nearly_integer_vector(rotated_double, kInputSymmetryCoordTol))
+    const Vector3_Order<double> rotated_cell = multiply_row_vector(R_double, op.rotation);
+    const Vector3_Order<double> common_shift = to_double(op_info.return_lattice[atom_from_i]);
+    const Vector3_Order<double> mapped_j_cell =
+        to_double(op_info.return_lattice[atom_from_j]) + rotated_cell - common_shift;
+    if (!nearly_integer_vector(mapped_j_cell, kInputSymmetryCoordTol))
     {
         throw std::runtime_error("Real-space symmetry generated a non-integer lattice vector");
     }
     // Keep the raw rotated lattice vector returned by the ABACUS formula.
     // The caller is responsible for filtering against the explicit R list.
-    return round_to_integer_vector(rotated_double);
+    return round_to_integer_vector(mapped_j_cell);
 }
 
 using InputSymmetryRSpaceKey = std::tuple<atom_t, atom_t, Vector3_Order<int>>;
@@ -1639,6 +1649,15 @@ input_symmetry_irreducible_sector_t build_input_symmetry_rspace_irreducible_sect
     {
         op_infos.push_back(get_space_group_atom_mapping(op, rspace_coord_frac, ctx.atom_to_type, kInputSymmetryRSpaceAtomMapTol));
     }
+    std::vector<bool> use_operation(ctx.rspace_operations.size(), true);
+    if (ctx.lattice_available)
+    {
+        for (std::size_t isym = 0; isym < ctx.rspace_operations.size(); ++isym)
+        {
+            use_operation[isym] =
+                preserves_lattice_metric(ctx.rspace_operations[isym].rotation, ctx.lattice_vectors);
+        }
+    }
     const std::set<Vector3_Order<int>> Rset(Rlist.begin(), Rlist.end());
 
     std::set<InputSymmetryRSpaceKey> uncovered;
@@ -1653,8 +1672,6 @@ input_symmetry_irreducible_sector_t build_input_symmetry_rspace_irreducible_sect
         }
     }
 
-    std::cout << "uncovered\n" << uncovered << std::endl;
-
     input_symmetry_irreducible_sector_t irreducible_sector;
     while (!uncovered.empty())
     {
@@ -1666,6 +1683,10 @@ input_symmetry_irreducible_sector_t build_input_symmetry_rspace_irreducible_sect
         std::set<InputSymmetryRSpaceKey> orbit{seed};
         for (std::size_t isym = 0; isym < ctx.rspace_operations.size(); ++isym)
         {
+            if (!use_operation[isym])
+            {
+                continue;
+            }
             const auto& op_info = op_infos[isym];
             const auto full_I = op_info.atom_map[seed_i];
             const auto full_J = op_info.atom_map[seed_j];
@@ -1716,6 +1737,15 @@ void build_input_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
     {
         op_infos.push_back(get_space_group_atom_mapping(op, rspace_coord_frac, ctx.atom_to_type, kInputSymmetryRSpaceAtomMapTol));
     }
+    std::vector<bool> use_operation(ctx.rspace_operations.size(), true);
+    if (ctx.lattice_available)
+    {
+        for (std::size_t isym = 0; isym < ctx.rspace_operations.size(); ++isym)
+        {
+            use_operation[isym] =
+                preserves_lattice_metric(ctx.rspace_operations[isym].rotation, ctx.lattice_vectors);
+        }
+    }
     const auto inverse_map = build_rspace_inverse_map(ctx, rspace_coord_frac);
 
     sector_stars.clear();
@@ -1735,6 +1765,10 @@ void build_input_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
             for (std::size_t isym = 0; isym < ctx.rspace_operations.size(); ++isym)
             {
                 const int inv = inverse_map[isym];
+                if (!use_operation[static_cast<std::size_t>(inv)])
+                {
+                    continue;
+                }
                 const auto& op_info = op_infos[static_cast<std::size_t>(inv)];
                 const auto full_I = op_info.atom_map[ir_pair.first];
                 const auto full_J = op_info.atom_map[ir_pair.second];
@@ -1865,4 +1899,4 @@ ComplexMatrix rotate_input_symmetry_abf_rspace_matrix(const SymmetryContext& ctx
     return transpose(T_i, false) * matrix_source * conj(T_j);
 }
 
-} // namespace librpa_int
+}  // namespace librpa_int
