@@ -284,6 +284,24 @@
       />
     </testcase>
 
+    <testcase name="Bulk MgO, with symmetry on (aims input)" directory="g0w0_aims_MgO_sym_libri">
+      <labels disable="bug"
+      />
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <validate name="Quasi-particle energies on k-grid"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="17"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+    </testcase>
+
     <testcase name="Lithium atom, spin-polarized (aims input)" directory="g0w0_aims_Li_atom_libri">
       <build require_libri="true"
       />
