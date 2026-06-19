@@ -10,3 +10,5 @@ replace_w_head = t
 option_dielect_func = 0
 parallel_routing = libri
 use_kpara_scf_eigvec = t
+# use_symmetry_exx = t
+# use_symmetry_gw = t
