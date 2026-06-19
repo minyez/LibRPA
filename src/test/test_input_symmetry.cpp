@@ -203,6 +203,43 @@ InputSymmetryOperation make_row_symmetry_operation(const std::array<int, 9>& rot
     return op;
 }
 
+void test_symmetry_context_saves_fractional_row_operations()
+{
+    SymmetryContext ctx;
+    const Matrix3 col_rotation(0.0, -1.0, 0.0,
+                               1.0, 0.0, 0.0,
+                               0.0, 0.0, 1.0);
+    const Vector3_Order<double> translation{0.25, -0.5, 1.0 / 3.0};
+    InputSymmetryOperation op;
+    op.rotation = col_rotation;
+    op.translation = translation;
+    op.use_row_convention = false;
+    ComplexMatrix shell_rotation(1, 1);
+    shell_rotation(0, 0) = {2.0, 0.0};
+    op.shell_rotations[0] = shell_rotation;
+
+    const SpaceGroupSymOp original_op{col_rotation, translation, false};
+    const Vector3_Order<double> coord{0.2, 0.3, 0.4};
+    const auto expected = apply_space_group_symmetry_operation(original_op, coord);
+
+    ctx.add_rspace_operation(op);
+    assert(ctx.available);
+    assert(ctx.rspace_operations.size() == 1);
+
+    const auto& saved = ctx.rspace_operations[0];
+    assert(saved.use_row_convention);
+    assert(saved.rotation == col_rotation.Transpose());
+    assert(fequal(saved.translation.x, translation.x));
+    assert(fequal(saved.translation.y, translation.y));
+    assert(fequal(saved.translation.z, translation.z));
+    assert_matrix_close(saved.shell_rotations.at(0), shell_rotation);
+
+    const auto actual = apply_space_group_symmetry_operation(saved, coord);
+    assert(fequal(actual.x, expected.x));
+    assert(fequal(actual.y, expected.y));
+    assert(fequal(actual.z, expected.z));
+}
+
 SymmetryContext make_bn_shrink_symmetry_context()
 {
     SymmetryContext ctx;
@@ -466,6 +503,7 @@ void test_abacus_generated_symops_ignore_legacy_sidecars()
 
 int main()
 {
+    test_symmetry_context_saves_fractional_row_operations();
     test_abf_rotation_fallback_uses_basis_convention();
     test_kspace_shell_rotations_use_direct_rotation();
     test_species_basis_layout_keeps_shell_order();

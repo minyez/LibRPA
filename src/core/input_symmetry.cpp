@@ -18,6 +18,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
+#include <utility>
 
 namespace librpa_int
 {
@@ -42,163 +43,6 @@ std::string trim(const std::string& text)
                                       [](unsigned char ch) { return std::isspace(ch) != 0; })
                          .base();
     return std::string(begin, end);
-}
-
-std::string strip_comment(const std::string& text)
-{
-    const auto comment_pos = text.find('#');
-    return trim(text.substr(0, comment_pos));
-}
-
-bool starts_with(const std::string& text, const std::string& prefix)
-{
-    return text.rfind(prefix, 0) == 0;
-}
-
-std::vector<std::string> build_input_symmetry_path_candidates(const std::string& dir_path)
-{
-    std::vector<std::string> dirs;
-    auto append_unique = [&dirs](const std::string& dir) {
-        if (!dir.empty() && std::find(dirs.begin(), dirs.end(), dir) == dirs.end())
-        {
-            dirs.push_back(dir);
-        }
-    };
-
-    append_unique(dir_path);
-    append_unique(join_path(dir_path, "OUT.ABACUS"));
-    if (base_name(dir_path) == "OUT.ABACUS")
-    {
-        append_unique(parent_path(dir_path));
-    }
-    return dirs;
-}
-
-std::vector<std::string> split_fields(const std::string& line)
-{
-    std::vector<std::string> fields;
-    std::istringstream iss(line);
-    std::string field;
-    while (iss >> field)
-    {
-        fields.push_back(field);
-    }
-    return fields;
-}
-
-bool is_section_header(const std::string& line)
-{
-    static const std::set<std::string> section_headers{
-        "ATOMIC_SPECIES",
-        "NUMERICAL_ORBITAL",
-        "ABFS_ORBITAL",
-        "NUMERICAL_DESCRIPTOR",
-        "LATTICE_CONSTANT",
-        "LATTICE_PARAMETER",
-        "LATTICE_VECTORS",
-        "ATOMIC_POSITIONS",
-        "NUMERICAL_DESCRIPTOR_VNA",
-    };
-    return section_headers.count(line) != 0;
-}
-
-std::vector<double> extract_doubles(const std::string& text)
-{
-    std::vector<double> values;
-    const char* begin = text.c_str();
-    char* end = nullptr;
-    while (*begin != '\0')
-    {
-        const double value = std::strtod(begin, &end);
-        if (end != begin)
-        {
-            values.push_back(value);
-            begin = end;
-        }
-        else
-        {
-            ++begin;
-        }
-    }
-    return values;
-}
-
-std::vector<long> extract_integers(const std::string& text)
-{
-    std::vector<long> values;
-    const char* begin = text.c_str();
-    char* end = nullptr;
-    while (*begin != '\0')
-    {
-        const long value = std::strtol(begin, &end, 10);
-        if (end != begin)
-        {
-            values.push_back(value);
-            begin = end;
-        }
-        else
-        {
-            ++begin;
-        }
-    }
-    return values;
-}
-
-bool is_integer_line(const std::string& text)
-{
-    const std::string stripped = trim(text);
-    if (stripped.empty())
-    {
-        return false;
-    }
-    std::size_t start = (stripped.front() == '+' || stripped.front() == '-') ? 1 : 0;
-    if (start == stripped.size())
-    {
-        return false;
-    }
-    return std::all_of(stripped.begin() + static_cast<std::ptrdiff_t>(start), stripped.end(),
-                       [](unsigned char ch) { return std::isdigit(ch) != 0; });
-}
-
-int shell_symbol_to_l(const char symbol)
-{
-    const std::string shells = "SPDFGHIJKLMNO";
-    const auto pos = shells.find(static_cast<char>(std::toupper(static_cast<unsigned char>(symbol))));
-    if (pos == std::string::npos)
-    {
-        return -1;
-    }
-    return static_cast<int>(pos);
-}
-
-std::vector<int> l_shells_from_shell_counts(const std::vector<int>& shell_counts)
-{
-    std::vector<int> l_shells;
-    for (int l = 0; l < static_cast<int>(shell_counts.size()); ++l)
-    {
-        for (int ishell = 0; ishell < shell_counts[l]; ++ishell)
-        {
-            l_shells.push_back(l);
-        }
-    }
-    return l_shells;
-}
-
-std::vector<int> radial_shell_offsets(const SpeciesBasisLayout& layout)
-{
-    std::vector<int> offsets;
-    offsets.reserve(layout.l_shells.size());
-    int offset = 0;
-    for (const int l : layout.l_shells)
-    {
-        offsets.push_back(offset);
-        offset += 2 * l + 1;
-    }
-    if (offset != layout.n_ao)
-    {
-        throw std::runtime_error("Species basis layout has inconsistent nao");
-    }
-    return offsets;
 }
 
 std::vector<int> build_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
@@ -229,13 +73,6 @@ bool nearly_same_kpoint(const Vector3_Order<double>& lhs,
     };
     return is_same_component(lhs.x, rhs.x) && is_same_component(lhs.y, rhs.y)
            && is_same_component(lhs.z, rhs.z);
-}
-
-Matrix3 build_matrix3_from_array(const std::array<std::array<double, 3>, 3>& matrix)
-{
-    return Matrix3(matrix[0][0], matrix[0][1], matrix[0][2],
-                   matrix[1][0], matrix[1][1], matrix[1][2],
-                   matrix[2][0], matrix[2][1], matrix[2][2]);
 }
 
 bool is_identity_rotation(const Matrix3& matrix,
@@ -449,43 +286,6 @@ bool rspace_representative_less(const InputSymmetryRSpaceKey& lhs,
     return std::get<2>(lhs) < std::get<2>(rhs);
 }
 
-std::string find_first_existing_file(const std::vector<std::string>& candidates)
-{
-    for (const auto& candidate : candidates)
-    {
-        if (!candidate.empty() && file_exists(candidate))
-        {
-            return candidate;
-        }
-    }
-    return "";
-}
-
-std::string read_input_symmetry_keyword(const std::string& input_file, const std::string& keyword)
-{
-    std::ifstream ifs(input_file);
-    if (!ifs.good())
-    {
-        return "";
-    }
-
-    std::string line;
-    while (std::getline(ifs, line))
-    {
-        const std::string cleaned = strip_comment(line);
-        if (cleaned.empty())
-        {
-            continue;
-        }
-        const auto fields = split_fields(cleaned);
-        if (!fields.empty() && fields.front() == keyword && fields.size() >= 2)
-        {
-            return fields[1];
-        }
-    }
-    return "";
-}
-
 struct ParsedInputSymmetryStru
 {
     std::vector<std::string> species_labels;
@@ -494,458 +294,12 @@ struct ParsedInputSymmetryStru
     std::map<atom_t, std::array<double, 3>> coord_frac;
 };
 
-ParsedInputSymmetryStru parse_input_symmetry_stru_file(const std::string& stru_file)
+void normalize_to_row_fractional(InputSymmetryOperation& operation)
 {
-    std::ifstream ifs(stru_file);
-    if (!ifs.good())
+    if (!operation.use_row_convention)
     {
-        throw std::runtime_error("Failed to open " + stru_file);
-    }
-
-    std::vector<std::string> lines;
-    std::string line;
-    while (std::getline(ifs, line))
-    {
-        const std::string cleaned = strip_comment(line);
-        if (!cleaned.empty())
-        {
-            lines.push_back(cleaned);
-        }
-    }
-
-    ParsedInputSymmetryStru parsed;
-    double lattice_constant = 1.0;
-    Matrix3 lattice_vectors;
-    bool has_lattice_vectors = false;
-    std::size_t index = 0;
-    while (index < lines.size())
-    {
-        const std::string& current = lines[index];
-        if (current == "LATTICE_CONSTANT")
-        {
-            ++index;
-            if (index >= lines.size())
-            {
-                throw std::runtime_error("Missing LATTICE_CONSTANT value in " + stru_file);
-            }
-            const auto fields = split_fields(lines[index]);
-            if (fields.empty())
-            {
-                throw std::runtime_error("Missing LATTICE_CONSTANT value in " + stru_file);
-            }
-            lattice_constant = std::stod(fields.front());
-            ++index;
-            continue;
-        }
-        if (current == "LATTICE_VECTORS")
-        {
-            ++index;
-            if (index + 2 >= lines.size())
-            {
-                throw std::runtime_error("Incomplete LATTICE_VECTORS block in " + stru_file);
-            }
-            std::array<std::array<double, 3>, 3> lattice_rows{{{{0.0, 0.0, 0.0}},
-                                                                {{0.0, 0.0, 0.0}},
-                                                                {{0.0, 0.0, 0.0}}}};
-            for (int row = 0; row < 3; ++row, ++index)
-            {
-                const auto values = extract_doubles(lines[index]);
-                if (values.size() != 3)
-                {
-                    throw std::runtime_error("Failed to parse LATTICE_VECTORS row in "
-                                             + stru_file + ": " + lines[index]);
-                }
-                for (int col = 0; col < 3; ++col)
-                {
-                    lattice_rows[static_cast<std::size_t>(row)][static_cast<std::size_t>(col)] =
-                        values[static_cast<std::size_t>(col)] * lattice_constant;
-                }
-            }
-            lattice_vectors = build_matrix3_from_array(lattice_rows);
-            has_lattice_vectors = true;
-            continue;
-        }
-        if (current == "ATOMIC_SPECIES")
-        {
-            ++index;
-            while (index < lines.size() && !is_section_header(lines[index]))
-            {
-                const auto fields = split_fields(lines[index]);
-                if (!fields.empty())
-                {
-                    parsed.species_labels.push_back(fields.front());
-                }
-                ++index;
-            }
-            continue;
-        }
-        if (current == "NUMERICAL_ORBITAL")
-        {
-            ++index;
-            while (index < lines.size() && !is_section_header(lines[index]))
-            {
-                parsed.orbital_files.push_back(lines[index]);
-                ++index;
-            }
-            continue;
-        }
-        if (current == "ATOMIC_POSITIONS")
-        {
-            ++index;
-            if (index >= lines.size())
-            {
-                throw std::runtime_error("Missing ATOMIC_POSITIONS mode in " + stru_file);
-            }
-            const std::string position_mode = lines[index];
-            ++index;
-
-            atom_t atom_index = 0;
-            while (index < lines.size() && !is_section_header(lines[index]))
-            {
-                const auto species_fields = split_fields(lines[index]);
-                if (species_fields.empty())
-                {
-                    ++index;
-                    continue;
-                }
-                const std::string& species_label = species_fields.front();
-                const auto type_iter =
-                    std::find(parsed.species_labels.begin(), parsed.species_labels.end(), species_label);
-                if (type_iter == parsed.species_labels.end())
-                {
-                    throw std::runtime_error("Failed to match atom type label " + species_label
-                                             + " in " + stru_file);
-                }
-                const int atom_type =
-                    static_cast<int>(std::distance(parsed.species_labels.begin(), type_iter));
-                ++index;
-                if (index >= lines.size())
-                {
-                    throw std::runtime_error("Unexpected end of file while reading magnetic moment block in "
-                                             + stru_file);
-                }
-                ++index;
-                if (index >= lines.size())
-                {
-                    throw std::runtime_error("Unexpected end of file while reading atom count in "
-                                             + stru_file);
-                }
-                const auto count_fields = split_fields(lines[index]);
-                if (count_fields.empty())
-                {
-                    throw std::runtime_error("Missing atom count in " + stru_file);
-                }
-                const int nat_this_type = std::stoi(count_fields.front());
-                ++index;
-                for (int i = 0; i < nat_this_type; ++i)
-                {
-                    if (index >= lines.size())
-                    {
-                        throw std::runtime_error("Unexpected end of file while reading atomic positions in "
-                                                 + stru_file);
-                    }
-                    const auto atom_fields = split_fields(lines[index]);
-                    if (atom_fields.size() < 3)
-                    {
-                        throw std::runtime_error("Failed to parse atomic coordinate in "
-                                                 + stru_file + ": " + lines[index]);
-                    }
-                    std::array<double, 3> coord_raw{
-                        std::stod(atom_fields[0]),
-                        std::stod(atom_fields[1]),
-                        std::stod(atom_fields[2]),
-                    };
-
-                    std::array<double, 3> coord_frac = coord_raw;
-                    std::string mode_lower = position_mode;
-                    std::transform(mode_lower.begin(), mode_lower.end(), mode_lower.begin(),
-                                   [](unsigned char ch) {
-                                       return static_cast<char>(std::tolower(ch));
-                                   });
-                    if (mode_lower == "direct")
-                    {
-                        coord_frac = coord_raw;
-                    }
-                    else if (starts_with(mode_lower, "cartesian"))
-                    {
-                        if (!has_lattice_vectors)
-                        {
-                            throw std::runtime_error("ATOMIC_POSITIONS uses Cartesian coordinates but "
-                                                     "LATTICE_VECTORS is unavailable in "
-                                                     + stru_file);
-                        }
-                        Vector3<double> coord_cart(coord_raw[0], coord_raw[1], coord_raw[2]);
-                        if (mode_lower.find("angstrom") != std::string::npos)
-                        {
-                            coord_cart.x *= ANG2BOHR;
-                            coord_cart.y *= ANG2BOHR;
-                            coord_cart.z *= ANG2BOHR;
-                        }
-                        const Vector3<double> coord_frac_vec =
-                            coord_cart * lattice_vectors.Inverse();
-                        coord_frac = {coord_frac_vec.x, coord_frac_vec.y, coord_frac_vec.z};
-                    }
-                    else
-                    {
-                        throw std::runtime_error("Unsupported ATOMIC_POSITIONS mode `" + position_mode
-                                                 + "` in " + stru_file);
-                    }
-
-                    parsed.atom_to_type[atom_index] = atom_type;
-                    parsed.coord_frac[atom_index] = coord_frac;
-                    ++atom_index;
-                    ++index;
-                }
-            }
-            continue;
-        }
-        ++index;
-    }
-
-    return parsed;
-}
-
-SpeciesBasisLayout parse_input_symmetry_orbital_file(const std::string& orbital_file,
-                                             const std::string& species_label)
-{
-    std::ifstream ifs(orbital_file);
-    if (!ifs.good())
-    {
-        throw std::runtime_error("Failed to open orbital file " + orbital_file);
-    }
-
-    SpeciesBasisLayout layout;
-    layout.label = species_label;
-
-    int lmax = -1;
-    std::vector<int> shell_counts;
-    std::string line;
-    while (std::getline(ifs, line))
-    {
-        const std::string cleaned = strip_comment(line);
-        if (cleaned.empty())
-        {
-            continue;
-        }
-        if (starts_with(cleaned, "Lmax"))
-        {
-            const auto values = extract_integers(cleaned);
-            if (values.empty())
-            {
-                throw std::runtime_error("Failed to parse Lmax in orbital file " + orbital_file);
-            }
-            lmax = static_cast<int>(values.front());
-            if (lmax < 0)
-            {
-                throw std::runtime_error("Negative Lmax in orbital file " + orbital_file);
-            }
-            shell_counts.resize(static_cast<std::size_t>(lmax + 1), 0);
-            continue;
-        }
-        if (starts_with(cleaned, "Number of "))
-        {
-            const auto prefix_size = std::string("Number of ").size();
-            const auto token = cleaned.substr(prefix_size);
-            char shell_symbol = '\0';
-            for (const char ch : token)
-            {
-                if (std::isalpha(static_cast<unsigned char>(ch)) != 0)
-                {
-                    shell_symbol = ch;
-                    break;
-                }
-            }
-            const int l = shell_symbol_to_l(shell_symbol);
-            const auto values = extract_integers(cleaned);
-            if (l < 0 || values.empty())
-            {
-                continue;
-            }
-            if (static_cast<int>(shell_counts.size()) <= l)
-            {
-                shell_counts.resize(static_cast<std::size_t>(l + 1), 0);
-            }
-            const int count = static_cast<int>(values.back());
-            if (count < 0)
-            {
-                throw std::runtime_error("Negative shell count in orbital file " + orbital_file);
-            }
-            shell_counts[static_cast<std::size_t>(l)] = count;
-        }
-        if (starts_with(cleaned, "SUMMARY"))
-        {
-            break;
-        }
-    }
-
-    if (lmax >= 0 && static_cast<int>(shell_counts.size()) < lmax + 1)
-    {
-        shell_counts.resize(static_cast<std::size_t>(lmax + 1), 0);
-    }
-    layout.set(l_shells_from_shell_counts(shell_counts));
-    if (layout.n_ao <= 0)
-    {
-        throw std::runtime_error("Parsed zero AO functions from orbital file " + orbital_file);
-    }
-    return layout;
-}
-
-std::string resolve_input_symmetry_file(const std::string& file_name,
-                                const std::vector<std::string>& search_dirs)
-{
-    if (is_absolute_path(file_name))
-    {
-        return file_exists(file_name) ? file_name : "";
-    }
-
-    for (const auto& dir : search_dirs)
-    {
-        if (dir.empty())
-        {
-            continue;
-        }
-        const std::string candidate = join_path(dir, file_name);
-        if (file_exists(candidate))
-        {
-            return candidate;
-        }
-    }
-    return file_exists(file_name) ? file_name : "";
-}
-
-bool append_unique_abf_layout(std::vector<SpeciesBasisLayout>& candidates,
-                              const SpeciesBasisLayout& layout)
-{
-    const auto duplicate = std::find_if(candidates.begin(), candidates.end(),
-                                        [&layout](const SpeciesBasisLayout& candidate) {
-                                            return candidate.label == layout.label
-                                                   && candidate.l_shells == layout.l_shells
-                                                   && candidate.n_ao == layout.n_ao;
-                                        });
-    if (duplicate != candidates.end())
-    {
-        return false;
-    }
-    candidates.push_back(layout);
-    return true;
-}
-
-[[maybe_unused]] void try_load_input_symmetry_ao_shell_layout(const std::string& dir_path,
-                                                      SymmetryContext& ctx,
-                                                      std::ostream* log)
-{
-    const auto candidate_dirs = build_input_symmetry_path_candidates(dir_path);
-    std::vector<std::string> stru_candidates;
-    std::vector<std::string> input_candidates;
-    for (const auto& dir : candidate_dirs)
-    {
-        stru_candidates.push_back(join_path(dir, "STRU"));
-        input_candidates.push_back(join_path(dir, "INPUT"));
-    }
-
-    const std::string stru_file = find_first_existing_file(stru_candidates);
-    if (stru_file.empty())
-    {
-        if (log != nullptr)
-        {
-            (*log) << "| AO shell layout        : unavailable (STRU not found)\n";
-        }
-        return;
-    }
-
-    const std::string input_file = find_first_existing_file(input_candidates);
-    const std::string orbital_dir =
-        input_file.empty() ? "" : read_input_symmetry_keyword(input_file, "orbital_dir");
-
-    try
-    {
-        const ParsedInputSymmetryStru parsed = parse_input_symmetry_stru_file(stru_file);
-        if (parsed.species_labels.empty() || parsed.orbital_files.empty())
-        {
-            throw std::runtime_error("Failed to find ATOMIC_SPECIES / NUMERICAL_ORBITAL sections in "
-                                     + stru_file);
-        }
-        if (parsed.species_labels.size() != parsed.orbital_files.size())
-        {
-            throw std::runtime_error("The number of NUMERICAL_ORBITAL entries does not match "
-                                     "ATOMIC_SPECIES in " + stru_file);
-        }
-
-        std::vector<std::string> search_dirs;
-        search_dirs.push_back(parent_path(stru_file));
-        search_dirs.push_back(dir_path);
-        if (!input_file.empty())
-        {
-            search_dirs.push_back(parent_path(input_file));
-        }
-        if (!orbital_dir.empty())
-        {
-            if (is_absolute_path(orbital_dir))
-            {
-                search_dirs.push_back(orbital_dir);
-            }
-            else
-            {
-                if (!input_file.empty())
-                {
-                    search_dirs.push_back(join_path(parent_path(input_file), orbital_dir));
-                }
-                search_dirs.push_back(join_path(parent_path(stru_file), orbital_dir));
-                search_dirs.push_back(join_path(dir_path, orbital_dir));
-            }
-        }
-
-        ctx.ao_type_layouts.clear();
-        ctx.ao_type_layouts.reserve(parsed.species_labels.size());
-        for (std::size_t itype = 0; itype < parsed.species_labels.size(); ++itype)
-        {
-            const std::string resolved_orbital =
-                resolve_input_symmetry_file(parsed.orbital_files[itype], search_dirs);
-            if (resolved_orbital.empty())
-            {
-                throw std::runtime_error("Failed to resolve orbital file "
-                                         + parsed.orbital_files[itype] + " for species "
-                                         + parsed.species_labels[itype]);
-            }
-            ctx.ao_type_layouts.push_back(
-                parse_input_symmetry_orbital_file(resolved_orbital, parsed.species_labels[itype]));
-        }
-
-        ctx.atom_to_type = parsed.atom_to_type;
-        ctx.input_coord_frac = parsed.coord_frac;
-        ctx.ao_shell_layout_available = true;
-        if (log != nullptr)
-        {
-            (*log) << "| AO shell layout        : loaded for " << ctx.ao_type_layouts.size()
-                   << " atom types and " << ctx.atom_to_type.size() << " atoms\n";
-            for (std::size_t itype = 0; itype < ctx.ao_type_layouts.size(); ++itype)
-            {
-                const auto& layout = ctx.ao_type_layouts[itype];
-                (*log) << "|   type " << itype << " (" << layout.label << ")"
-                       << " nao=" << layout.n_ao << " shell_counts=";
-                const int lmax = layout.shell_counts.empty() ? -1 : layout.shell_counts.rbegin()->first;
-                for (int l = 0; l <= lmax; ++l)
-                {
-                    if (l != 0)
-                    {
-                        (*log) << ",";
-                    }
-                    const auto count = layout.shell_counts.find(l);
-                    (*log) << (count == layout.shell_counts.end() ? 0 : count->second);
-                }
-                (*log) << "\n";
-            }
-        }
-    }
-    catch (const std::exception& ex)
-    {
-        ctx.ao_type_layouts.clear();
-        ctx.atom_to_type.clear();
-        ctx.ao_shell_layout_available = false;
-        if (log != nullptr)
-        {
-            (*log) << "| AO shell layout        : unavailable (" << ex.what() << ")\n";
-        }
+        operation.rotation = operation.rotation.Transpose();
+        operation.use_row_convention = true;
     }
 }
 
@@ -1087,6 +441,24 @@ void SymmetryContext::clear()
     reciprocal_vectors.Reset();
     kspace_return_lattice.clear();
     kstar_member_fold_G.clear();
+}
+
+void SymmetryContext::add_rspace_operation(InputSymmetryOperation operation)
+{
+    normalize_to_row_fractional(operation);
+    rspace_operations.push_back(std::move(operation));
+    available = true;
+}
+
+void SymmetryContext::set_rspace_operations(std::vector<InputSymmetryOperation> operations)
+{
+    rspace_operations.clear();
+    rspace_operations.reserve(operations.size());
+    for (auto& operation : operations)
+    {
+        add_rspace_operation(std::move(operation));
+    }
+    available = !rspace_operations.empty();
 }
 
 void SymmetryContext::set_lattice(const Matrix3& latvec, const Matrix3& G)
@@ -1273,7 +645,7 @@ ComplexMatrix build_input_symmetry_ao_rotation_matrix(const SymmetryContext& ctx
 {
     const auto& layout = ctx.get_ao_type_layout(atom_type);
     ComplexMatrix rotation(layout.n_ao, layout.n_ao);
-    const auto shell_offsets = radial_shell_offsets(layout);
+    const auto& shell_offsets = layout.shell_offsets;
 
     int filled_nao = 0;
     for (const auto& entry : layout.shell_indices)
@@ -1328,7 +700,7 @@ ComplexMatrix build_input_symmetry_abf_rotation_matrix(
 {
     const auto& layout = ctx.find_abf_type_layout(atom_type, nao_hint);
     ComplexMatrix rotation(layout.n_ao, layout.n_ao);
-    const auto shell_offsets = radial_shell_offsets(layout);
+    const auto& shell_offsets = layout.shell_offsets;
 
     int filled_nao = 0;
     for (const auto& entry : layout.shell_indices)
@@ -2334,11 +1706,11 @@ input_symmetry_irreducible_sector_t build_input_symmetry_rspace_irreducible_sect
 {
     if (ctx.rspace_operations.empty())
     {
-        throw std::runtime_error("ABACUS real-space symmetry operations are unavailable");
+        throw std::runtime_error("Real-space symmetry operations are unavailable");
     }
     if (ctx.atom_to_type.empty())
     {
-        throw std::runtime_error("ABACUS atom-to-type mapping is unavailable for real-space symmetry");
+        throw std::runtime_error("Atom-to-type mapping is unavailable for real-space symmetry");
     }
 
     const auto& rspace_coord_frac =
@@ -2404,11 +1776,11 @@ void build_input_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
     (void)period;
     if (!ctx.available || ctx.irreducible_sector.empty() || ctx.rspace_operations.empty())
     {
-        throw std::runtime_error("ABACUS real-space symmetry metadata is incomplete");
+        throw std::runtime_error("Real-space symmetry metadata is incomplete");
     }
     if (ctx.atom_to_type.empty())
     {
-        throw std::runtime_error("ABACUS atom-to-type mapping is unavailable for real-space symmetry");
+        throw std::runtime_error("Atom-to-type mapping is unavailable for real-space symmetry");
     }
 
     const auto& rspace_coord_frac =
@@ -2472,7 +1844,7 @@ void build_input_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
                     continue;
                 }
                 std::ostringstream oss;
-                oss << "Failed to build a real-space symmetry star from ABACUS symmetry for "
+                oss << "Failed to build a real-space symmetry star from symmetry for "
                     << "irreducible pair (" << ir_pair.first << ", " << ir_pair.second << ")"
                     << " and R=(" << ir_R.x << ", " << ir_R.y << ", " << ir_R.z << ")";
                 for (const auto& line : candidate_debug)
@@ -2508,11 +1880,11 @@ ComplexMatrix rotate_input_symmetry_rspace_matrix(const SymmetryContext& ctx,
 {
     if (!ctx.has_ao_shell_layout())
     {
-        throw std::runtime_error("AO shell layout is required before rotating ABACUS real-space matrices");
+        throw std::runtime_error("AO shell layout is required before rotating real-space matrices");
     }
     if (isym < 0 || isym >= static_cast<int>(ctx.rspace_operations.size()))
     {
-        throw std::out_of_range("ABACUS real-space symmetry index is out of range");
+        throw std::out_of_range("Real-space symmetry index is out of range");
     }
 
     const int type_i = ctx.atom_to_type.at(atom_from_i);
@@ -2523,7 +1895,7 @@ ComplexMatrix rotate_input_symmetry_rspace_matrix(const SymmetryContext& ctx,
 
     if (matrix_source.nr != T_i.nr || matrix_source.nc != T_j.nr)
     {
-        throw std::runtime_error("ABACUS real-space rotation has incompatible AO dimensions");
+        throw std::runtime_error("Real-space rotation has incompatible AO dimensions");
     }
 
     // Keep the same row-major convention as the AO/ABF k-space operator restore:
@@ -2540,11 +1912,11 @@ ComplexMatrix rotate_input_symmetry_abf_rspace_matrix(const SymmetryContext& ctx
 {
     if (!ctx.has_abf_shell_layout())
     {
-        throw std::runtime_error("ABF shell layout is required before rotating ABACUS real-space matrices");
+        throw std::runtime_error("ABF shell layout is required before rotating real-space matrices");
     }
     if (isym < 0 || isym >= static_cast<int>(ctx.rspace_operations.size()))
     {
-        throw std::out_of_range("ABACUS real-space symmetry index is out of range");
+        throw std::out_of_range("Real-space symmetry index is out of range");
     }
 
     const int type_i = ctx.atom_to_type.at(atom_from_i);
@@ -2557,7 +1929,7 @@ ComplexMatrix rotate_input_symmetry_abf_rspace_matrix(const SymmetryContext& ctx
 
     if (matrix_source.nr != T_i.nr || matrix_source.nc != T_j.nr)
     {
-        throw std::runtime_error("ABACUS real-space ABF rotation has incompatible dimensions");
+        throw std::runtime_error("Real-space ABF rotation has incompatible dimensions");
     }
 
     return transpose(T_i, false) * matrix_source * conj(T_j);

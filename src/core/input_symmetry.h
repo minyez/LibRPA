@@ -137,6 +137,8 @@ struct SymmetryContext
     std::map<std::pair<int, int>, Vector3_Order<int>> kstar_member_fold_G;
 
     void clear();
+    void add_rspace_operation(InputSymmetryOperation operation);
+    void set_rspace_operations(std::vector<InputSymmetryOperation> operations);
     void set_lattice(const Matrix3& latvec, const Matrix3& G);
     bool empty() const;
     bool has_ao_shell_layout() const;

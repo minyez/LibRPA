@@ -140,20 +140,10 @@ std::size_t read_stru_symops_from_tokens(const std::vector<std::string> &tokens,
         op.rotation = librpa_int::Matrix3(rotation[0], rotation[1], rotation[2],
                                           rotation[3], rotation[4], rotation[5],
                                           rotation[6], rotation[7], rotation[8]);
-        // Normalize file input to LibRPA's row-fractional convention.
-        // FIXME: Essentially row-fractional rotation should also work,
-        // since the internal facilities should have considered both.
-        // In practice, it is unfortunately not true.
-        // Thought transpose here is safe, it would be nice to figure out
-        // where we had done wrong.
-        if (convention == "col")
-        {
-            op.rotation = op.rotation.Transpose();
-        }
         op.translation = {std::stod(tokens[pos]),
                           std::stod(tokens[pos + 1]),
                           std::stod(tokens[pos + 2])};
-        op.use_row_convention = true;
+        op.use_row_convention = convention == "row";
         pos += 3;
         symops.push_back(std::move(op));
     }
@@ -207,12 +197,7 @@ void read_stru_tail_symops(std::ifstream &infile, const std::string &file_path)
             stru_symops[isym].shell_rotations = operations[isym].shell_rotations;
         }
     }
-    operations.clear();
-    for (auto &op : stru_symops)
-    {
-        operations.push_back(std::move(op));
-    }
-    pds->symmetry_context.available = !operations.empty();
+    pds->symmetry_context.set_rspace_operations(std::move(stru_symops));
 }
 
 } // namespace
