@@ -7,12 +7,13 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 using namespace librpa_int;
 
-void test_constuctor()
+static void test_constuctor()
 {
-    librpa_int::AtomicBasis ab;
+    AtomicBasis ab;
     assert(ab.n_atoms == 0);
     assert(ab.nb_total == 0);
 
@@ -28,14 +29,14 @@ void test_constuctor()
     assert(8 == ab.get_global_index(2, 1));
     assert(4 == ab.get_global_index(1, 2));
 
-    librpa_int::AtomicBasis ab_from_doublemap({0, 1, 1}, {{0, 4}, {1, 8}});
+    AtomicBasis ab_from_doublemap({0, 1, 1}, {{0, 4}, {1, 8}});
     assert(ab_from_doublemap.n_atoms == 3);
     assert(ab_from_doublemap.nb_total == (4 + 2 * 8));
 }
 
-void test_indexing()
+static void test_indexing()
 {
-    librpa_int::AtomicBasis ab({4, 4, 8, 8, 5});
+    AtomicBasis ab({4, 4, 8, 8, 5});
     assert(ab.nb_total == 29);
     std::unordered_map<size_t, std::pair<int, int>> map_go_I_lo
         {
@@ -58,9 +59,9 @@ void test_indexing()
     }
 }
 
-void test_l_shell_metadata()
+static void test_l_shell_metadata()
 {
-    librpa_int::AtomicBasis ab({1, 3, 5});
+    AtomicBasis ab({1, 3, 5});
     const std::vector<std::vector<int>> l_shells{{0}, {1}, {2}};
     ab.set_l_shells(l_shells);
     assert(ab.has_l_shells());
@@ -83,19 +84,36 @@ void test_l_shell_metadata()
     assert(ab.get_max_l() == -1);
 }
 
-void test_get_2d_indices()
+static void test_species_layout()
 {
-    librpa_int::AtomicBasis ab({1, 2, 3});
+    // C atom, 1s 2s 2p 3s 3p 3d
+    SpeciesBasisLayout layout("C", {0, 0, 1, 0, 1, 2});
+
+    assert(layout.n_shell == 6);
+    assert(layout.n_ao == 14);
+    assert(layout.max_l == 2);
+
+    const std::vector<int> shell_offsets{0, 1, 2, 5, 6, 9};
+    assert(equal_vector(layout.shell_offsets, shell_offsets));
+    const std::map<int, std::vector<int>> shell_indices{{0, {0, 1, 3}}, {1, {2, 4}}, {2, {5}}};
+    assert(equal_map_vector(layout.shell_indices, shell_indices));
+    const std::map<int, int> shell_counts{{0, 3}, {1, 2}, {2, 1}};
+    assert(layout.shell_counts == shell_counts);
+}
+
+static void test_get_2d_indices()
+{
+    AtomicBasis ab({1, 2, 3});
     {
         // column fast case
-        const auto id = librpa_int::get_2d_mat_indices_atpair(ab, ab, {{0, 1}, {1, 0}}, false, false);
+        const auto id = get_2d_mat_indices_atpair(ab, ab, {{0, 1}, {1, 0}}, false, false);
         assert(id.size() == 4);
         const std::vector<atpair_t> ref = {{0, 1}, {0, 2}, {1, 0}, {2, 0}};
         for (int i = 0; i < 4; i++) assert(equal_pair(id[i], ref[i]));
     }
     {
         // row fast case
-        const auto id = librpa_int::get_2d_mat_indices_atpair(ab, ab, {{1, 2}}, true, false);
+        const auto id = get_2d_mat_indices_atpair(ab, ab, {{1, 2}}, true, false);
         assert(id.size() == 6);
         const std::vector<atpair_t> ref = {{1, 3}, {2, 3}, {1, 4}, {2, 4}, {1, 5}, {2, 5}};
         for (int i = 0; i < 6; i++) assert(equal_pair(id[i], ref[i]));
@@ -111,11 +129,11 @@ void test_get_2d_indices()
             {1, 2}, {2, 2}, {3, 2}, {4, 2}, {5, 2}, // third column
         };
         // without sort
-        auto id = librpa_int::get_2d_mat_indices_atpair(ab, ab, {{1, 1}, {2, 1}}, true, false);
+        auto id = get_2d_mat_indices_atpair(ab, ab, {{1, 1}, {2, 1}}, true, false);
         assert(id.size() == 10);
         for (int i = 0; i < 10; i++) assert(equal_pair(id[i], ref_nosort[i]));
         // sort
-        id = librpa_int::get_2d_mat_indices_atpair(ab, ab, {{1, 1}, {2, 1}}, true, true);
+        id = get_2d_mat_indices_atpair(ab, ab, {{1, 1}, {2, 1}}, true, true);
         assert(id.size() == 10);
         for (int i = 0; i < 10; i++) assert(equal_pair(id[i], ref_sort[i]));
     }
@@ -129,29 +147,29 @@ void test_get_2d_indices()
             {1, 1}, {1, 2}, {2, 1}, {2, 2}, {3, 1}, {3, 2}, {4, 1}, {4, 2}, {5, 1}, {5, 2},
         };
         // without sort
-        auto id = librpa_int::get_2d_mat_indices_atpair(ab, ab, {{1, 1}, {2, 1}}, false, false);
+        auto id = get_2d_mat_indices_atpair(ab, ab, {{1, 1}, {2, 1}}, false, false);
         assert(id.size() == 10);
         for (int i = 0; i < 10; i++) assert(equal_pair(id[i], ref_nosort[i]));
         // sort
-        id = librpa_int::get_2d_mat_indices_atpair(ab, ab, {{1, 1}, {2, 1}}, false, true);
+        id = get_2d_mat_indices_atpair(ab, ab, {{1, 1}, {2, 1}}, false, true);
         assert(id.size() == 10);
         for (int i = 0; i < 10; i++) assert(equal_pair(id[i], ref_sort[i]));
     }
 
 }
 
-void test_get_1d_indices()
+static void test_get_1d_indices()
 {
-    librpa_int::AtomicBasis ab({1, 2, 3});
+    AtomicBasis ab({1, 2, 3});
     // 2D: (1, 3), (2, 3), (1, 4), (2, 4), (1, 5), (2, 5)
     // row-major: 9, 15, 10, 16, 11, 17
     // col-major: 19, 20, 25, 26, 31, 32
-    const auto id_rfast_rmajor = librpa_int::get_1d_mat_indices_atpair(ab, ab, {{1, 2}}, true, true);
+    const auto id_rfast_rmajor = get_1d_mat_indices_atpair(ab, ab, {{1, 2}}, true, true);
     const std::vector<std::size_t> ref_rfast_rmajor({9, 15, 10, 16, 11, 17});
     assert(id_rfast_rmajor.size() == 6);
     assert(equal_array(6, id_rfast_rmajor.data(), ref_rfast_rmajor.data()));
 
-    const auto id_rfast_cmajor = librpa_int::get_1d_mat_indices_atpair(ab, ab, {{1, 2}}, true, false);
+    const auto id_rfast_cmajor = get_1d_mat_indices_atpair(ab, ab, {{1, 2}}, true, false);
     const std::vector<std::size_t> ref_rfast_cmajor({19, 20, 25, 26, 31, 32});
     assert(id_rfast_cmajor.size() == 6);
     assert(equal_array(6, id_rfast_cmajor.data(), ref_rfast_cmajor.data()));
@@ -161,6 +179,7 @@ int main (int argc, char *argv[])
 {
     test_constuctor();
     test_l_shell_metadata();
+    test_species_layout();
     test_indexing();
     test_get_2d_indices();
     test_get_1d_indices();
