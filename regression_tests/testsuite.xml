@@ -285,8 +285,6 @@
     </testcase>
 
     <testcase name="Bulk MgO, with symmetry on (aims input)" directory="g0w0_aims_MgO_sym_libri">
-      <labels disable="bug"
-      />
       <build require_libri="true"
       />
       <run ntasks_disable="none"
