@@ -191,7 +191,9 @@ class TestDriver:
         exclude = _validate_scope_filter(all_testcases, "--exclude", exclude)
         if only:
             for tc in all_testcases:
-                if tc["directory"] not in only:
+                if tc["directory"] in only:
+                    tc.setdefault("labels", {})["disable"] = False
+                else:
                     _disable_testcase(tc, "not selected by --only")
         elif exclude:
             for tc in all_testcases:

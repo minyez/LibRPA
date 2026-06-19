@@ -102,6 +102,33 @@ class TestScopeFilter(unittest.TestCase):
 
         self.assertEqual(selected, {"case-a", "case-b"})
 
+    def test_only_enables_disabled_testcase(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            testcases = root / "testcases"
+            refs = root / "refs"
+            testcases.mkdir()
+            refs.mkdir()
+            tc = {
+                "directory": "case",
+                "name": "disabled case",
+                "build": {"require_libri": False},
+                "run": {
+                    "ntasks_disable": [],
+                    "nthreads_disable": [],
+                    "ntasks_enable": [],
+                    "nthreads_enable": [],
+                },
+                "labels": {"disable": "experimental"},
+                "validates": [],
+            }
+            driver = TestDriver(testcases, refs, root / "workspace", {"group": [tc]})
+
+            driver.initialize(1, 1, False, only=["testcases/case"])
+
+            self.assertEqual(driver._testcases_filtered, [tc])
+            self.assertFalse(tc["labels"]["disable"])
+
 
 if __name__ == "__main__":
     unittest.main()
