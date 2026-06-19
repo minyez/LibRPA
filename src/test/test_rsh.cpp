@@ -114,8 +114,23 @@ void test_aims_rsh()
     const LibrpaRshCoeff coeff_m_nega = LIBRPA_RSH_COEFF_1_M;
     const LibrpaRshCoeff coeff_m_posi = LIBRPA_RSH_COEFF_1_M;
     const Matrix3 rot_c4z(0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+    const Vector3<double> euler_c4z{PI/2.0, 0.0, 0.0};
+    const auto euler_from_rot = rotation_matrix_to_euler_angles_zyz(rot_c4z);
+    assert(fequal(euler_from_rot.x, euler_c4z.x));
+    assert(fequal(euler_from_rot.y, euler_c4z.y));
+    assert(fequal(euler_from_rot.z, euler_c4z.z));
+
     const auto rotmat = real_spherical_harmonic_rotation_matrix(rot_c4z, 1, order, coeff_m_nega, coeff_m_posi);
     cout << rotmat << endl;
+    assert(fequal(rotmat(0, 0), C_ZERO));
+    assert(fequal(rotmat(0, 1), C_ZERO));
+    assert(fequal(rotmat(0, 2), -C_ONE));
+    assert(fequal(rotmat(1, 0), C_ZERO));
+    assert(fequal(rotmat(1, 1), C_ONE));
+    assert(fequal(rotmat(1, 2), C_ZERO));
+    assert(fequal(rotmat(2, 0), C_ONE));
+    assert(fequal(rotmat(2, 1), C_ZERO));
+    assert(fequal(rotmat(2, 2), C_ZERO));
 }
 
 void test_abacus_rsh()
