@@ -1,4 +1,8 @@
 #pragma once
+/*
+ * Now LibRPA always uses concrete MPI implementation,
+ * hence, LIBRPA_USE_MPI should be always defined.
+ */
 
 // MPI related
 #ifdef LIBRPA_USE_MPI

@@ -73,6 +73,7 @@ foreach(target
   test_matrix_m_mpi
   test_meanfield_mpi
   test_kpoint_blacs_parallel_context
+  test_shared_memory_mpi
   )
   config_test(${target} 4)
 endforeach()
