@@ -10,11 +10,15 @@
 #include <vector>
 
 #include "testutils.h"
+#include "../io/stl_io_helper.h"
 
 namespace {
 
-void assert_matrix_close(const librpa_int::ComplexMatrix& actual,
-                         const librpa_int::ComplexMatrix& expected,
+using namespace std;
+using namespace librpa_int;
+
+void assert_matrix_close(const ComplexMatrix& actual,
+                         const ComplexMatrix& expected,
                          const double thres = 1e-12)
 {
     assert(actual.nr == expected.nr);
@@ -32,12 +36,6 @@ void assert_matrix_close(const librpa_int::ComplexMatrix& actual,
 
 void test_abf_rotation_fallback_uses_basis_convention()
 {
-    using librpa_int::SymmetryContext;
-    using librpa_int::Matrix3;
-    using librpa_int::SpeciesBasisLayout;
-    using librpa_int::build_input_symmetry_abf_rotation_matrix;
-    using librpa_int::real_spherical_harmonic_rotation_matrix;
-
     SymmetryContext ctx;
     ctx.basis_convention = {-1,
                             0,
@@ -89,15 +87,6 @@ void test_abf_rotation_fallback_uses_basis_convention()
 
 void test_kspace_shell_rotations_use_direct_rotation()
 {
-    using librpa_int::BasisConvention;
-    using librpa_int::Matrix3;
-    using librpa_int::SpaceGroupSymOp;
-    using librpa_int::Vector3_Order;
-    using librpa_int::build_input_symmetry_kspace_phase;
-    using librpa_int::build_input_symmetry_kspace_shell_rotations;
-    using librpa_int::build_input_symmetry_shell_rotations_from_direct_rotation;
-    using librpa_int::real_spherical_harmonic_rotation_matrix;
-
     const BasisConvention basis_convention{-1,
                                            0,
                                            LIBRPA_ANGULAR_ORDER_NATURAL,
@@ -154,11 +143,6 @@ void test_kspace_shell_rotations_use_direct_rotation()
 
 void test_species_basis_layout_keeps_shell_order()
 {
-    using librpa_int::ComplexMatrix;
-    using librpa_int::SymmetryContext;
-    using librpa_int::SpeciesBasisLayout;
-    using librpa_int::build_input_symmetry_ao_rotation_matrix;
-
     SpeciesBasisLayout layout;
     assert(!layout.is_shell_available());
     layout.label = "X";
@@ -200,18 +184,18 @@ void write_file(const std::filesystem::path& path, const std::string& text)
     ofs << text;
 }
 
-void add_irreducible_sector_entry(librpa_int::input_symmetry_irreducible_sector_t& sector,
-                                  const librpa_int::atom_t atom_i,
-                                  const librpa_int::atom_t atom_j,
-                                  const librpa_int::input_symmetry_R_t& R)
+void add_irreducible_sector_entry(input_symmetry_irreducible_sector_t& sector,
+                                  const atom_t atom_i,
+                                  const atom_t atom_j,
+                                  const input_symmetry_R_t& R)
 {
     sector[{atom_i, atom_j}].insert(R);
 }
 
-librpa_int::InputSymmetryOperation make_row_symmetry_operation(const std::array<int, 9>& rotation)
+InputSymmetryOperation make_row_symmetry_operation(const std::array<int, 9>& rotation)
 {
-    librpa_int::InputSymmetryOperation op;
-    op.rotation = librpa_int::Matrix3(rotation[0], rotation[1], rotation[2],
+    InputSymmetryOperation op;
+    op.rotation = Matrix3(rotation[0], rotation[1], rotation[2],
                                       rotation[3], rotation[4], rotation[5],
                                       rotation[6], rotation[7], rotation[8]);
     op.translation = {0.0, 0.0, 0.0};
@@ -219,9 +203,9 @@ librpa_int::InputSymmetryOperation make_row_symmetry_operation(const std::array<
     return op;
 }
 
-librpa_int::SymmetryContext make_bn_shrink_symmetry_context()
+SymmetryContext make_bn_shrink_symmetry_context()
 {
-    librpa_int::SymmetryContext ctx;
+    SymmetryContext ctx;
     ctx.atom_to_type = {{0, 0}, {1, 1}};
     ctx.input_coord_frac = {{0, {0.0, 0.0, 0.0}}, {1, {0.25, 0.25, 0.25}}};
 
@@ -258,15 +242,107 @@ librpa_int::SymmetryContext make_bn_shrink_symmetry_context()
     return ctx;
 }
 
+void add_mgo_fractional_symmetry_operations(SymmetryContext& ctx)
+{
+    const std::array<std::array<int, 3>, 6> permutations{{
+        {{0, 1, 2}},
+        {{0, 2, 1}},
+        {{1, 0, 2}},
+        {{1, 2, 0}},
+        {{2, 0, 1}},
+        {{2, 1, 0}},
+    }};
+    const std::array<int, 2> signs{{-1, 1}};
+
+    for (const auto& permutation : permutations)
+    {
+        for (const int sx : signs)
+        {
+            for (const int sy : signs)
+            {
+                for (const int sz : signs)
+                {
+                    const std::array<int, 3> sign{{sx, sy, sz}};
+                    std::array<int, 9> rotation{};
+                    for (int col = 0; col != 3; ++col)
+                    {
+                        rotation[3 * permutation[col] + col] = sign[col];
+                    }
+
+                    const Matrix3 col_fractional_rotation(
+                        rotation[0], rotation[1], rotation[2],
+                        rotation[3], rotation[4], rotation[5],
+                        rotation[6], rotation[7], rotation[8]);
+                    InputSymmetryOperation op;
+                    op.rotation = col_fractional_rotation.Transpose();
+                    op.translation = {0.0, 0.0, 0.0};
+                    op.use_row_convention = true;
+                    ctx.rspace_operations.push_back(op);
+                }
+            }
+        }
+    }
+    assert(ctx.rspace_operations.size() == 48);
+}
+
+void test_mgo_k333_irreducible_sector_matches_abacus()
+{
+    SymmetryContext ctx;
+    ctx.atom_to_type = {{0, 0}, {1, 1}};
+    ctx.input_coord_frac = {{0, {0.0, 0.0, 0.0}}, {1, {0.5, 0.5, 0.5}}};
+    add_mgo_fractional_symmetry_operations(ctx);
+
+    const Vector3_Order<int> period{3, 3, 3};
+    const auto Rlist = construct_R_grid(period);
+    const auto generated_sector =
+        build_input_symmetry_rspace_irreducible_sector(ctx, {}, Rlist);
+
+    input_symmetry_irreducible_sector_t expected_sector;
+    add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1, -1});
+    add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1,  0});
+    add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1,  1});
+    add_irreducible_sector_entry(expected_sector, 0, 0, {-1,  0,  0});
+    add_irreducible_sector_entry(expected_sector, 0, 0, { 0,  0,  0});
+    add_irreducible_sector_entry(expected_sector, 0, 1, {-1,  0,  0});
+    add_irreducible_sector_entry(expected_sector, 0, 1, {-1,  0,  1});
+    add_irreducible_sector_entry(expected_sector, 0, 1, {-1,  1,  1});
+    add_irreducible_sector_entry(expected_sector, 0, 1, { 0,  0,  0});
+    add_irreducible_sector_entry(expected_sector, 0, 1, { 0,  0,  1});
+    add_irreducible_sector_entry(expected_sector, 0, 1, { 0,  1,  1});
+    add_irreducible_sector_entry(expected_sector, 0, 1, { 1,  1,  1});
+    add_irreducible_sector_entry(expected_sector, 1, 0, {-1, -1, -1});
+    add_irreducible_sector_entry(expected_sector, 1, 0, {-1, -1,  0});
+    add_irreducible_sector_entry(expected_sector, 1, 0, {-1, -1,  1});
+    add_irreducible_sector_entry(expected_sector, 1, 0, {-1,  0,  0});
+    add_irreducible_sector_entry(expected_sector, 1, 0, {-1,  0,  1});
+    add_irreducible_sector_entry(expected_sector, 1, 0, { 0,  0,  0});
+    add_irreducible_sector_entry(expected_sector, 1, 0, { 0,  0,  1});
+    add_irreducible_sector_entry(expected_sector, 1, 1, {-1, -1, -1});
+    add_irreducible_sector_entry(expected_sector, 1, 1, {-1, -1,  0});
+    add_irreducible_sector_entry(expected_sector, 1, 1, {-1, -1,  1});
+    add_irreducible_sector_entry(expected_sector, 1, 1, {-1,  0,  0});
+    add_irreducible_sector_entry(expected_sector, 1, 1, { 0,  0,  0});
+    cout << "generated_sector" << endl << generated_sector << endl;
+    cout << "expected_sector"  << endl << expected_sector << endl;
+    assert(generated_sector == expected_sector);
+
+    ctx.irreducible_sector = generated_sector;
+    ctx.available = true;
+    input_symmetry_rspace_sector_stars_t sector_stars;
+    build_input_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
+    std::size_t restored_members = 0;
+    for (const auto& pair_stars : sector_stars)
+    {
+        for (const auto& R_star : pair_stars.second)
+        {
+            restored_members += R_star.second.size();
+        }
+    }
+    assert(restored_members == 2 * 2 * Rlist.size());
+}
+
 void test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry()
 {
-    using librpa_int::Vector3_Order;
-    using librpa_int::build_input_symmetry_rspace_irreducible_sector;
-    using librpa_int::build_input_symmetry_rspace_sector_stars;
-    using librpa_int::construct_R_grid;
-    using librpa_int::input_symmetry_irreducible_sector_t;
-    using librpa_int::input_symmetry_rspace_sector_stars_t;
-
     auto ctx = make_bn_shrink_symmetry_context();
     const Vector3_Order<int> period{2, 2, 2};
     const auto Rlist = construct_R_grid(period);
@@ -308,9 +384,6 @@ void test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry()
 
 void test_abacus_legacy_sidecars_are_ignored_without_generated_symops()
 {
-    using librpa_int::SymmetryContext;
-    using librpa_int::load_input_symmetry_context;
-
     const auto dir = std::filesystem::temp_directory_path()
                      / "librpa_test_input_symmetry_ignored_legacy_sidecars";
     std::filesystem::remove_all(dir);
@@ -329,10 +402,6 @@ void test_abacus_legacy_sidecars_are_ignored_without_generated_symops()
 
 void test_abacus_generated_symops_do_not_require_sidecars()
 {
-    using librpa_int::SymmetryContext;
-    using librpa_int::Matrix3;
-    using librpa_int::load_input_symmetry_context;
-
     const auto dir = std::filesystem::temp_directory_path()
                      / "librpa_test_input_symmetry_generated_symops_no_sidecars";
     std::filesystem::remove_all(dir);
@@ -356,11 +425,6 @@ void test_abacus_generated_symops_do_not_require_sidecars()
 
 void test_abacus_generated_symops_ignore_legacy_sidecars()
 {
-    using librpa_int::SymmetryContext;
-    using librpa_int::InputSymmetryOperation;
-    using librpa_int::Matrix3;
-    using librpa_int::load_input_symmetry_context;
-
     const auto dir = std::filesystem::temp_directory_path()
                      / "librpa_test_input_symmetry_generated_symops_ignore_legacy_sidecars";
     std::filesystem::remove_all(dir);
@@ -405,6 +469,7 @@ int main()
     test_abf_rotation_fallback_uses_basis_convention();
     test_kspace_shell_rotations_use_direct_rotation();
     test_species_basis_layout_keeps_shell_order();
+    test_mgo_k333_irreducible_sector_matches_abacus();
     test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry();
     test_abacus_legacy_sidecars_are_ignored_without_generated_symops();
     test_abacus_generated_symops_do_not_require_sidecars();
