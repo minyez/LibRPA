@@ -51,7 +51,8 @@ static void librpa_init_global_common(MPI_Comm comm, LibrpaSwitch switch_redirec
 #endif
 
     mpi_comm_global_h.barrier();
-    lib_printf_root("Initialized LibRPA global environment\n");
+    lib_printf_root("Initialized LibRPA global environment at %s\n",
+                    librpa_int::get_timestamp().c_str());
     mpi_comm_global_h.barrier();
 }
 
@@ -84,7 +85,8 @@ void librpa_finalize_global(void)
 {
     using namespace librpa_int::global;
     mpi_comm_global_h.barrier();
-    lib_printf_root("Finalizing LibRPA global environment\n");
+    lib_printf_root("Finalizing LibRPA global environment at %s\n",
+                    librpa_int::get_timestamp().c_str());
     mpi_comm_global_h.barrier();
 
 #ifdef LIBRPA_USE_ELPA
