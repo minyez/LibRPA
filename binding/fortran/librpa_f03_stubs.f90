@@ -59,8 +59,8 @@ module librpa_f03
    !> @brief Controls the amount of output during computation.
    !> @{
    integer, parameter, public :: LIBRPA_VERBOSE_DEBUG = 4      !< Debug output
-   integer, parameter, public :: LIBRPA_VERBOSE_WARN = 3       !< Warnings and above
-   integer, parameter, public :: LIBRPA_VERBOSE_INFO = 2       !< Informational messages
+   integer, parameter, public :: LIBRPA_VERBOSE_INFO = 3       !< Informational messages
+   integer, parameter, public :: LIBRPA_VERBOSE_WARN = 2       !< Warnings and above
    integer, parameter, public :: LIBRPA_VERBOSE_CRITICAL = 1   !< Critical errors only
    integer, parameter, public :: LIBRPA_VERBOSE_SILENT = 0     !< No output
    !> @}

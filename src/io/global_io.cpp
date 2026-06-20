@@ -28,16 +28,6 @@ static bool librpa_io_initialized = false;
  * Private variables ends
  ============================================== */
 
-void set_output_level(const LibrpaVerbose level) noexcept
-{
-    output_level = level;
-}
-
-LibrpaVerbose get_output_level() noexcept
-{
-    return output_level;
-}
-
 void init_global_io(bool redirect_stdout, const char *redirect_path, bool enable_task_output)
 {
     using namespace librpa_int::global;

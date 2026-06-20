@@ -31,7 +31,7 @@ option(LIBRPA_USE_EXTERNAL_GREENX  "Use an external GreenX target provided by th
 option(LIBRPA_ENABLE_TEST          "Flag to build LibRPA tests" ON)
 option(LIBRPA_ENABLE_DRIVER        "Flag to build LibRPA driver executable" ON)
 option(LIBRPA_ENABLE_FORTRAN_BIND  "Flag to build LibRPA Fotran binding" OFF)
-option(LIBRPA_VERBOSE_OUTPUT       "Flag to print verbose information in stdout and process output of LibRPA" OFF)
+option(LIBRPA_VERBOSE_OUTPUT       "Flag to print verbose information in stdout and process output of LibRPA" ON)
 option(LIBRPA_USE_CUDA             "Enable CUDA language support" OFF)
 option(LIBRPA_USE_HIP              "Enable HIP language support" OFF)
 
@@ -401,7 +401,6 @@ endif()
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
   message(STATUS "Build type set to Debug, adding LIBRPA_DEBUG preprocessor directive")
   add_compile_definitions("LIBRPA_DEBUG")
-  set(LIBRPA_VERBOSE_OUTPUT ON)
 endif()
 
 if(LIBRPA_VERBOSE_OUTPUT)

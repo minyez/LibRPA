@@ -21,22 +21,13 @@ extern FILE *pfile_redirect;
 //! Current stdout verbosity. Plain lib_printf messages are informational.
 extern LibrpaVerbose output_level;
 
-void set_output_level(const LibrpaVerbose level) noexcept;
+inline void set_output_level(const LibrpaVerbose level) noexcept { output_level = level; }
 
-LibrpaVerbose get_output_level() noexcept;
-
-inline int verbose_rank(const LibrpaVerbose level) noexcept
-{
-    if (level == LIBRPA_VERBOSE_DEBUG) return 4;
-    if (level == LIBRPA_VERBOSE_INFO) return 3;
-    if (level == LIBRPA_VERBOSE_WARN) return 2;
-    if (level == LIBRPA_VERBOSE_CRITICAL) return 1;
-    return 0;
-}
+inline LibrpaVerbose get_output_level() noexcept { return output_level; }
 
 inline bool should_output(const LibrpaVerbose verbose_level = LIBRPA_VERBOSE_INFO) noexcept
 {
-    return verbose_rank(output_level) >= verbose_rank(verbose_level);
+    return output_level >= verbose_level;
 }
 
 //! Initialize the IO environment of LibRPA
@@ -138,7 +129,7 @@ void lib_printf_coll(const char* s, Args&&... args) noexcept
 
 inline bool verbalize(const LibrpaVerbose current_level, const LibrpaVerbose verbose_level) noexcept
 {
-    return global::verbose_rank(current_level) >= global::verbose_rank(verbose_level);
+    return current_level >= verbose_level;
 }
 
 //! Similar to lib_printf_root, but one can specify any communicator

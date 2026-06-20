@@ -54,6 +54,7 @@ foreach(target
     test_matrix_m
     test_meanfield
     test_pbc
+    test_profiler
     test_qpe_solver
     test_rsh
     test_rpa_headwing

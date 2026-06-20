@@ -28,11 +28,11 @@ extern "C" {
 /** @brief Verbose level for debug output. */
 #define LIBRPA_VERBOSE_DEBUG 4
 
-/** @brief Verbose level for warning messages. */
-#define LIBRPA_VERBOSE_WARN 3
-
 /** @brief Verbose level for informational messages. */
-#define LIBRPA_VERBOSE_INFO 2
+#define LIBRPA_VERBOSE_INFO 3
+
+/** @brief Verbose level for warning messages. */
+#define LIBRPA_VERBOSE_WARN 2
 
 /** @brief Verbose level for critical/error messages only. */
 #define LIBRPA_VERBOSE_CRITICAL 1

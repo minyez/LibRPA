@@ -11,6 +11,7 @@ int main (int argc, char *argv[])
 {
     using namespace librpa_int;
 
+    assert(LIBRPA_VERBOSE_INFO > LIBRPA_VERBOSE_WARN);
     global::set_output_level(LIBRPA_VERBOSE_WARN);
     assert(!global::should_output(LIBRPA_VERBOSE_INFO));
     assert(global::should_output(LIBRPA_VERBOSE_WARN));

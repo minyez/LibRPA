@@ -61,9 +61,11 @@ void Profiler::Timer::stop() noexcept
     clock_start = 0;
 }
 
-std::shared_ptr<Profiler::Timer> Profiler::add(const std::string &tname, const std::string &tnote) noexcept
+std::shared_ptr<Profiler::Timer> Profiler::add(const std::string &tname,
+                                               const std::string &tnote,
+                                               LibrpaVerbose verbose_level) noexcept
 {
-    auto new_timer = std::make_shared<Timer>(tname, tnote);
+    auto new_timer = std::make_shared<Timer>(tname, tnote, verbose_level);
 
     if (!root)
     {
@@ -100,28 +102,33 @@ std::shared_ptr<Profiler::Timer> Profiler::add(const std::string &tname, const s
     return new_timer;
 }
 
-void Profiler::start(const std::string &tname, const std::string &tnote) noexcept
+void Profiler::start(const std::string &tname, const std::string &tnote,
+                     LibrpaVerbose verbose) noexcept
 {
     if (omp_get_thread_num() != 0) return;
     auto timer = find_timer_in_hierarchy(tname);
     // create a new timer if it is not found, otherwise we move to that timer and start
     if (!timer)
     {
-        timer = add(tname, tnote);
+        timer = add(tname, tnote, verbose);
     }
+    timer->verbose_level = verbose;
     // move to it
     current = timer;
 #ifdef LIBRPA_VERBOSE
-    double free_mem_gb;
-    get_node_free_mem(free_mem_gb);
-    global::ofs_myid << get_timestamp() <<" Timer start: " << tname << ". "
-                           << "Free memory on node [GB]: " << free_mem_gb;
+    if (global::should_output(verbose))
+    {
+        double free_mem_gb;
+        get_node_free_mem(free_mem_gb);
+        global::ofs_myid << get_timestamp() <<" Timer start: " << tname << ". "
+                         << "Free memory on node [GB]: " << free_mem_gb;
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
-    size_t free_mem_gpu_bt, total_mem_gpu_bt;
-    ddla::DEVICE_CHECK(deviceMemGetInfo(&free_mem_gpu_bt, &total_mem_gpu_bt));
-    global::ofs_myid << "  on GPU [GB]: " << free_mem_gpu_bt/1024./1024./1024.;
+        size_t free_mem_gpu_bt, total_mem_gpu_bt;
+        ddla::DEVICE_CHECK(deviceMemGetInfo(&free_mem_gpu_bt, &total_mem_gpu_bt));
+        global::ofs_myid << "  on GPU [GB]: " << free_mem_gpu_bt/1024./1024./1024.;
 #endif
-    global::ofs_myid << std::endl;
+        global::ofs_myid << std::endl;
+    }
 #endif
     current->start();
 }
@@ -135,16 +142,19 @@ void Profiler::stop(const std::string &tname) noexcept
         if (current->name == tname)
         {
 #ifdef LIBRPA_VERBOSE
-            double free_mem_gb;
-            get_node_free_mem(free_mem_gb);
-            global::ofs_myid << get_timestamp() << " Timer stop:  " << tname << ". "
-                             << "Free memory on node [GB]: " << free_mem_gb;
+            if (global::should_output(current->verbose_level))
+            {
+                double free_mem_gb;
+                get_node_free_mem(free_mem_gb);
+                global::ofs_myid << get_timestamp() << " Timer stop:  " << tname << ". "
+                                 << "Free memory on node [GB]: " << free_mem_gb;
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
-            size_t free_mem_gpu_bt, total_mem_gpu_bt;
-            ddla::DEVICE_CHECK(deviceMemGetInfo(&free_mem_gpu_bt, &total_mem_gpu_bt));
-            global::ofs_myid << "  on GPU [GB]: " << free_mem_gpu_bt/1024./1024./1024.;
+                size_t free_mem_gpu_bt, total_mem_gpu_bt;
+                ddla::DEVICE_CHECK(deviceMemGetInfo(&free_mem_gpu_bt, &total_mem_gpu_bt));
+                global::ofs_myid << "  on GPU [GB]: " << free_mem_gpu_bt/1024./1024./1024.;
 #endif
-            global::ofs_myid << std::endl;
+                global::ofs_myid << std::endl;
+            }
 #endif
             current->stop();
             current = current->parent;
@@ -209,9 +219,19 @@ double Profiler::get_wall_time_last(const std::string &tname) noexcept
     return 0.0;
 }
 
-std::string Profiler::get_profile_string_of_timer(std::shared_ptr<Profiler::Timer> timer, int level)
+std::string Profiler::get_profile_string_of_timer(std::shared_ptr<Profiler::Timer> timer, int level,
+                                                  LibrpaVerbose verbose_level)
 {
     std::ostringstream ss;
+    if (timer->verbose_level > verbose_level)
+    {
+        if (timer->child)
+            ss << get_profile_string_of_timer(timer->child, level, verbose_level);
+        if (timer->next)
+            ss << get_profile_string_of_timer(timer->next, level, verbose_level);
+        return ss.str();
+    }
+
     // std::string indent(2 * level, ' ');
     std::string indent(level, ' ');
     const auto note = indent + (timer->note == "" ? timer->name : timer->note);
@@ -226,9 +246,9 @@ std::string Profiler::get_profile_string_of_timer(std::shared_ptr<Profiler::Time
         << std::setw(18) << (indent + cstr_walltime.str()) << "\n";
     // Print child, then sibling
     if (timer->child)
-        ss << get_profile_string_of_timer(timer->child, level + 1);
+        ss << get_profile_string_of_timer(timer->child, level + 1, verbose_level);
     if (timer->next)
-        ss << get_profile_string_of_timer(timer->next, level);
+        ss << get_profile_string_of_timer(timer->next, level, verbose_level);
     return ss.str();
 }
 
@@ -253,7 +273,7 @@ std::string Profiler::get_profile_string(int verbose) noexcept
         << std::setw(18) << "CPU time (s)" << " " << std::setw(18) << "Wall time (s)" << "\n";
     output << banner('-', 100) << "\n";
     if (root)
-        output << get_profile_string_of_timer(root, 0);
+        output << get_profile_string_of_timer(root, 0, verbose);
 
     return output.str();
 }

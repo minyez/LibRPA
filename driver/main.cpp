@@ -15,7 +15,6 @@
 #include "../src/utils/utils_mem.h"
 #include "../src/api/instance_manager.h"
 #include "../src/io/fs.h"
-#include "../src/core/input_symmetry.h"
 // #include "task_qsgw.h"
 // #include "task_qsgwA.h"
 // #include "task_qsgw_band.h"
@@ -35,7 +34,7 @@ static void initialize(int argc, char **argv)
         librpa_int::global::lib_printf(LIBRPA_VERBOSE_WARN, "Warning: MPI_Init_thread provide %d != required %d", provided, MPI_THREAD_FUNNELED);
     }
 
-    set_output_level(driver::driver_params.output_level);
+    librpa::set_output_level(driver::driver_params.output_level);
     librpa::init_global(LIBRPA_SWITCH_OFF);
 
     // Global profiler begins right after MPI is initialized
