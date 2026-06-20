@@ -217,8 +217,8 @@ module librpa_f03
       real(c_double) :: libri_g0w0_threshold_Wc
 
       ! Output controls
-      integer(c_int) :: output_gw_sigc_ks_if
-      integer(c_int) :: output_gw_sigc_mat
+      integer(c_int) :: output_gw_sigc_ks_kf
+      integer(c_int) :: output_gw_sigc_ks_mat_kf
       integer(c_int) :: output_gw_sigc_mat_rt
       integer(c_int) :: output_gw_sigc_mat_rf
       integer(c_int) :: output_wc_rf
@@ -354,13 +354,13 @@ module librpa_f03
       real(dp) :: libri_g0w0_threshold_G
       !> LibRI threshold of screened Coulomb matrix for G0W0 correlation self-energy.
       real(dp) :: libri_g0w0_threshold_Wc
-      !> Output KS-diagonal correlation self-energy on imaginary frequencies.
-      logical :: output_gw_sigc_ks_if
-      !> Experimental: output correlation self-energy matrix in k-space and imaginary frequencies.
-      logical :: output_gw_sigc_mat
-      !> Experimental: output correlation self-energy matrix in real space and imaginary time.
+      !> Output KS-diagonal correlation self-energy in k-space, imaginary frequency domain.
+      logical :: output_gw_sigc_ks_kf
+      !> Experimental: output KS-basis correlation self-energy matrix in k-space and imaginary frequencies.
+      logical :: output_gw_sigc_ks_mat_kf
+      !> Experimental: output NAO-basis correlation self-energy matrix in real space and imaginary time.
       logical :: output_gw_sigc_mat_rt
-      !> Experimental: output correlation self-energy matrix in real space and imaginary frequencies.
+      !> Experimental: output NAO-basis correlation self-energy matrix in real space and imaginary frequencies.
       logical :: output_gw_sigc_mat_rf
       !> Experimental: output \f$W^c\f$ matrix in real space and imaginary frequency.
       logical :: output_wc_rf
@@ -1134,7 +1134,7 @@ contains
       call sync_opt(opts%load_sigc_from_file,     opts%opts_c%load_sigc_from_file,     direction)
       call sync_opt(opts%use_scalapack_gw_wc,     opts%opts_c%use_scalapack_gw_wc,     direction)
       call sync_opt(opts%use_cholesky_gw_wc,      opts%opts_c%use_cholesky_gw_wc,      direction)
-      call sync_opt(opts%use_gpu_replace_scalapack,           opts%opts_c%use_gpu_replace_scalapack,           direction)
+      call sync_opt(opts%use_gpu_replace_scalapack, opts%opts_c%use_gpu_replace_scalapack, direction)
       call sync_opt(opts%use_elpa_sqrt_coulomb,   opts%opts_c%use_elpa_sqrt_coulomb,   direction)
       call sync_opt(opts%sqrt_coulomb_threshold,  opts%opts_c%sqrt_coulomb_threshold,  direction)
       call sync_opt(opts%replace_w_head,          opts%opts_c%replace_w_head,          direction)
@@ -1146,8 +1146,8 @@ contains
       call sync_opt(opts%libri_g0w0_threshold_C,  opts%opts_c%libri_g0w0_threshold_C,  direction)
       call sync_opt(opts%libri_g0w0_threshold_G,  opts%opts_c%libri_g0w0_threshold_G,  direction)
       call sync_opt(opts%libri_g0w0_threshold_Wc, opts%opts_c%libri_g0w0_threshold_Wc, direction)
-      call sync_opt(opts%output_gw_sigc_ks_if,    opts%opts_c%output_gw_sigc_ks_if, direction)
-      call sync_opt(opts%output_gw_sigc_mat,      opts%opts_c%output_gw_sigc_mat,      direction)
+      call sync_opt(opts%output_gw_sigc_ks_kf,    opts%opts_c%output_gw_sigc_ks_kf,    direction)
+      call sync_opt(opts%output_gw_sigc_ks_mat_kf, opts%opts_c%output_gw_sigc_ks_mat_kf, direction)
       call sync_opt(opts%output_gw_sigc_mat_rt,   opts%opts_c%output_gw_sigc_mat_rt,   direction)
       call sync_opt(opts%output_gw_sigc_mat_rf,   opts%opts_c%output_gw_sigc_mat_rf,   direction)
       call sync_opt(opts%output_wc_rf,            opts%opts_c%output_wc_rf,            direction)

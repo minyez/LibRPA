@@ -246,13 +246,13 @@ module librpa_f03
       real(dp) :: libri_g0w0_threshold_G
       !> LibRI threshold of screened Coulomb matrix for G0W0 correlation self-energy.
       real(dp) :: libri_g0w0_threshold_Wc
-      !> Output KS-diagonal correlation self-energy on imaginary frequencies.
-      logical :: output_gw_sigc_ks_if
-      !> Experimental: output correlation self-energy matrix in k-space and imaginary frequencies.
-      logical :: output_gw_sigc_mat
-      !> Experimental: output correlation self-energy matrix in real space and imaginary time.
+      !> Output KS-diagonal correlation self-energy in k-space, imaginary frequency domain.
+      logical :: output_gw_sigc_ks_kf
+      !> Experimental: output KS-basis correlation self-energy matrix in k-space and imaginary frequencies.
+      logical :: output_gw_sigc_ks_mat_kf
+      !> Experimental: output NAO-basis correlation self-energy matrix in real space and imaginary time.
       logical :: output_gw_sigc_mat_rt
-      !> Experimental: output correlation self-energy matrix in real space and imaginary frequencies.
+      !> Experimental: output NAO-basis correlation self-energy matrix in real space and imaginary frequencies.
       logical :: output_gw_sigc_mat_rf
       !> Experimental: output \f$W^c\f$ matrix in real space and imaginary frequency.
       logical :: output_wc_rf

@@ -195,9 +195,10 @@ These parameters are active for LibRI-enabled builds and LibRI routing.
 
 | Parameter Name            | Description                                                               | Type | Default Value (Options)                   | Status       |
 |---------------------------|---------------------------------------------------------------------------|------|-------------------------------------------|--------------|
-| `output_gw_sigc_mat`      | Output correlation self-energy matrix (k-space, imaginary frequencies)    | bool | `false`                                   | Experimental |
-| `output_gw_sigc_mat_rt`   | Output correlation self-energy matrix (real-space, imaginary time)        | bool | `false`                                   | Experimental |
-| `output_gw_sigc_mat_rf`   | Output correlation self-energy matrix (real-space, imaginary frequencies) | bool | `false`                                   | Experimental |
+| `output_gw_sigc_ks_kf`    | Output KS-diagonal correlation self-energy (k-space, imaginary frequencies) | bool | `false`                                 | Experimental |
+| `output_gw_sigc_ks_mat_kf` | Output KS-basis correlation self-energy matrix (k-space, imaginary frequencies) | bool | `false`                              | Experimental |
+| `output_gw_sigc_mat_rt`   | Output NAO-basis correlation self-energy matrix (real-space, imaginary time) | bool | `false`                                | Experimental |
+| `output_gw_sigc_mat_rf`   | Output NAO-basis correlation self-energy matrix (real-space, imaginary frequencies) | bool | `false`                         | Experimental |
 | `output_wc_rf`            | Output $W^c$ matrix in real space and imaginary frequency where supported | bool | `false`                                   | Experimental |
 | `ifreq_output_wc_start`   | First zero-based $W^c$ frequency index to output                         | int  | 0                                         | Experimental |
 | `ifreq_output_wc_end`     | Half-open $W^c$ frequency output end index; negative means all remaining frequencies | int | -1 | Experimental |
@@ -213,6 +214,8 @@ and may be removed in the future:
 | `use_soc`        | `use_spinor_wfc`     | Old spelling for selecting spinor-format driver input |
 | `tfgrid_type`    | `tfgrids_type`       | Old spelling                               |
 | `gf_R_threshold` | `gf_threshold`       | Old spelling                               |
+| `output_gw_sigc_ks_if` | `output_gw_sigc_ks_kf` | Old spelling |
+| `output_gw_sigc_mat` | `output_gw_sigc_ks_mat_kf` | Old spelling |
 | `option_output_Wc_Rf_mat` | `output_wc_rf`,          | `0` disables output,  |
 |                           | `ifreq_output_wc_start`, | `1` maps to `[0,1)`,  |
 |                           | `ifreq_output_wc_end`    | `2` maps to `[0,all)` |

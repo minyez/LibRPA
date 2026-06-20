@@ -504,15 +504,15 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
     is_kspace_built_ = false;
     is_rspace_redist_for_KS_ = false;
     is_rspace_redist_blacs_ = false;
-    output_sigc_ks_if_band_index_ = 0;
+    output_sigc_ks_kf_band_index_ = 0;
 
     // Public runtime options
     libri_threshold_C = 0.0;
     libri_threshold_Wc = 0.0;
     libri_threshold_G = 0.0;
     output_dir = "./";  // POSIX
-    output_sigc_mat = false;
-    output_sigc_ks_if = true;
+    output_sigc_ks_mat_kf = false;
+    output_sigc_ks_kf = true;
     output_sigc_mat_rt = false;
     output_sigc_mat_rf = false;
     output_wc_rf = false;
@@ -1799,7 +1799,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     sigc_is_ik_f_KS.clear(); sigc_diag_is_ik_f_KS.clear();
     auto store_sigc_local = [this](int isp, int ik, double freq, const Matz &sigc)
     {
-        if (!this->output_sigc_mat) return;
+        if (!this->output_sigc_ks_mat_kf) return;
         auto &mat_map = this->sigc_is_ik_f_KS[isp][ik];
         auto it = mat_map.find(freq);
         if (it == mat_map.end())
@@ -1983,7 +1983,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                                                 0.0,
                                                                 sigc_nband_nband_opt.ptr(), 1, 1, desc_nband_nband_opt.desc);
                                 }
-                                if (this->output_sigc_mat)
+                                if (this->output_sigc_ks_mat_kf)
                                 {
                                     store_sigc_local(isp, ik, freq, sigc_nband_nband_opt);
                                 }
@@ -2077,7 +2077,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                 }
                                 broadcast_ComplexMatrix(
                                     sigc_nband_nband_dense, 0, comm_h.comm);
-                                if (this->output_sigc_mat)
+                                if (this->output_sigc_ks_mat_kf)
                                 {
                                     const Matz sigc_dense(n_bands, n_bands,
                                                           sigc_nband_nband_dense.c,
@@ -2121,7 +2121,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                                             wfc_ket_block.ptr(), 1, 1, desc_nband_nao.desc, 0.0,
                                                             sigc_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
                             }
-                            if (this->output_sigc_mat)
+                            if (this->output_sigc_ks_mat_kf)
                             {
                                 ScalapackConnector::pgemr2d_f(n_bands, n_bands,
                                                               sigc_nband_nband.ptr(), 1, 1, desc_nband_nband.desc,
@@ -2177,7 +2177,7 @@ void G0W0::build_sigc_matrix_KS_kgrid(const Atoms &geometry)
     comm_h.barrier();
     librpa_int::global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid" << std::endl;
     this->build_sigc_matrix_KS(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {});
-    if (this->output_sigc_ks_if)
+    if (this->output_sigc_ks_kf)
     {
         const auto fn = path_as_directory(this->output_dir) + "self_energy_omega.dat";
         write_self_energy_omega(fn.c_str(), *this, this->mf.get_n_kpoints(),
@@ -2196,14 +2196,14 @@ void G0W0::build_sigc_matrix_KS_band(const std::map<int, std::map<int, std::map<
         librpa_int::global::lib_printf("build_sigc_matrix_KS_kgrid: constructing self-energy matrix for band k-path\n");
     }
     this->build_sigc_matrix_KS(wfc, kfrac_band, bvk_remap);
-    if (this->output_sigc_ks_if)
+    if (this->output_sigc_ks_kf)
     {
         const int n_bands = infer_target_n_bands(comm_h, wfc, this->mf.get_n_bands());
         const auto iks = output_iks == nullptr
                              ? collect_target_iks(comm_h, wfc, static_cast<int>(kfrac_band.size()))
                              : *output_iks;
         const auto stem = make_sigc_ks_imagfreq_band_stem(
-            this->output_dir, output_sigc_ks_if_band_index_++);
+            this->output_dir, output_sigc_ks_kf_band_index_++);
         write_self_energy_omega((stem + ".dat").c_str(), *this, iks, n_bands);
         write_self_energy_omega_kpoints((stem + ".kidx").c_str(), *this, iks);
     }
@@ -2215,7 +2215,7 @@ void G0W0::build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h
     comm_h.barrier();
     librpa_int::global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid with BLACS" << std::endl;
     this->build_sigc_matrix_KS_blacs(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {}, blacs_ctxt_h, use_gpu_replace_scalapack);
-    if (this->output_sigc_ks_if)
+    if (this->output_sigc_ks_kf)
     {
         const auto fn = path_as_directory(this->output_dir) + "self_energy_omega.dat";
         write_self_energy_omega(fn.c_str(), *this, this->mf.get_n_kpoints(),
@@ -2237,14 +2237,14 @@ void G0W0::build_sigc_matrix_KS_band_blacs(
         librpa_int::global::lib_printf("build_sigc_matrix_KS_band: constructing self-energy matrix for band k-path with BLACS\n");
     }
     this->build_sigc_matrix_KS_blacs(wfc, kfrac_band, bvk_remap, blacs_ctxt_h, use_gpu_replace_scalapack);
-    if (this->output_sigc_ks_if)
+    if (this->output_sigc_ks_kf)
     {
         const int n_bands = infer_target_n_bands(comm_h, wfc, this->mf.get_n_bands());
         const auto iks = output_iks == nullptr
                              ? collect_target_iks(comm_h, wfc, static_cast<int>(kfrac_band.size()))
                              : *output_iks;
         const auto stem = make_sigc_ks_imagfreq_band_stem(
-            this->output_dir, output_sigc_ks_if_band_index_++);
+            this->output_dir, output_sigc_ks_kf_band_index_++);
         write_self_energy_omega((stem + ".dat").c_str(), *this, iks, n_bands);
         write_self_energy_omega_kpoints((stem + ".kidx").c_str(), *this, iks);
     }

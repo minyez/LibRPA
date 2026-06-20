@@ -260,16 +260,16 @@ typedef struct
     double libri_g0w0_threshold_Wc;
 
     /* Output controls */
-    //! Output KS-diagonal correlation self-energy on imaginary frequencies.
-    LibrpaSwitch output_gw_sigc_ks_if;
+    //! Output KS-diagonal correlation self-energy in k-space, imaginary frequency domain.
+    LibrpaSwitch output_gw_sigc_ks_kf;
 
-    //! Output correlation self-energy matrix (reciprocal space, imaginary frequency domain)
-    LibrpaSwitch output_gw_sigc_mat;
+    //! Output correlation self-energy matrix in KS basis (k-space, imaginary frequency domain).
+    LibrpaSwitch output_gw_sigc_ks_mat_kf;
 
-    //! Output correlation self-energy matrix in NAO (real space, imaginary time domain)
+    //! Output correlation self-energy matrix in NAO basis (real space, imaginary time domain).
     LibrpaSwitch output_gw_sigc_mat_rt;
 
-    //! Output correlation self-energy matrix in NAO (real space, imaginary frequency domain)
+    //! Output correlation self-energy matrix in NAO basis (real space, imaginary frequency domain).
     LibrpaSwitch output_gw_sigc_mat_rf;
 
     //! Output Wc matrix in ABFs (real space, imaginary frequency domain).

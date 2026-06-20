@@ -26,7 +26,7 @@ private:
     bool is_kspace_built_;
     bool is_rspace_redist_for_KS_;
     bool is_rspace_redist_blacs_;
-    int output_sigc_ks_if_band_index_;
+    int output_sigc_ks_kf_band_index_;
 
     //! frequency-domain reciprocal-space correlation self-energy, indices [ispin][ispinor_bra][ispinor_ket][freq][R][I][J](n_I, n_J)
     // Sparse storage from LibRI calculation
@@ -60,8 +60,8 @@ public:
     double libri_threshold_Wc;
     double libri_threshold_G;
 
-    bool output_sigc_mat;
-    bool output_sigc_ks_if;
+    bool output_sigc_ks_mat_kf;
+    bool output_sigc_ks_kf;
     bool output_sigc_mat_rt;
     bool output_sigc_mat_rf;
     bool output_wc_rf;

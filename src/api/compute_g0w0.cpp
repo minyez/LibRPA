@@ -705,7 +705,7 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
     pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h, opts.use_gpu_replace_scalapack);
     pds->is_band_calc_done = false;
     profiler.stop("g0w0_sigc_rotate_KS");
-    if (opts.output_gw_sigc_mat == LIBRPA_SWITCH_ON)
+    if (opts.output_gw_sigc_ks_mat_kf == LIBRPA_SWITCH_ON)
         write_sigc_matrices_KS_binary(*pds, opts.output_dir, "kgrid");
 
     std::vector<int> iks_collect;
@@ -847,7 +847,7 @@ void librpa_get_g0w0_spectral_function_kgrid(
     pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
     pds->is_band_calc_done = false;
     profiler.stop("g0w0_sigc_rotate_KS");
-    if (opts.output_gw_sigc_mat == LIBRPA_SWITCH_ON)
+    if (opts.output_gw_sigc_ks_mat_kf == LIBRPA_SWITCH_ON)
         write_sigc_matrices_KS_binary(*pds, opts.output_dir, "kgrid");
 
     std::vector<int> iks_collect;
@@ -914,7 +914,7 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
     profiler.start("g0w0_sigc_rotate_KS", "Correlation self-energy in K-S space");
     ensure_band_sigc_ks_blacs(*pds, opts, iks_output);
     profiler.stop("g0w0_sigc_rotate_KS");
-    if (opts.output_gw_sigc_mat == LIBRPA_SWITCH_ON)
+    if (opts.output_gw_sigc_ks_mat_kf == LIBRPA_SWITCH_ON)
         write_sigc_matrices_KS_binary(*pds, opts.output_dir,
                                       "band_" + std::to_string(pds->band_data_id));
 
@@ -1067,7 +1067,7 @@ void librpa_get_g0w0_spectral_function_band_k(
     profiler.start("g0w0_sigc_rotate_KS", "Correlation self-energy in K-S space");
     ensure_band_sigc_ks_blacs(*pds, opts, iks_output);
     profiler.stop("g0w0_sigc_rotate_KS");
-    if (opts.output_gw_sigc_mat == LIBRPA_SWITCH_ON)
+    if (opts.output_gw_sigc_ks_mat_kf == LIBRPA_SWITCH_ON)
         write_sigc_matrices_KS_binary(*pds, opts.output_dir,
                                       "band_" + std::to_string(pds->band_data_id));
 
