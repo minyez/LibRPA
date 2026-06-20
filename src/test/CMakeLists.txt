@@ -45,6 +45,7 @@ foreach(target
     test_fitting
     test_io
     test_input_symmetry
+    test_arbitrary_float
     test_geometry
     test_lebedev_laikov
     test_libri_utils
