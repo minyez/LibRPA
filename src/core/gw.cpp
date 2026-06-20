@@ -529,7 +529,7 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
     libri_threshold_G = 0.0;
     output_dir = "./";  // POSIX
     output_sigc_ks_mat_kf = false;
-    output_sigc_ks_kf = true;
+    output_sigc_ks_kf = false;
     output_sigc_mat_kf = false;
     output_sigc_mat_rt = false;
     output_sigc_mat_rf = false;
