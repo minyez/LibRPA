@@ -204,3 +204,13 @@ Useful `<validate>` attributes:
   `cmp_table.abs_diff(1e-4, columns="3:8")`.
 - `binary_extract`: reserved for binary-output extractors. Plain-text output is
   used when this attribute is omitted.
+
+## Reference update guidelines
+
+- Do not edit reference output by hand. Reference data should match the commit
+  recorded in the testcase `refhash` label in `testsuite.xml`, so it can be
+  reproduced from that source snapshot, input setup, data files, and runtime
+  environment.
+- Update references sparingly. Code changes may perturb output, but if the
+  quantities validated in `testsuite.xml` remain within tolerance, keep the
+  existing reference data. That is the point of a regression test.
