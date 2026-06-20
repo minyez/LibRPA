@@ -88,7 +88,7 @@ void librpa_set_scf_dimension(LibrpaHandler* h, int nspins, int nkpts, int nstat
     using global::ofs_myid;
 
     const std::string tname = "api_set_scf_dimension";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
 
@@ -148,7 +148,7 @@ void librpa_set_wg_ekb_efermi(LibrpaHandler* h, int nspins, int nkpts, int nstat
     using librpa_int::global::lib_printf;
 
     const std::string tname = "api_set_wg_ekb_efermi";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &meanfield = pds->mf;
 
@@ -186,7 +186,7 @@ void librpa_set_wfc(LibrpaHandler* h, int ispin, int ik, int nstates_local, int 
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_wfc";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &meanfield = pds->mf;
@@ -214,7 +214,7 @@ void librpa_set_wfc_spinor(LibrpaHandler* h, int ik, int nstates_local, int nbas
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_wfc_spinor";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &meanfield = pds->mf;
@@ -247,7 +247,7 @@ void librpa_set_wfc_packed(LibrpaHandler* h, int ispin, int ik, int nstates_loca
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_wfc_packed";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &meanfield = pds->mf;
@@ -274,7 +274,7 @@ void librpa_set_wfc_spinor_packed(LibrpaHandler* h, int ik, int nstates_local, i
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_wfc_spinor_packed";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &meanfield = pds->mf;
@@ -327,7 +327,7 @@ void librpa_set_ao_basis_wfc(LibrpaHandler* h,
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_ao_basis_wfc";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     set_ao_basis(pds->basis_wfc, natoms, nbs_wfc, nshells, l_shells, pds->atoms.types, pds->basis_wfc_layouts);
@@ -357,7 +357,7 @@ void librpa_set_ao_basis_aux(LibrpaHandler* h,
     using librpa_int::global::ofs_myid;
 
     const std::string tname = "api_set_ao_basis_aux";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     set_ao_basis(pds->basis_aux, natoms, nbs_aux, nshells, l_shells, pds->atoms.types, pds->basis_aux_layouts);
@@ -388,7 +388,7 @@ void librpa_set_ao_basis_aux_shrink(LibrpaHandler* h,
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_ao_basis_aux_shrink";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     set_ao_basis(pds->basis_aux_shrink, natoms, nbs_aux_shrink, nshells, l_shells, pds->atoms.types, pds->basis_aux_shrink_layouts);
@@ -461,7 +461,7 @@ void librpa_set_basis_convention(LibrpaHandler* h, int bloch_phase, int bloch_ra
     using librpa_int::global::ofs_myid;
 
     const std::string tname = "api_set_basis_convention";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     if (!is_valid_bloch_phase(bloch_phase))
     {
@@ -511,7 +511,7 @@ void librpa_set_symmetry_operations(LibrpaHandler* h, const int n_symops, const 
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_symmetry_operations";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto operations =
@@ -543,7 +543,7 @@ void librpa_set_latvec_and_G(LibrpaHandler* h, const double lat_mat[9], const do
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_latvec_and_G";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &pbc = pds->pbc;
@@ -585,7 +585,7 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_atoms";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &pbc = pds->pbc;
@@ -655,7 +655,7 @@ void librpa_set_kgrids_kvec(LibrpaHandler* h, int nk1, int nk2, int nk3, const d
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_kgrids_kvec";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &pbc = pds->pbc;
@@ -702,7 +702,7 @@ void librpa_set_ibz_mapping(LibrpaHandler* h, int nkpts, const int* map_ibzk)
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_ibz_mapping";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &pbc = pds->pbc;
@@ -751,7 +751,7 @@ void librpa_set_lri_coeff(LibrpaHandler* h, LibrpaParallelRouting routing, int I
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_lri_coeff";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &cs_data = pds->cs_data;
@@ -874,7 +874,7 @@ void librpa_set_aux_bare_coulomb_k_atom_pair(LibrpaHandler* h, int ik, int I, in
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_aux_bare_coulomb_k_atom_pair";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &qvec = pds->pbc.klist[ik];
@@ -891,7 +891,7 @@ void librpa_set_aux_bare_coulomb_k_atom_pair_packed(LibrpaHandler* h, int ik, in
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_aux_bare_coulomb_k_atom_pair_packed";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &qvec = pds->pbc.klist[ik];
@@ -908,7 +908,7 @@ void librpa_set_aux_cut_coulomb_k_atom_pair(LibrpaHandler* h, int ik, int I, int
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_aux_cut_coulomb_k_atom_pair";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &qvec = pds->pbc.klist[ik];
@@ -925,7 +925,7 @@ void librpa_set_aux_cut_coulomb_k_atom_pair_packed(LibrpaHandler* h, int ik, int
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_aux_cut_coulomb_k_atom_pair_packed";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &qvec = pds->pbc.klist[ik];
@@ -1016,7 +1016,7 @@ void librpa_set_aux_bare_coulomb_k_2d_block(LibrpaHandler* h, int ik, int mu_beg
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_aux_bare_coulomb_k_2d_block";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &qvec = pds->pbc.klist[ik];
@@ -1035,7 +1035,7 @@ void librpa_set_aux_bare_coulomb_k_2d_block_packed(LibrpaHandler* h, int ik, int
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_aux_bare_coulomb_k_2d_block_packed";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &qvec = pds->pbc.klist[ik];
@@ -1054,7 +1054,7 @@ void librpa_set_aux_cut_coulomb_k_2d_block(LibrpaHandler* h, int ik, int mu_begi
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_aux_cut_coulomb_k_2d_block";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &qvec = pds->pbc.klist[ik];
@@ -1073,7 +1073,7 @@ void librpa_set_aux_cut_coulomb_k_2d_block_packed(LibrpaHandler* h, int ik, int 
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_aux_cut_coulomb_k_2d_block_packed";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &qvec = pds->pbc.klist[ik];
@@ -1110,7 +1110,7 @@ void librpa_set_velocity_matrix(LibrpaHandler* h, int n_spins, int n_kpts,
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_velocity_matrix";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
     if (n_spins <= 0 || n_kpts <= 0 || n_states <= 0)
         throw LIBRPA_RUNTIME_ERROR("velocity matrix dimensions must be positive");
     if (velocity_real == nullptr || velocity_imag == nullptr)
@@ -1151,7 +1151,7 @@ void librpa_set_velocity_matrix_packed(LibrpaHandler* h, int n_spins, int n_kpts
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_velocity_matrix_packed";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
     if (n_spins <= 0 || n_kpts <= 0 || n_states <= 0)
         throw LIBRPA_RUNTIME_ERROR("velocity matrix dimensions must be positive");
     if (velocity_ri == nullptr)
@@ -1194,7 +1194,7 @@ void librpa_set_band_kvec(LibrpaHandler* h, int n_kpts_band, const double* kfrac
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_band_kvec";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     mark_band_data_set(pds);
@@ -1216,7 +1216,7 @@ void librpa_set_band_occ_eigval(LibrpaHandler* h, int n_spins, int n_kpts_band, 
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_band_occ_eigval";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const int n_basis = pds->mf.get_n_aos();
@@ -1248,7 +1248,7 @@ void librpa_set_wfc_band(LibrpaHandler* h, int ispin, int ik_band, int nstates_l
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_wfc_band";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     mark_band_data_set(pds);
@@ -1277,7 +1277,7 @@ void librpa_set_wfc_band_spinor(LibrpaHandler* h, int ik_band, int nstates_local
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_wfc_band";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     mark_band_data_set(pds);
@@ -1308,7 +1308,7 @@ void librpa_set_wfc_band_packed(LibrpaHandler* h, int ispin, int ik_band, int ns
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_wfc_band_packed";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     mark_band_data_set(pds);
@@ -1337,7 +1337,7 @@ void librpa_set_wfc_band_spinor_packed(LibrpaHandler* h, int ik_band, int nstate
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_wfc_band_packed";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     mark_band_data_set(pds);
@@ -1367,7 +1367,7 @@ void librpa_reset_band_data(LibrpaHandler* h)
     using librpa_int::global::profiler;
 
     const std::string tname = "api_reset_band_data";
-    profiler.start(tname);
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     pds->is_band_data_set = false;
