@@ -303,7 +303,7 @@ std::vector<KPointStar> build_kpoint_stars(
         KPointStar star;
         const auto seed_kpoint = kpoints[ik_rep];
 
-        // ponytail: O(n_k^2 * n_sym); add a grid hash if this becomes hot.
+        // NOTE: O(n_k^2 * n_sym); add a grid hash if this becomes hot.
         for (std::size_t ik = 0; ik < kpoints.size(); ++ik)
         {
             if (used[ik])

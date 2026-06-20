@@ -42,6 +42,11 @@ struct SpaceGroupSymOp
     Vector3_Order<double> translation{0.0, 0.0, 0.0};
     //! Whether to treat lattice vectors and fractional coordinates as row vectors.
     bool use_row_convention = true;
+
+    bool is_identity_rotation() const
+    {
+        return is_same_matrix(this->rotation, Matrix3::IDENTITY, 1e-8);
+    }
 };
 
 inline bool operator==(const SpaceGroupSymOp &op1, const SpaceGroupSymOp &op2)

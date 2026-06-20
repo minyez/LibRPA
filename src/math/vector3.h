@@ -46,6 +46,7 @@ public:
 	Vector3<T>& operator/=(const T &s)          { x/=s; y/=s; z/=s;        return *this; }
 	Vector3<T>  operator -() const              { return Vector3<T>(-x,-y,-z); }			// Peize Lin add 2017-01-10
 
+	T norm_l1(void) const	{ return std::abs(x) + std::abs(y) + std::abs(z); }
 	T norm2(void) const	{ return x*x + y*y + z*z; }
 	T norm(void) const	{ return sqrt(norm2()); }
 	Vector3<T>& normalize(void){ const T m=norm(); x/=m; y/=m; z/=m; return *this; }	// Peize Lin update return 2019-09-08

@@ -4,8 +4,6 @@
  */
 #include "input_symmetry.h"
 
-#include "pbc.h"
-#include "../io/fs.h"
 #include "../math/rsh.h"
 #include "../utils/constants.h"
 #include "../io/stl_io_helper.h"
@@ -15,7 +13,6 @@
 #include <cmath>
 #include <complex>
 #include <cstdlib>
-#include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
@@ -32,20 +29,6 @@ constexpr double kInputSymmetryCoordTol = 1e-5;
 // Real-space atom mapping is reconstructed from fractional coordinates. The looser tolerance
 // below remains as a fallback for text-derived coordinates and lattice-inversion noise.
 constexpr double kInputSymmetryRSpaceAtomMapTol = 5e-5;
-
-std::string trim(const std::string& text)
-{
-    const auto begin = std::find_if_not(text.begin(), text.end(),
-                                        [](unsigned char ch) { return std::isspace(ch) != 0; });
-    if (begin == text.end())
-    {
-        return "";
-    }
-    const auto end = std::find_if_not(text.rbegin(), text.rend(),
-                                      [](unsigned char ch) { return std::isspace(ch) != 0; })
-                         .base();
-    return std::string(begin, end);
-}
 
 std::vector<int> build_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
 {
@@ -75,16 +58,6 @@ bool nearly_same_kpoint(const Vector3_Order<double>& lhs,
     };
     return is_same_component(lhs.x, rhs.x) && is_same_component(lhs.y, rhs.y)
            && is_same_component(lhs.z, rhs.z);
-}
-
-bool is_identity_rotation(const Matrix3& matrix,
-                          const double tol = 1e-8)
-{
-    return std::abs(matrix.e11 - 1.0) < tol && std::abs(matrix.e12) < tol
-           && std::abs(matrix.e13) < tol && std::abs(matrix.e21) < tol
-           && std::abs(matrix.e22 - 1.0) < tol && std::abs(matrix.e23) < tol
-           && std::abs(matrix.e31) < tol && std::abs(matrix.e32) < tol
-           && std::abs(matrix.e33 - 1.0) < tol;
 }
 
 bool preserves_lattice_metric(const Matrix3& rotation,
@@ -147,7 +120,7 @@ std::vector<int> build_rspace_inverse_map(
             const auto composed = compose_space_group_symmetry_operations(
                 ctx.rspace_operations[isym], ctx.rspace_operations[jsym]);
             const bool is_inverse =
-                is_identity_rotation(composed.rotation)
+                composed.is_identity_rotation()
                 && nearly_integer_vector(composed.translation, kInputSymmetryCoordTol);
 
             if (is_inverse)
@@ -198,11 +171,6 @@ input_symmetry_R_t to_input_symmetry_R(const Vector3_Order<int>& R)
     return {R.x, R.y, R.z};
 }
 
-int rspace_R_l1_norm(const Vector3_Order<int>& R)
-{
-    return std::abs(R.x) + std::abs(R.y) + std::abs(R.z);
-}
-
 bool rspace_representative_less(const InputSymmetryRSpaceKey& lhs,
                                 const InputSymmetryRSpaceKey& rhs)
 {
@@ -214,8 +182,8 @@ bool rspace_representative_less(const InputSymmetryRSpaceKey& lhs,
     {
         return std::get<1>(lhs) < std::get<1>(rhs);
     }
-    const auto lhs_norm = rspace_R_l1_norm(std::get<2>(lhs));
-    const auto rhs_norm = rspace_R_l1_norm(std::get<2>(rhs));
+    const auto lhs_norm = std::get<2>(lhs).norm_l1();
+    const auto rhs_norm = std::get<2>(rhs).norm_l1();
     if (lhs_norm != rhs_norm)
     {
         return lhs_norm < rhs_norm;
