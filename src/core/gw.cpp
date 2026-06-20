@@ -896,8 +896,9 @@ void G0W0::build_spacetime(
                         profiler.get_wall_time_last("g0w0_build_spacetime_wt_ft_wc"),
                         profiler.get_cpu_time_last("g0w0_build_spacetime_wt_ft_wc"));
 
+        const int n_tau = tfg.get_n_grids();
         profiler.start("g0w0_build_spacetime_ct_ft_wc", "Tranform Wc (q,t) -> (R,t)");
-        for (auto itau = 0; itau != tfg.get_n_grids(); ++itau)
+        for (auto itau = 0; itau != n_tau; ++itau)
         {
             const auto tau = tfg.get_time_nodes()[itau];
             auto &Wc_q = Wc_tau_q[tau];

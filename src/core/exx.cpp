@@ -864,7 +864,7 @@ void Exx::build(const LibrpaParallelRouting routing,
 	                {
 	                    const auto n_full_I = ab_wfc.get_atom_nb(full_I);
 	                    const auto n_full_J = ab_wfc.get_atom_nb(full_J);
-	                    if (block.nr != n_full_I || block.nc != n_full_J)
+	                    if (block.nr != as_int(n_full_I) || block.nc != as_int(n_full_J))
 	                    {
 	                        throw std::runtime_error(
 	                            "ABACUS EXX real-space restore produced an AO block with an inconsistent dimension");

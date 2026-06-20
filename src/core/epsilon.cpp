@@ -2686,7 +2686,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     std::complex<double>* chi0_block_ptr;
     std::complex<double>* coul_block_ptr;
     std::complex<double>* coul_chi0_block_ptr;
-    std::complex<double>* coul_eigen_block_ptr;
+    // std::complex<double>* coul_eigen_block_ptr;
     std::complex<double>* coulwc_block_ptr;
 
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
@@ -2701,7 +2701,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         chi0_block_ptr = chi0_block.ptr();
         coul_block_ptr = coul_block.ptr();
         coul_chi0_block_ptr = coul_chi0_block.ptr();
-        coul_eigen_block_ptr = coul_eigen_block.ptr();
+        // coul_eigen_block_ptr = coul_eigen_block.ptr();
         coulwc_block_ptr = coulwc_block.ptr();
     }
 #if defined(LIBRPA_USE_ELPA)
@@ -3656,11 +3656,11 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
         if (ifreq_output_wc_end >= 0 &&
             ifreq_output_wc_end <= ifreq_output_wc_start)
             throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_end must be negative or greater than ifreq_output_wc_start");
-        if (ifreq_output_wc_start >= n_freq)
+        if (ifreq_output_wc_start >= as_int(n_freq))
             throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_start is outside the Wc frequency grid");
 
         const int ifreq_end = ifreq_output_wc_end < 0 ? n_freq : ifreq_output_wc_end;
-        if (ifreq_end > n_freq)
+        if (ifreq_end > as_int(n_freq))
             throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_end is outside the Wc frequency grid");
 
         global::profiler.start("write_Wc_freq_R", "Export Wc(R,w) to file");
