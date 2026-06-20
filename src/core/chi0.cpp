@@ -317,6 +317,7 @@ Chi0::Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
     libri_threshold_G = 0.0;
     libri_collect_s0_chunk = 0;
     libri_collect_max_bytes = 0;
+    nbands_G = -1;
 }
 
 void Chi0::build(LibrpaParallelRouting routing,
@@ -409,7 +410,7 @@ void Chi0::build_gf_Rt(Vector3_Order<int> R, double tau)
     const auto naos = mf.get_n_aos();
     const int natom = atbasis_abf.n_atoms;
 
-    const int nbands_G = 0; // TODO: replace with a runtime option
+    const int nbands_G = this->nbands_G;
     const auto nsoc = 1; // TODO replace with meanfield member variable
     const bool use_soc = mf.get_n_spinor() > 1;
 
@@ -1934,7 +1935,6 @@ matrix Chi0::compute_chi0_s_munu_tau_R(const atpair_R_mat_t &Cs_IJR,
                                        int spin_channel, int isoc1, int isoc2,
                                        atom_t Mu, atom_t Nu, double tau, Vector3_Order<int> R)
 {
-    global::profiler.start("cal_chi0_element", "chi(tau,R,I,J)");
     /* lib_printf("     begin chi0  thread: %d,  I: %zu, J: %zu\n",omp_get_thread_num(), Mu, Nu); */
 
     assert(tau > 0);
@@ -1953,8 +1953,17 @@ matrix Chi0::compute_chi0_s_munu_tau_R(const atpair_R_mat_t &Cs_IJR,
 
     /* lib_printf("     check if already calculated\n"); */
     /* lib_printf("     size of Green_atom: %zu\n", Green_atom.size()); */
-    const auto &gf_R_tau = gf_is_R_tau.at(spin_channel).at(isoc1).at(isoc2);
-    if (gf_R_tau.at(I_index).count(J_index))
+    const auto spin_it = gf_is_R_tau.find(spin_channel);
+    if (spin_it == gf_is_R_tau.end()) return matrix(mu_num, nu_num);
+    const auto soc1_it = spin_it->second.find(isoc1);
+    if (soc1_it == spin_it->second.end()) return matrix(mu_num, nu_num);
+    const auto soc2_it = soc1_it->second.find(isoc2);
+    if (soc2_it == soc1_it->second.end()) return matrix(mu_num, nu_num);
+    const auto &gf_R_tau = soc2_it->second;
+
+    global::profiler.start("cal_chi0_element", "chi(tau,R,I,J)");
+
+    if (gf_R_tau.count(I_index) && gf_R_tau.at(I_index).count(J_index))
         if (gf_R_tau.at(I_index).at(J_index).count(R))
         {
             if (gf_R_tau.at(I_index).at(J_index).at(R).count(tau)) flag_G_IJRt = 1;
@@ -1972,7 +1981,7 @@ matrix Chi0::compute_chi0_s_munu_tau_R(const atpair_R_mat_t &Cs_IJR,
         const auto L_index = L_pair.first;
         const size_t l_num = atbasis_wfc[L_index];
         /* librpa_int::global::lib_printf("     begin is loop\n"); */
-        if (gf_R_tau.at(I_index).count(L_index))
+        if (gf_R_tau.count(I_index) && gf_R_tau.at(I_index).count(L_index))
         {
             for (const auto &R2_index : L_pair.second)
             {
@@ -2033,7 +2042,7 @@ matrix Chi0::compute_chi0_s_munu_tau_R(const atpair_R_mat_t &Cs_IJR,
                 {
                     const auto L_index = L_pair.first;
                     const size_t l_num = atbasis_wfc[L_index];
-                    if (gf_R_tau.at(K_index).count(L_index))
+                    if (gf_R_tau.count(K_index) && gf_R_tau.at(K_index).count(L_index))
                     {
                         for (const auto &R2_index : L_pair.second)
                         {
@@ -2082,7 +2091,7 @@ matrix Chi0::compute_chi0_s_munu_tau_R(const atpair_R_mat_t &Cs_IJR,
                 }
             }
             Vector3_Order<int> R_temp_3(Vector3_Order<int>(R - R1) % R_period);
-            if (gf_R_tau.at(K_index).count(J_index))
+            if (gf_R_tau.count(K_index) && gf_R_tau.at(K_index).count(J_index))
             {
                 if (gf_R_tau.at(K_index).at(J_index).count(R_temp_3))
                 {
