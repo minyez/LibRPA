@@ -49,6 +49,7 @@ Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
       mf(),
       velocity_matrix(),
       mf_band(),
+      band_data_id(0),
       is_band_data_set(false),
       is_band_calc_done(false),
       tfg(),

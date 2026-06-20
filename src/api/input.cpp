@@ -1193,6 +1193,8 @@ void librpa_set_band_kvec(LibrpaHandler* h, int n_kpts_band, const double* kfrac
     profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
+    if (pds->is_band_data_set)
+        ++pds->band_data_id;
     mark_band_data_set(pds);
     pds->kfrac_band_list.clear();
     const auto &kf = kfrac_list_band;
@@ -1366,6 +1368,7 @@ void librpa_reset_band_data(LibrpaHandler* h)
     profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
+    ++pds->band_data_id;
     pds->is_band_data_set = false;
     pds->is_band_calc_done = false;
     pds->kfrac_band_list = {};

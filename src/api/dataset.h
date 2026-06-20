@@ -101,6 +101,8 @@ public:
     velocity_matrix_t velocity_matrix;
     //! Mean-field object for band calculation
     MeanField mf_band;
+    //! Monotonic id for distinguishing successive band-path input datasets.
+    int band_data_id;
     //! Whether band-path input data has been provided through set_band_* APIs.
     bool is_band_data_set;
     //! Whether band-path EXX/GW k-space matrices have been computed for the set band data.

@@ -9,6 +9,7 @@
 #include "../../src/io/global_io.h"
 #include "../../src/io/stl_io_helper.h"
 #include "../../src/utils/constants.h"
+#include "../../src/utils/error.h"
 #include "../../src/utils/profiler.h"
 #include "../driver.h"
 #include "../read_data.h"
@@ -298,34 +299,6 @@ void driver::task_g0w0()
         }
         // profiler.stop("g0w0_solve_qpe");
     }
-
-    // profiler.start("g0w0_export_sigc_KS", "Export self-energy in KS basis");
-    // pds->comm_h.barrier();
-    // if (driver::get_bool(opts.output_gw_sigc_mat) && pds->comm_h.is_root())
-    // {
-    //     char fn[100];
-    //     for (const auto &ispin_sigc: pds->p_g0w0->sigc_is_ik_f_KS)
-    //     {
-    //         const auto &ispin = ispin_sigc.first;
-    //         for (const auto &ik_sigc: ispin_sigc.second)
-    //         {
-    //             const auto &ik = ik_sigc.first;
-    //             for (const auto &freq_sigc: ik_sigc.second)
-    //             {
-    //                 const auto ifreq = pds->p_g0w0->tfg.get_freq_index(freq_sigc.first);
-    //                 sprintf(fn, "Sigc_fk_mn_ispin_%d_ik_%d_ifreq_%d.mtx", ispin, ik, ifreq);
-    //                 print_matrix_mm_file(freq_sigc.second, librpa_int::path_as_directory(opts.output_dir) + fn, "", 1e-10);
-    //             }
-    //         }
-    //     }
-    //     // for aims analytic continuation reader
-    // }
-    // // Limit writing of file to the master process (it has all the data)
-    // if (pds->comm_h.is_root())
-    // {
-    //     write_self_energy_omega("self_energy_omega.dat", *(pds->p_g0w0));
-    // }
-    // profiler.stop("g0w0_export_sigc_KS");
 
     profiler.stop("g0w0");
 }

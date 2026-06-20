@@ -4,6 +4,8 @@
 #include "librpa_enums.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <fstream>
 #include <functional>
 #include <iomanip>
@@ -429,6 +431,53 @@ void write_wc_rf_atom_blocks(
     }
 }
 
+void write_sigc_matrix_binary(const Matz &mat, const std::string &fn)
+{
+    const std::int32_t n_states = mat.nr();
+    const std::int32_t type_bytes = sizeof(double);
+    if (mat.nr() != mat.nc())
+        throw LIBRPA_RUNTIME_ERROR("SigC matrix output expects a square matrix");
+
+    std::ofstream ofs(fn, std::ios::binary);
+    if (!ofs)
+        throw LIBRPA_RUNTIME_ERROR("failed to open SigC matrix output file: " + fn);
+
+    ofs.write(reinterpret_cast<const char *>(&n_states), sizeof(n_states));
+    ofs.write(reinterpret_cast<const char *>(&type_bytes), sizeof(type_bytes));
+    for (int i = 0; i != mat.nr(); ++i)
+    {
+        for (int j = 0; j != mat.nc(); ++j)
+        {
+            const auto v = mat(i, j);
+            const double re = v.real();
+            const double im = v.imag();
+            ofs.write(reinterpret_cast<const char *>(&re), sizeof(re));
+            ofs.write(reinterpret_cast<const char *>(&im), sizeof(im));
+        }
+    }
+}
+
+void write_sigc_matrix_binary_parallel(const Matz &mat_loc,
+                                       const ArrayDesc &desc,
+                                       const std::string &fn)
+{
+    if (!desc.is_initialized())
+        throw LIBRPA_RUNTIME_ERROR("SigC matrix output descriptor is not initialized");
+    if (mat_loc.nr() != desc.m_loc() || mat_loc.nc() != desc.n_loc())
+        throw LIBRPA_RUNTIME_ERROR("SigC matrix local block does not match its descriptor");
+
+    ArrayDesc desc_full(desc.ictxt());
+    desc_full.init(desc.m(), desc.n(), desc.m(), desc.n(), desc.irsrc(), desc.icsrc());
+    Matz mat_full(desc_full.m_loc(), desc_full.n_loc(), mat_loc.major());
+    ScalapackConnector::pgemr2d_f(desc.m(), desc.n(),
+                                  mat_loc.ptr(), 1, 1, desc.desc,
+                                  mat_full.ptr(), 1, 1, desc_full.desc,
+                                  desc.ictxt());
+    if (desc_full.is_src())
+        write_sigc_matrix_binary(mat_full, fn);
+    desc.barrier();
+}
+
 }  // namespace
 
 G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
@@ -482,6 +531,29 @@ void G0W0::reset_rspace()
 void G0W0::reset_kspace()
 {
     sigc_is_ik_f_KS.clear(); sigc_diag_is_ik_f_KS.clear(); is_kspace_built_ = false;
+}
+
+void G0W0::write_sigc_matrices_KS_binary(const std::string &output_dir,
+                                         const std::string &source) const
+{
+    char fn[100];
+    for (const auto &ispin_sigc: sigc_is_ik_f_KS)
+    {
+        const auto &ispin = ispin_sigc.first;
+        for (const auto &ik_sigc: ispin_sigc.second)
+        {
+            const auto &ik = ik_sigc.first;
+            for (const auto &freq_sigc: ik_sigc.second)
+            {
+                const auto ifreq = tfg.get_freq_index(freq_sigc.first);
+                std::snprintf(fn, sizeof(fn), "Sigc_fk_mn_%s_ispin_%d_ik_%d_ifreq_%d.bin",
+                              source.c_str(), ispin, ik, ifreq);
+                write_sigc_matrix_binary_parallel(
+                    freq_sigc.second, desc_sigc_is_ik_f_KS,
+                    path_as_directory(output_dir) + fn);
+            }
+        }
+    }
 }
 
 #ifdef LIBRPA_USE_LIBRI
@@ -1586,6 +1658,8 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     desc_nao_nao_opt.init(n_aos, n_aos, mb_opt, mb_opt, 0, 0);
     desc_nband_nband_opt.init(n_bands, n_bands, mb_opt, mb_opt, 0, 0);
     desc_nao_nband_opt.init(n_aos, n_bands, mb_opt, mb_opt, 0, 0);
+    desc_sigc_is_ik_f_KS.reset_handler(blacs_ctxt_h);
+    desc_sigc_is_ik_f_KS.init(n_bands, n_bands, mb_opt, mb_opt, 0, 0);
 
     auto wfc_bra_opt = init_local_mat<complex<double>>(desc_nao_nband_opt, MAJOR::COL);
     auto wfc_ket_opt = init_local_mat<complex<double>>(desc_nao_nband_opt, MAJOR::COL);
@@ -1637,7 +1711,6 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     {
         desc_nao_nao_fb.init(n_aos, n_aos, n_aos, n_aos, 0, 0);
     }
-
     const auto set_IJ_nao_nao = get_necessary_IJ_from_block_2D(
         this->atbasis_wfc, this->atbasis_wfc, desc_nao_nao);
     const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao);
@@ -1724,6 +1797,16 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     }
 
     sigc_is_ik_f_KS.clear(); sigc_diag_is_ik_f_KS.clear();
+    auto store_sigc_local = [this](int isp, int ik, double freq, const Matz &sigc)
+    {
+        if (!this->output_sigc_mat) return;
+        auto &mat_map = this->sigc_is_ik_f_KS[isp][ik];
+        auto it = mat_map.find(freq);
+        if (it == mat_map.end())
+            mat_map[freq] = sigc.copy();
+        else
+            it->second += sigc;
+    };
 
     // local 2D-block submatrices
     auto sigc_nao_nao = init_local_mat<complex<double>>(desc_nao_nao, MAJOR::COL);
@@ -1900,6 +1983,10 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                                                 0.0,
                                                                 sigc_nband_nband_opt.ptr(), 1, 1, desc_nband_nband_opt.desc);
                                 }
+                                if (this->output_sigc_mat)
+                                {
+                                    store_sigc_local(isp, ik, freq, sigc_nband_nband_opt);
+                                }
                                 // Extract the diagonal of the distributed KS self-energy directly,
                                 // avoiding a full-matrix pgemr2d collect to one process.
                                 std::vector<cplxdb> diag_send(n_bands, cplxdb{0.0, 0.0});
@@ -1990,6 +2077,15 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                 }
                                 broadcast_ComplexMatrix(
                                     sigc_nband_nband_dense, 0, comm_h.comm);
+                                if (this->output_sigc_mat)
+                                {
+                                    const Matz sigc_dense(n_bands, n_bands,
+                                                          sigc_nband_nband_dense.c,
+                                                          MAJOR::ROW);
+                                    const auto sigc_dense_opt =
+                                        get_local_mat(sigc_dense, desc_sigc_is_ik_f_KS, MAJOR::COL);
+                                    store_sigc_local(isp, ik, freq, sigc_dense_opt);
+                                }
                                 if (comm_h.is_root())
                                 {
                                     std::vector<cplxdb> diag(n_bands);
@@ -2024,6 +2120,14 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                                             temp_nband_nao.ptr(), 1, 1, desc_nband_nao.desc,
                                                             wfc_ket_block.ptr(), 1, 1, desc_nband_nao.desc, 0.0,
                                                             sigc_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
+                            }
+                            if (this->output_sigc_mat)
+                            {
+                                ScalapackConnector::pgemr2d_f(n_bands, n_bands,
+                                                              sigc_nband_nband.ptr(), 1, 1, desc_nband_nband.desc,
+                                                              sigc_nband_nband_opt.ptr(), 1, 1, desc_nband_nband_opt.desc,
+                                                              desc_nband_nband_opt.ictxt());
+                                store_sigc_local(isp, ik, freq, sigc_nband_nband_opt);
                             }
                             // collect the full matrix to master
                             // TODO: would need a different strategy for large system

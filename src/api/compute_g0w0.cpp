@@ -218,6 +218,15 @@ void ensure_band_sigc_ks_blacs(librpa_int::Dataset &ds, const LibrpaOptions &opt
     ds.is_band_calc_done = true;
 }
 
+void write_sigc_matrices_KS_binary(librpa_int::Dataset &ds, const std::string &output_dir,
+                                   const std::string &source)
+{
+    using librpa_int::global::profiler;
+    profiler.start("g0w0_export_sigc_KS", "Export self-energy in KS basis");
+    ds.p_g0w0->write_sigc_matrices_KS_binary(output_dir, source);
+    profiler.stop("g0w0_export_sigc_KS");
+}
+
 std::map<double, librpa_int::atom_mapping<std::map<librpa_int::Vector3_Order<double>,
                                                    librpa_int::Matz>>::pair_t_old>
 collect_w_blacs_to_atom_pairs(
@@ -670,7 +679,6 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
-    const bool debug = global::should_output(LIBRPA_VERBOSE_DEBUG);
     i_state_low = std::max(0, i_state_low);
     i_state_high = std::min(pds->mf.get_n_states(), i_state_high);
     if (n_spins != pds->mf.get_n_spins())
@@ -697,6 +705,8 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
     pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h, opts.use_gpu_replace_scalapack);
     pds->is_band_calc_done = false;
     profiler.stop("g0w0_sigc_rotate_KS");
+    if (opts.output_gw_sigc_mat == LIBRPA_SWITCH_ON)
+        write_sigc_matrices_KS_binary(*pds, opts.output_dir, "kgrid");
 
     std::vector<int> iks_collect;
     const auto freq_nodes = pds->tfg.get_freq_nodes();
@@ -837,6 +847,8 @@ void librpa_get_g0w0_spectral_function_kgrid(
     pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
     pds->is_band_calc_done = false;
     profiler.stop("g0w0_sigc_rotate_KS");
+    if (opts.output_gw_sigc_mat == LIBRPA_SWITCH_ON)
+        write_sigc_matrices_KS_binary(*pds, opts.output_dir, "kgrid");
 
     std::vector<int> iks_collect;
     const auto freq_nodes = pds->tfg.get_freq_nodes();
@@ -870,7 +882,6 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
-    const bool debug = global::should_output(LIBRPA_VERBOSE_DEBUG);
     if (!pds->is_band_data_set || pds->mf_band.get_n_spins() == 0)
         throw LIBRPA_RUNTIME_ERROR("Meanfield data for band calculation is not set");
     i_state_low = std::max(0, i_state_low);
@@ -903,6 +914,9 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
     profiler.start("g0w0_sigc_rotate_KS", "Correlation self-energy in K-S space");
     ensure_band_sigc_ks_blacs(*pds, opts, iks_output);
     profiler.stop("g0w0_sigc_rotate_KS");
+    if (opts.output_gw_sigc_mat == LIBRPA_SWITCH_ON)
+        write_sigc_matrices_KS_binary(*pds, opts.output_dir,
+                                      "band_" + std::to_string(pds->band_data_id));
 
     std::vector<int> iks_collect;
     const auto freq_nodes = pds->tfg.get_freq_nodes();
@@ -1053,6 +1067,9 @@ void librpa_get_g0w0_spectral_function_band_k(
     profiler.start("g0w0_sigc_rotate_KS", "Correlation self-energy in K-S space");
     ensure_band_sigc_ks_blacs(*pds, opts, iks_output);
     profiler.stop("g0w0_sigc_rotate_KS");
+    if (opts.output_gw_sigc_mat == LIBRPA_SWITCH_ON)
+        write_sigc_matrices_KS_binary(*pds, opts.output_dir,
+                                      "band_" + std::to_string(pds->band_data_id));
 
     std::vector<int> iks_collect;
     const auto freq_nodes = pds->tfg.get_freq_nodes();
