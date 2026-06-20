@@ -142,6 +142,18 @@ void librpa_set_basis_convention(LibrpaHandler* h, int bloch_phase, int bloch_ra
                                  LibrpaRshCoeff posi_m);
 
 /**
+ * @brief Set real-space symmetry operations.
+ *
+ * @param[in] h          Handler.
+ * @param[in] n_symops   Number of symmetry operations.
+ * @param[in] row_conv   Positive if rotations use the row-fractional convention.
+ * @param[in] rotmats    Flattened rotation matrices, length 9*n_symops.
+ * @param[in] trans      Optional flattened fractional translations, length 3*n_symops.
+ */
+void librpa_set_symmetry_operations(LibrpaHandler* h, int n_symops, int row_conv,
+                                    const int* rotmats, const double* trans);
+
+/**
  * @brief Set direct and reciprocal lattice vectors.
  * @param[in] h         Handler.
  * @param[in] lat_mat   Lattice vectors (3x3, column-major, in Bohr).

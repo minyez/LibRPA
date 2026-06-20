@@ -294,6 +294,7 @@ module librpa_f03
          procedure :: set_ao_basis_aux => librpa_set_ao_basis_aux
          procedure :: set_ao_basis_aux_shrink => librpa_set_ao_basis_aux_shrink
          procedure :: set_basis_convention => librpa_set_basis_convention
+         procedure :: set_symmetry_operations => librpa_set_symmetry_operations
          procedure :: set_latvec_and_G => librpa_set_latvec_and_G
          procedure :: set_atoms => librpa_set_atoms
          procedure :: set_kgrids_kvec => librpa_set_kgrids_kvec
@@ -596,6 +597,23 @@ contains
       integer, intent(in) :: posi_m
       call error_on_call("librpa_set_basis_convention")
    end subroutine librpa_set_basis_convention
+
+   !> @brief Set real-space symmetry operations
+   !>
+   !> @param[in,out] this       Handler.
+   !> @param[in]     n_symops   Number of symmetry operations.
+   !> @param[in]     row_conv   True if rotations use the row-fractional convention.
+   !> @param[in]     rotmats    Rotation matrices, one 9-element column per operation.
+   !> @param[in]     trans      Optional fractional translations, one 3-element column per operation.
+   subroutine librpa_set_symmetry_operations(this, n_symops, row_conv, rotmats, trans)
+      implicit none
+      class(LibrpaHandler), intent(inout) :: this
+      integer, intent(in) :: n_symops
+      logical, intent(in) :: row_conv
+      integer, dimension(9, n_symops), intent(in) :: rotmats
+      real(dp), dimension(3, n_symops), intent(in), optional :: trans
+      call error_on_call("librpa_set_symmetry_operations")
+   end subroutine librpa_set_symmetry_operations
 
    !> @brief Set the direct and reciprocal lattice vectors
    !>

@@ -473,6 +473,7 @@ module librpa_f03
          procedure :: set_ao_basis_aux => librpa_set_ao_basis_aux
          procedure :: set_ao_basis_aux_shrink => librpa_set_ao_basis_aux_shrink
          procedure :: set_basis_convention => librpa_set_basis_convention
+         procedure :: set_symmetry_operations => librpa_set_symmetry_operations
          procedure :: set_latvec_and_G => librpa_set_latvec_and_G
          procedure :: set_atoms => librpa_set_atoms
          procedure :: set_kgrids_kvec => librpa_set_kgrids_kvec
@@ -603,6 +604,14 @@ module librpa_f03
          type(c_ptr), value :: h
          integer(c_int), value :: bloch_phase, bloch_ratom, order, nega_m, posi_m
       end subroutine librpa_set_basis_convention_c
+
+      subroutine librpa_set_symmetry_operations_c(h, n_symops, row_conv, rotmats, trans) &
+            bind(c, name="librpa_set_symmetry_operations")
+         import :: c_ptr, c_int
+         type(c_ptr), value :: h
+         integer(c_int), value :: n_symops, row_conv
+         type(c_ptr), value :: rotmats, trans
+      end subroutine librpa_set_symmetry_operations_c
 
       subroutine librpa_set_latvec_and_G_c(h, latt, recplatt) &
             bind(c, name="librpa_set_latvec_and_G")
@@ -1594,6 +1603,50 @@ contains
          int(bloch_phase, kind=c_int), int(bloch_ratom, kind=c_int), int(order, kind=c_int), &
          int(nega_m, kind=c_int), int(posi_m, kind=c_int))
    end subroutine librpa_set_basis_convention
+
+   !> @brief Set real-space symmetry operations
+   !>
+   !> @param[in,out] this       Handler.
+   !> @param[in]     n_symops   Number of symmetry operations.
+   !> @param[in]     row_conv   True if rotations use the row-fractional convention.
+   !> @param[in]     rotmats    Rotation matrices, one 9-element column per operation.
+   !> @param[in]     trans      Optional fractional translations, one 3-element column per operation.
+   subroutine librpa_set_symmetry_operations(this, n_symops, row_conv, rotmats, trans)
+      implicit none
+      class(LibrpaHandler), intent(inout) :: this
+      integer, intent(in) :: n_symops
+      logical, intent(in) :: row_conv
+      integer, dimension(9, n_symops), intent(in) :: rotmats
+      real(dp), dimension(3, n_symops), intent(in), optional :: trans
+
+      integer(c_int), allocatable, target :: rotmats_c(:, :)
+      real(c_double), allocatable, target :: trans_c(:, :)
+      integer(c_int) :: n_symops_c, row_conv_c
+      type(c_ptr) :: rotmats_ptr, trans_ptr
+
+      n_symops_c = int(n_symops, kind=c_int)
+      row_conv_c = 0
+      if (row_conv) row_conv_c = 1
+      rotmats_ptr = c_null_ptr
+      trans_ptr = c_null_ptr
+
+      if (n_symops > 0) then
+         allocate(rotmats_c(9, n_symops))
+         rotmats_c = int(rotmats, kind=c_int)
+         rotmats_ptr = c_loc(rotmats_c(1, 1))
+         if (present(trans)) then
+            allocate(trans_c(3, n_symops))
+            trans_c = real(trans, kind=c_double)
+            trans_ptr = c_loc(trans_c(1, 1))
+         end if
+      end if
+
+      call librpa_set_symmetry_operations_c(this%ptr_c_handle, &
+         n_symops_c, row_conv_c, rotmats_ptr, trans_ptr)
+
+      if (allocated(trans_c)) deallocate(trans_c)
+      if (allocated(rotmats_c)) deallocate(rotmats_c)
+   end subroutine librpa_set_symmetry_operations
 
    !> @brief Set the direct and reciprocal lattice vectors
    !>

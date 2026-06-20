@@ -9,7 +9,6 @@
 #include "../io/stl_io_helper.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <complex>
 #include <cstdlib>
@@ -209,6 +208,40 @@ void normalize_to_row_fractional(InputSymmetryOperation& operation)
 }
 
 } // namespace
+
+std::vector<InputSymmetryOperation> make_input_symmetry_operations(const int n_symops,
+                                                                   const bool use_row_convention,
+                                                                   const int* rotmats,
+                                                                   const double* translations)
+{
+    if (n_symops < 0)
+    {
+        throw std::invalid_argument("number of symmetry operations must be non-negative");
+    }
+    if (n_symops > 0 && rotmats == nullptr)
+    {
+        throw std::invalid_argument("symmetry operation rotation matrices must not be null");
+    }
+
+    std::vector<InputSymmetryOperation> operations;
+    operations.reserve(static_cast<std::size_t>(n_symops));
+    for (int isym = 0; isym != n_symops; ++isym)
+    {
+        const int* rotation = rotmats + 9 * isym;
+        InputSymmetryOperation operation;
+        operation.rotation = Matrix3(rotation[0], rotation[1], rotation[2],
+                                     rotation[3], rotation[4], rotation[5],
+                                     rotation[6], rotation[7], rotation[8]);
+        if (translations != nullptr)
+        {
+            const double* translation = translations + 3 * isym;
+            operation.translation = {translation[0], translation[1], translation[2]};
+        }
+        operation.use_row_convention = use_row_convention;
+        operations.push_back(std::move(operation));
+    }
+    return operations;
+}
 
 ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
     const SpaceGroupSymOp& operation,

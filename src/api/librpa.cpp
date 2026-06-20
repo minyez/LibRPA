@@ -222,6 +222,12 @@ LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
     (bloch_phase, bloch_ratom, order, nega_m, posi_m)
 )
 
+void Handler::set_symmetry_operations(const int n_symops, const int row_conv,
+                                      const int* rotmats, const double* trans)
+{
+    ::librpa_set_symmetry_operations(this->h_, n_symops, row_conv, rotmats, trans);
+}
+
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
     set_latvec_and_G,
     (const double lat_mat[9], const double G_mat[9]),

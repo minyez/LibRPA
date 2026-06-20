@@ -8,9 +8,11 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Internal headers
+#include "../core/input_symmetry.h"
 #include "../io/global_io.h"
 #include "../io/stl_io_helper.h"
 #include "../math/matrix.h"
@@ -503,6 +505,37 @@ void librpa_set_basis_convention(LibrpaHandler* h, int bloch_phase, int bloch_ra
     profiler.stop(tname);
 }
 
+void librpa_set_symmetry_operations(LibrpaHandler* h, const int n_symops, const int row_conv,
+                                    const int* rotmats, const double* trans)
+{
+    using librpa_int::global::profiler;
+
+    const std::string tname = "api_set_symmetry_operations";
+    profiler.start(tname);
+
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    auto operations =
+        librpa_int::make_input_symmetry_operations(n_symops, row_conv > 0, rotmats, trans);
+    auto& old_operations = pds->symmetry_context.rspace_operations;
+    std::vector<std::map<int, librpa_int::ComplexMatrix>> shell_rotations;
+    if (old_operations.size() == operations.size())
+    {
+        shell_rotations.reserve(old_operations.size());
+        for (std::size_t isym = 0; isym != old_operations.size(); ++isym)
+        {
+            shell_rotations.push_back(old_operations[isym].shell_rotations);
+        }
+    }
+    pds->symmetry_context.set_rspace_operations(std::move(operations));
+    auto& new_operations = pds->symmetry_context.rspace_operations;
+    for (std::size_t isym = 0; isym != shell_rotations.size(); ++isym)
+    {
+        new_operations[isym].shell_rotations = std::move(shell_rotations[isym]);
+    }
+
+    profiler.stop(tname);
+}
+
 void librpa_set_latvec_and_G(LibrpaHandler* h, const double lat_mat[9], const double G_mat[9])
 {
     using std::cout;
@@ -519,6 +552,7 @@ void librpa_set_latvec_and_G(LibrpaHandler* h, const double lat_mat[9], const do
     std::vector<double> recp(G_mat, G_mat + 9);
 
     pbc.set_latvec_and_G(latt, recp);
+    pds->symmetry_context.set_lattice(pds->pbc.latvec, pds->pbc.G);
 
     pds->comm_h.barrier();
     if (pds->comm_h.is_root())

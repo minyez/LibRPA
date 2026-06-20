@@ -257,6 +257,10 @@ public:
     void set_basis_convention(int bloch_phase, int bloch_ratom, LibrpaAngularOrder order,
                               LibrpaRshCoeff nega_m, LibrpaRshCoeff posi_m);
 
+    /** @brief Set real-space symmetry operations. */
+    void set_symmetry_operations(int n_symops, int row_conv, const int* rotmats,
+                                 const double* trans = nullptr);
+
     /** @brief Set lattice vectors and reciprocal lattice vectors. */
     void set_latvec_and_G(const double lat_mat[9], const double G_mat[9]);
 

@@ -155,6 +155,12 @@ struct SymmetryContext
 bool load_input_symmetry_context(SymmetryContext& ctx,
                                   std::ostream* log = nullptr);
 
+std::vector<InputSymmetryOperation> make_input_symmetry_operations(
+    int n_symops,
+    bool use_row_convention,
+    const int* rotmats,
+    const double* translations = nullptr);
+
 ComplexMatrix build_input_symmetry_shell_rotation_from_direct_rotation(
     const SpaceGroupSymOp& operation,
     const Matrix3& lattice_vectors,
