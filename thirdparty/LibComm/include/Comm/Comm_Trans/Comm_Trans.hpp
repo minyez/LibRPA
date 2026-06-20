@@ -118,7 +118,7 @@ void Comm_Trans<Tkey,Tvalue,Tdatas_isend,Tdatas_recv>::communicate(
 					std::ref(buffers_recv[rank_recv]),
 					std::ref(lock_set_value),
 					std::ref(datas_recv),
-					std::ref(states_recv[rank_recv]));
+					std::ref(states_recv[rank_recv])).wait();
 		}
 
 		if (rank_isend_tmp1<this->comm_size+1 && memory.enough_send())
