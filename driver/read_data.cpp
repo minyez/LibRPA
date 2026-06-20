@@ -59,6 +59,7 @@ namespace
 constexpr double kInputSymmetryKpointMatchTol = 1e-5;
 constexpr double kBzSamplingWeightSumTol = 1e-6;
 constexpr std::int32_t READER_SHRINK_SINVS_V1_MARKER = -30241621;
+constexpr std::int32_t EIGENVECTOR_V1_MARKER = -12345678;
 
 bool any_symmetry_speedup_enabled()
 {
@@ -376,104 +377,180 @@ int read_vxc(const string &file_path, std::vector<matrix> &vxc)
     return 0;
 }
 
-static int handle_KS_file(const string &file_path)
+static bool check_KS_file_binary(const string &file_path)
+{
+    ifstream infile(file_path, std::ios::in | std::ios::binary);
+    if (!infile.good()) return false;
+    std::int32_t marker = 0;
+    infile.read(reinterpret_cast<char *>(&marker), sizeof(std::int32_t));
+    return infile.good() && marker == EIGENVECTOR_V1_MARKER;
+}
+
+static int handle_KS_file(const string &file_path, bool binary)
 {
     using driver::iks_eigvec_this;
 
     int ret = 0;
-    // cout<<file_path<<endl;
     ifstream infile;
-    // cout << "Reading eigenvector from file " << file_path << endl;
-    infile.open(file_path);
+    if (binary)
+    {
+        infile.open(file_path, std::ios::in | std::ios::binary);
+    }
+    else
+    {
+        infile.open(file_path);
+    }
     if (!infile.good()) return 1;
-
-    string rvalue, ivalue, kstr;
 
     const auto nspin = driver::n_spins;
     const auto nsoc = driver::n_spinor;
     const auto nband = driver::n_states;
     const auto nao = driver::n_basis_ao;
     const auto nbao = nband * nao;
-    const auto nbs = nband * nsoc;
     const auto n = nsoc * nbao;
     const bool use_spinor_wfc = driver::driver_params.use_spinor_wfc;
 
     std::vector<double> re(nspin * n);
     std::vector<double> im(nspin * n);
 
-    while (infile.peek() != EOF)
+    if (binary)
     {
-        infile >> kstr;
-        int ik = stoi(kstr) - 1;
-        // cout<<"     ik: "<<ik<<endl;
-        if (infile.peek() == EOF) break;
-        // for aims !!!
-        bool skip_this_ik = false;
-        if (driver::get_bool(driver::opts.use_kpara_scf_eigvec))
+        std::int32_t marker = 0;
+        std::int32_t n_kpoints_file = 0;
+        std::int32_t n_spins_file = 0;
+        std::int32_t n_spinor_file = 0;
+        std::int32_t n_states_file = 0;
+        std::int32_t n_aos_file = 0;
+        infile.read(reinterpret_cast<char *>(&marker), sizeof(std::int32_t));
+        infile.read(reinterpret_cast<char *>(&n_kpoints_file), sizeof(std::int32_t));
+        infile.read(reinterpret_cast<char *>(&n_spins_file), sizeof(std::int32_t));
+        infile.read(reinterpret_cast<char *>(&n_spinor_file), sizeof(std::int32_t));
+        infile.read(reinterpret_cast<char *>(&n_states_file), sizeof(std::int32_t));
+        infile.read(reinterpret_cast<char *>(&n_aos_file), sizeof(std::int32_t));
+        if (!infile.good() ||
+            marker != EIGENVECTOR_V1_MARKER ||
+            n_spins_file != nspin ||
+            n_spinor_file != nsoc ||
+            n_states_file != nband ||
+            n_aos_file != nao)
         {
-            const auto it = std::find(iks_eigvec_this.cbegin(), iks_eigvec_this.cend(), ik);
-            // this k does not belong to this process
-            skip_this_ik = (it == iks_eigvec_this.cend());
+            return 1;
         }
-        for (int iw = 0; iw != nao; iw++)
+
+        const std::size_t kpoint_data_bytes =
+            static_cast<std::size_t>(nspin) * nsoc * nband * nao *
+            sizeof(std::complex<double>);
+
+        for (std::int32_t ik_read = 0; ik_read != n_kpoints_file; ++ik_read)
         {
-            for (int isoc = 0; isoc != nsoc; isoc++)
+            std::int32_t ik_file = 0;
+            infile.read(reinterpret_cast<char *>(&ik_file), sizeof(std::int32_t));
+            if (!infile.good()) { ret = 1; break; }
+            const int ik = ik_file - 1;
+
+            bool skip_this_ik = false;
+            if (driver::get_bool(driver::opts.use_kpara_scf_eigvec))
             {
-                for (int ib = 0; ib != nband; ib++)
+                const auto it = std::find(iks_eigvec_this.cbegin(), iks_eigvec_this.cend(), ik);
+                skip_this_ik = (it == iks_eigvec_this.cend());
+            }
+
+            if (skip_this_ik)
+            {
+                infile.seekg(static_cast<std::streamoff>(kpoint_data_bytes), std::ios::cur);
+                if (!infile.good()) { ret = 1; break; }
+                continue;
+            }
+
+            std::fill(re.begin(), re.end(), 0.0);
+            std::fill(im.begin(), im.end(), 0.0);
+
+            for (int iw = 0; iw != nao; ++iw)
+            {
+                for (int isoc = 0; isoc != nsoc; ++isoc)
                 {
-                    for (int is = 0; is != nspin; is++)
+                    for (int ib = 0; ib != nband; ++ib)
                     {
-                        // cout<<iw<<ib<<is<<ik;
-                        infile >> rvalue >> ivalue;
-                        if (infile.bad())
+                        for (int is = 0; is != nspin; ++is)
                         {
-                            ret = 1;
-                            break;
+                            double rv = 0.0;
+                            double iv = 0.0;
+                            infile.read(reinterpret_cast<char *>(&rv), sizeof(double));
+                            infile.read(reinterpret_cast<char *>(&iv), sizeof(double));
+                            if (infile.bad()) { ret = 1; break; }
+                            re[is * n + isoc * nbao + ib * nao + iw] = rv;
+                            im[is * n + isoc * nbao + ib * nao + iw] = iv;
                         }
-                        // cout<<rvalue<<ivalue<<endl;
-                        if (skip_this_ik) continue;
-                        if (use_spinor_wfc)
+                    }
+                }
+            }
+            if (ret != 0) break;
+
+            for (int is = 0; is != nspin; ++is)
+            {
+                if (use_spinor_wfc)
+                {
+                    assert(is == 0);
+                    driver::h.set_wfc_spinor(ik, driver::n_states, driver::n_basis_ao,
+                                             re.data(), im.data(),
+                                             re.data() + nbao, im.data() + nbao);
+                }
+                else
+                {
+                    driver::h.set_wfc(is, ik, driver::n_states, driver::n_basis_ao,
+                                      re.data() + is * n, im.data() + is * n);
+                }
+            }
+        }
+    }
+    else
+    {
+        string rvalue, ivalue, kstr;
+        while (infile.peek() != EOF)
+        {
+            infile >> kstr;
+            int ik = stoi(kstr) - 1;
+            if (infile.peek() == EOF) break;
+            bool skip_this_ik = false;
+            if (driver::get_bool(driver::opts.use_kpara_scf_eigvec))
+            {
+                const auto it = std::find(iks_eigvec_this.cbegin(), iks_eigvec_this.cend(), ik);
+                skip_this_ik = (it == iks_eigvec_this.cend());
+            }
+            for (int iw = 0; iw != nao; ++iw)
+            {
+                for (int isoc = 0; isoc != nsoc; ++isoc)
+                {
+                    for (int ib = 0; ib != nband; ++ib)
+                    {
+                        for (int is = 0; is != nspin; ++is)
                         {
-                            // re[is * n + isoc * nbao + iw * nband + ib] = stod(rvalue);
-                            // im[is * n + isoc * nbao + iw * nband + ib] = stod(ivalue);
-                            // re[is * n + iw * nbs + isoc * nband + ib] = stod(rvalue);
-                            // im[is * n + iw * nbs + isoc * nband + ib] = stod(ivalue);
-                            re[is * n + isoc * nbao + ib * nao + iw] = stod(rvalue);
-                            im[is * n + isoc * nbao + ib * nao + iw] = stod(ivalue);
-                        }
-                        else
-                        {
+                            infile >> rvalue >> ivalue;
+                            if (infile.bad()) { ret = 1; break; }
+                            if (skip_this_ik) continue;
                             re[is * n + isoc * nbao + ib * nao + iw] = stod(rvalue);
                             im[is * n + isoc * nbao + ib * nao + iw] = stod(ivalue);
                         }
                     }
                 }
             }
-        }
-        if (skip_this_ik) continue;
-        for (int is = 0; is != nspin; is++)
-        {
-            if (use_spinor_wfc)
+            if (skip_this_ik) continue;
+            for (int is = 0; is != nspin; ++is)
             {
-                assert(is == 0);
-                driver::h.set_wfc_spinor(ik, driver::n_states, driver::n_basis_ao,
-                                         re.data(), im.data(),
-                                         re.data() + nbao, im.data() + nbao);
+                if (use_spinor_wfc)
+                {
+                    assert(is == 0);
+                    driver::h.set_wfc_spinor(ik, driver::n_states, driver::n_basis_ao,
+                                             re.data(), im.data(),
+                                             re.data() + nbao, im.data() + nbao);
+                }
+                else
+                {
+                    driver::h.set_wfc(is, ik, driver::n_states, driver::n_basis_ao,
+                                      re.data() + is * n, im.data() + is * n);
+                }
             }
-            else
-                driver::h.set_wfc(is, ik, driver::n_states, driver::n_basis_ao, re.data() + is * n, im.data() + is * n);
         }
-        // if (ik==0) librpa_int::global::ofs_myid << re << std::endl;
-        // for abacus
-        // for (int ib = 0; ib != NBANDS; ib++)
-        //     for (int iw = 0; iw != NLOCAL; iw++)
-        //         for (int is = 0; is != NSPIN; is++)
-        //         {
-        //             // cout<<iw<<ib<<is<<ik;
-        //             infile >> rvalue >> ivalue;
-        //             // cout<<rvalue<<ivalue<<endl;
-        //             wfc_k.at(stoi(ik) - 1)(ib, iw) = complex<double>(stod(rvalue), stod(ivalue));
-        //         }
     }
     return ret;
 }
@@ -578,7 +655,9 @@ int read_eigenvector(const string &dir_path)
         // cout << fm << " find:" << fm.find("KS_eigenvector") << "\n";
         if (fm.find(driver::driver_params.prefix_eigvecs_scf) == 0)
         {
-            ret = handle_KS_file(dir_path + fm);
+            const string file_path = dir_path + fm;
+            const bool binary = check_KS_file_binary(file_path);
+            ret = handle_KS_file(file_path, binary);
             if (ret != 0)
             {
                 break;
