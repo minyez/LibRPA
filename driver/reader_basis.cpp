@@ -5,18 +5,15 @@
 #include <librpa.hpp>
 #include <librpa_enums.h>
 
-#include "../src/api/instance_manager.h"
 #include "../src/io/global_io.h"
 #include "../src/utils/error.h"
 
 #include <algorithm>
 #include <cctype>
 #include <fstream>
-#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
 
 using std::ifstream;
@@ -114,11 +111,6 @@ void parse_basis_convention(const std::string &convention)
     }
     if (known_convention)
     {
-        driver::basis_convention =
-            {bloch_phase, bloch_ratom, order, coeff_m_nega, coeff_m_posi};
-        driver::basis_convention_name = convention;
-        auto pds = librpa_int::api::get_dataset_instance(driver::h);
-        pds->symmetry_context.basis_convention = driver::basis_convention;
         driver::h.set_basis_convention(bloch_phase, bloch_ratom, order,
                                        coeff_m_nega, coeff_m_posi);
         return;
@@ -408,6 +400,7 @@ void reader_basis_wfc(const std::string &file_path)
                                         file_path.c_str());
     const auto basis_info = read_basis_info_from_basis_file(file_path, BasisKind::Wfc, "AO");
     driver::h.set_ao_basis_wfc(basis_info.nbs, basis_info.l_shells);
+    driver::nbs_wfc = basis_info.nbs;
 }
 
 void reader_basis_aux(const std::string &file_path)
@@ -416,6 +409,7 @@ void reader_basis_aux(const std::string &file_path)
                                         file_path.c_str());
     const auto basis_info = read_basis_info_from_basis_file(file_path, BasisKind::Aux, "ABF");
     driver::h.set_ao_basis_aux(basis_info.nbs, basis_info.l_shells);
+    driver::nbs_aux = basis_info.nbs;
 }
 
 void reader_basis_aux_shrink(const std::string &file_path)
@@ -424,6 +418,7 @@ void reader_basis_aux_shrink(const std::string &file_path)
                                         file_path.c_str());
     const auto basis_info = read_basis_info_from_basis_file(file_path, BasisKind::Aux, "ABF");
     driver::h.set_ao_basis_aux_shrink(basis_info.nbs, basis_info.l_shells);
+    driver::nbs_aux_shrink = basis_info.nbs;
 }
 
 void reader_basis(const std::string &file_path)
@@ -433,4 +428,6 @@ void reader_basis(const std::string &file_path)
     const auto aux_info = read_basis_info_from_basis_file(file_path, BasisKind::Aux, "ABF");
     driver::h.set_ao_basis_wfc(wfc_info.nbs, wfc_info.l_shells);
     driver::h.set_ao_basis_aux(aux_info.nbs, aux_info.l_shells);
+    driver::nbs_wfc = wfc_info.nbs;
+    driver::nbs_aux = aux_info.nbs;
 }

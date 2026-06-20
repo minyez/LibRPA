@@ -121,8 +121,9 @@ int n_states = 0;
 int n_basis_wfc = 0;
 int n_basis_ao = 0;
 int n_spinor = 1;
-librpa_int::BasisConvention basis_convention;
-std::string basis_convention_name = "unset";
+std::vector<size_t> nbs_wfc;
+std::vector<size_t> nbs_aux;
+std::vector<size_t> nbs_aux_shrink;
 
 std::vector<int> iks_eigvec_this;
 std::vector<int> iks_band_eigvec_this;

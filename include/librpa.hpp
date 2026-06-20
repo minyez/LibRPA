@@ -275,7 +275,8 @@ public:
 
     /** @brief Set local RI coefficients. */
     void set_lri_coeff(LibrpaParallelRouting routing, int I, int J, int nbasis_i, int nbasis_j,
-                       int naux_mu, const int R[3], const double *Cs_in);
+                       int naux_mu, const int R[3], const double *Cs_in,
+                       int shrink_aux = 0);
 
     /** @brief Set bare Coulomb matrix elements (atom-pair format). */
     void set_aux_bare_coulomb_k_atom_pair(int ik, int I, int J, int naux_mu, int naux_nu,

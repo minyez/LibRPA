@@ -690,13 +690,15 @@ contains
    !> @param[in]     naux_i   Number of auxiliary basis functions on atom I.
    !> @param[in]     r        Index of unit cell in the crystal, with (0,0,0) at the origin.
    !> @param[in]     coeff    Local RI coefficients associated with atom pair I-J, with auxiliary basis on I.
+   !> @param[in]     shrink_aux If present and true, parse coefficients to the shrink auxiliary basis.
    !>
-   subroutine librpa_set_lri_coeff(this, routing, i_atom, j_atom, nao_i, nao_j, naux_i, r, coeff)
+   subroutine librpa_set_lri_coeff(this, routing, i_atom, j_atom, nao_i, nao_j, naux_i, r, coeff, shrink_aux)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
       integer, intent(in) :: routing, i_atom, j_atom, nao_i, nao_j, naux_i
       integer, dimension(3), intent(in) :: r
       real(dp), contiguous, intent(in) :: coeff(:, :, :)
+      logical, intent(in), optional :: shrink_aux
       call error_on_call("librpa_set_lri_coeff")
    end subroutine librpa_set_lri_coeff
 

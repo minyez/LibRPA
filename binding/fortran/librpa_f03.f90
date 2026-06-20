@@ -646,13 +646,14 @@ module librpa_f03
       end subroutine librpa_set_ibz_mapping_c
 
       subroutine librpa_set_lri_coeff_c(h, routing, i_atom, j_atom, nao_i, nao_j, naux_i, &
-                                        r, coeff) &
+                                        r, coeff, shrink_aux) &
             bind(c, name="librpa_set_lri_coeff")
          import :: c_ptr, c_int, c_double
          type(c_ptr), value :: h
          integer(c_int), value :: routing, i_atom, j_atom, nao_i, nao_j, naux_i
          integer(c_int), dimension(3), intent(in) :: r
          real(c_double), dimension(*), intent(in) :: coeff
+         integer(c_int), value :: shrink_aux
       end subroutine librpa_set_lri_coeff_c
 
       subroutine librpa_set_aux_bare_coulomb_k_atom_pair_c &
@@ -1770,16 +1771,18 @@ contains
    !> @param[in]     naux_i   Number of auxiliary basis functions on atom I.
    !> @param[in]     r        Index of unit cell in the crystal, with (0,0,0) at the origin.
    !> @param[in]     coeff    Local RI coefficients associated with atom pair I-J, with auxiliary basis on I.
+   !> @param[in]     shrink_aux If present and true, parse coefficients to the shrink auxiliary basis.
    !>
-   subroutine librpa_set_lri_coeff(this, routing, i_atom, j_atom, nao_i, nao_j, naux_i, r, coeff)
+   subroutine librpa_set_lri_coeff(this, routing, i_atom, j_atom, nao_i, nao_j, naux_i, r, coeff, shrink_aux)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
       integer, intent(in) :: routing, i_atom, j_atom, nao_i, nao_j, naux_i
       integer, dimension(3), intent(in) :: r
       real(dp), contiguous, intent(in) :: coeff(:, :, :)
+      logical, intent(in), optional :: shrink_aux
 
       integer(c_int) :: r_c(3)
-      integer(c_int) :: routing_c, i_atom_c, j_atom_c, nao_i_c, nao_j_c, naux_i_c
+      integer(c_int) :: routing_c, i_atom_c, j_atom_c, nao_i_c, nao_j_c, naux_i_c, shrink_aux_c
       real(c_double), allocatable :: coeff_c(:,:,:)
 
       ! Sanity check
@@ -1807,14 +1810,18 @@ contains
       nao_i_c = int(nao_i, c_int)
       nao_j_c = int(nao_j, c_int)
       naux_i_c = int(naux_i, c_int)
+      shrink_aux_c = 0
+      if (present(shrink_aux)) then
+         if (shrink_aux) shrink_aux_c = 1
+      end if
       if (dp == c_double) then
          call librpa_set_lri_coeff_c(this%ptr_c_handle, &
-               routing_c, i_atom_c, j_atom_c, nao_i_c, nao_j_c, naux_i_c, r_c, coeff)
+               routing_c, i_atom_c, j_atom_c, nao_i_c, nao_j_c, naux_i_c, r_c, coeff, shrink_aux_c)
       else
          allocate(coeff_c(naux_i, nao_j, nao_i))
          coeff_c = real(coeff, kind=c_double)
          call librpa_set_lri_coeff_c(this%ptr_c_handle, &
-               routing_c, i_atom_c, j_atom_c, nao_i_c, nao_j_c, naux_i_c, r_c, coeff_c)
+               routing_c, i_atom_c, j_atom_c, nao_i_c, nao_j_c, naux_i_c, r_c, coeff_c, shrink_aux_c)
          deallocate(coeff_c)
       end if
    end subroutine librpa_set_lri_coeff

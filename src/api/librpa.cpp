@@ -254,8 +254,8 @@ LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
 
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
     set_lri_coeff,
-    (LibrpaParallelRouting routing, int I, int J, int nbasis_i, int nbasis_j, int naux_mu, const int R[3], const double* Cs_in),
-    (routing, I, J, nbasis_i, nbasis_j, naux_mu, R, Cs_in)
+    (LibrpaParallelRouting routing, int I, int J, int nbasis_i, int nbasis_j, int naux_mu, const int R[3], const double* Cs_in, int shrink_aux),
+    (routing, I, J, nbasis_i, nbasis_j, naux_mu, R, Cs_in, shrink_aux)
 )
 
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(

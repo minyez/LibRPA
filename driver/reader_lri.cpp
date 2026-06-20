@@ -21,11 +21,11 @@
 #include <vector>
 
 #include "driver.h"
-#include "../src/api/instance_manager.h"
 #include "../src/io/fs.h"
 #include "../src/io/global_io.h"
 #include "../src/io/stl_io_helper.h"
 #include "../src/mpi/global_mpi.h"
+#include "../src/utils/error.h"
 #include "../src/utils/profiler.h"
 
 #define READER_LRICOEF_V1_MARKER -10267453
@@ -93,73 +93,26 @@ static std::vector<std::string> discover_Cs_files_for_keyword(const std::string 
     return files;
 }
 
-static librpa_int::Cs_LRI &target_Cs_data_for_keyword(const std::string &keyword)
+static bool target_shrink_aux_basis_for_keyword(const std::string &keyword)
 {
-    auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
     if (keyword == driver::driver_params.prefix_lri_coeff_shrink)
-        return ds->cs_data_shrink;
-    return ds->cs_data;
+        return true;
+    return false;
 }
 
-static const librpa_int::AtomicBasis &target_aux_basis_for_keyword(const std::string &keyword)
+static const std::vector<size_t> &target_aux_basis_sizes_for_keyword(const std::string &keyword)
 {
-    auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
-    if (keyword == driver::driver_params.prefix_lri_coeff_shrink)
-        return ds->basis_aux_shrink;
-    return ds->basis_aux;
+    if (target_shrink_aux_basis_for_keyword(keyword))
+        return driver::nbs_aux_shrink;
+    return driver::nbs_aux;
 }
 
 static void set_driver_lri_coeff(const std::string &keyword, LibrpaParallelRouting routing,
                                  int I, int J, int nbasis_i, int nbasis_j, int naux_mu,
                                  const int R[3], const double *Cs_in)
 {
-    using librpa_int::Vector3_Order;
-    using librpa_int::as_size;
-    using librpa_int::matrix;
-
-    auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
-    auto &cs_data = target_Cs_data_for_keyword(keyword);
-    const auto &basis_aux = target_aux_basis_for_keyword(keyword);
-    const auto &basis_wfc = ds->basis_wfc;
-
-    if (!basis_wfc.initialized())
-        throw LIBRPA_RUNTIME_ERROR("wave function basis not set before reading LRI coefficients");
-    if (!basis_aux.initialized())
-        throw LIBRPA_RUNTIME_ERROR("auxiliary basis not set before reading LRI coefficients");
-
-    if (basis_aux[I] != as_size(naux_mu))
-        throw LIBRPA_RUNTIME_ERROR("LRI coefficient auxiliary dimension is inconsistent with target basis");
-    if (basis_wfc[I] != as_size(nbasis_i) || basis_wfc[J] != as_size(nbasis_j))
-        throw LIBRPA_RUNTIME_ERROR("LRI coefficient wave-function dimension is inconsistent with target basis");
-
-    const size_t cs_size = as_size(nbasis_i) * as_size(nbasis_j) * as_size(naux_mu);
-    const size_t n_ij = as_size(nbasis_i) * as_size(nbasis_j);
-
-    if (routing == LIBRPA_ROUTING_LIBRI)
-    {
-        const std::array<int, 3> Ra{R[0], R[1], R[2]};
-        auto data = std::make_shared<std::valarray<double>>(cs_size);
-        for (size_t i_row = 0; i_row != n_ij; ++i_row)
-        {
-            for (size_t i_col = 0; i_col != as_size(naux_mu); ++i_col)
-            {
-                (*data)[i_col * n_ij + i_row] = Cs_in[i_row * as_size(naux_mu) + i_col];
-            }
-        }
-        const std::initializer_list<std::size_t> shape{as_size(naux_mu), as_size(nbasis_i),
-                                                       as_size(nbasis_j)};
-        cs_data.data_libri[I][{J, Ra}] = RI::Tensor<double>(shape, data);
-        cs_data.use_libri = true;
-    }
-    else
-    {
-        Vector3_Order<int> box(R[0], R[1], R[2]);
-        auto cs_ptr = std::make_shared<matrix>();
-        cs_ptr->create(nbasis_i * nbasis_j, naux_mu);
-        std::memcpy(cs_ptr->c, Cs_in, sizeof(double) * cs_size);
-        cs_data.data_IJR[I][J][box] = cs_ptr;
-        cs_data.use_libri = false;
-    }
+    const int shrink_aux = keyword == driver::driver_params.prefix_lri_coeff_shrink ? 1 : 0;
+    driver::h.set_lri_coeff(routing, I, J, nbasis_i, nbasis_j, naux_mu, R, Cs_in, shrink_aux);
 }
 
 static bool get_Cs_binary_data_size(int n_i, int n_j, int n_mu, std::streamoff &data_size)
@@ -214,6 +167,9 @@ struct CsBinaryV1ReadTask
     std::size_t block_id = 0;
     CsBinaryV1Record block;
     std::streamoff nbytes = 0;
+    int n_i = 0;
+    int n_j = 0;
+    int n_mu = 0;
 };
 
 struct CsBinaryV1CollectedRead
@@ -417,10 +373,9 @@ int checked_Cs_basis_size(const std::size_t value,
     return static_cast<int>(value);
 }
 
-template <typename BasisWfc, typename BasisAux>
 void get_Cs_binary_v1_block_dimensions(const CsBinaryV1Record &block,
-                                       const BasisWfc &basis_wfc,
-                                       const BasisAux &basis_aux,
+                                       const std::vector<size_t> &basis_wfc,
+                                       const std::vector<size_t> &basis_aux,
                                        const string &file_path,
                                        int &n_i,
                                        int &n_j,
@@ -433,31 +388,30 @@ void get_Cs_binary_v1_block_dimensions(const CsBinaryV1Record &block,
     n_mu = checked_Cs_basis_size(basis_aux[ia1], file_path, "auxiliary basis", ia1);
 }
 
-template <typename BasisWfc, typename BasisAux>
 void validate_Cs_binary_v1_blocks(const string &file_path,
                                   const int natom,
                                   const std::streamoff file_size,
                                   const std::vector<CsBinaryV1Record> &records,
-                                  const BasisWfc &basis_wfc,
-                                  const BasisAux &basis_aux)
+                                  const std::vector<size_t> &basis_wfc,
+                                  const std::vector<size_t> &basis_aux)
 {
-    if (!basis_wfc.initialized())
+    if (basis_wfc.empty())
     {
         throw std::runtime_error(file_path +
                                  ": Cs reader v1 requires wave-function basis information");
     }
-    if (!basis_aux.initialized())
+    if (basis_aux.empty())
     {
         throw std::runtime_error(file_path +
                                  ": Cs reader v1 requires auxiliary basis information");
     }
-    if (basis_wfc.n_atoms != static_cast<std::size_t>(natom) ||
-        basis_aux.n_atoms != static_cast<std::size_t>(natom))
+    if (basis_wfc.size() != static_cast<std::size_t>(natom) ||
+        basis_aux.size() != static_cast<std::size_t>(natom))
     {
         std::ostringstream ss;
         ss << file_path << ": Cs reader v1 atom count " << natom
-           << " does not match loaded basis atom counts wfc=" << basis_wfc.n_atoms
-           << ", aux=" << basis_aux.n_atoms;
+           << " does not match loaded basis atom counts wfc=" << basis_wfc.size()
+           << ", aux=" << basis_aux.size();
         throw std::runtime_error(ss.str());
     }
 
@@ -497,12 +451,11 @@ void validate_Cs_binary_v1_blocks(const string &file_path,
     }
 }
 
-template <typename BasisWfc, typename BasisAux>
 std::vector<CsBinaryV1ReadTask> make_Cs_binary_v1_read_tasks(
     const std::vector<string> &files,
     const double threshold,
-    const BasisWfc &basis_wfc,
-    const BasisAux &basis_aux)
+    const std::vector<size_t> &basis_wfc,
+    const std::vector<size_t> &basis_aux)
 {
     std::vector<CsBinaryV1ReadTask> tasks;
     for (const auto &file_path: files)
@@ -534,7 +487,7 @@ std::vector<CsBinaryV1ReadTask> make_Cs_binary_v1_read_tasks(
                 throw std::runtime_error("Invalid Cs reader v1 block dimensions in: " +
                                          file_path);
             }
-            file_tasks.push_back({file_path, i, block, data_size});
+            file_tasks.push_back({file_path, i, block, data_size, n_i, n_j, n_mu});
         }
 
         std::sort(file_tasks.begin(), file_tasks.end(),
@@ -658,10 +611,7 @@ std::vector<CsBinaryV1CollectedRead> collect_Cs_binary_v1_reads(
     return collected;
 }
 
-template <typename BasisWfc, typename BasisAux>
 void read_Cs_binary_v1_tasks(const std::vector<CsBinaryV1ReadTask> &tasks,
-                             const BasisWfc &basis_wfc,
-                             const BasisAux &basis_aux,
                              const std::string &keyword)
 {
     const auto collected_reads = collect_Cs_binary_v1_reads(tasks);
@@ -684,14 +634,8 @@ void read_Cs_binary_v1_tasks(const std::vector<CsBinaryV1ReadTask> &tasks,
 
         for (const auto &task: read.tasks)
         {
-            int n_i = 0;
-            int n_j = 0;
-            int n_mu = 0;
-            get_Cs_binary_v1_block_dimensions(
-                task.block, basis_wfc, basis_aux, task.file_path, n_i, n_j, n_mu);
-
             std::shared_ptr<matrix> cs_ptr = std::make_shared<matrix>();
-            cs_ptr->create(n_i * n_j, n_mu);
+            cs_ptr->create(task.n_i * task.n_j, task.n_mu);
             const auto buffer_offset =
                 checked_streamoff_to_size(
                     static_cast<std::streamoff>(task.block.offset) - read.offset,
@@ -703,7 +647,7 @@ void read_Cs_binary_v1_tasks(const std::vector<CsBinaryV1ReadTask> &tasks,
             const int ia2 = task.block.ia2 - 1;
             int R[3] = {task.block.R[0], task.block.R[1], task.block.R[2]};
             set_driver_lri_coeff(keyword, driver::opts.parallel_routing, ia1, ia2,
-                                 n_i, n_j, n_mu, R, cs_ptr->c);
+                                 task.n_i, task.n_j, task.n_mu, R, cs_ptr->c);
         }
     }
 }
@@ -939,9 +883,8 @@ static size_t handle_Cs_file_binary(const string &file_path, double threshold,
         const auto records = read_Cs_binary_v1_header_or_throw(
             file_path, natom, ncell, file_size);
 
-        auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
-        const auto &basis_wfc = ds->basis_wfc;
-        const auto &basis_aux = ds->basis_aux;
+        const auto &basis_wfc = driver::nbs_wfc;
+        const auto &basis_aux = target_aux_basis_sizes_for_keyword(keyword);
         validate_Cs_binary_v1_blocks(
             file_path, natom, file_size, records, basis_wfc, basis_aux);
 
@@ -1174,8 +1117,8 @@ std::vector<size_t> handle_Cs_file_dry(const string &file_path, double threshold
         int n_i = stoi(i_s);
         int n_j = stoi(j_s);
         int n_mu = stoi(mu_s);
-        int ia1 = stoi(ia1_s) - 1;
-        int ia2 = stoi(ia2_s) - 1;
+        // int ia1 = stoi(ia1_s) - 1;
+        // int ia2 = stoi(ia2_s) - 1;
         // R[0] = stoi(ic_1);
         // R[1] = stoi(ic_2);
         // R[2] = stoi(ic_3);
@@ -1352,9 +1295,8 @@ static size_t handle_Cs_file_binary_by_ids(const string &file_path, double thres
         const auto records = read_Cs_binary_v1_header_or_throw(
             file_path, natom, ncell, file_size);
 
-        auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
-        const auto &basis_wfc = ds->basis_wfc;
-        const auto &basis_aux = target_aux_basis_for_keyword(keyword);
+        const auto &basis_wfc = driver::nbs_wfc;
+        const auto &basis_aux = target_aux_basis_sizes_for_keyword(keyword);
         validate_Cs_binary_v1_blocks(
             file_path, natom, file_size, records, basis_wfc, basis_aux);
 
@@ -1479,9 +1421,8 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
 
         size_t cs_discard = 0;
         profiler.start("handle_Cs_file_dry");
-        auto ds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
-        const auto &basis_wfc = ds->basis_wfc;
-        const auto &basis_aux = target_aux_basis_for_keyword(keyword);
+        const auto &basis_wfc = driver::nbs_wfc;
+        const auto &basis_aux = target_aux_basis_sizes_for_keyword(keyword);
         const auto tasks = make_Cs_binary_v1_read_tasks(files, threshold, basis_wfc, basis_aux);
         const auto tasks_this_proc = select_Cs_binary_v1_tasks_for_rank(tasks, myid, nprocs);
         cs_discard = tasks.size() - tasks_this_proc.size();
@@ -1492,7 +1433,7 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
         if (myid == 0) lib_printf("Finished Cs filtering\n");
 
         profiler.start("handle_Cs_file");
-        read_Cs_binary_v1_tasks(tasks_this_proc, basis_wfc, basis_aux, keyword);
+        read_Cs_binary_v1_tasks(tasks_this_proc, keyword);
         profiler.stop("handle_Cs_file");
         if (myid == 0) lib_printf("Finished Cs parsing\n");
         return cs_discard;
@@ -1601,11 +1542,6 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
     // cout << "Done\n";
     if (myid == 0) lib_printf("Finished Cs parsing\n");
 
-    // // debug
-    // auto pds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
-    // auto &Cs = pds->cs_data;
-    // ofs_myid << "Data #keys: " << Cs.n_keys() << endl;
-    // ofs_myid << "Data bytes: " << Cs.n_data_bytes() << endl;
     return cs_discard;
 }
 
@@ -1835,6 +1771,10 @@ std::vector<size_t> read_aux_basis_from_Cs(const string &dir_path, const string 
         nbs_aux.resize(n_atoms);
     }
     global::mpi_comm_global_h.bcast(nbs_aux.data(), n_atoms, 0);
+    if (target_shrink_aux_basis_for_keyword(keyword))
+        driver::nbs_aux_shrink = nbs_aux;
+    else
+        driver::nbs_aux = nbs_aux;
     return nbs_aux;
 }
 
@@ -1867,4 +1807,6 @@ void read_basis_from_Cs(const string &dir_path)
     global::mpi_comm_global_h.bcast(nbs_aux.data(), n_atoms, 0);
     driver::h.set_ao_basis_wfc(nbs_wfc);
     driver::h.set_ao_basis_aux(nbs_aux);
+    driver::nbs_wfc = nbs_wfc;
+    driver::nbs_aux = nbs_aux;
 }

@@ -3,12 +3,14 @@
 #include "librpa_input.h"
 
 // Standard headers
+#include <array>
 #include <complex>
 #include <cstring>
 #include <map>
 #include <memory>
 #include <string>
 #include <utility>
+#include <valarray>
 #include <vector>
 
 // Internal headers
@@ -73,6 +75,65 @@ std::vector<std::vector<int>> parse_l_shells(const int natoms,
         }
     }
     return parsed;
+}
+
+void set_lri_coeff_impl(LibrpaHandler* h, LibrpaParallelRouting routing, int I, int J,
+                        int nbasis_i, int nbasis_j, int naux_mu, const int R[3],
+                        const double* Cs_in, bool shrink_aux, const std::string &tname)
+{
+    using namespace librpa_int;
+    using librpa_int::global::profiler;
+
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
+
+    auto pds = api::get_dataset_instance(h);
+    auto &cs_data = shrink_aux ? pds->cs_data_shrink : pds->cs_data;
+    const auto &basis_aux = shrink_aux ? pds->basis_aux_shrink : pds->basis_aux;
+
+    if (!pds->basis_wfc.initialized())
+        throw LIBRPA_RUNTIME_ERROR("wave function basis not set, call (librpa_)set_ao_basis_wfc first");
+    if (!basis_aux.initialized())
+    {
+        if (shrink_aux)
+            throw LIBRPA_RUNTIME_ERROR("shrink auxiliary basis not set, call (librpa_)set_ao_basis_aux_shrink first");
+        throw LIBRPA_RUNTIME_ERROR("auxiliary basis not set, call (librpa_)set_ao_basis_aux first");
+    }
+
+    const size_t cs_size = nbasis_i * nbasis_j * naux_mu;
+    const size_t n_ij = nbasis_i * nbasis_j;
+
+    if (basis_aux[I] != as_size(naux_mu))
+        throw LIBRPA_RUNTIME_ERROR("LRI coefficient auxiliary dimension is inconsistent with target basis");
+    if (pds->basis_wfc[I] != as_size(nbasis_i) || pds->basis_wfc[J] != as_size(nbasis_j))
+        throw LIBRPA_RUNTIME_ERROR("LRI coefficient wave-function dimension is inconsistent with target basis");
+
+    if (routing == LIBRPA_ROUTING_LIBRI)
+    {
+        const std::array<int, 3> Ra{R[0], R[1], R[2]};
+        auto data = std::make_shared<std::valarray<double>>(cs_size);
+        for (size_t i_row = 0; i_row < n_ij; i_row++)
+        {
+            for (size_t i_col = 0; i_col != as_size(naux_mu); i_col++)
+            {
+                (*data)[i_col * n_ij + i_row] = Cs_in[i_row * naux_mu + i_col];
+            }
+        }
+        const std::initializer_list<std::size_t> shape{as_size(naux_mu), as_size(nbasis_i),
+                                                       as_size(nbasis_j)};
+        cs_data.data_libri[I][{J, Ra}] = RI::Tensor<double>(shape, data);
+        cs_data.use_libri = true;
+    }
+    else
+    {
+        Vector3_Order<int> box(R[0], R[1], R[2]);
+        std::shared_ptr<matrix> cs_ptr = std::make_shared<matrix>();
+        cs_ptr->create(nbasis_i * nbasis_j, naux_mu);
+        memcpy((*cs_ptr).c, Cs_in, sizeof(double) * cs_size);
+        cs_data.data_IJR[I][J][box] = cs_ptr;
+        cs_data.use_libri = false;
+    }
+
+    profiler.stop(tname);
 }
 
 } // namespace
@@ -482,6 +543,7 @@ void librpa_set_basis_convention(LibrpaHandler* h, int bloch_phase, int bloch_ra
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     pds->basis_convention = {bloch_phase, bloch_ratom, order, nega_m, posi_m};
+    pds->symmetry_context.basis_convention = pds->basis_convention;
 
     pds->comm_h.barrier();
     if (pds->comm_h.is_root())
@@ -740,78 +802,12 @@ void librpa_set_ibz_mapping(LibrpaHandler* h, int nkpts, const int* map_ibzk)
 
 void librpa_set_lri_coeff(LibrpaHandler* h, LibrpaParallelRouting routing, int I, int J,
                           int nbasis_i, int nbasis_j, int naux_mu, const int R[3],
-                          const double* Cs_in)
+                          const double* Cs_in, int shrink_aux)
 {
-    using std::endl;
-    using namespace librpa_int;
-    using librpa_int::matrix;
-    using librpa_int::Vector3_Order;
-    using librpa_int::as_size;
-    using librpa_int::global::ofs_myid;
-    using librpa_int::global::profiler;
-
-    const std::string tname = "api_set_lri_coeff";
-    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
-
-    auto pds = librpa_int::api::get_dataset_instance(h);
-    auto &cs_data = pds->cs_data;
-    if (!pds->basis_wfc.initialized())
-        throw LIBRPA_RUNTIME_ERROR("wave function basis not set, call (librpa_)set_ao_basis_wfc first");
-    if (!pds->basis_aux.initialized())
-        throw LIBRPA_RUNTIME_ERROR("auxiliary basis not set, call (librpa_)set_ao_basis_aux first");
-
-    const size_t cs_size = nbasis_i * nbasis_j * naux_mu;
-    const size_t n_ij = nbasis_i * nbasis_j;
-
-    // ofs_myid << "Parsing I J " << I << " " << J << " "
-    //          << "ds->basis_aux " << pds->basis_aux.nbs_ << " "
-    //          << "ds->basis_wfc " << pds->basis_wfc.nbs_ << endl;
-    // ofs_myid << "ds->basis_aux[I] == naux_mu ? "
-    //          << pds->basis_aux[I] << " " << as_size(naux_mu) << " "
-    //          << std::boolalpha << (pds->basis_aux[I] == as_size(naux_mu))
-    //          << endl;
-    // ofs_myid << "ds->basis_wfc[I] == nbasis_i ? "
-    //          << pds->basis_wfc[I] << " " << as_size(nbasis_i) << " "
-    //          << std::boolalpha << (pds->basis_wfc[I] == as_size(nbasis_i))
-    //          << endl;
-    // ofs_myid << "ds->basis_wfc[J] == nbasis_j ? "
-    //          << pds->basis_wfc[J] << " " << as_size(nbasis_j) << " "
-    //          << std::boolalpha << (pds->basis_wfc[J] == as_size(nbasis_j))
-    //          << endl;
-
-    assert(pds->basis_aux[I] == as_size(naux_mu));
-    assert(pds->basis_wfc[I] == as_size(nbasis_i));
-    assert(pds->basis_wfc[J] == as_size(nbasis_j));
-
-    if (routing == LIBRPA_ROUTING_LIBRI)
-    {
-        const std::array<int, 3> Ra{R[0], R[1], R[2]};
-        // RI tensor uses ABF as slowest index, so we need transpose the input data.
-        auto data = std::make_shared<std::valarray<double>>(cs_size);
-        // Unless n_cols >> n_rows, cache-friendly reading (by row in C/C++) is more efficient
-        for (size_t i_row = 0; i_row < n_ij; i_row++)
-        {
-            for (size_t i_col = 0; i_col != as_size(naux_mu); i_col++)
-            {
-                (*data)[i_col * n_ij + i_row] = Cs_in[i_row * naux_mu + i_col];
-            }
-        }
-        const std::initializer_list<std::size_t> shape{as_size(naux_mu), as_size(nbasis_i),
-                                                       as_size(nbasis_j)};
-        cs_data.data_libri[I][{J, Ra}] = RI::Tensor<double>(shape, data);
-        cs_data.use_libri = true;
-    }
-    else
-    {
-        librpa_int::Vector3_Order<int> box(R[0], R[1], R[2]);
-        std::shared_ptr<matrix> cs_ptr = std::make_shared<matrix>();
-        cs_ptr->create(nbasis_i * nbasis_j, naux_mu);
-        memcpy((*cs_ptr).c, Cs_in, sizeof(double) * cs_size);
-        cs_data.data_IJR[I][J][box] = cs_ptr;
-        cs_data.use_libri = false;
-    }
-
-    profiler.stop(tname);
+    const bool use_shrink_aux = shrink_aux > 0;
+    set_lri_coeff_impl(h, routing, I, J, nbasis_i, nbasis_j, naux_mu, R, Cs_in,
+                       use_shrink_aux,
+                       use_shrink_aux ? "api_set_lri_coeff_shrink" : "api_set_lri_coeff");
 }
 
 static void _set_aux_coulomb_k_atom_pair(const librpa_int::Vector3_Order<double> &qvec,

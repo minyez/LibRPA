@@ -205,10 +205,11 @@ void librpa_set_ibz_mapping(LibrpaHandler* h, int nkpts, const int* map_ibzk);
  * @param[in] naux_mu    Number of auxiliary functions for mu index.
  * @param[in] R          Lattice vector [R1, R2, R3].
  * @param[in] Cs_in      RI triple coefficients.
+ * @param[in] shrink_aux If positive, parse coefficients to the shrink auxiliary basis.
  */
 void librpa_set_lri_coeff(LibrpaHandler* h, LibrpaParallelRouting routing, int I, int J,
                           int nbasis_i, int nbasis_j, int naux_mu, const int R[3],
-                          const double* Cs_in);
+                          const double* Cs_in, int shrink_aux = 0);
 
 /**
  * @brief Set bare Coulomb matrix elements (atom-pair format).

@@ -4,8 +4,8 @@
 #include "librpa_enums.h"
 
 #include <string>
+#include <vector>
 
-#include "../src/core/atomic_basis.h"
 #include "../src/math/vector3_order.h"
 
 namespace driver
@@ -94,8 +94,9 @@ extern int n_states;
 extern int n_basis_wfc;
 extern int n_basis_ao;
 extern int n_spinor;
-extern librpa_int::BasisConvention basis_convention;
-extern std::string basis_convention_name;
+extern std::vector<size_t> nbs_wfc;
+extern std::vector<size_t> nbs_aux;
+extern std::vector<size_t> nbs_aux_shrink;
 
 // Used for parallel distribution of input SCF KS eigenvectors over k-points
 extern std::vector<int> iks_eigvec_this;
