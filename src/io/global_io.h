@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <fstream>
 #include <utility>
+#include <vector>
 
 #include "../mpi/global_mpi.h"
 #include "librpa_enums.h"
@@ -105,18 +106,41 @@ void lib_printf_root(const char* s, Args&&... args) noexcept
     lib_printf_root(LIBRPA_VERBOSE_INFO, s, std::forward<Args>(args)...);
 }
 
-//! simlar to global::printf, but all processes will print in the order of myid
+namespace detail
+{
+
+void lib_printf_coll_msg_impl(const librpa_int::MpiCommHandler &comm_h,
+                              const LibrpaVerbose verbose_level,
+                              const char *local_msg,
+                              const int count) noexcept;
+
+template <typename... Args>
+void lib_printf_coll_impl(const librpa_int::MpiCommHandler &comm_h,
+                          const LibrpaVerbose verbose_level,
+                          const char* s, Args&&... args) noexcept
+{
+    int count = 0;
+    std::vector<char> local_msg;
+    if (should_output(verbose_level))
+    {
+        const int msg_len = std::snprintf(nullptr, 0, s, args...);
+        if (msg_len > 0)
+        {
+            count = msg_len;
+            local_msg.resize(count + 1);
+            std::snprintf(local_msg.data(), local_msg.size(), s, args...);
+        }
+    }
+    lib_printf_coll_msg_impl(comm_h, verbose_level, count > 0 ? local_msg.data() : nullptr, count);
+}
+
+} /* end of namespace detail */
+
+//! Similar to global::printf, but messages from all processes are printed in myid order.
 template <typename... Args>
 void lib_printf_coll(const LibrpaVerbose verbose_level, const char* s, Args&&... args) noexcept
 {
-    for (int i = 0; i < size_global; i++)
-    {
-        if (myid_global == i)
-        {
-            lib_printf(verbose_level, s, std::forward<Args>(args)...);
-        }
-        MPI_Barrier(mpi_comm_global);
-    }
+    detail::lib_printf_coll_impl(mpi_comm_global_h, verbose_level, s, std::forward<Args>(args)...);
 }
 
 template <typename... Args>
@@ -148,14 +172,7 @@ template <typename... Args>
 void printf_comm_coll(const librpa_int::MpiCommHandler &comm_h, const char* s, Args&&... args) noexcept
 {
     comm_h.check_initialized();
-    for (int i = 0; i < comm_h.nprocs; i++)
-    {
-        if (i == comm_h.myid)
-        {
-            global::lib_printf(s, std::forward<Args>(args)...);
-        }
-        comm_h.barrier();
-    }
+    global::detail::lib_printf_coll_impl(comm_h, LIBRPA_VERBOSE_INFO, s, std::forward<Args>(args)...);
 }
 
 } /* end of namespace librpa_int */

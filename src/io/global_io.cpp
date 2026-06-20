@@ -76,6 +76,50 @@ void init_global_io(bool redirect_stdout, const char *redirect_path, bool enable
 
 inline bool is_io_initialized() { return librpa_io_initialized; }
 
+namespace detail
+{
+
+void lib_printf_coll_msg_impl(const librpa_int::MpiCommHandler &comm_h,
+                              const LibrpaVerbose verbose_level,
+                              const char *local_msg,
+                              const int count) noexcept
+{
+    std::vector<int> counts;
+    if (comm_h.myid == 0) counts.resize(comm_h.nprocs);
+    MPI_Gather(&count, 1, MPI_INT, comm_h.myid == 0 ? counts.data() : nullptr, 1, MPI_INT, 0, comm_h.comm);
+
+    std::vector<int> displs;
+    std::vector<char> all_msgs;
+    if (comm_h.myid == 0)
+    {
+        displs.resize(comm_h.nprocs);
+        int total_count = 0;
+        for (int i = 0; i < comm_h.nprocs; ++i)
+        {
+            displs[i] = total_count;
+            total_count += counts[i];
+        }
+        all_msgs.resize(total_count);
+    }
+
+    MPI_Gatherv(local_msg, count, MPI_CHAR,
+                comm_h.myid == 0 ? all_msgs.data() : nullptr,
+                comm_h.myid == 0 ? counts.data() : nullptr,
+                comm_h.myid == 0 ? displs.data() : nullptr,
+                MPI_CHAR, 0, comm_h.comm);
+
+    if (comm_h.myid == 0 && should_output(verbose_level))
+    {
+        for (int i = 0; i < comm_h.nprocs; ++i)
+        {
+            if (counts[i] > 0) lib_printf("%.*s", counts[i], all_msgs.data() + displs[i]);
+        }
+    }
+    comm_h.barrier();
+}
+
+} /* end of namespace detail */
+
 void finalize_global_io()
 {
     if (ofs_myid.is_open()) ofs_myid.close();
