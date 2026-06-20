@@ -125,3 +125,6 @@ Below are a few specific guidelines for LibRPA:
 - `LibrpaSwitch`-type runtime options must begin with `output_` or `use_`, and vice versa.
 - Option with a few available values can either be an `int` type starting with `option_`,
   or a dedicated `enum` type defined in `librpa_enums.h`.
+- Try to keep the option name short, favorably no longer than 25 characters.
+- Use `utilities/check_librpa_options.py` to cross-check the consistency between the C
+  struct, Fortran interface and high-level wrapper of `LibrpaOptions`.
