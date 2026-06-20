@@ -197,6 +197,7 @@ These parameters are active for LibRI-enabled builds and LibRI routing.
 |---------------------------|---------------------------------------------------------------------------|------|-------------------------------------------|--------------|
 | `output_gw_sigc_ks_kf`    | Output KS-diagonal correlation self-energy (k-space, imaginary frequencies) | bool | `false`                                 | Experimental |
 | `output_gw_sigc_ks_mat_kf` | Output KS-basis correlation self-energy matrix (k-space, imaginary frequencies) | bool | `false`                              | Experimental |
+| `output_gw_sigc_mat_kf`   | Output NAO-basis correlation self-energy matrix (k-space, imaginary frequencies) | bool | `false`                                | Experimental |
 | `output_gw_sigc_mat_rt`   | Output NAO-basis correlation self-energy matrix (real-space, imaginary time) | bool | `false`                                | Experimental |
 | `output_gw_sigc_mat_rf`   | Output NAO-basis correlation self-energy matrix (real-space, imaginary frequencies) | bool | `false`                         | Experimental |
 | `output_wc_rf`            | Output $W^c$ matrix in real space and imaginary frequency where supported | bool | `false`                                   | Experimental |

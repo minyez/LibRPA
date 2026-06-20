@@ -266,6 +266,9 @@ typedef struct
     //! Output correlation self-energy matrix in KS basis (k-space, imaginary frequency domain).
     LibrpaSwitch output_gw_sigc_ks_mat_kf;
 
+    //! Output correlation self-energy matrix in NAO basis (k-space, imaginary frequency domain).
+    LibrpaSwitch output_gw_sigc_mat_kf;
+
     //! Output correlation self-energy matrix in NAO basis (real space, imaginary time domain).
     LibrpaSwitch output_gw_sigc_mat_rt;
 

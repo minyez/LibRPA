@@ -478,6 +478,23 @@ void write_sigc_matrix_binary_parallel(const Matz &mat_loc,
     desc.barrier();
 }
 
+void write_sigc_nao_kf_matrix(const Matz &mat, const ArrayDesc &desc,
+                              const std::string &output_dir, const std::string &source,
+                              const int ispin, const int ispinor_bra,
+                              const int ispinor_ket, const int n_spinor,
+                              const int ik, const int ifreq)
+{
+    std::ostringstream ss;
+    ss << path_as_directory(output_dir) << "SigcKF_" << source
+       << "_ispin_" << ispin;
+    if (n_spinor > 1)
+    {
+        ss << "_spinor_" << ispinor_bra << "_" << ispinor_ket;
+    }
+    ss << "_ik_" << ik << "_ifreq_" << ifreq << ".mtx";
+    print_matrix_mm_file_parallel(ss.str(), mat, desc, "", 1e-10);
+}
+
 }  // namespace
 
 G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
@@ -513,6 +530,7 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
     output_dir = "./";  // POSIX
     output_sigc_ks_mat_kf = false;
     output_sigc_ks_kf = true;
+    output_sigc_mat_kf = false;
     output_sigc_mat_rt = false;
     output_sigc_mat_rf = false;
     output_wc_rf = false;
@@ -1617,7 +1635,8 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                       const std::vector<Vector3_Order<double>> &kfrac_target,
                                       const AtomPairBvKRemap<atom_t> &bvk_remap,
                                       const BlacsCtxtHandler &blacs_ctxt_h,
-                                      const bool use_gpu_replace_scalapack)
+                                      const bool use_gpu_replace_scalapack,
+                                      const std::string &source)
 {
     assert(blacs_ctxt_h.comm() == this->comm_h.comm);
     assert(this->is_rspace_built_);
@@ -1917,6 +1936,13 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                 sigc_nao_nao.zero_out();
                                 collect_block_from_IJ_storage_matrix_transform(sigc_nao_nao, desc_nao_nao,
                                         this->atbasis_wfc, this->atbasis_wfc, fourier, sigc_isp_local.at(freq));
+                                if (this->output_sigc_mat_kf)
+                                {
+                                    const int ifreq = this->tfg.get_freq_index(freq);
+                                    write_sigc_nao_kf_matrix(
+                                        sigc_nao_nao, desc_nao_nao, this->output_dir, source,
+                                        isp, ispn_bra, ispn_ket, n_spinor, ik, ifreq);
+                                }
                                 ScalapackConnector::pgemr2d_f(n_aos, n_aos, sigc_nao_nao.ptr(), 1, 1,
                                                               desc_nao_nao.desc, sigc_nao_nao_opt.ptr(),
                                                               1, 1, desc_nao_nao_opt.desc, blacs_ctxt_h.ictxt);
@@ -2045,6 +2071,13 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                 sigc_nao_nao, desc_nao_nao,
                                 this->atbasis_wfc, this->atbasis_wfc,
                                 fourier, sigc_isp_local.at(freq));
+                            if (this->output_sigc_mat_kf)
+                            {
+                                const int ifreq = this->tfg.get_freq_index(freq);
+                                write_sigc_nao_kf_matrix(
+                                    sigc_nao_nao, desc_nao_nao, this->output_dir, source,
+                                    isp, ispn_bra, ispn_ket, n_spinor, ik, ifreq);
+                            }
                             if (use_root_dense_projection)
                             {
                                 auto sigc_nao_nao_fb =
@@ -2214,7 +2247,7 @@ void G0W0::build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h
 {
     comm_h.barrier();
     librpa_int::global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid with BLACS" << std::endl;
-    this->build_sigc_matrix_KS_blacs(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {}, blacs_ctxt_h, use_gpu_replace_scalapack);
+    this->build_sigc_matrix_KS_blacs(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {}, blacs_ctxt_h, use_gpu_replace_scalapack, "kgrid");
     if (this->output_sigc_ks_kf)
     {
         const auto fn = path_as_directory(this->output_dir) + "self_energy_omega.dat";
@@ -2236,7 +2269,10 @@ void G0W0::build_sigc_matrix_KS_band_blacs(
     {
         librpa_int::global::lib_printf("build_sigc_matrix_KS_band: constructing self-energy matrix for band k-path with BLACS\n");
     }
-    this->build_sigc_matrix_KS_blacs(wfc, kfrac_band, bvk_remap, blacs_ctxt_h, use_gpu_replace_scalapack);
+    const int output_band_index = output_sigc_ks_kf_band_index_;
+    this->build_sigc_matrix_KS_blacs(wfc, kfrac_band, bvk_remap, blacs_ctxt_h,
+                                     use_gpu_replace_scalapack,
+                                     "band_" + std::to_string(output_band_index));
     if (this->output_sigc_ks_kf)
     {
         const int n_bands = infer_target_n_bands(comm_h, wfc, this->mf.get_n_bands());
@@ -2244,10 +2280,12 @@ void G0W0::build_sigc_matrix_KS_band_blacs(
                              ? collect_target_iks(comm_h, wfc, static_cast<int>(kfrac_band.size()))
                              : *output_iks;
         const auto stem = make_sigc_ks_imagfreq_band_stem(
-            this->output_dir, output_sigc_ks_kf_band_index_++);
+            this->output_dir, output_band_index);
         write_self_energy_omega((stem + ".dat").c_str(), *this, iks, n_bands);
         write_self_energy_omega_kpoints((stem + ".kidx").c_str(), *this, iks);
     }
+    if (this->output_sigc_ks_kf || this->output_sigc_mat_kf)
+        ++output_sigc_ks_kf_band_index_;
 }
 
 } // namespace librpa_int

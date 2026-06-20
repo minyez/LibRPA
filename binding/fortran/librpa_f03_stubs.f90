@@ -250,6 +250,8 @@ module librpa_f03
       logical :: output_gw_sigc_ks_kf
       !> Experimental: output KS-basis correlation self-energy matrix in k-space and imaginary frequencies.
       logical :: output_gw_sigc_ks_mat_kf
+      !> Experimental: output NAO-basis correlation self-energy matrix in k-space and imaginary frequencies.
+      logical :: output_gw_sigc_mat_kf
       !> Experimental: output NAO-basis correlation self-energy matrix in real space and imaginary time.
       logical :: output_gw_sigc_mat_rt
       !> Experimental: output NAO-basis correlation self-energy matrix in real space and imaginary frequencies.

@@ -40,7 +40,8 @@ private:
                                     const std::vector<Vector3_Order<double>> &kfrac_target,
                                     const AtomPairBvKRemap<atom_t> &bvk_remap,
                                     const BlacsCtxtHandler &blacs_ctxt_h,
-                                    bool use_gpu_replace_scalapack);
+                                    bool use_gpu_replace_scalapack,
+                                    const std::string &source);
 
 public:
     const MeanField &mf;
@@ -62,6 +63,7 @@ public:
 
     bool output_sigc_ks_mat_kf;
     bool output_sigc_ks_kf;
+    bool output_sigc_mat_kf;
     bool output_sigc_mat_rt;
     bool output_sigc_mat_rf;
     bool output_wc_rf;

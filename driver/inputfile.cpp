@@ -347,6 +347,7 @@ void parse_inputfile_to_params(const std::string &fn)
         parser.parse_bool("output_gw_sigc_mat", btmp, flag);
         if (flag == 0) opts.output_gw_sigc_ks_mat_kf = get_switch(btmp);
     }
+    _parse_switch(opts, output_gw_sigc_mat_kf);
     _parse_switch(opts, output_gw_sigc_mat_rt);
     _parse_switch(opts, output_gw_sigc_mat_rf);
     _parse_switch(opts, output_wc_rf);
