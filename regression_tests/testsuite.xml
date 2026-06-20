@@ -78,6 +78,8 @@
     </testcase>
 
     <testcase name="BN shrink reader v1 (abacus input)" directory="g0w0_band_abacus_BN_shrink_v1_libri">
+      <labels refhash="a56500a434d0f57e06eb8cfed2dacd3f66833f78"
+      />
       <build require_libri="true"
       />
       <run ntasks_disable="none"
@@ -94,6 +96,8 @@
     </testcase>
 
     <testcase name="BN SOC (abacus input)" directory="g0w0_band_abacus_BN_soc_libri">
+      <labels refhash="a56500a434d0f57e06eb8cfed2dacd3f66833f78"
+      />
       <build require_libri="true"
       />
       <run ntasks_disable="none"
@@ -109,7 +113,7 @@
                 regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
                 headers="2"
                 rows="52"
-                comparison="cmp_table.abs_diff(5e-3)"
+                comparison="cmp_table.abs_diff(1e-4)"
       />
       <!-- <validate name="GW bandgap" -->
       <!--           regex="GW bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
@@ -191,6 +195,8 @@
     </testcase>
 
     <testcase name="BN symmetry shrink (abacus input)" directory="g0w0_band_abacus_BN_sym_shrink_libri">
+      <labels refhash="a56500a434d0f57e06eb8cfed2dacd3f66833f78"
+      />
       <build require_libri="true"
       />
       <run ntasks_disable="none"
@@ -227,6 +233,8 @@
     </testcase>
 
     <testcase name="Bulk silicon, with eigenvector parllelized over k (aims input)" directory="g0w0_aims_Si_libri">
+      <labels refhash="a56500a434d0f57e06eb8cfed2dacd3f66833f78"
+      />
       <build require_libri="true"
       />
       <run ntasks_disable="none"
@@ -243,6 +251,8 @@
     </testcase>
 
     <testcase name="Water molecule in box (aims input)" directory="g0w0_aims_mole_H2O_libri">
+      <labels refhash="a56500a434d0f57e06eb8cfed2dacd3f66833f78"
+      />
       <build require_libri="true"
       />
       <validate name="Quasi-particle energies"
@@ -254,6 +264,8 @@
     </testcase>
 
     <testcase name="Bulk silicon, band structure (aims input)" directory="g0w0_band_aims_Si_libri">
+      <labels refhash="a56500a434d0f57e06eb8cfed2dacd3f66833f78"
+      />
       <build require_libri="true"
       />
       <run ntasks_disable="none"
@@ -285,6 +297,8 @@
     </testcase>
 
     <testcase name="Bulk MgO, with symmetry on (aims input)" directory="g0w0_aims_MgO_sym_libri">
+      <labels refhash="a56500a434d0f57e06eb8cfed2dacd3f66833f78"
+      />
       <build require_libri="true"
       />
       <run ntasks_disable="none"
@@ -301,6 +315,8 @@
     </testcase>
 
     <testcase name="Lithium atom, spin-polarized (aims input)" directory="g0w0_aims_Li_atom_libri">
+      <labels refhash="a56500a434d0f57e06eb8cfed2dacd3f66833f78"
+      />
       <build require_libri="true"
       />
       <validate name="Quasi-particle energies"

@@ -166,6 +166,8 @@ Entry fields:
   directory under both `testcases/` and `refs/`.
 - `<labels disable="...">` optionally disables a case. Use `disable="true"` or
   a short reason such as `disable="experimental"`.
+- `<labels refhash="...">` records the commit hash used to generate the
+  reference data. It is informational metadata for maintainers.
 - `<build require_libri="true">` skips the case unless `--use-libri` is passed.
 - `<run>` filters by runtime layout. Use `ntasks_enable` or `nthreads_enable`
   to allow only selected values, and `ntasks_disable` or `nthreads_disable` to
