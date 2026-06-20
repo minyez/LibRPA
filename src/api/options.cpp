@@ -55,7 +55,7 @@ void librpa_init_options(LibrpaOptions *opts)
 
     opts->n_params_anacon = -1;
     opts->option_qpe_solver = 0;
-    opts->qpe_solver_thres = 1.0e-5;
+    opts->qpe_solver_thres = 1.0e-6;
     opts->qpe_solver_n_iter_max = 10000;
     opts->qpe_solver_damp_factor = 0.1;
     opts->use_qpe_adaptive_damp = LIBRPA_SWITCH_OFF;
