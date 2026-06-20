@@ -77,6 +77,11 @@ bool is_stru_symop_header_at(const std::vector<std::string> &tokens, const std::
     return pos + 1 < tokens.size() && is_stru_symop_convention(tokens[pos + 1]);
 }
 
+bool is_stru_tail_boundary_at(const std::vector<std::string> &tokens, const std::size_t pos)
+{
+    return pos == tokens.size() || (pos < tokens.size() && is_stru_symop_header_at(tokens, pos));
+}
+
 std::size_t skip_legacy_stru_kpoint_section(const std::vector<std::string> &tokens,
                                             std::size_t pos,
                                             const std::string &file_path)
@@ -95,12 +100,12 @@ std::size_t skip_legacy_stru_kpoint_section(const std::vector<std::string> &toke
     if (driver::n_kpoints > 0 && driver::n_kpoints <= nk_full)
     {
         const auto after_ibz_rows = pos + static_cast<std::size_t>(3 * driver::n_kpoints);
-        if (is_stru_symop_header_at(tokens, after_ibz_rows))
+        if (is_stru_tail_boundary_at(tokens, after_ibz_rows))
         {
             return after_ibz_rows;
         }
         const auto after_ibz_mapping = after_ibz_rows + static_cast<std::size_t>(nk_full);
-        if (is_stru_symop_header_at(tokens, after_ibz_mapping))
+        if (is_stru_tail_boundary_at(tokens, after_ibz_mapping))
         {
             return after_ibz_mapping;
         }
@@ -109,7 +114,7 @@ std::size_t skip_legacy_stru_kpoint_section(const std::vector<std::string> &toke
     require_stru_tail_tokens(tokens, pos, static_cast<std::size_t>(3 * nk_full),
                              "legacy k-point rows");
     pos += static_cast<std::size_t>(3 * nk_full);
-    if (is_stru_symop_header_at(tokens, pos))
+    if (is_stru_tail_boundary_at(tokens, pos))
     {
         return pos;
     }

@@ -77,6 +77,89 @@ bool nearly_same_kpoint(const librpa_int::Vector3_Order<double> &lhs,
            && std::abs(lhs.z - rhs.z) <= tol;
 }
 
+std::string lowercase_token(std::string token)
+{
+    std::transform(token.begin(), token.end(), token.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return token;
+}
+
+bool is_stru_symop_convention(const std::string &token)
+{
+    const auto convention = lowercase_token(token);
+    return convention == "row" || convention == "col";
+}
+
+bool legacy_stru_tail_ends_at(const std::vector<std::string> &tokens, const std::size_t pos)
+{
+    return pos == tokens.size()
+           || (pos + 1 < tokens.size() && is_stru_symop_convention(tokens[pos + 1]));
+}
+
+int parse_stru_int_token(const std::string &token, const std::string &context)
+{
+    try
+    {
+        std::size_t used = 0;
+        const int value = std::stoi(token, &used);
+        if (used == token.size())
+        {
+            return value;
+        }
+    }
+    catch (const std::exception &)
+    {
+    }
+    throw LIBRPA_RUNTIME_ERROR("Invalid integer in " + context + ": " + token);
+}
+
+double parse_stru_double_token(const std::string &token, const std::string &context)
+{
+    try
+    {
+        std::size_t used = 0;
+        const double value = std::stod(token, &used);
+        if (used == token.size())
+        {
+            return value;
+        }
+    }
+    catch (const std::exception &)
+    {
+    }
+    throw LIBRPA_RUNTIME_ERROR("Invalid floating-point value in " + context + ": " + token);
+}
+
+bool try_legacy_stru_kpoint_layout(const std::vector<std::string> &tokens,
+                                   const std::size_t kvec_pos,
+                                   const int n_k_rows,
+                                   const int nk_full,
+                                   const bool with_mapping,
+                                   int &selected_n_k_rows,
+                                   bool &selected_has_mapping)
+{
+    if (n_k_rows <= 0)
+    {
+        return false;
+    }
+    const auto after_k_rows = kvec_pos + static_cast<std::size_t>(3 * n_k_rows);
+    if (after_k_rows > tokens.size())
+    {
+        return false;
+    }
+    const auto end = with_mapping
+                         ? after_k_rows + static_cast<std::size_t>(nk_full)
+                         : after_k_rows;
+    if (end > tokens.size() || !legacy_stru_tail_ends_at(tokens, end))
+    {
+        return false;
+    }
+
+    selected_n_k_rows = n_k_rows;
+    selected_has_mapping = with_mapping;
+    return true;
+}
+
 } // namespace
 
 struct QpStateRange
@@ -1328,6 +1411,173 @@ void read_bz_sampling(const std::string &file_path)
     driver::n_ibz_kpoints = static_cast<int>(driver::ibz_kpoints.size());
 }
 
+void read_bz_sampling_from_stru(const std::string &file_path)
+{
+    using namespace librpa_int;
+
+    global::lib_printf_root("Fallback reading Brillouin zone sampling from structure file: %s\n",
+                            file_path.c_str());
+
+    ifstream infile(file_path);
+    if (!infile.good())
+    {
+        throw LIBRPA_RUNTIME_ERROR("Fail to open structure file " + file_path);
+    }
+
+    std::string token;
+    for (int i = 0; i != 6 * 3; ++i)
+    {
+        infile >> token;
+    }
+
+    int n_atoms = 0;
+    infile >> n_atoms;
+    if (!infile.good() || n_atoms < 0)
+    {
+        throw LIBRPA_RUNTIME_ERROR("Fail to read atom count from " + file_path);
+    }
+    for (int i = 0; i != n_atoms * 4; ++i)
+    {
+        infile >> token;
+    }
+
+    std::vector<std::string> tokens;
+    while (infile >> token)
+    {
+        tokens.emplace_back(token);
+    }
+    if (tokens.empty() || (tokens.size() >= 2 && is_stru_symop_convention(tokens[1])))
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "Structure file does not contain legacy k-point sampling data: " + file_path);
+    }
+
+    std::size_t pos = 0;
+    int nk[3];
+    for (int i = 0; i != 3; ++i)
+    {
+        if (pos >= tokens.size())
+        {
+            throw LIBRPA_RUNTIME_ERROR("Unexpected end of stru_out while reading legacy k-point grid");
+        }
+        nk[i] = parse_stru_int_token(tokens[pos++], file_path);
+        if (nk[i] <= 0)
+        {
+            throw LIBRPA_RUNTIME_ERROR("Invalid legacy k-point grid in " + file_path);
+        }
+    }
+
+    const int nk_full = nk[0] * nk[1] * nk[2];
+    int n_k_rows = 0;
+    bool has_full_mapping = false;
+    const bool can_try_band_k_count = driver::n_kpoints > 0 && driver::n_kpoints <= nk_full;
+    if (can_try_band_k_count
+        && (!try_legacy_stru_kpoint_layout(tokens, pos, driver::n_kpoints, nk_full, true,
+                                           n_k_rows, has_full_mapping)
+            && !try_legacy_stru_kpoint_layout(tokens, pos, driver::n_kpoints, nk_full, false,
+                                              n_k_rows, has_full_mapping)))
+    {
+        n_k_rows = 0;
+    }
+    if (n_k_rows == 0
+        && !try_legacy_stru_kpoint_layout(tokens, pos, nk_full, nk_full, true,
+                                          n_k_rows, has_full_mapping)
+        && !try_legacy_stru_kpoint_layout(tokens, pos, nk_full, nk_full, false,
+                                          n_k_rows, has_full_mapping))
+    {
+        throw LIBRPA_RUNTIME_ERROR("Fail to locate legacy k-point rows in " + file_path);
+    }
+    if (driver::n_kpoints > 0 && n_k_rows != driver::n_kpoints)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "Legacy stru_out k-point count does not match band_out: "
+            + std::to_string(n_k_rows) + " != " + std::to_string(driver::n_kpoints));
+    }
+    if (n_k_rows < nk_full && !has_full_mapping)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "Legacy stru_out symmetry-reduced k-point list requires the full-to-IBZ mapping");
+    }
+
+    std::vector<double> kvecs(static_cast<std::size_t>(3 * n_k_rows));
+    for (int i = 0; i != 3 * n_k_rows; ++i)
+    {
+        kvecs[static_cast<std::size_t>(i)] =
+            parse_stru_double_token(tokens[pos++], file_path);
+        if (!std::isfinite(kvecs[static_cast<std::size_t>(i)]))
+        {
+            throw LIBRPA_RUNTIME_ERROR("Legacy stru_out k-point row contains an invalid number");
+        }
+    }
+
+    std::vector<int> map_ibzk(static_cast<std::size_t>(n_k_rows));
+    for (int ik = 0; ik != n_k_rows; ++ik)
+    {
+        map_ibzk[static_cast<std::size_t>(ik)] = ik;
+    }
+    std::vector<double> kweights;
+
+    if (has_full_mapping)
+    {
+        std::vector<int> full_to_ibzk(static_cast<std::size_t>(nk_full));
+        for (int ik = 0; ik != nk_full; ++ik)
+        {
+            full_to_ibzk[static_cast<std::size_t>(ik)] =
+                parse_stru_int_token(tokens[pos++], file_path) - 1;
+            if (full_to_ibzk[static_cast<std::size_t>(ik)] < 0
+                || full_to_ibzk[static_cast<std::size_t>(ik)] >= n_k_rows)
+            {
+                throw LIBRPA_RUNTIME_ERROR(
+                    "Legacy stru_out irreducible k-point mapping index out of range");
+            }
+        }
+
+        if (n_k_rows == nk_full)
+        {
+            map_ibzk = std::move(full_to_ibzk);
+        }
+        else
+        {
+            kweights.assign(static_cast<std::size_t>(n_k_rows), 0.0);
+            for (const int ik_ibz : full_to_ibzk)
+            {
+                kweights[static_cast<std::size_t>(ik_ibz)] += 1.0 / nk_full;
+            }
+            for (double weight : kweights)
+            {
+                if (weight <= 0.0)
+                {
+                    throw LIBRPA_RUNTIME_ERROR(
+                        "Legacy stru_out irreducible k-point mapping misses a listed k-point");
+                }
+            }
+        }
+    }
+
+    auto pds = api::get_dataset_instance(driver::h);
+    if (n_k_rows < nk_full)
+    {
+        if (!any_symmetry_speedup_enabled())
+        {
+            throw LIBRPA_RUNTIME_ERROR(
+                "Legacy stru_out contains a symmetry-reduced SCF k-point list; "
+                "switch on use_symmetry_exx, use_symmetry_gw, or use_symmetry_rpa to use this input");
+        }
+        if (pds->symmetry_context.rspace_operations.empty())
+        {
+            throw LIBRPA_RUNTIME_ERROR(
+                "Legacy stru_out contains a symmetry-reduced SCF k-point list, "
+                "but no symmetry operations were loaded from stru_out");
+        }
+    }
+
+    auto &pbc = pds->pbc;
+    pbc.set_kgrids_kvec(nk[0], nk[1], nk[2], kvecs);
+    pbc.set_ibz_mapping(map_ibzk, {}, kweights);
+    driver::ibz_kpoints = pbc.klist_coul;
+    driver::n_ibz_kpoints = static_cast<int>(driver::ibz_kpoints.size());
+}
+
 void read_basis(const std::string &file_path)
 {
     reader_basis(file_path);
@@ -1919,18 +2169,6 @@ void read_ri_shrink(const string &dir_path)
     using driver::driver_params;
 
     auto pds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
-    const auto &abf = pds->basis_aux;
-
-    if (mpi_comm_global_h.is_root())
-    {
-        std::cout << "iatom & large Nabfs: " << std::endl;
-        int I = 0;
-        for (auto &mu : abf.get_atom_nbs())
-        {
-            std::cout << I << "," << mu << std::endl;
-            ++I;
-        }
-    }
 
     const auto shrink_basis_path =
         librpa_int::join_path(driver_params.input_dir, driver_params.fn_basis_aux_shrink);
@@ -1952,9 +2190,10 @@ void read_ri_shrink(const string &dir_path)
     }
     else
     {
-        pds->basis_aux_shrink.set(read_aux_basis_from_Cs(
-            driver_params.input_dir, driver_params.prefix_lri_coeff_shrink));
+        driver::h.set_ao_basis_aux_shrink(
+            read_aux_basis_from_Cs(driver_params.input_dir, driver_params.prefix_lri_coeff_shrink));
     }
+    // TODO: get rid of pds call here
     pds->desc_abf_shrink.reset_handler(pds->blacs_h);
     pds->desc_abf_shrink.init_1b1p(pds->basis_aux_shrink.nb_total,
                                    pds->basis_aux_shrink.nb_total, 0, 0);

@@ -62,6 +62,7 @@ size_t read_shrink_sinvS(const string &dir_path, const string &vq_fprefix,
 void read_stru(const std::string &file_path);
 
 void read_bz_sampling(const std::string &file_path);
+void read_bz_sampling_from_stru(const std::string &file_path);
 
 void read_basis(const std::string &file_path);
 void read_dielec_func(const string &file_path, std::vector<double> &omegas,

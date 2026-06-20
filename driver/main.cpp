@@ -146,9 +146,12 @@ int main(int argc, char **argv)
         profiler.start("driver_bz", "BZ sampling");
         if (!librpa_int::path_exists(path_bz_sampling.c_str()))
         {
-            throw LIBRPA_RUNTIME_ERROR("Missing required BZ sampling file: " + path_bz_sampling);
+            read_bz_sampling_from_stru(path_stru);
         }
-        read_bz_sampling(path_bz_sampling);
+        else
+        {
+            read_bz_sampling(path_bz_sampling);
+        }
         lib_printf_root("\n");
         profiler.stop("driver_bz");
 
