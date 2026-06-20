@@ -193,6 +193,7 @@ module librpa_f03
       integer(c_int) :: qpe_solver_n_iter_max
       real(c_double) :: qpe_solver_damp_factor
       integer(c_int) :: use_qpe_adaptive_damp
+      integer(c_int) :: use_qpe_legacy_update
       integer(c_int) :: override_qpe_solver_nan
       real(c_double) :: sf_gf_omega_shift
       real(c_double) :: sf_sigc_omega_shift
@@ -297,7 +298,7 @@ module librpa_f03
       logical :: use_shrink_chi
       !> Number of parameters for analytic continuation.
       integer :: n_params_anacon
-      !> Quasi-particle equation solver: 0 fixed-point, 1 quasi-Newton, 2 perturbative.
+      !> Quasi-particle equation solver: 0 damped residual-mixing, 1 quasi-Newton, 2 perturbative.
       integer :: option_qpe_solver
       !> Convergence threshold for the quasi-particle equation solver, in Hartree.
       real(dp) :: qpe_solver_thres
@@ -308,6 +309,9 @@ module librpa_f03
       real(dp) :: qpe_solver_damp_factor
       !> Adapt the quasi-particle equation damping factor during the solve.
       logical :: use_qpe_adaptive_damp
+      !> Test-only: recover legacy non-adaptive update for QPE solver 0.
+      !> Ignored when adaptive damping is enabled.
+      logical :: use_qpe_legacy_update
       !> Keep the final unconverged QPE iterate instead of outputting NaN.
       logical :: override_qpe_solver_nan
       !> Broadening/shift used for Green's function in spectral-function output, in Hartree.
@@ -1110,6 +1114,7 @@ contains
       call sync_opt(opts%qpe_solver_n_iter_max,   opts%opts_c%qpe_solver_n_iter_max,   direction)
       call sync_opt(opts%qpe_solver_damp_factor,  opts%opts_c%qpe_solver_damp_factor,  direction)
       call sync_opt(opts%use_qpe_adaptive_damp,   opts%opts_c%use_qpe_adaptive_damp,   direction)
+      call sync_opt(opts%use_qpe_legacy_update, opts%opts_c%use_qpe_legacy_update, direction)
       call sync_opt(opts%override_qpe_solver_nan, opts%opts_c%override_qpe_solver_nan, direction)
       call sync_opt(opts%sf_gf_omega_shift,       opts%opts_c%sf_gf_omega_shift,       direction)
       call sync_opt(opts%sf_sigc_omega_shift,     opts%opts_c%sf_sigc_omega_shift,     direction)

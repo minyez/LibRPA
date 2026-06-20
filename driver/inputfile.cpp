@@ -366,6 +366,7 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_double(opts, qpe_solver_thres);
     _parse_double(opts, qpe_solver_damp_factor);
     _parse_switch(opts, use_qpe_adaptive_damp);
+    _parse_switch(opts, use_qpe_legacy_update);
     _parse_switch(opts, override_qpe_solver_nan);
 
     // Spectral function

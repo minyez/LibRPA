@@ -100,7 +100,7 @@ void test_quasi_newton_uses_pade_derivative()
     assert(std::abs(sigc - sigc_ref) < 1.0e-10);
 }
 
-void test_nonadaptive_fixed_point_returns_consistent_qpe_and_sigc()
+void test_nonadaptive_residual_mixing_keeps_legacy_entry()
 {
     constexpr int nfreq = 4;
     constexpr double e_mf = 0.0;
@@ -118,11 +118,20 @@ void test_nonadaptive_fixed_point_returns_consistent_qpe_and_sigc()
     double e_qp = 0.0;
     cplxdb sigc;
     const int info = qpe_solver_pade_self_consistent(
-        pade, e_mf, e_fermi, vxc, sigma_x, e_qp, sigc, 1.0, 1.0e-12, 1, 0.1,
+        pade, e_mf, e_fermi, vxc, sigma_x, e_qp, sigc, 1.0, 1.0e-12, 2, 0.1,
         false);
 
     assert(info != 0);
-    assert(fequal(e_qp, sigc.real(), 1.0e-12));
+    assert(fequal(e_qp, 0.22, 1.0e-12));
+    assert(fequal(sigc.real(), 0.22, 1.0e-12));
+
+    const int legacy_info = qpe_solver_pade_self_consistent(
+        pade, e_mf, e_fermi, vxc, sigma_x, e_qp, sigc, 1.0, 1.0e-12, 2, 0.1,
+        false, true);
+
+    assert(legacy_info != 0);
+    assert(fequal(e_qp, 0.42, 1.0e-12));
+    assert(fequal(sigc.real(), 0.42, 1.0e-12));
 }
 
 void test_perturbative_qp_weight()
@@ -159,7 +168,7 @@ void test_perturbative_qp_weight()
     assert(fequal(e_qp, e_qp_ref, 1.0e-10));
 }
 
-void test_adaptive_damp_branch_hop_fallback()
+void test_adaptive_damp_residual_mixing_branch_hop_case()
 {
     constexpr double ha2ev = 27.211386245988;
     constexpr double e_mf = 224.36314 / ha2ev;
@@ -204,7 +213,7 @@ int main(int argc, char *argv[])
     check_single_pole_self_energy(false);
     check_single_pole_self_energy(true);
     test_quasi_newton_uses_pade_derivative();
-    test_nonadaptive_fixed_point_returns_consistent_qpe_and_sigc();
+    test_nonadaptive_residual_mixing_keeps_legacy_entry();
     test_perturbative_qp_weight();
-    test_adaptive_damp_branch_hop_fallback();
+    test_adaptive_damp_residual_mixing_branch_hop_case();
 }

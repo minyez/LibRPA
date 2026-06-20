@@ -190,7 +190,7 @@ module librpa_f03
       logical :: use_shrink_chi
       !> Number of parameters for analytic continuation.
       integer :: n_params_anacon
-      !> Quasi-particle equation solver: 0 fixed-point, 1 quasi-Newton, 2 perturbative.
+      !> Quasi-particle equation solver: 0 damped residual-mixing, 1 quasi-Newton, 2 perturbative.
       integer :: option_qpe_solver
       !> Convergence threshold for the quasi-particle equation solver, in Hartree.
       real(dp) :: qpe_solver_thres
@@ -201,6 +201,9 @@ module librpa_f03
       real(dp) :: qpe_solver_damp_factor
       !> Adapt the quasi-particle equation damping factor during the solve.
       logical :: use_qpe_adaptive_damp
+      !> Test-only: recover legacy non-adaptive update for QPE solver 0.
+      !> Ignored when adaptive damping is enabled.
+      logical :: use_qpe_legacy_update
       !> Keep the final unconverged QPE iterate instead of outputting NaN.
       logical :: override_qpe_solver_nan
       !> Broadening/shift used for Green's function in spectral-function output, in Hartree.

@@ -53,7 +53,6 @@ constexpr double qpe_damp_max = 1.0;
 constexpr double qpe_damp_shrink = 0.5;
 constexpr double qpe_damp_grow = 1.25;
 constexpr double qpe_newton_denom_min = 1.0e-12;
-constexpr int qpe_min_damp_sign_changes_to_mix = 2;
 
 double qpe_damp_upper_bound(const double damp_fac)
 {
@@ -118,7 +117,8 @@ int qpe_solver_pade_self_consistent(
         const double thres,
         const int n_iter_max,
         const double damp_fac,
-        const bool use_adaptive_damp)
+        const bool use_adaptive_damp,
+        const bool use_legacy_nonadaptive_update)
 {
     int info = 0;
     int n_iter = 0;
@@ -147,8 +147,9 @@ int qpe_solver_pade_self_consistent(
     double damp = damp_max;
     double abs_diff_last = std::numeric_limits<double>::infinity();
     double diff_last = std::numeric_limits<double>::quiet_NaN();
-    int n_min_damp_sign_changes = 0;
-    bool use_residual_mixing_update = false;
+    // NOTE: legacy update is kept only for non-adaptive comparison tests.
+    const bool use_residual_mixing_update =
+            use_adaptive_damp || !use_legacy_nonadaptive_update;
 
     // std::cout << "QPE: " << e_mf << " " << e_fermi << " " << vxc << " " << sigma_x << "\n";
     while (n_iter++ < n_iter_max)
@@ -202,31 +203,10 @@ int qpe_solver_pade_self_consistent(
         if (use_adaptive_damp && sign_changed)
         {
             damp = std::max(damp_min, qpe_damp_shrink * damp);
-            if (damp <= damp_min && abs_diff_this > thres)
-            {
-                ++n_min_damp_sign_changes;
-                if (!use_residual_mixing_update &&
-                    n_min_damp_sign_changes >= qpe_min_damp_sign_changes_to_mix)
-                {
-                    // The legacy update can branch-hop even at the damping floor; fall back
-                    // to local residual mixing so the damping factor controls the step.
-                    use_residual_mixing_update = true;
-                    damp = damp_max;
-                }
-            }
-            else
-            {
-                n_min_damp_sign_changes = 0;
-            }
         }
         else if (use_adaptive_damp && abs_diff_this < abs_diff_last)
         {
             damp = std::min(damp_max, std::max(damp_min, qpe_damp_grow * damp));
-            n_min_damp_sign_changes = 0;
-        }
-        else
-        {
-            n_min_damp_sign_changes = 0;
         }
         diff_last = diff;
         abs_diff_last = abs_diff_this;

@@ -309,14 +309,15 @@ int solve_qpe_with_option(const int option_qpe_solver,
                           const double thres,
                           const int n_iter_max,
                           const double damp_fac,
-                          const bool use_adaptive_damp)
+                          const bool use_adaptive_damp,
+                          const bool use_legacy_nonadaptive_update)
 {
     switch (option_qpe_solver)
     {
     case 0:
         return librpa_int::qpe_solver_pade_self_consistent(
             pade, e_mf, e_fermi, vxc, sigma_x, e_qp, sigc, diff_init, thres,
-            n_iter_max, damp_fac, use_adaptive_damp);
+            n_iter_max, damp_fac, use_adaptive_damp, use_legacy_nonadaptive_update);
     case 1:
         return librpa_int::qpe_solver_pade_quasi_newton(
             pade, e_mf, e_fermi, vxc, sigma_x, e_qp, sigc, diff_init, thres,
@@ -339,7 +340,7 @@ int solve_qpe_with_option(const int option_qpe_solver,
     default:
         throw LIBRPA_RUNTIME_ERROR(
             "Invalid option_qpe_solver: " + std::to_string(option_qpe_solver)
-            + ". Available values are 0 (fixed-point), 1 (quasi-Newton), and 2 (perturbative).");
+            + ". Available values are 0 (damped residual-mixing), 1 (quasi-Newton), and 2 (perturbative).");
     }
 }
 
@@ -723,6 +724,8 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
     const auto option_qpe_solver = opts.option_qpe_solver;
     const double diff_init = option_qpe_solver == 0 ? 1.0e-3 : 0.0;
     const bool use_adaptive_damp = opts.use_qpe_adaptive_damp == LIBRPA_SWITCH_ON;
+    const bool use_legacy_nonadaptive_update =
+            opts.use_qpe_legacy_update == LIBRPA_SWITCH_ON;
     const bool override_qpe_solver_nan = opts.override_qpe_solver_nan == LIBRPA_SWITCH_ON;
 
     for (int isp = 0; isp < n_spins; isp++)
@@ -757,7 +760,8 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
                 librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
                 int flag_qpe_solver = solve_qpe_with_option(
                     option_qpe_solver, pade, eks_state, efermi, vxc_state, exx_state, e_qp,
-                    sigc, diff_init, thres_qpe, n_iter_max, damp_fac, use_adaptive_damp);
+                    sigc, diff_init, thres_qpe, n_iter_max, damp_fac, use_adaptive_damp,
+                    use_legacy_nonadaptive_update);
                 if (flag_qpe_solver != 0)
                 {
                     global::ofs_myid << "Warning! QPE solver failed for spin " << isp + 1
@@ -926,6 +930,8 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
     const auto option_qpe_solver = opts.option_qpe_solver;
     const double diff_init = option_qpe_solver == 0 ? 1.0e-3 : 0.0;
     const bool use_adaptive_damp = opts.use_qpe_adaptive_damp == LIBRPA_SWITCH_ON;
+    const bool use_legacy_nonadaptive_update =
+            opts.use_qpe_legacy_update == LIBRPA_SWITCH_ON;
     const bool override_qpe_solver_nan = opts.override_qpe_solver_nan == LIBRPA_SWITCH_ON;
 
     for (int isp = 0; isp < n_spins; isp++)
@@ -960,7 +966,8 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                 librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
                 int flag_qpe_solver = solve_qpe_with_option(
                     option_qpe_solver, pade, eks_state, efermi, vxc_state, exx_state, e_qp,
-                    sigc, diff_init, thres_qpe, n_iter_max, damp_fac, use_adaptive_damp);
+                    sigc, diff_init, thres_qpe, n_iter_max, damp_fac, use_adaptive_damp,
+                    use_legacy_nonadaptive_update);
                 if (flag_qpe_solver != 0)
                 {
                     global::ofs_myid << "Warning! QPE solver failed for spin " << isp + 1

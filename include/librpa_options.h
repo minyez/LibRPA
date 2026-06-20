@@ -163,7 +163,7 @@ typedef struct
     //! Quasi-particle equation solver option.
     /*!
      * Available values:
-     * - 0: fixed-point self-consistent solver
+     * - 0: damped residual-mixing self-consistent solver
      * - 1: quasi-Newton self-consistent solver using the Pade derivative
      * - 2: perturbative solver linearized at the mean-field energy
      */
@@ -181,6 +181,10 @@ typedef struct
 
     //! If enabled, adapt the QPE damping factor during the solve.
     LibrpaSwitch use_qpe_adaptive_damp;
+
+    //! Test-only switch to recover the legacy non-adaptive QPE update.
+    //! Ignored when adaptive damping is enabled.
+    LibrpaSwitch use_qpe_legacy_update;
 
     //! If enabled, keep the final unconverged QPE iterate instead of outputting NaN.
     LibrpaSwitch override_qpe_solver_nan;

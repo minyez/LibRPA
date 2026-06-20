@@ -21,6 +21,8 @@ namespace librpa_int
  * \param [in]     damp_fac    Damping factor for QPE updates; used as the initial and maximum factor when adaptive damping is enabled
  * \param [in]     use_adaptive_damp
  *                             Adapt the damping factor during the solve
+ * \param [in]     use_legacy_nonadaptive_update
+ *                             Recover the old fixed-point base update only when adaptive damping is disabled
  * \retval         info        0 if QPE is solved successfully, non-zero otherwise
  */
 int qpe_solver_pade_self_consistent(
@@ -35,7 +37,8 @@ int qpe_solver_pade_self_consistent(
         const double thres = 1.0e-5,
         const int n_iter_max = 10000,
         const double damp_fac = 0.1,
-        const bool use_adaptive_damp = false
+        const bool use_adaptive_damp = false,
+        const bool use_legacy_nonadaptive_update = false
         );
 
 /*!

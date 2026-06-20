@@ -166,11 +166,12 @@ Regular k-grid calculations are not affected by BvK remapping.
 | `rpa_headwing_body_start` | First regular Coulomb-eigenbasis channel used by RPA head/wing correction; 0 uses channel 1 | int | 0 | Experimental |
 | `load_sigc_from_file`    | Load correlation self-energy matrix from file where supported                | bool   | `false`                               | Experimental |
 | `sqrt_coulomb_threshold` | Threshold for eigenvalues when taking the square root of Coulomb matrices    | double | 0.0                                   |              |
-| `option_qpe_solver`      | QP equation solver: 0=fixed-point self-consistent, 1=quasi-Newton self-consistent, 2=perturbative | int | 0 |              |
+| `option_qpe_solver`      | QP equation solver: 0=damped residual-mixing self-consistent, 1=quasi-Newton self-consistent, 2=perturbative | int | 0 |              |
 | `qpe_solver_thres`       | Convergence threshold for the QP equation residual, in Hartree               | double | 1.0e-5                                |              |
 | `qpe_solver_n_iter_max`  | Maximum number of self-consistent QP equation iterations                     | int    | 10000                                 |              |
 | `qpe_solver_damp_factor` | Damping factor for QP equation updates; used as the initial and maximum factor when adaptive damping is enabled | double | 0.1  |              |
 | `use_qpe_adaptive_damp`  | Adapt the quasi-particle equation damping factor during the solve              | bool   | `false`                               |              |
+| `use_qpe_legacy_update` | Test-only: recover the legacy non-adaptive update for QPE solver 0; ignored when adaptive damping is enabled | bool | `false` | Diagnostic |
 | `override_qpe_solver_nan` | Keep the final unconverged QPE iterate instead of outputting NaN            | bool   | `false`                               | Diagnostic   |
 | `sf_gf_omega_shift`   | Broadening/shift used for Green's function in spectral-function APIs, in Hartree | double | 0.01                                | Experimental |
 | `sf_sigc_omega_shift` | Broadening/shift used for continued correlation self-energy in spectral-function APIs, in Hartree | double | 0.01             | Experimental |

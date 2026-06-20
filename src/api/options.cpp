@@ -59,6 +59,7 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->qpe_solver_n_iter_max = 10000;
     opts->qpe_solver_damp_factor = 0.1;
     opts->use_qpe_adaptive_damp = LIBRPA_SWITCH_OFF;
+    opts->use_qpe_legacy_update = LIBRPA_SWITCH_OFF;
     opts->override_qpe_solver_nan = LIBRPA_SWITCH_OFF;
     opts->sf_gf_omega_shift = 0.01;
     opts->sf_sigc_omega_shift = 0.01;
