@@ -177,7 +177,7 @@ void parse_inputfile_to_params(const std::string &fn)
 
     InputFile inputf;
     int flag;
-    auto parser = inputf.load(fn, false);
+    auto parser = inputf.load(fn, true);
 
     std::string stmp;
     bool btmp;

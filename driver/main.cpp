@@ -8,6 +8,8 @@
 
 #include <mpi.h>
 #include <omp.h>
+#include <stdexcept>
+#include <string>
 
 // Internal headers, used here only for printing formation and some consistency check
 // May move to public API later
@@ -21,17 +23,21 @@
 // #include "task_scRPA.h"
 // #include "task_scRPA_band.h"
 
-static void initialize(int argc, char **argv)
+static void initialize_mpi_env(int argc, char **argv)
 {
-    using namespace librpa_int::global;
-
     // MPI Initialization
     int provided;
     MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
     if (MPI_THREAD_FUNNELED != provided)
     {
-        librpa_int::global::lib_printf(LIBRPA_VERBOSE_WARN, "Warning: MPI_Init_thread provide %d != required %d", provided, MPI_THREAD_FUNNELED);
+        throw std::runtime_error("Error: MPI_Init_thread provide " + std::to_string(provided) +
+                                 " != required " + std::to_string(MPI_THREAD_FUNNELED));
     }
+}
+
+static void initialize_librpa()
+{
+    using namespace librpa_int::global;
 
     librpa::set_output_level(driver::driver_params.output_level);
     librpa::init_global(LIBRPA_SWITCH_OFF);
@@ -64,7 +70,7 @@ static void initialize(int argc, char **argv)
     driver::h.init(MPI_COMM_WORLD);
 }
 
-static void finalize(bool success)
+static void finalize_librpa(bool success)
 {
     using namespace librpa_int::global;
 
@@ -88,8 +94,6 @@ static void finalize(bool success)
             lib_printf(LIBRPA_VERBOSE_CRITICAL, "Error: libRPA failed\n");
         }
     }
-
-    MPI_Finalize();
 }
 
 int main(int argc, char **argv)
@@ -98,8 +102,16 @@ int main(int argc, char **argv)
     using namespace librpa_int::global;
     using librpa_int::get_node_free_mem;
 
+    // Initialize MPI environment
+    initialize_mpi_env(argc, argv);
+
+    // Parse the main input file
     parse_inputfile_to_params(input_filename);
-    initialize(argc, argv);
+    // Early check of task to fail quickly in case
+    task_t task = get_task(driver_params.task);
+
+    // Initialize LibRPA global environment and handler
+    initialize_librpa();
 
     // Echo input file runtime options.
     profiler.start("driver_read_params", "Driver Read Input Parameters");
@@ -127,8 +139,6 @@ int main(int argc, char **argv)
     profiler.start("driver_band_out", "DFT SCF eigenvalues/occupations");
     read_scf_occ_eigenvalues(path_eigocc_scf);
     profiler.stop("driver_band_out");
-
-    task_t task = get_task(driver_params.task);
 
     if (task != task_t::print_minimax)
     {
@@ -187,7 +197,7 @@ int main(int argc, char **argv)
                     "Error!!! No eigenvector files is found at directory, check if you "
                     "have input files KS_eigenvector\n");
             }
-            finalize(false);
+            finalize_librpa(false);
             return EXIT_FAILURE;
         }
         profiler.stop("driver_read_eigenvector");
@@ -225,6 +235,10 @@ int main(int argc, char **argv)
     run_task(task);
     mpi_comm_global_h.barrier();
 
-    finalize(true);
+    // Finalize LibRPA environment, free handler
+    finalize_librpa(true);
+    // Let MPI rest in peace
+    MPI_Finalize();
+
     return EXIT_SUCCESS;
 }
