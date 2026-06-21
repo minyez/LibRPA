@@ -11,6 +11,7 @@
 #include "../src/math/matrix.h"
 #include "../src/math/vector3_order.h"
 #include "librpa.hpp"
+#include "reader_eigenvec.h"
 #include "reader_lri.h"
 #include "reader_coulomb.h"
 
@@ -42,9 +43,6 @@ void read_scf_occ_eigenvalues(const string &file_path, MeanField &mf, bool use_s
  */
 int read_vxc(const string &file_path, std::vector<matrix> &vxc);
 
-int read_eigenvector(const string &dir_path);
-int read_eigenvector(const string &dir_path, MeanField &mf, bool use_spinor_wfc,
-                     const std::vector<int> *iks_selected = nullptr);
 
 // high-level reader for RI coefficients and bare Coulomb interactions
 void read_ri(const string &dir_path, librpa::ParallelRouting &routing);
