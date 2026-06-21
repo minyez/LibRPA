@@ -571,11 +571,38 @@ void librpa_set_symmetry_operations(LibrpaHandler* h, const int n_symops, const 
                                     const int* rotmats, const double* trans)
 {
     using librpa_int::global::profiler;
+    using librpa_int::SpaceGroupSymOp;
+
+    if (n_symops < 0)
+        throw LIBRPA_RUNTIME_ERROR("number of symmetry operations must be non-negative");
+    if (n_symops > 0 && rotmats == nullptr)
+        throw LIBRPA_RUNTIME_ERROR("symmetry operation rotation matrices must not be null");
 
     const std::string tname = "api_set_symmetry_operations";
     profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
+    auto &ops = pds->spg_symops;
+
+    ops.clear();
+    ops.reserve(static_cast<std::size_t>(n_symops));
+    for (int isym = 0; isym != n_symops; ++isym)
+    {
+        const int* rot = rotmats + 9 * isym;
+        std::array<double, 9> array_rotmt{
+            static_cast<double>(rot[0]), static_cast<double>(rot[1]), static_cast<double>(rot[2]),
+            static_cast<double>(rot[3]), static_cast<double>(rot[4]), static_cast<double>(rot[5]),
+            static_cast<double>(rot[6]), static_cast<double>(rot[7]), static_cast<double>(rot[8])};
+        std::array<double, 3> array_trans{0.0, 0.0, 0.0};
+        if (trans != nullptr)
+        {
+            const double* translation = trans + 3 * isym;
+            array_trans = {translation[0], translation[1], translation[2]};
+        }
+        bool use_row_convention = row_conv > 0 ? true : false;
+        ops.push_back({array_rotmt, array_trans, use_row_convention});
+    }
+
     auto operations =
         librpa_int::make_input_symmetry_operations(n_symops, row_conv > 0, rotmats, trans);
     auto& old_operations = pds->symmetry_context.rspace_operations;

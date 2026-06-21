@@ -7,6 +7,7 @@
 #include <vector>
 #include "../core/atom.h"
 #include "../math/vector3_order.h"
+#include "../math/complexmatrix.h"
 #ifdef LIBRPA_USE_LIBRI
 #include <RI/global/Tensor.h>
 #else
@@ -165,6 +166,31 @@ std::ostream& operator<<(std::ostream& os, const RI::Tensor<T>& t)
                                         std::to_string(__LINE__));
     }
 }
+
+template <typename Tdata>
+ComplexMatrix convert_libri_tensor_to_complex_matrix(
+    const RI::Tensor<Tdata>& tensor,
+    const int nrows,
+    const int ncols)
+{
+    ComplexMatrix matrix(nrows, ncols);
+    for (int row = 0; row != nrows; ++row)
+    {
+        for (int col = 0; col != ncols; ++col)
+        {
+            if constexpr (std::is_same<Tdata, std::complex<double>>::value)
+            {
+                matrix(row, col) = tensor(row, col);
+            }
+            else
+            {
+                matrix(row, col) = std::complex<double>(tensor(row, col), 0.0);
+            }
+        }
+    }
+    return matrix;
+}
+
 #endif
 
 }

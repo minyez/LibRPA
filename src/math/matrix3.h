@@ -5,6 +5,8 @@
 #ifndef MatriX3_H
 #define MatriX3_H
 
+#include <array>
+
 #include "vector3.h"
 
 namespace librpa_int {
@@ -23,6 +25,10 @@ public:
 	Matrix3(const double &r11 = 1,const double &r12 = 0,const double &r13 = 0,
 	        const double &r21 = 0,const double &r22 = 1,const double &r23 = 0,
 	        const double &r31 = 0,const double &r32 = 0,const double &r33 = 1);
+	Matrix3(const std::array<double, 9> &a)
+	: e11(a[0]), e12(a[1]), e13(a[2]),
+		e21(a[3]), e22(a[4]), e23(a[5]),
+		e31(a[6]), e32(a[7]), e33(a[8]) {};
 
 	void Reset(void);
 	void Identity(void);

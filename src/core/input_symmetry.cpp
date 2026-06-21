@@ -362,8 +362,6 @@ void SymmetryContext::clear()
 {
     available = false;
     lattice_available = false;
-    ao_shell_layout_available = false;
-    abf_shell_layout_available = false;
     ao_lmax = -1;
     abf_lmax = -1;
     basis_convention = {};
@@ -371,8 +369,6 @@ void SymmetryContext::clear()
     rspace_operations.clear();
     kstars.clear();
     abf_kstars.clear();
-    ao_type_layouts.clear();
-    abf_type_layout_candidates.clear();
     atom_to_type.clear();
     input_coord_frac.clear();
     lattice_vectors.Reset();
@@ -410,19 +406,82 @@ bool SymmetryContext::empty() const
 {
     return irreducible_sector.empty() && rspace_operations.empty() && kstars.empty()
            && abf_kstars.empty()
-           && ao_type_layouts.empty() && abf_type_layout_candidates.empty()
            && atom_to_type.empty()
            && kspace_return_lattice.empty() && kstar_member_fold_G.empty();
 }
 
-bool SymmetryContext::has_ao_shell_layout() const
+bool SymmetryContext::has_shell_layout(const std::string &key) const
 {
-    return ao_shell_layout_available && !ao_type_layouts.empty();
+    return map_key_layouts.find(key) != map_key_layouts.cend();
 }
 
-bool SymmetryContext::has_abf_shell_layout() const
+bool SymmetryContext::finalize(std::ostream* log)
 {
-    return abf_shell_layout_available && !abf_type_layout_candidates.empty();
+    if (rspace_operations.empty())
+    {
+        clear();
+        return false;
+    }
+
+    available = true;
+    if (log != nullptr)
+    {
+        print_summary(*log);
+    }
+    return true;
+}
+
+void SymmetryContext::print_summary(std::ostream& log) const
+{
+    log << "Detected symmetry operations from structure\n";
+    if (irreducible_sector.empty())
+    {
+        log << "| irreducible atom pairs : pending compute initialization\n"
+            << "| irreducible {pair, R}  : pending compute initialization\n";
+    }
+    else
+    {
+        log << "| irreducible atom pairs : " << count_irreducible_pairs() << "\n"
+            << "| irreducible {pair, R}  : " << count_irreducible_blocks() << "\n";
+    }
+    log << "| real-space operations  : " << rspace_operations.size() << "\n";
+    if (kstars.empty())
+    {
+        log << "| IBZ k-stars            : pending compute initialization\n"
+            << "| total star members     : pending compute initialization\n";
+    }
+    else
+    {
+        log << "| IBZ k-stars            : " << kstars.size() << "\n"
+            << "| total star members     : " << count_kstar_members() << "\n";
+    }
+    log << "| k rotations            : generated from symmetry operations\n"
+        << "| AO / ABF lmax          : " << ao_lmax << " / " << abf_lmax << "\n";
+    for (const auto &[key, layouts]: map_key_layouts)
+    {
+        log << "Layout key: " << key << "\n";
+        log << "| AO shell layout        : loaded for " << layouts.size()
+            << " atom types and " << atom_to_type.size() << " atoms\n";
+        for (std::size_t itype = 0; itype < layouts.size(); ++itype)
+        {
+            const auto& layout = layouts[itype];
+            log << "|   type " << itype << " (" << layout.label << ")"
+                << " nao=" << layout.n_ao << " shell_counts=";
+            const int lmax =
+                layout.shell_counts.empty() ? -1 : layout.shell_counts.rbegin()->first;
+            for (int l = 0; l <= lmax; ++l)
+            {
+                if (l != 0)
+                {
+                    log << ",";
+                }
+                const auto count = layout.shell_counts.find(l);
+                log << (count == layout.shell_counts.end() ? 0 : count->second);
+            }
+            log << "\n";
+        }
+    }
+    log << "| legacy sidecars        : ignored (symrot_R/symrot_k/irreducible_sector)\n";
 }
 
 std::size_t SymmetryContext::count_irreducible_pairs() const
@@ -455,149 +514,66 @@ std::size_t SymmetryContext::count_atoms_with_layout() const
     return atom_to_type.size();
 }
 
-std::size_t SymmetryContext::count_abf_layout_candidates() const
+const SpeciesBasisLayout& SymmetryContext::get_shell_layout(const std::string &key, const int atom_type) const
 {
-    std::size_t count = 0;
-    for (const auto& candidates : abf_type_layout_candidates)
+    const auto &it = map_key_layouts.find(key);
+    if (it == map_key_layouts.cend())
     {
-        count += candidates.size();
+        throw std::out_of_range("Basis layout not found: " + key);
     }
-    return count;
-}
-
-const SpeciesBasisLayout& SymmetryContext::get_ao_type_layout(const int atom_type) const
-{
-    if (atom_type < 0 || atom_type >= static_cast<int>(ao_type_layouts.size()))
+    const auto &layouts = it->second;
+    if (atom_type < 0 || atom_type >= static_cast<int>(layouts.size()))
     {
         throw std::out_of_range("Atom type is out of range in AO shell layout");
     }
-    return ao_type_layouts[static_cast<std::size_t>(atom_type)];
+    return layouts[static_cast<std::size_t>(atom_type)];
 }
 
-const SpeciesBasisLayout& SymmetryContext::find_abf_type_layout(const int atom_type,
-                                                                      const int nao_hint) const
+std::string find_input_symmetry_shell_layout_key(
+    const SymmetryContext& ctx,
+    const std::map<atom_t, size_t>& atom_nb,
+    const std::string& preferred_key)
 {
-    if (atom_type < 0 || atom_type >= static_cast<int>(abf_type_layout_candidates.size()))
-    {
-        throw std::out_of_range("Atom type is out of range in ABF shell layout");
-    }
-
-    const auto& candidates = abf_type_layout_candidates[static_cast<std::size_t>(atom_type)];
-    if (candidates.empty())
-    {
-        throw std::runtime_error("ABF shell layout is unavailable for atom type "
-                                 + std::to_string(atom_type));
-    }
-
-    if (nao_hint > 0)
-    {
-        const auto matched = std::find_if(candidates.begin(), candidates.end(),
-                                          [nao_hint](const SpeciesBasisLayout& candidate) {
-                                              return candidate.n_ao == nao_hint;
-                                          });
-        if (matched != candidates.end())
+    const auto matches_key = [&ctx, &atom_nb](const std::string& key) {
+        if (!ctx.has_shell_layout(key))
         {
-            return *matched;
+            return false;
         }
-    }
-
-    if (candidates.size() == 1)
-    {
-        return candidates.front();
-    }
-
-    std::ostringstream oss;
-    oss << "Failed to resolve ABF shell layout for atom type " << atom_type
-        << " with nao_hint=" << nao_hint << ". Candidate dimensions:";
-    for (const auto& candidate : candidates)
-    {
-        oss << " " << candidate.n_ao;
-    }
-    throw std::runtime_error(oss.str());
-}
-
-bool load_input_symmetry_context(SymmetryContext& ctx,
-                                  std::ostream* log)
-{
-    if (ctx.rspace_operations.empty())
-    {
-        ctx.clear();
-        return false;
-    }
-
-    ctx.available = true;
-
-    if (log != nullptr)
-    {
-        (*log) << "Detected symmetry operations from structure\n";
-        if (ctx.irreducible_sector.empty())
+        for (const auto& atom_count : atom_nb)
         {
-            (*log) << "| irreducible atom pairs : pending compute initialization\n"
-                   << "| irreducible {pair, R}  : pending compute initialization\n";
-        }
-        else
-        {
-            (*log) << "| irreducible atom pairs : " << ctx.count_irreducible_pairs() << "\n"
-                   << "| irreducible {pair, R}  : " << ctx.count_irreducible_blocks() << "\n";
-        }
-        (*log) << "| real-space operations  : " << ctx.rspace_operations.size() << "\n";
-        if (ctx.kstars.empty())
-        {
-            (*log) << "| IBZ k-stars            : pending compute initialization\n"
-                   << "| total star members     : pending compute initialization\n";
-        }
-        else
-        {
-            (*log) << "| IBZ k-stars            : " << ctx.kstars.size() << "\n"
-                   << "| total star members     : " << ctx.count_kstar_members() << "\n";
-        }
-        (*log) << "| k rotations            : generated from symmetry operations\n"
-               << "| AO / ABF lmax          : " << ctx.ao_lmax << " / " << ctx.abf_lmax << "\n";
-        if (ctx.has_ao_shell_layout())
-        {
-            (*log) << "| AO shell layout        : loaded for " << ctx.ao_type_layouts.size()
-                   << " atom types and " << ctx.atom_to_type.size() << " atoms\n";
-            for (std::size_t itype = 0; itype < ctx.ao_type_layouts.size(); ++itype)
+            const auto type_iter = ctx.atom_to_type.find(atom_count.first);
+            if (type_iter == ctx.atom_to_type.end())
             {
-                const auto& layout = ctx.ao_type_layouts[itype];
-                (*log) << "|   type " << itype << " (" << layout.label << ")"
-                       << " nao=" << layout.n_ao << " shell_counts=";
-                const int lmax = layout.shell_counts.empty() ? -1 : layout.shell_counts.rbegin()->first;
-                for (int l = 0; l <= lmax; ++l)
-                {
-                    if (l != 0)
-                    {
-                        (*log) << ",";
-                    }
-                    const auto count = layout.shell_counts.find(l);
-                    (*log) << (count == layout.shell_counts.end() ? 0 : count->second);
-                }
-                (*log) << "\n";
+                return false;
+            }
+            if (ctx.get_shell_layout(key, type_iter->second).n_ao
+                != static_cast<int>(atom_count.second))
+            {
+                return false;
             }
         }
-        else
-        {
-            (*log) << "| AO shell layout        : unavailable\n";
-        }
-        if (ctx.has_abf_shell_layout())
-        {
-            (*log) << "| ABF shell layout       : generated/cached with "
-                   << ctx.count_abf_layout_candidates() << " candidate type layouts\n";
-        }
-        else
-        {
-            (*log) << "| ABF shell layout       : unavailable\n";
-        }
-        (*log) << "| legacy sidecars        : ignored (symrot_R/symrot_k/irreducible_sector)\n";
+        return true;
+    };
+
+    if (matches_key(preferred_key))
+    {
+        return preferred_key;
     }
-    return true;
+    for (const auto& key_layouts : ctx.map_key_layouts)
+    {
+        if (key_layouts.first != preferred_key && matches_key(key_layouts.first))
+        {
+            return key_layouts.first;
+        }
+    }
+    throw std::runtime_error("No input-symmetry shell layout matches the basis dimensions");
 }
 
-ComplexMatrix build_input_symmetry_ao_rotation_matrix(const SymmetryContext& ctx,
-                                              const int atom_type,
-                                              const std::map<int, ComplexMatrix>& shell_rotations)
+ComplexMatrix build_input_symmetry_rotation_matrix(
+    const SymmetryContext& ctx, const std::string& key, const int atom_type,
+    const std::map<int, ComplexMatrix>& shell_rotations)
 {
-    const auto& layout = ctx.get_ao_type_layout(atom_type);
+    const auto& layout = ctx.get_shell_layout(key, atom_type);
     ComplexMatrix rotation(layout.n_ao, layout.n_ao);
     const auto& shell_offsets = layout.shell_offsets;
 
@@ -645,14 +621,14 @@ ComplexMatrix build_input_symmetry_ao_rotation_matrix(const SymmetryContext& ctx
     return rotation;
 }
 
-ComplexMatrix build_input_symmetry_abf_rotation_matrix(
+ComplexMatrix build_input_symmetry_rotation_matrix(
     const SymmetryContext& ctx,
+    const std::string &key,
     const int atom_type,
-    const int nao_hint,
     const std::map<int, ComplexMatrix>& shell_rotations,
     const Matrix3& direct_rotation)
 {
-    const auto& layout = ctx.find_abf_type_layout(atom_type, nao_hint);
+    const auto& layout = ctx.get_shell_layout(key, atom_type);
     ComplexMatrix rotation(layout.n_ao, layout.n_ao);
     const auto& shell_offsets = layout.shell_offsets;
 
@@ -1091,8 +1067,9 @@ std::complex<double> build_input_symmetry_reciprocal_gauge_phase(
 
 } // namespace
 
-input_symmetry_atom_block_matrix_map_t rotate_input_symmetry_abf_kspace_operator_blocks(
+input_symmetry_atom_block_matrix_map_t rotate_input_symmetry_kspace_operator_blocks(
     const SymmetryContext& ctx,
+    const std::string &key,
     const InputSymmetryKStarMember& member,
     const input_symmetry_atom_block_matrix_map_t& blocks_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
@@ -1102,7 +1079,7 @@ input_symmetry_atom_block_matrix_map_t rotate_input_symmetry_abf_kspace_operator
     const std::set<std::pair<atom_t, atom_t>>* target_atom_pairs,
     const Vector3_Order<double>* k_bz_target)
 {
-    if (!ctx.has_abf_shell_layout())
+    if (!ctx.has_shell_layout(key))
     {
         throw std::runtime_error("ABF shell layout is required before rotating k-space operators");
     }
@@ -1195,8 +1172,8 @@ input_symmetry_atom_block_matrix_map_t rotate_input_symmetry_abf_kspace_operator
     for (std::size_t atom = 0; atom < atom_nabf.size(); ++atom)
     {
         const auto* atom_rotation = rotations_by_from[atom];
-        atom_M_blocks[atom] = build_input_symmetry_abf_rotation_matrix(
-            ctx, atom_rotation->atom_type, static_cast<int>(atom_nabf.at(atom)),
+        atom_M_blocks[atom] = build_input_symmetry_rotation_matrix(
+            ctx, key, atom_rotation->atom_type,
             atom_rotation->shell_rotations, direct_rotation);
         const auto return_lattice =
             build_input_symmetry_kspace_return_lattice(ctx, *atom_rotation, coord_frac_map, spatial_isym);
@@ -1305,8 +1282,9 @@ const InputSymmetryKStarMember& find_matching_abf_kstar_member(const InputSymmet
     return *matched;
 }
 
-input_symmetry_atom_block_matrix_map_t symmetrize_input_symmetry_abf_ibz_kspace_operator_blocks(
+input_symmetry_atom_block_matrix_map_t symmetrize_input_symmetry_ibz_kspace_operator_blocks(
     const SymmetryContext& ctx,
+    const std::string &key,
     const Vector3_Order<double>& k_ibz,
     const input_symmetry_atom_block_matrix_map_t& blocks_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
@@ -1314,7 +1292,7 @@ input_symmetry_atom_block_matrix_map_t symmetrize_input_symmetry_abf_ibz_kspace_
     const InputSymmetryKStar* abf_star,
     const std::set<std::pair<atom_t, atom_t>>* target_atom_pairs)
 {
-    if (!ctx.has_abf_shell_layout())
+    if (!ctx.has_shell_layout(key))
     {
         throw std::runtime_error("ABF shell layout is required before symmetrizing q-space operators");
     }
@@ -1357,8 +1335,8 @@ input_symmetry_atom_block_matrix_map_t symmetrize_input_symmetry_abf_ibz_kspace_
         // Little-group members can return an equivalent IBZ representative that differs from the
         // active LibRPA label by a reciprocal-lattice vector G. Re-apply the target gauge so the
         // averaged operator is accumulated in the same k_ibz representative used by LibRPA.
-        const auto rotated_blocks = rotate_input_symmetry_abf_kspace_operator_blocks(
-            ctx, abf_member, blocks_ibz, atom_nabf, k_ibz, coord_frac, false, target_atom_pairs,
+        const auto rotated_blocks = rotate_input_symmetry_kspace_operator_blocks(
+            ctx, key, abf_member, blocks_ibz, atom_nabf, k_ibz, coord_frac, false, target_atom_pairs,
             &k_ibz);
 
         for (const auto& atom_i_pair : rotated_blocks)
@@ -1395,8 +1373,9 @@ input_symmetry_atom_block_matrix_map_t symmetrize_input_symmetry_abf_ibz_kspace_
     return accumulated_blocks;
 }
 
-ComplexMatrix rotate_input_symmetry_abf_kspace_operator_matrix(
+ComplexMatrix rotate_input_symmetry_kspace_operator_matrix(
     const SymmetryContext& ctx,
+    const std::string &key,
     const InputSymmetryKStarMember& member,
     const ComplexMatrix& matrix_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
@@ -1405,7 +1384,7 @@ ComplexMatrix rotate_input_symmetry_abf_kspace_operator_matrix(
     const bool use_time_reversal,
     const Vector3_Order<double>* k_bz_target)
 {
-    if (!ctx.has_abf_shell_layout())
+    if (!ctx.has_shell_layout(key))
     {
         throw std::runtime_error("ABF shell layout is required before rotating k-space operators");
     }
@@ -1428,8 +1407,8 @@ ComplexMatrix rotate_input_symmetry_abf_kspace_operator_matrix(
         }
     }
 
-    const auto rotated_blocks = rotate_input_symmetry_abf_kspace_operator_blocks(
-        ctx, member, blocks_ibz, atom_nabf, k_ibz, coord_frac_map, use_time_reversal,
+    const auto rotated_blocks = rotate_input_symmetry_kspace_operator_blocks(
+        ctx, key, member, blocks_ibz, atom_nabf, k_ibz, coord_frac_map, use_time_reversal,
         nullptr, k_bz_target);
 
     ComplexMatrix rotated_matrix(nabf_total, nabf_total);
@@ -1444,14 +1423,15 @@ ComplexMatrix rotate_input_symmetry_abf_kspace_operator_matrix(
     return rotated_matrix;
 }
 
-ComplexMatrix symmetrize_input_symmetry_abf_ibz_kspace_operator_matrix(
+ComplexMatrix symmetrize_input_symmetry_ibz_kspace_operator_matrix(
     const SymmetryContext& ctx,
+    const std::string &key,
     const Vector3_Order<double>& k_ibz,
     const ComplexMatrix& matrix_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
     const std::map<atom_t, std::array<double, 3>>& coord_frac)
 {
-    if (!ctx.has_abf_shell_layout())
+    if (!ctx.has_shell_layout(key))
     {
         throw std::runtime_error("ABF shell layout is required before symmetrizing q-space operators");
     }
@@ -1468,8 +1448,8 @@ ComplexMatrix symmetrize_input_symmetry_abf_ibz_kspace_operator_matrix(
         }
     }
 
-    const auto rotated_blocks = symmetrize_input_symmetry_abf_ibz_kspace_operator_blocks(
-        ctx, k_ibz, blocks_ibz, atom_nabf, coord_frac);
+    const auto rotated_blocks = symmetrize_input_symmetry_ibz_kspace_operator_blocks(
+        ctx, key, k_ibz, blocks_ibz, atom_nabf, coord_frac);
 
     ComplexMatrix accumulated(matrix_ibz.nr, matrix_ibz.nc);
     for (const auto& atom_i_pair : rotated_blocks)
@@ -1484,6 +1464,7 @@ ComplexMatrix symmetrize_input_symmetry_abf_ibz_kspace_operator_matrix(
 }
 
 ComplexMatrix rotate_input_symmetry_kspace_matrix(const SymmetryContext& ctx,
+                                          const std::string &key,
                                           const InputSymmetryKStarMember& member,
                                           const ComplexMatrix& matrix_ibz,
                                           const std::map<atom_t, size_t>& atom_nw,
@@ -1509,7 +1490,7 @@ ComplexMatrix rotate_input_symmetry_kspace_matrix(const SymmetryContext& ctx,
     //   non-TRS:  D_bz[I, J] = M_I^T  · D_ibz[S(I), S(J)]  · conj(M_J)
     //   TRS:      D_bz[I, J] = M_I†   · conj(D_ibz[S(I), S(J)]) · M_J
     // -------------------------------------------------------------------------
-    if (!ctx.has_ao_shell_layout())
+    if (!ctx.has_shell_layout(key))
     {
         throw std::runtime_error("AO shell layout is required before rotating k-space matrices");
     }
@@ -1564,7 +1545,7 @@ ComplexMatrix rotate_input_symmetry_kspace_matrix(const SymmetryContext& ctx,
     for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
     {
         const auto* atom_rotation = rotations_by_from[atom];
-        atom_M_blocks[atom] = build_input_symmetry_ao_rotation_matrix(ctx,
+        atom_M_blocks[atom] = build_input_symmetry_rotation_matrix(ctx, key,
                                                                atom_rotation->atom_type,
                                                                atom_rotation->shell_rotations);
         const auto return_lattice =
@@ -1854,12 +1835,13 @@ void build_input_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
 }
 
 ComplexMatrix rotate_input_symmetry_rspace_matrix(const SymmetryContext& ctx,
+                                          const std::string &key,
                                           const int isym,
                                           const atom_t atom_from_i,
                                           const atom_t atom_from_j,
                                           const ComplexMatrix& matrix_source)
 {
-    if (!ctx.has_ao_shell_layout())
+    if (!ctx.has_shell_layout(key))
     {
         throw std::runtime_error("AO shell layout is required before rotating real-space matrices");
     }
@@ -1871,8 +1853,8 @@ ComplexMatrix rotate_input_symmetry_rspace_matrix(const SymmetryContext& ctx,
     const int type_i = ctx.atom_to_type.at(atom_from_i);
     const int type_j = ctx.atom_to_type.at(atom_from_j);
     const auto& op = ctx.rspace_operations[static_cast<std::size_t>(isym)];
-    const ComplexMatrix T_i = build_input_symmetry_ao_rotation_matrix(ctx, type_i, op.shell_rotations);
-    const ComplexMatrix T_j = build_input_symmetry_ao_rotation_matrix(ctx, type_j, op.shell_rotations);
+    const ComplexMatrix T_i = build_input_symmetry_rotation_matrix(ctx, key, type_i, op.shell_rotations);
+    const ComplexMatrix T_j = build_input_symmetry_rotation_matrix(ctx, key, type_j, op.shell_rotations);
 
     if (matrix_source.nr != T_i.nr || matrix_source.nc != T_j.nr)
     {
@@ -1886,12 +1868,13 @@ ComplexMatrix rotate_input_symmetry_rspace_matrix(const SymmetryContext& ctx,
 }
 
 ComplexMatrix rotate_input_symmetry_abf_rspace_matrix(const SymmetryContext& ctx,
+                                              const std::string& key,
                                               const int isym,
                                               const atom_t atom_from_i,
                                               const atom_t atom_from_j,
                                               const ComplexMatrix& matrix_source)
 {
-    if (!ctx.has_abf_shell_layout())
+    if (!ctx.has_shell_layout(key))
     {
         throw std::runtime_error("ABF shell layout is required before rotating real-space matrices");
     }
@@ -1903,10 +1886,10 @@ ComplexMatrix rotate_input_symmetry_abf_rspace_matrix(const SymmetryContext& ctx
     const int type_i = ctx.atom_to_type.at(atom_from_i);
     const int type_j = ctx.atom_to_type.at(atom_from_j);
     const auto& op = ctx.rspace_operations[static_cast<std::size_t>(isym)];
-    const ComplexMatrix T_i = build_input_symmetry_abf_rotation_matrix(
-        ctx, type_i, matrix_source.nr, op.shell_rotations, op.rotation);
-    const ComplexMatrix T_j = build_input_symmetry_abf_rotation_matrix(
-        ctx, type_j, matrix_source.nc, op.shell_rotations, op.rotation);
+    const ComplexMatrix T_i = build_input_symmetry_rotation_matrix(
+        ctx, key, type_i, op.shell_rotations, op.rotation);
+    const ComplexMatrix T_j = build_input_symmetry_rotation_matrix(
+        ctx, key, type_j, op.shell_rotations, op.rotation);
 
     if (matrix_source.nr != T_i.nr || matrix_source.nc != T_j.nr)
     {

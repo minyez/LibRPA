@@ -24,7 +24,7 @@ void validate_input_symmetry_kstar_meanfield_restore(
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac)
 {
-    if (!ctx.available || !ctx.has_ao_shell_layout() || ctx.kstars.empty())
+    if (!ctx.available || !ctx.has_shell_layout("WFC") || ctx.kstars.empty())
     {
         throw std::runtime_error("ABACUS k-star restore requires AO shell layouts in the symmetry context");
     }
@@ -56,7 +56,7 @@ void validate_input_symmetry_kstar_meanfield_restore(
         {
             throw std::runtime_error("ABACUS k-star restore missing fractional coordinates for an atom");
         }
-        if (ctx.get_ao_type_layout(type_iter->second).n_ao != static_cast<int>(atom_entry.second))
+        if (ctx.get_shell_layout("WFC", type_iter->second).n_ao != static_cast<int>(atom_entry.second))
         {
             throw std::runtime_error("ABACUS k-star restore AO layout is inconsistent with atom_nw");
         }
@@ -172,7 +172,7 @@ bool can_restore_input_symmetry_kstar_meanfield(
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac)
 {
-    if (!ctx.available || !ctx.has_ao_shell_layout() || ctx.kstars.empty())
+    if (!ctx.available || !ctx.has_shell_layout("WFC") || ctx.kstars.empty())
     {
         return false;
     }
@@ -246,7 +246,7 @@ ComplexMatrix get_input_symmetry_restored_dmat_cplx_R(
                 member, member_kfrac_targets, static_cast<std::size_t>(ik_ibz), imember);
             const bool use_time_reversal = member.isym >= nsym_space;
             const auto dmat_member = librpa_int::rotate_input_symmetry_kspace_matrix(
-                ctx, member, dmat_ibz, atom_nw, k_ibz, coord_frac, use_time_reversal,
+                ctx, "WFC", member, dmat_ibz, atom_nw, k_ibz, coord_frac, use_time_reversal,
                 &k_bz_target);
             const double angle = -(k_bz_target * R) * TWO_PI;
             const auto kphase = std::complex<double>(std::cos(angle), std::sin(angle));
@@ -321,7 +321,7 @@ get_input_symmetry_restored_gf_cplx_imagtimes_Rs(
                     member, member_kfrac_targets, static_cast<std::size_t>(ik_ibz), imember);
                 const bool use_time_reversal = member.isym >= nsym_space;
                 const auto gf_member = librpa_int::rotate_input_symmetry_kspace_matrix(
-                    ctx, member, gf_ibz, atom_nw, k_ibz, coord_frac, use_time_reversal,
+                    ctx, "WFC", member, gf_ibz, atom_nw, k_ibz, coord_frac, use_time_reversal,
                     &k_bz_target);
                 for (const auto& R : Rs)
                 {

@@ -17,6 +17,7 @@
 #include "../core/ri.h"
 #include "../core/timefreq.h"
 #include "../math/matrix_m.h"
+#include "../math/symmetry.h"
 #include "../mpi/base_blacs.h"
 #include "../mpi/base_mpi.h"
 #include "../mpi/kpoint_blacs_parallel_context.h"
@@ -76,6 +77,7 @@ public:
     std::map<int, SpeciesBasisLayout> basis_aux_shrink_layouts;
     //! Basis ordering and real-spherical-harmonic convention.
     BasisConvention basis_convention;
+    SpaceGroupSymOps<SpaceGroupSymOp> spg_symops;
     //! Symmetry context built from structure and full k-point grid.
     SymmetryContext symmetry_context;
     //! Atomic structure

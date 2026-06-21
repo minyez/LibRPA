@@ -41,6 +41,7 @@ Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
       basis_aux_layouts(),
       basis_aux_shrink_layouts(),
       basis_convention(),
+      spg_symops(),
       symmetry_context(),
       atoms(),
       pbc(),

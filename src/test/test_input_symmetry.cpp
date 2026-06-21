@@ -45,8 +45,7 @@ void test_abf_rotation_fallback_uses_basis_convention()
     SpeciesBasisLayout layout;
     layout.label = "X";
     layout.set({1});
-    ctx.abf_type_layout_candidates = {{layout}};
-    ctx.abf_shell_layout_available = true;
+    ctx.map_key_layouts["AUX"] = {layout};
     ctx.lattice_vectors = Matrix3(1.0, 0.0, 0.0,
                                   0.0, 1.0, 0.0,
                                   0.0, 0.0, 1.0);
@@ -58,7 +57,7 @@ void test_abf_rotation_fallback_uses_basis_convention()
     const Matrix3 direct_rotation = cartesian_rotation.Transpose();
 
     const auto fallback_rotation =
-        build_input_symmetry_abf_rotation_matrix(ctx, 0, 3, {}, direct_rotation);
+        build_input_symmetry_rotation_matrix(ctx, "AUX", 0, {}, direct_rotation);
     const auto expected_rotation =
         real_spherical_harmonic_rotation_matrix(cartesian_rotation,
                                                 1,
@@ -75,7 +74,7 @@ void test_abf_rotation_fallback_uses_basis_convention()
     ctx.lattice_vectors = skew_lattice;
 
     const auto skew_fallback_rotation =
-        build_input_symmetry_abf_rotation_matrix(ctx, 0, 3, {}, fractional_rotation);
+        build_input_symmetry_rotation_matrix(ctx, "AUX", 0, {}, fractional_rotation);
     const auto skew_expected_rotation =
         real_spherical_harmonic_rotation_matrix(cartesian_rotation,
                                                 1,
@@ -154,7 +153,7 @@ void test_species_basis_layout_keeps_shell_order()
     assert(layout.shell_indices.at(0).front() == 1);
 
     SymmetryContext ctx;
-    ctx.ao_type_layouts = {layout};
+    ctx.map_key_layouts["WFC"] = {layout};
 
     ComplexMatrix p_rotation(3, 3);
     p_rotation.zero_out();
@@ -166,7 +165,7 @@ void test_species_basis_layout_keeps_shell_order()
     s_rotation(0, 0) = {7.0, 0.0};
 
     const auto rotation =
-        build_input_symmetry_ao_rotation_matrix(ctx, 0, {{1, p_rotation}, {0, s_rotation}});
+        build_input_symmetry_rotation_matrix(ctx, "WFC", 0, {{1, p_rotation}, {0, s_rotation}});
 
     ComplexMatrix expected(4, 4);
     expected.zero_out();
@@ -175,6 +174,27 @@ void test_species_basis_layout_keeps_shell_order()
     expected(2, 2) = {4.0, 0.0};
     expected(3, 3) = {7.0, 0.0};
     assert_matrix_close(rotation, expected);
+}
+
+void test_shell_layout_key_matches_basis_dimensions()
+{
+    SymmetryContext ctx;
+    ctx.atom_to_type = {{0, 0}, {1, 0}};
+
+    SpeciesBasisLayout full_layout;
+    full_layout.label = "full";
+    full_layout.set({1, 0});
+
+    SpeciesBasisLayout shrink_layout;
+    shrink_layout.label = "shrink";
+    shrink_layout.set({0});
+
+    ctx.map_key_layouts["AUX"] = {full_layout};
+    ctx.map_key_layouts["AUXSHRINK"] = {shrink_layout};
+
+    assert(find_input_symmetry_shell_layout_key(ctx, {{0, 4}, {1, 4}}, "AUX") == "AUX");
+    assert(find_input_symmetry_shell_layout_key(ctx, {{0, 1}, {1, 1}}, "AUX")
+           == "AUXSHRINK");
 }
 
 void write_file(const std::filesystem::path& path, const std::string& text)
@@ -477,7 +497,7 @@ void test_abacus_legacy_sidecars_are_ignored_without_generated_symops()
                "atompair (0, 0), R = (0, 0, 0)\n");
 
     SymmetryContext ctx;
-    assert(!load_input_symmetry_context(ctx));
+    assert(!ctx.finalize());
     assert(ctx.rspace_operations.empty());
     assert(ctx.kstars.empty());
 
@@ -499,7 +519,7 @@ void test_abacus_generated_symops_do_not_require_sidecars()
                             0.0, 1.0, 0.0,
                             0.0, 0.0, 1.0));
 
-    assert(load_input_symmetry_context(ctx));
+    assert(ctx.finalize());
     assert(ctx.available);
     assert(ctx.rspace_operations.size() == 24);
     assert(ctx.irreducible_sector.empty());
@@ -535,7 +555,7 @@ void test_abacus_generated_symops_ignore_legacy_sidecars()
     op.use_row_convention = true;
     ctx.rspace_operations.push_back(op);
 
-    assert(load_input_symmetry_context(ctx));
+    assert(ctx.finalize());
     assert(ctx.rspace_operations.size() == 1);
     assert(ctx.lattice_available);
     assert(ctx.irreducible_sector.empty());
@@ -554,6 +574,7 @@ int main()
     test_abf_rotation_fallback_uses_basis_convention();
     test_kspace_shell_rotations_use_direct_rotation();
     test_species_basis_layout_keeps_shell_order();
+    test_shell_layout_key_matches_basis_dimensions();
     test_mgo_k333_irreducible_sector_matches_single();
     test_mgo_k333_irreducible_sector_matches_both();
     test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry();

@@ -252,30 +252,6 @@ class OutputOnlyFilter_GW_Symmetry : public RI::Filter_Atom<TA, std::pair<TA, TC
 };
 
 template <typename Tdata>
-ComplexMatrix convert_libri_tensor_to_complex_matrix_gw(
-    const RI::Tensor<Tdata>& tensor,
-    const int nrows,
-    const int ncols)
-{
-    ComplexMatrix matrix(nrows, ncols);
-    for (int row = 0; row != nrows; ++row)
-    {
-        for (int col = 0; col != ncols; ++col)
-        {
-            if constexpr (std::is_same<Tdata, std::complex<double>>::value)
-            {
-                matrix(row, col) = tensor(row, col);
-            }
-            else
-            {
-                matrix(row, col) = std::complex<double>(tensor(row, col), 0.0);
-            }
-        }
-    }
-    return matrix;
-}
-
-template <typename Tdata>
 RI::Tensor<Tdata> convert_complex_matrix_to_libri_tensor_gw(
     const ComplexMatrix& matrix)
 {
@@ -329,11 +305,11 @@ restore_input_symmetry_ao_rspace_tensor_map_gw(
             const auto nao_I = atbasis_wfc.get_atom_nb(ir_I);
             const auto nao_J = atbasis_wfc.get_atom_nb(ir_J);
             const ComplexMatrix sigma_ir =
-                convert_libri_tensor_to_complex_matrix_gw(jr_entry.second, nao_I, nao_J);
+                convert_libri_tensor_to_complex_matrix(jr_entry.second, nao_I, nao_J);
             for (const auto& restore_member : pair_iter->second.at(ir_R))
             {
                 const ComplexMatrix sigma_full = librpa_int::rotate_input_symmetry_rspace_matrix(
-                    symmetry_ctx, restore_member.isym, ir_I, ir_J, sigma_ir);
+                    symmetry_ctx, "WFC", restore_member.isym, ir_I, ir_J, sigma_ir);
                 auto& target = tensors_full[restore_member.full_atom_pair.first][{
                     static_cast<int>(restore_member.full_atom_pair.second),
                     {restore_member.full_R.x, restore_member.full_R.y, restore_member.full_R.z}}];
@@ -1093,7 +1069,7 @@ void G0W0::build_spacetime(
     const bool use_input_sigc_symmetry =
         this->use_symmetry_context
         && symmetry_ctx.available
-        && symmetry_ctx.has_ao_shell_layout()
+        && symmetry_ctx.has_shell_layout("WFC")
         && !symmetry_ctx.irreducible_sector.empty()
         && !symmetry_ctx.rspace_operations.empty()
         && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(natom)

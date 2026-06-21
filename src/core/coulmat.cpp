@@ -282,6 +282,8 @@ atpair_R_mat_t accumulate_input_symmetry_abf_irreducible_sector_vr(
     atpair_R_mat_t blocks_by_R_real;
     atpair_R_cplx_mat_t blocks_by_R_complex;
     const auto atom_nabf = build_atom_nabf_map(basis_abf);
+    const auto abf_layout_key =
+        find_input_symmetry_shell_layout_key(ctx, atom_nabf, "AUX");
     const auto filtered_sector =
         filter_input_symmetry_irreducible_sector_by_rlist(ctx.irreducible_sector, pbc.Rlist);
     if (filtered_sector.empty())
@@ -349,8 +351,8 @@ atpair_R_mat_t accumulate_input_symmetry_abf_irreducible_sector_vr(
             librpa_int::input_symmetry_atom_block_matrix_map_t rotated_blocks;
             try
             {
-                rotated_blocks = librpa_int::rotate_input_symmetry_abf_kspace_operator_blocks(
-                    ctx, abf_member, blocks_ibz, atom_nabf, star.k_ibz,
+                rotated_blocks = librpa_int::rotate_input_symmetry_kspace_operator_blocks(
+                    ctx, abf_layout_key, abf_member, blocks_ibz, atom_nabf, star.k_ibz,
                     ctx.input_coord_frac, use_time_reversal, &target_atom_pairs,
                     &q_bz_target_frac);
             }
@@ -408,12 +410,19 @@ bool can_use_input_symmetry_irreducible_sector_ft_vq(const SymmetryContext& ctx,
                                              const PeriodicBoundaryData& pbc)
 {
     const auto atom_nabf = build_atom_nabf_map(basis_abf);
+    try
+    {
+        (void)find_input_symmetry_shell_layout_key(ctx, atom_nabf, "AUX");
+    }
+    catch (const std::exception&)
+    {
+        return false;
+    }
     const bool has_complete_or_distributed_coverage =
         global::mpi_comm_global_h.nprocs > 1
         || has_complete_input_symmetry_abf_ibz_coverage(coulmat_k, atom_nabf, pbc);
     return ctx.available
-           && ctx.has_abf_shell_layout()
-           && ctx.has_ao_shell_layout()
+           && ctx.has_shell_layout("WFC")
            && !ctx.kstars.empty()
            && ctx.kstars.size() == pbc.kfrac_list.size()
            && !pbc.map_irk_ks.empty()

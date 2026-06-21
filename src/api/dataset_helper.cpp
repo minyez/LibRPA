@@ -40,40 +40,6 @@ std::vector<SpeciesBasisLayout> type_layouts_from_map(
     return by_type;
 }
 
-bool append_type_layout_candidates(std::vector<std::vector<SpeciesBasisLayout>> &candidates,
-                                   const std::map<int, SpeciesBasisLayout> &layouts)
-{
-    bool appended_any = false;
-    for (const auto &entry : layouts)
-    {
-        if (!entry.second.is_shell_available())
-        {
-            continue;
-        }
-        const int atom_type = entry.first;
-        if (atom_type < 0)
-        {
-            throw LIBRPA_RUNTIME_ERROR("Atomic basis shell layout uses a negative atom type");
-        }
-        if (candidates.size() <= static_cast<std::size_t>(atom_type))
-        {
-            candidates.resize(static_cast<std::size_t>(atom_type + 1));
-        }
-        auto &type_candidates = candidates[static_cast<std::size_t>(atom_type)];
-        const auto duplicate = std::find_if(
-            type_candidates.begin(), type_candidates.end(),
-            [&entry](const SpeciesBasisLayout &candidate) {
-                return same_species_basis_layout(candidate, entry.second);
-            });
-        if (duplicate == type_candidates.end())
-        {
-            type_candidates.push_back(entry.second);
-            appended_any = true;
-        }
-    }
-    return appended_any;
-}
-
 std::array<double, 3> coord_frac_array(const coord_t &coord)
 {
     return {coord.x, coord.y, coord.z};
@@ -405,56 +371,40 @@ void sync_input_symmetry_shell_layouts_from_cached_layouts(Dataset &ds)
 
     if (type_layouts_have_shells(ds.basis_wfc_layouts))
     {
-        ctx.ao_type_layouts = type_layouts_from_map(ds.basis_wfc_layouts);
-        ctx.ao_shell_layout_available = !ctx.ao_type_layouts.empty();
+        ctx.map_key_layouts["WFC"] = type_layouts_from_map(ds.basis_wfc_layouts);
         ctx.ao_lmax = ds.basis_wfc.get_max_l();
     }
 
-    const bool has_basis_abf_layouts =
-        type_layouts_have_shells(ds.basis_aux_layouts)
-        || type_layouts_have_shells(ds.basis_aux_shrink_layouts);
-    if (has_basis_abf_layouts)
-    {
-        ctx.abf_type_layout_candidates.clear();
-        ctx.abf_shell_layout_available = false;
-        ctx.abf_lmax = -1;
-    }
-
     int abf_lmax = -1;
-    bool updated_abf_layouts = false;
     if (type_layouts_have_shells(ds.basis_aux_layouts))
     {
-        updated_abf_layouts =
-            append_type_layout_candidates(ctx.abf_type_layout_candidates, ds.basis_aux_layouts)
-            || updated_abf_layouts;
+        ctx.map_key_layouts["AUX"] = type_layouts_from_map(ds.basis_aux_layouts);
         abf_lmax = std::max(abf_lmax, ds.basis_aux.get_max_l());
     }
     if (type_layouts_have_shells(ds.basis_aux_shrink_layouts))
     {
-        updated_abf_layouts =
-            append_type_layout_candidates(ctx.abf_type_layout_candidates,
-                                          ds.basis_aux_shrink_layouts)
-            || updated_abf_layouts;
+        ctx.map_key_layouts["AUXSHRINK"] = type_layouts_from_map(ds.basis_aux_shrink_layouts);
         abf_lmax = std::max(abf_lmax, ds.basis_aux_shrink.get_max_l());
     }
-    if (updated_abf_layouts)
-    {
-        ctx.abf_shell_layout_available = !ctx.abf_type_layout_candidates.empty();
-        ctx.abf_lmax = abf_lmax;
-    }
+    ctx.abf_lmax = abf_lmax;
 }
 
 } // namespace
 
 void initialize_input_symmetry_context(Dataset &ds, const bool build_shell_rotations)
 {
+
+    // If symmetry operations have not been set, make it an identity group
+    if (ds.spg_symops.size() == 0)
+    {
+        ds.spg_symops.push_back(SpaceGroupSymOp::IDENTITY);
+    }
+
     auto &ctx = ds.symmetry_context;
     if (ctx.rspace_operations.empty())
     {
         return;
     }
-    ctx.available = true;
-
     sync_input_symmetry_structure_from_dataset(ds);
 
     if (ctx.irreducible_sector.empty()
@@ -471,7 +421,7 @@ void initialize_input_symmetry_context(Dataset &ds, const bool build_shell_rotat
         generate_input_symmetry_kstars_from_pbc(ctx, ds.pbc);
     }
 
-    load_input_symmetry_context(ds.symmetry_context, &(global::ofs_myid));
+    ctx.finalize(&(global::ofs_myid));
 
     if (!build_shell_rotations)
     {
@@ -539,7 +489,7 @@ void require_input_symmetry_shell_layouts(const Dataset &ds, const char *calcula
         return;
     }
 
-    if (!ctx.has_ao_shell_layout() || !ctx.has_abf_shell_layout())
+    if (!ctx.has_shell_layout("WFC") || !ctx.has_shell_layout("AUX"))
     {
         throw LIBRPA_RUNTIME_ERROR(
             std::string("Cannot use ") + calculation

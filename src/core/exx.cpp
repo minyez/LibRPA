@@ -201,30 +201,6 @@ class OutputOnlyFilter_Atom_Symmetry : public RI::Filter_Atom<TA, std::pair<TA, 
   private:
     RI::Symmetry_Filter<TA, TC, Tdata> symmetry;
 };
-
-template <typename Tdata>
-ComplexMatrix convert_libri_tensor_to_complex_matrix(
-    const RI::Tensor<Tdata>& tensor,
-    const int nrows,
-    const int ncols)
-{
-    ComplexMatrix matrix(nrows, ncols);
-    for (int row = 0; row != nrows; ++row)
-    {
-        for (int col = 0; col != ncols; ++col)
-        {
-            if constexpr (std::is_same<Tdata, std::complex<double>>::value)
-            {
-                matrix(row, col) = tensor(row, col);
-            }
-            else
-            {
-                matrix(row, col) = std::complex<double>(tensor(row, col), 0.0);
-            }
-        }
-    }
-    return matrix;
-}
 #endif
 
 } // namespace
@@ -516,7 +492,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     const bool use_symmetry_exx =
         this->use_symmetry_context
         && symmetry_ctx.available
-        && symmetry_ctx.has_ao_shell_layout()
+        && symmetry_ctx.has_shell_layout("WFC")
         && !symmetry_ctx.irreducible_sector.empty()
         && !symmetry_ctx.rspace_operations.empty()
         && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(n_atoms)
@@ -531,7 +507,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     if (use_symmetry_exx)
     {
         global::lib_printf(
-            "Reducing EXX real-space contractions with ABACUS irreducible sectors\n");
+            "Reducing EXX real-space contractions with irreducible sectors\n");
         librpa_int::build_input_symmetry_rspace_sector_stars(
             symmetry_ctx, symmetry_ctx.input_coord_frac, this->pbc.period, Rlist,
             input_symmetry_sector_stars, nullptr);
@@ -604,6 +580,8 @@ void Exx::build(const LibrpaParallelRouting routing,
         && exx_coulomb_uses_input_symmetry_irreducible_sector_layout(coul_mat, symmetry_ctx);
     if (use_input_exx_coulomb_restore)
     {
+        const auto abf_layout_key = find_input_symmetry_shell_layout_key(
+            symmetry_ctx, build_atom_nw_map(atbasis_abf), "AUX");
         global::lib_printf(
             "Restoring the ABACUS EXX auxiliary Coulomb blocks from the irreducible sector to the full real-space sector before LibRI contraction\n");
         for (const auto& I_JRV : coul_mat)
@@ -633,8 +611,8 @@ void Exx::build(const LibrpaParallelRouting routing,
                     for (const auto& restore_member : star_iter->second)
                     {
                         const ComplexMatrix v_full =
-                            librpa_int::rotate_input_symmetry_abf_rspace_matrix(
-                                symmetry_ctx, restore_member.isym,
+                            librpa_int::rotate_input_symmetry_rspace_matrix(
+                                symmetry_ctx, abf_layout_key, restore_member.isym,
                                 static_cast<atom_t>(ir_I),
                                 static_cast<atom_t>(ir_J), v_ir);
                         const matrix v_full_real = v_full.real();
@@ -925,7 +903,7 @@ void Exx::build(const LibrpaParallelRouting routing,
 	                                {
 	                                    const auto block_full =
 	                                        librpa_int::rotate_input_symmetry_rspace_matrix(
-	                                            symmetry_ctx, restore_member.isym,
+	                                            symmetry_ctx, "WFC", restore_member.isym,
 	                                            static_cast<atom_t>(I),
 	                                            static_cast<atom_t>(J), block_ir);
 	                                    store_exx_block(

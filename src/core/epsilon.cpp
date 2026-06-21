@@ -546,8 +546,8 @@ abf_rspace_dense_block_map_t restore_input_symmetry_abf_rspace_dense_blocks(
 
                 for (const auto& restore_member : star_iter->second)
                 {
-                    ComplexMatrix w_full = librpa_int::rotate_input_symmetry_abf_rspace_matrix(
-                        symmetry_ctx, restore_member.isym, ir_I, ir_J, R_matrix.second);
+                    ComplexMatrix w_full = librpa_int::rotate_input_symmetry_rspace_matrix(
+                        symmetry_ctx, "AUX", restore_member.isym, ir_I, ir_J, R_matrix.second);
                     auto& target =
                         tensors_full[restore_member.full_atom_pair.first]
                                     [restore_member.full_atom_pair.second][restore_member.full_R];
@@ -582,9 +582,16 @@ bool can_use_input_symmetry_irreducible_sector_wr_restore(
     const std::map<atom_t, size_t>& atom_nabf,
     const PeriodicBoundaryData& pbc)
 {
+    try
+    {
+        (void)librpa_int::find_input_symmetry_shell_layout_key(ctx, atom_nabf, "AUX");
+    }
+    catch (const std::exception&)
+    {
+        return false;
+    }
     return ctx.available
-           && ctx.has_abf_shell_layout()
-           && ctx.has_ao_shell_layout()
+           && ctx.has_shell_layout("WFC")
            && !ctx.kstars.empty()
            && ctx.kstars.size() == pbc.kfrac_list.size()
            && !pbc.map_irk_ks.empty()
@@ -600,8 +607,15 @@ bool can_symmetrize_input_symmetry_chi0_ibz_blocks(
     const std::map<atom_t, size_t>& atom_nabf,
     const PeriodicBoundaryData& pbc)
 {
+    try
+    {
+        (void)librpa_int::find_input_symmetry_shell_layout_key(ctx, atom_nabf, "AUX");
+    }
+    catch (const std::exception&)
+    {
+        return false;
+    }
     return ctx.available
-           && ctx.has_abf_shell_layout()
            && !ctx.kstars.empty()
            && ctx.kstars.size() == pbc.kfrac_list.size()
            && ctx.atom_to_type.size() == atom_nabf.size()
@@ -659,8 +673,10 @@ atom_mapping<ComplexMatrix>::pair_t_old symmetrize_input_symmetry_chi0_ibz_block
         return blocks_ibz;
     }
 
-    const auto symmetrized_blocks = librpa_int::symmetrize_input_symmetry_abf_ibz_kspace_operator_blocks(
-        ctx, q_ibz_frac, blocks_for_symmetrization, atom_nabf, ctx.input_coord_frac, abf_star,
+    const auto abf_layout_key =
+        librpa_int::find_input_symmetry_shell_layout_key(ctx, atom_nabf, "AUX");
+    const auto symmetrized_blocks = librpa_int::symmetrize_input_symmetry_ibz_kspace_operator_blocks(
+        ctx, abf_layout_key, q_ibz_frac, blocks_for_symmetrization, atom_nabf, ctx.input_coord_frac, abf_star,
         &output_atom_pairs);
     return to_atom_mapping_blocks(symmetrized_blocks);
 }
@@ -678,6 +694,8 @@ abf_rspace_complex_block_map_t accumulate_input_symmetry_full_wr_from_ibz_q(
     {
         return {};
     }
+    const auto abf_layout_key =
+        librpa_int::find_input_symmetry_shell_layout_key(ctx, atom_nabf, "AUX");
 
     auto blocks_by_R_ir =
         allocate_input_symmetry_irreducible_wr_storage(plan.local_irreducible_sector, atom_nabf);
@@ -707,8 +725,8 @@ abf_rspace_complex_block_map_t accumulate_input_symmetry_full_wr_from_ibz_q(
         }
         const auto rotation_atom_pairs =
             librpa_int::build_input_symmetry_upper_atom_pair_closure(star, plan.local_irreducible_pairs);
-        blocks_ibz = librpa_int::symmetrize_input_symmetry_abf_ibz_kspace_operator_blocks(
-            ctx, q_ibz_frac, blocks_ibz, atom_nabf, ctx.input_coord_frac, abf_star,
+        blocks_ibz = librpa_int::symmetrize_input_symmetry_ibz_kspace_operator_blocks(
+            ctx, abf_layout_key, q_ibz_frac, blocks_ibz, atom_nabf, ctx.input_coord_frac, abf_star,
             &rotation_atom_pairs);
         if (star.members.size() != star_mapping.member_q_bz_keys.size())
         {
@@ -729,8 +747,8 @@ abf_rspace_complex_block_map_t accumulate_input_symmetry_full_wr_from_ibz_q(
             librpa_int::input_symmetry_atom_block_matrix_map_t rotated_blocks;
             try
             {
-                rotated_blocks = librpa_int::rotate_input_symmetry_abf_kspace_operator_blocks(
-                    ctx, abf_member, blocks_ibz, atom_nabf, star.k_ibz, ctx.input_coord_frac,
+                rotated_blocks = librpa_int::rotate_input_symmetry_kspace_operator_blocks(
+                    ctx, abf_layout_key, abf_member, blocks_ibz, atom_nabf, star.k_ibz, ctx.input_coord_frac,
                     use_time_reversal, &rotation_atom_pairs, &q_bz_target_frac);
             }
             catch (const std::exception& ex)
