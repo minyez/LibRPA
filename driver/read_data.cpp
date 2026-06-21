@@ -1228,9 +1228,30 @@ void read_bz_sampling_from_stru(const std::string &file_path)
     sync_driver_ibz_kpoints_from_mapping(kvecs, map_q_ks, n_k_rows);
 }
 
-void read_basis(const std::string &file_path)
+void read_basis_wfc_aux(const std::string &input_dir,
+                        const std::string &fn_basis,
+                        const std::string &fn_basis_wfc,
+                        const std::string &fn_basis_aux)
 {
-    reader_basis(file_path);
+    using librpa_int::join_path;
+    using librpa_int::path_exists;
+
+    const string path_basis = join_path(input_dir, fn_basis);
+    const string path_basis_wfc = join_path(input_dir, fn_basis_wfc);
+    const string path_basis_aux = join_path(input_dir, fn_basis_aux);
+    if (path_exists(path_basis_wfc.c_str()) && path_exists(path_basis_aux.c_str()))
+    {
+        reader_basis_wfc(path_basis_wfc);
+        reader_basis_aux(path_basis_aux);
+    }
+    else if (path_exists(path_basis.c_str()))
+    {
+        reader_basis(path_basis);
+    }
+    else
+    {
+        read_basis_from_Cs(input_dir);
+    }
 }
 
 void read_band_kpath_info(const string &file_path)
@@ -1816,25 +1837,27 @@ void read_ri_shrink(const string &dir_path)
 {
     using librpa_int::global::mpi_comm_global_h;
     using librpa_int::global::profiler;
+    using librpa_int::join_path;
+    using librpa_int::path_exists;
     using driver::driver_params;
 
     auto pds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
 
     const auto shrink_basis_path =
-        librpa_int::join_path(driver_params.input_dir, driver_params.fn_basis_aux_shrink);
+        join_path(driver_params.input_dir, driver_params.fn_basis_aux_shrink);
     const auto legacy_shrink_basis_path =
-        librpa_int::join_path(driver_params.input_dir, "basis_out_shrink");
+        join_path(driver_params.input_dir, "basis_out_shrink");
     const auto legacy_backup_basis_path =
-        librpa_int::join_path(driver_params.input_dir, "basis_out.shrink_backup");
-    if (librpa_int::path_exists(shrink_basis_path.c_str()))
+        join_path(driver_params.input_dir, "basis_out.shrink_backup");
+    if (path_exists(shrink_basis_path.c_str()))
     {
         reader_basis_aux_shrink(shrink_basis_path);
     }
-    else if (librpa_int::path_exists(legacy_shrink_basis_path.c_str()))
+    else if (path_exists(legacy_shrink_basis_path.c_str()))
     {
         reader_basis_aux_shrink(legacy_shrink_basis_path);
     }
-    else if (librpa_int::path_exists(legacy_backup_basis_path.c_str()))
+    else if (path_exists(legacy_backup_basis_path.c_str()))
     {
         reader_basis_aux_shrink(legacy_backup_basis_path);
     }
