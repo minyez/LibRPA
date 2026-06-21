@@ -7,6 +7,7 @@
 
 #include <mpi.h>
 #include <omp.h>
+#include <exception>
 #include <stdexcept>
 #include <string>
 
@@ -21,6 +22,9 @@
 // #include "task_hf_band.h"
 // #include "task_scRPA.h"
 // #include "task_scRPA_band.h"
+
+using namespace driver;
+using namespace librpa_int::global;
 
 static void initialize_mpi_env(int argc, char **argv)
 {
@@ -69,10 +73,39 @@ static void initialize_librpa()
     driver::h.init(MPI_COMM_WORLD);
 }
 
+static int run_task_and_catch(const driver::task_t &task)
+{
+    int local_failed = 0;
+    try
+    {
+        run_task(task);
+    }
+    catch (const std::exception &e)
+    {
+        local_failed = 1;
+        lib_printf(LIBRPA_VERBOSE_CRITICAL, "Error on MPI rank %d: %s\n", mpi_comm_global_h.myid,
+                   e.what());
+    }
+    catch (...)
+    {
+        local_failed = 1;
+        lib_printf(LIBRPA_VERBOSE_CRITICAL, "Error on MPI rank %d: unknown exception\n",
+                   mpi_comm_global_h.myid);
+    }
+
+    int any_failed = 0;
+    mpi_comm_global_h.allreduce(&local_failed, &any_failed, 1, MPI_MAX);
+
+    if (!any_failed)
+    {
+        mpi_comm_global_h.barrier();
+    }
+
+    return any_failed;
+}
+
 static void finalize_librpa(bool success)
 {
-    using namespace librpa_int::global;
-
     // Free the memory space
     driver::h.free();
     profiler.stop("driver_total");
@@ -97,8 +130,6 @@ static void finalize_librpa(bool success)
 
 int main(int argc, char **argv)
 {
-    using namespace driver;
-    using namespace librpa_int::global;
     using librpa_int::get_node_free_mem;
 
     // Initialize MPI environment
@@ -216,13 +247,9 @@ int main(int argc, char **argv)
     mpi_comm_global_h.barrier();
     profiler.stop("driver_read_common_input_data");
 
-    run_task(task);
-    mpi_comm_global_h.barrier();
-
-    // Finalize LibRPA environment, free handler
-    finalize_librpa(true);
-    // Let MPI rest in peace
+    int any_failed = run_task_and_catch(task);
+    finalize_librpa(!any_failed);
     MPI_Finalize();
 
-    return EXIT_SUCCESS;
+    return any_failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }
