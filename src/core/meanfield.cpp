@@ -26,23 +26,23 @@ void validate_input_symmetry_kstar_meanfield_restore(
 {
     if (!ctx.available || !ctx.has_shell_layout("WFC") || ctx.kstars.empty())
     {
-        throw std::runtime_error("ABACUS k-star restore requires AO shell layouts in the symmetry context");
+        throw std::runtime_error("k-star restore requires AO shell layouts in the symmetry context");
     }
     if (mf.get_n_kpoints() != static_cast<int>(kfrac_list.size()))
     {
-        throw std::runtime_error("ABACUS k-star restore got inconsistent mean-field k-point counts");
+        throw std::runtime_error("k-star restore got inconsistent mean-field k-point counts");
     }
     if (ctx.kstars.size() != kfrac_list.size())
     {
-        throw std::runtime_error("ABACUS k-star restore got inconsistent IBZ k-star counts");
+        throw std::runtime_error("k-star restore got inconsistent IBZ k-star counts");
     }
     if (ctx.count_kstar_members() == 0)
     {
-        throw std::runtime_error("ABACUS k-star restore found an empty full-k member list");
+        throw std::runtime_error("k-star restore found an empty full-k member list");
     }
     if (ctx.rspace_operations.empty())
     {
-        throw std::runtime_error("ABACUS k-star restore requires real-space symmetry operations");
+        throw std::runtime_error("k-star restore requires real-space symmetry operations");
     }
     for (const auto& atom_entry : atom_nw)
     {
@@ -50,15 +50,15 @@ void validate_input_symmetry_kstar_meanfield_restore(
         const auto type_iter = ctx.atom_to_type.find(atom);
         if (type_iter == ctx.atom_to_type.end())
         {
-            throw std::runtime_error("ABACUS k-star restore missing AO type metadata for an atom");
+            throw std::runtime_error("k-star restore missing AO type metadata for an atom");
         }
         if (coord_frac.count(atom) == 0)
         {
-            throw std::runtime_error("ABACUS k-star restore missing fractional coordinates for an atom");
+            throw std::runtime_error("k-star restore missing fractional coordinates for an atom");
         }
         if (ctx.get_shell_layout("WFC", type_iter->second).n_ao != static_cast<int>(atom_entry.second))
         {
-            throw std::runtime_error("ABACUS k-star restore AO layout is inconsistent with atom_nw");
+            throw std::runtime_error("k-star restore AO layout is inconsistent with atom_nw");
         }
     }
     for (const auto& type_entry : ctx.atom_to_type)
