@@ -709,7 +709,8 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
     profiler.stop(tname);
 }
 
-void librpa_set_kgrids_kvec(LibrpaHandler* h, int nk1, int nk2, int nk3, const double* kvecs)
+void librpa_set_kgrids_kvec(LibrpaHandler* h, int nk1, int nk2, int nk3, int nkpts,
+                            const double* kvecs, const double* kweights)
 {
     using librpa_int::global::lib_printf;
     using std::cout;
@@ -722,10 +723,18 @@ void librpa_set_kgrids_kvec(LibrpaHandler* h, int nk1, int nk2, int nk3, const d
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &pbc = pds->pbc;
 
-    const int nkpts = nk1 * nk2 * nk3;
+    if (nkpts <= 0 || kvecs == nullptr)
+    {
+        throw LIBRPA_RUNTIME_ERROR("invalid k-point count or k-point buffer");
+    }
     std::vector<double> v_kvecs(kvecs, kvecs + 3 * nkpts);
+    std::vector<double> v_kweights;
+    if (kweights != nullptr)
+    {
+        v_kweights.assign(kweights, kweights + nkpts);
+    }
 
-    pbc.set_kgrids_kvec(nk1, nk2, nk3, v_kvecs);
+    pbc.set_kgrids_kvec(nk1, nk2, nk3, v_kvecs, v_kweights);
 
     pds->comm_h.barrier();
     if (pds->comm_h.is_root())
@@ -741,12 +750,26 @@ void librpa_set_kgrids_kvec(LibrpaHandler* h, int nk1, int nk2, int nk3, const d
                     ik+1, klist[ik].x, klist[ik].y, klist[ik].z,
                     kfrac_list[ik].x, kfrac_list[ik].y, kfrac_list[ik].z);
         }
+        if (static_cast<int>(pbc.klist_full.size()) == nkpts)
+        {
+            cout << "Hint: full k-point list is copied from parsed k-points." << endl;
+        }
+        else
+        {
+            cout << "Hint: full k-point list is generated from k-grid; parsed k-points are symmetry-reduced." << endl;
+        }
 
         const auto &Rlist = pbc.Rlist;
-        cout << "R-points to compute:" << endl;
-        for (int iR = 0; iR != nkpts; iR++)
+        cout << "R-points to compute: " << Rlist.size() << endl;
+        const int step = 5;
+        for (std::size_t iR = 0; iR < Rlist.size(); iR += step)
         {
-            lib_printf("%4d: %3d %3d %3d\n", iR+1, Rlist[iR].x, Rlist[iR].y, Rlist[iR].z);
+            lib_printf("%5zu - %5zu :", iR + 1, std::min(iR + step, Rlist.size()));
+            for (std::size_t jR = iR; jR != std::min(iR + step, Rlist.size()); ++jR)
+            {
+                lib_printf(" (%3d, %3d, %3d)", Rlist[jR].x, Rlist[jR].y, Rlist[jR].z);
+            }
+            lib_printf("\n");
         }
         cout << endl;
     }
@@ -755,7 +778,7 @@ void librpa_set_kgrids_kvec(LibrpaHandler* h, int nk1, int nk2, int nk3, const d
     profiler.stop(tname);
 }
 
-void librpa_set_ibz_mapping(LibrpaHandler* h, int nkpts, const int* map_ibzk)
+void librpa_set_kq_mapping(LibrpaHandler* h, int nkpts, const int* map_q_ks)
 {
     using std::cout;
     using std::endl;
@@ -763,27 +786,27 @@ void librpa_set_ibz_mapping(LibrpaHandler* h, int nkpts, const int* map_ibzk)
     using namespace librpa_int::global;
     using librpa_int::global::profiler;
 
-    const std::string tname = "api_set_ibz_mapping";
+    const std::string tname = "api_set_kq_mapping";
     profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     auto &pbc = pds->pbc;
-    assert(nkpts == pbc.get_n_cells_bvk());
+    assert(nkpts == static_cast<int>(pbc.klist.size()));
 
-    std::vector<int> map(map_ibzk, map_ibzk + nkpts);
-    pbc.set_ibz_mapping(map, {});
+    std::vector<int> map(map_q_ks, map_q_ks + nkpts);
+    pbc.set_kq_mapping(map, {});
     // ofs_myid << map << std::endl;
     pds->comm_h.barrier();
     if (pds->comm_h.is_root())
     {
         const int nkpt = pbc.irk_point_id_mapping.size();
-        cout << "Irreducible Brillouin mapping:" << endl;
+        cout << "SCF k-point to Coulomb q-point mapping:" << endl;
         lib_printf("%4s: %12s %12s %12s    %4s\n",
-                   "ik", "k_1", "k_2", "k_3", "ibzk");
+                   "ik", "k_1", "k_2", "k_3", "iq");
         for (int ik = 0; ik < nkpt; ik++)
         {
-            int ibzk = pbc.irk_point_id_mapping[ik];
-            if (ibzk == ik)
+            int iq = pbc.irk_point_id_mapping[ik];
+            if (iq == ik)
             {
                 lib_printf("%4d: %12.7f %12.7f %12.7f\n",
                            ik + 1, pbc.kfrac_list[ik].x, pbc.kfrac_list[ik].y, pbc.kfrac_list[ik].z);
@@ -791,7 +814,7 @@ void librpa_set_ibz_mapping(LibrpaHandler* h, int nkpts, const int* map_ibzk)
             else
             {
                 lib_printf("%4d: %12.7f %12.7f %12.7f -> %4d\n",
-                           ik + 1, pbc.kfrac_list[ik].x, pbc.kfrac_list[ik].y, pbc.kfrac_list[ik].z, ibzk + 1);
+                           ik + 1, pbc.kfrac_list[ik].x, pbc.kfrac_list[ik].y, pbc.kfrac_list[ik].z, iq + 1);
             }
         }
     }

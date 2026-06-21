@@ -15,11 +15,24 @@
 
 namespace librpa_int {
 
+//! Relation between one stored full-grid k-point and the loaded SCF k-list.
+enum class KFullToKRelation
+{
+    //! No loaded SCF k-point represents this full-grid point yet.
+    NONE,
+    //! The loaded SCF k-point is the same k-point.
+    DIRECT,
+    //! The loaded SCF k-point is the time-reversal partner, -k.
+    TIME_REVERSAL,
+};
+
 class PeriodicBoundaryData
 {
 private:
     bool lattice_reset_ = false;
     bool kgrid_no_symmetry_ = true;
+
+    void reset_k_info();
 
 public:
     //! Lattice vectors as a 3D-matrix, each row as a lattice vector. Unit: Bohr
@@ -39,17 +52,27 @@ public:
     std::vector<Vector3_Order<double>> klist;
     //! Loaded SCF k-points in fractional coordinates
     std::vector<Vector3_Order<double>> kfrac_list;
+    //! Scalar weight of each loaded SCF k-point, if available.
+    std::vector<double> weight_k;
     //! Full-BZ k-points when explicitly expanded; otherwise mirrors klist.
     std::vector<Vector3_Order<double>> klist_full;
     //! Full-BZ k-points in fractional coordinates when explicitly expanded; otherwise mirrors kfrac_list.
     std::vector<Vector3_Order<double>> kfrac_list_full;
+    //! Mapping from loaded SCF k-points to stored full-grid k-points.
+    std::vector<int> k_to_kfull;
+    //! Mapping from stored full-grid k-points to loaded SCF representative k-points; -1 means missing.
+    std::vector<int> kfull_to_k;
+    //! How each kfull_to_k entry was resolved.
+    std::vector<KFullToKRelation> kfull_to_k_relation;
+    //! Whether any missing full-grid k-point was found through time reversal.
+    bool kgrid_uses_time_reversal = false;
 
     //! K-points where Coulomb matrices are parsed, in Cartesian coordinates
     std::vector<Vector3_Order<double>> klist_coul;
     //! Scalar weight of each Coulomb k-point
-    std::vector<double> kweight_ibz;
-    //! Same as kweight_ibz, but indexed directly by the Coulomb k-point
-    std::map<Vector3_Order<double>, double> map_ibzk_weight;
+    std::vector<double> weight_q;
+    //! Same as weight_q, but indexed directly by the Coulomb k-point
+    std::map<Vector3_Order<double>, double> map_q_weight;
     std::vector<int> irk_point_id_mapping;
     std::vector<int> isymops;
     //! Mapping of Coulomb k-points to loaded SCF k-points using that representative
@@ -65,16 +88,17 @@ public:
     //! Set BvK periodicity and rebuild the corresponding R-grid.
     void set_period(int nk1, int nk2, int nk3);
     //! Set the loaded SCF k-point list. kvecs should be in Bohr^-1 unit.
-    void set_kgrids_kvec(int nk1, int nk2, int nk3, const std::vector<double> &kvecs);
+    void set_kgrids_kvec(int nk1, int nk2, int nk3,
+                         const std::vector<double> &kvecs,
+                         const std::vector<double> &kweights = {});
     //! Set an irreducible loaded k-point list plus full-BZ star members in internal units.
     void set_irreducible_kgrids_kvec(
         int nk1, int nk2, int nk3,
         const std::vector<double> &kvecs_ibz,
         const std::vector<std::vector<Vector3_Order<double>>> &full_kstars);
-    //! Set the mapping of loaded SCF k-points to Coulomb-matrix k-points.
-    void set_ibz_mapping(const std::vector<int> &irk_point_id_mapping_in,
-                         const std::vector<int> &isymops_in = {},
-                         const std::vector<double> &kweights = {});
+    //! Set the mapping from loaded SCF k-points to Coulomb q-points.
+    void set_kq_mapping(const std::vector<int> &map_q_ks,
+                         const std::vector<int> &isymops_in = {});
 
     // Getting
     int get_R_index(const Vector3_Order<int> &R) const;

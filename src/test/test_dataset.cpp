@@ -1,9 +1,9 @@
 #include "../api/dataset.h"
 #include "../api/dataset_helper.h"
-#include "../mpi/base_mpi.h"
 
 #include "../mpi/global_mpi.h"
 #include "../io/global_io.h"
+#include "../utils/constants.h"
 #include "librpa_enums.h"
 #include "testutils.h"
 
@@ -28,6 +28,15 @@ static_assert(!has_mf_headwing<librpa_int::Dataset>::value,
 static_assert(!has_kfrac_headwing_list<librpa_int::Dataset>::value,
               "Dataset should use pbc.kfrac_list for analytic head/wing instead of kfrac_headwing_list");
 
+static std::vector<double> sc222_kvecs()
+{
+    const double half = librpa_int::TWO_PI * 0.5;
+    return {
+        0.0, 0.0, 0.0, 0.0, 0.0, half, 0.0, half, 0.0, 0.0, half, half,
+        half, 0.0, 0.0, half, 0.0, half, half, half, 0.0, half, half, half,
+    };
+}
+
 static void test_set_comm_blacs_coul_np4()
 {
     using namespace librpa_int;
@@ -35,11 +44,8 @@ static void test_set_comm_blacs_coul_np4()
     std::vector<size_t> nbs{2, 3};
     Dataset ds(MPI_COMM_WORLD);
     ds.basis_aux.set(nbs);
-    ds.pbc.set_kgrids_kvec(2, 2, 2,
-                           {
-                               0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.0, 0.0, 0.5, 0.5,
-                               0.5, 0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.5, 0.0, 0.5, 0.5, 0.5,
-                           });
+    ds.pbc.set_latvec({1, 0, 0, 0, 1, 0, 0, 0, 1});
+    ds.pbc.set_kgrids_kvec(2, 2, 2, sc222_kvecs());
     // Irreducible map not set, thus the irreducible sector is just the full BZ.
     const int n_aux = ds.basis_aux.nb_total;
     const int m = n_aux, n = n_aux;
@@ -180,15 +186,12 @@ static void test_redistribute_blacs2ap_np4(const std::vector<size_t> &nbs)
     using namespace librpa_int;
     Dataset ds(MPI_COMM_WORLD);
     ds.basis_aux.set(nbs);
+    ds.pbc.set_latvec({1, 0, 0, 0, 1, 0, 0, 0, 1});
     initialize_ds_atpairs_local(ds, LIBRPA_ROUTING_LIBRI);
     const int n_aux = ds.basis_aux.nb_total;
     ds.desc_abf.reset_handler(ds.blacs_h);
     ds.desc_abf.init_1b1p(n_aux, n_aux, 0, 0);
-    ds.pbc.set_kgrids_kvec(2, 2, 2,
-                           {
-                               0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.0, 0.0, 0.5, 0.5,
-                               0.5, 0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.5, 0.0, 0.5, 0.5, 0.5,
-                           });
+    ds.pbc.set_kgrids_kvec(2, 2, 2, sc222_kvecs());
     const int m = n_aux, n = n_aux;
     const int nkpts = ds.pbc.klist.size();
     int lbrow, ubrow, lbcol, ubcol;

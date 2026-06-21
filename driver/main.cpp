@@ -13,7 +13,6 @@
 // May move to public API later
 #include "../src/utils/profiler.h"
 #include "../src/utils/utils_mem.h"
-#include "../src/api/instance_manager.h"
 #include "../src/io/fs.h"
 // #include "task_qsgw.h"
 // #include "task_qsgwA.h"
@@ -124,11 +123,6 @@ int main(int argc, char **argv)
     const string path_basis_aux = driver_params.input_dir + driver_params.fn_basis_aux;
     const string path_eigocc_scf = driver_params.input_dir + driver_params.fn_eigocc_scf;
 
-    {
-        auto pds = librpa_int::api::get_dataset_instance(driver::h);
-        pds->symmetry_context.clear();
-    }
-
     profiler.start("driver_read_common_input_data", "Driver Read Task-Common Input Data");
     profiler.start("driver_band_out", "DFT SCF eigenvalues/occupations");
     read_scf_occ_eigenvalues(path_eigocc_scf);
@@ -172,16 +166,6 @@ int main(int argc, char **argv)
         }
         lib_printf_root("\n");
         profiler.stop("driver_basis");
-
-        profiler.start("driver_input_symmetry", "Driver Read symmetry context");
-        {
-            auto pds = librpa_int::api::get_dataset_instance(driver::h);
-            librpa_int::load_input_symmetry_context(
-                pds->symmetry_context,
-                mpi_comm_global_h.is_root() && should_output() ? &std::cout : nullptr);
-        }
-        profiler.stop("driver_input_symmetry");
-        lib_printf_root("\n");
 
         profiler.start("driver_read_eigenvector", "SCF eigenvectors");
         int ret_eigenvec = read_eigenvector(driver_params.input_dir);

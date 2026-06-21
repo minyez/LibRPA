@@ -267,11 +267,16 @@ public:
     /** @brief Set atom types and Cartesian coordinates. */
     void set_atoms(const std::vector<int> &types, const std::vector<double> &pos_cart);
 
-    /** @brief Set k-point grid vectors. */
-    void set_kgrids_kvec(int nk1, int nk2, int nk3, const double *kvecs);
+    /** @brief Set k-point grid vectors. Non-null weights are normalized to sum to one. */
+    void set_kgrids_kvec(int nk1, int nk2, int nk3, int nkpts,
+                         const double *kvecs, const double *kweights = nullptr);
 
-    /** @brief Set mapping from full k-point grid to irreducibleBZ. */
-    void set_ibz_mapping(const std::vector<int> &map_ibzk);
+    /** @brief Set loaded SCF k-point vectors. Non-empty weights are normalized to sum to one. */
+    void set_kgrids_kvec(int nk1, int nk2, int nk3, const std::vector<double> &kvecs,
+                         const std::vector<double> &kweights = {});
+
+    /** @brief Set mapping from loaded SCF k-points to Coulomb q-points. */
+    void set_kq_mapping(const std::vector<int> &map_q_ks);
 
     /** @brief Set local RI coefficients. */
     void set_lri_coeff(LibrpaParallelRouting routing, int I, int J, int nbasis_i, int nbasis_j,

@@ -529,13 +529,29 @@ bool load_input_symmetry_context(SymmetryContext& ctx,
 
     if (log != nullptr)
     {
-        (*log) << "Detected symmetry operations from structure\n"
-               << "| irreducible atom pairs : " << ctx.count_irreducible_pairs() << "\n"
-               << "| irreducible {pair, R}  : " << ctx.count_irreducible_blocks() << "\n"
-               << "| real-space operations  : " << ctx.rspace_operations.size() << "\n"
-               << "| IBZ k-stars            : " << ctx.kstars.size() << "\n"
-               << "| total star members     : " << ctx.count_kstar_members() << "\n"
-               << "| k rotations            : generated from symmetry operations\n"
+        (*log) << "Detected symmetry operations from structure\n";
+        if (ctx.irreducible_sector.empty())
+        {
+            (*log) << "| irreducible atom pairs : pending compute initialization\n"
+                   << "| irreducible {pair, R}  : pending compute initialization\n";
+        }
+        else
+        {
+            (*log) << "| irreducible atom pairs : " << ctx.count_irreducible_pairs() << "\n"
+                   << "| irreducible {pair, R}  : " << ctx.count_irreducible_blocks() << "\n";
+        }
+        (*log) << "| real-space operations  : " << ctx.rspace_operations.size() << "\n";
+        if (ctx.kstars.empty())
+        {
+            (*log) << "| IBZ k-stars            : pending compute initialization\n"
+                   << "| total star members     : pending compute initialization\n";
+        }
+        else
+        {
+            (*log) << "| IBZ k-stars            : " << ctx.kstars.size() << "\n"
+                   << "| total star members     : " << ctx.count_kstar_members() << "\n";
+        }
+        (*log) << "| k rotations            : generated from symmetry operations\n"
                << "| AO / ABF lmax          : " << ctx.ao_lmax << " / " << ctx.abf_lmax << "\n";
         if (ctx.has_ao_shell_layout())
         {

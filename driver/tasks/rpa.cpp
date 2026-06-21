@@ -46,7 +46,14 @@ void driver::task_rpa()
 
         for (int i_irk = 0; i_irk < n_ibz_kpoints; i_irk++)
         {
-            std::cout << "| " << ibz_kpoints[i_irk] << ": " << corr_irk[i_irk] << std::endl;
+            if (i_irk < static_cast<int>(ibz_kpoints.size()))
+            {
+                std::cout << "| " << ibz_kpoints[i_irk] << ": " << corr_irk[i_irk] << std::endl;
+            }
+            else
+            {
+                std::cout << "| q" << i_irk + 1 << ": " << corr_irk[i_irk] << std::endl;
+            }
         }
         lib_printf("| Total EcRPA: %18.9f\n", corr);
     }

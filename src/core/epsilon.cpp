@@ -839,7 +839,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
         ipiv_ptr = ipiv.data();
     }
     const auto &klist = chi0.pbc.klist;
-    const auto &map_ibzk_weight = chi0.pbc.map_ibzk_weight;
+    const auto &map_q_weight = chi0.pbc.map_q_weight;
     complex<double> tot_RPA_energy(0.0, 0.0);
     map<Vector3_Order<double>, complex<double>> cRPA_q;
     if(comm_h.is_root())
@@ -1048,8 +1048,8 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
             {
                 lib_printf("| TIME of DET-freq-q:  %f,  q: ( %f, %f, %f)  TOT: %f  CHI_arr: %f  CHI_comm: %f, CHI_2d: %f, Pi: %f, Det: %f\n",freq, q.x,q.y,q.z,pi_freq_end-pi_freq_begin, chi_arr_time,chi_comm_time,chi_2d_time,pi_end-pi_begin,det_end-pi_end);
                 complex<double> rpa_for_omega_q = complex<double>(trace_pi + ln_det);
-                cRPA_q[q] += rpa_for_omega_q * freq_weight * map_ibzk_weight.at(q) / TWO_PI;//!check
-                tot_RPA_energy += rpa_for_omega_q * freq_weight * map_ibzk_weight.at(q) / TWO_PI;
+                cRPA_q[q] += rpa_for_omega_q * freq_weight * map_q_weight.at(q) / TWO_PI;//!check
+                tot_RPA_energy += rpa_for_omega_q * freq_weight * map_q_weight.at(q) / TWO_PI;
             }
         }
     }
@@ -1119,7 +1119,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
     // ofs_myid << "Iset Jset " << s0_s1 << endl;
     // ofs_myid << "atpair_unordered_local of myid " << blacs_h.myid << " " << atpair_unordered_local << endl;
 
-    const auto &map_ibzk_weight = chi0.pbc.map_ibzk_weight;
+    const auto &map_q_weight = chi0.pbc.map_q_weight;
 
     // NOTE: this may change later when q-points are parallelized
     vector<Vector3_Order<double>> qpts(chi0.pbc.klist_coul);
@@ -1404,8 +1404,8 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
             {
                 lib_printf("| TIME of DET-freq-q:  %f,  q: ( %f, %f, %f)  TOT: %f  CHI_arr: %f  CHI_comm: %f, CHI_2d: %f, Pi: %f, Det: %f\n",freq, q.x,q.y,q.z,pi_freq_end-pi_freq_begin, chi_arr_time,chi_comm_time,chi_2d_time,pi_end-pi_begin,det_end-pi_end);
                 //cout << " ifreq:" << freq << "      rpa_for_omega_k: " << rpa_for_omega_q << "      lnt_det: " << ln_det << "    trace_pi " << trace_pi << endl;
-                cRPA_q[q] += rpa_for_omega_q * freq_weight * map_ibzk_weight.at(q) / TWO_PI;//!check
-                tot_RPA_energy += rpa_for_omega_q * freq_weight * map_ibzk_weight.at(q) / TWO_PI;
+                cRPA_q[q] += rpa_for_omega_q * freq_weight * map_q_weight.at(q) / TWO_PI;//!check
+                tot_RPA_energy += rpa_for_omega_q * freq_weight * map_q_weight.at(q) / TWO_PI;
             }
         }
     }
@@ -1827,7 +1827,7 @@ CorrEnergy compute_RPA_correlation_blacs(const Chi0 &chi0, const atpair_k_cplx_m
             if(comm_h.myid==0)
             {
                 std::complex<double> rpa_for_omega_q = trace_pi + ln_det;
-                const auto kweight = chi0.pbc.map_ibzk_weight.at(q);
+                const auto kweight = chi0.pbc.map_q_weight.at(q);
                 //cout << " ifreq:" << freq << "      rpa_for_omega_k: " << rpa_for_omega_q << "      lnt_det: " << ln_det << "    trace_pi " << trace_pi << endl;
                 cRPA_q[q] += rpa_for_omega_q * freq_weight * kweight / TWO_PI;//!check
                 tot_RPA_energy += rpa_for_omega_q * freq_weight * kweight / TWO_PI;
@@ -2007,7 +2007,7 @@ CorrEnergy compute_RPA_correlation(LibrpaParallelRouting routing, const Chi0 &ch
                 // cout << "PI trace vector:" << endl;
                 // cout << endl;
                 rpa_for_omega_q = ln_det + trace_pi;
-                const auto kweight = chi0.pbc.map_ibzk_weight.at(q);
+                const auto kweight = chi0.pbc.map_q_weight.at(q);
                 // cout << " ifreq:" << freq << "      rpa_for_omega_k: " << rpa_for_omega_q << "      lnt_det: " << ln_det << "    trace_pi " << trace_pi << endl;
                 cRPA_q[q] += rpa_for_omega_q * freq_weight * kweight / TWO_PI;
                 tot_RPA_energy += rpa_for_omega_q * freq_weight * kweight / TWO_PI;
@@ -2016,7 +2016,7 @@ CorrEnergy compute_RPA_correlation(LibrpaParallelRouting routing, const Chi0 &ch
         // lib_printf("Finish EcRPA %4d, size %zu\n", comm_h.myid, pi_freq_q_Mu_Nu.size());
         comm_h.barrier();
         map<Vector3_Order<double>, complex<double>> global_cRPA_q;
-        for (const auto &q_weight: chi0.pbc.map_ibzk_weight)
+        for (const auto &q_weight: chi0.pbc.map_q_weight)
         {
             MPI_Reduce(&cRPA_q[q_weight.first], &global_cRPA_q[q_weight.first], 1,
                        MPI_DOUBLE_COMPLEX, MPI_SUM, 0, comm_h.comm);
@@ -2210,7 +2210,7 @@ map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>>
     // std::stringstream ss;
     // ss<<"out_pi_rank_"<<comm_h.myid<<".txt";
     // fp.open(ss.str());
-    const auto &irk_weight = chi0.pbc.map_ibzk_weight;
+    const auto &irk_weight = chi0.pbc.map_q_weight;
     const auto &comm_h = chi0.comm_h;
     #ifdef OPEN_TEST_FOR_LU_DECOMPOSITION
     // printf("success before irk_weight, pid: %d\n", mpi_comm_global_h.myid);
@@ -2750,7 +2750,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     }
 
     vector<Vector3_Order<double>> qpts;
-    for (const auto &q_weight: chi0.pbc.map_ibzk_weight)
+    for (const auto &q_weight: chi0.pbc.map_q_weight)
         qpts.push_back(q_weight.first);
     const auto &klist = chi0.pbc.klist;
     const auto &kfrac_list = chi0.pbc.kfrac_list;

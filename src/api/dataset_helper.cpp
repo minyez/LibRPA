@@ -189,6 +189,10 @@ std::vector<Vector3_Order<double>> build_uniform_kmesh_frac(const Vector3_Order<
 
 std::vector<Vector3_Order<double>> full_kpoints_frac_from_pbc(const PeriodicBoundaryData &pbc)
 {
+    if (static_cast<int>(pbc.kfrac_list_full.size()) == pbc.get_n_cells_bvk())
+    {
+        return pbc.kfrac_list_full;
+    }
     if (static_cast<int>(pbc.klist.size()) < pbc.get_n_cells_bvk())
     {
         return build_uniform_kmesh_frac(pbc.period);
@@ -208,19 +212,7 @@ std::vector<Vector3_Order<double>> coul_kpoints_frac_from_pbc(const PeriodicBoun
     for (const auto &k : pbc.klist_coul)
     {
         auto kfrac = pbc.latvec * k;
-        if (std::abs(kfrac.x) < 1e-8)
-        {
-            kfrac.x = 0.0;
-        }
-        if (std::abs(kfrac.y) < 1e-8)
-        {
-            kfrac.y = 0.0;
-        }
-        if (std::abs(kfrac.z) < 1e-8)
-        {
-            kfrac.z = 0.0;
-        }
-        kpoints.emplace_back(kfrac);
+        kpoints.emplace_back(restrict_fractional_coordinate(Vector3_Order<double>{kfrac}));
     }
     return kpoints;
 }
@@ -478,6 +470,8 @@ void initialize_input_symmetry_context(Dataset &ds, const bool build_shell_rotat
     {
         generate_input_symmetry_kstars_from_pbc(ctx, ds.pbc);
     }
+
+    load_input_symmetry_context(ds.symmetry_context, &(global::ofs_myid));
 
     if (!build_shell_rotations)
     {

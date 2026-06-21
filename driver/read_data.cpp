@@ -37,8 +37,6 @@
 
 #include "driver.h"
 #include "../src/mpi/global_mpi.h"
-#include "../src/core/input_symmetry.h"
-#include "../src/core/pbc.h"
 #include "../src/math/matrix.h"
 #include "../src/utils/constants.h"
 #include "../src/api/instance_manager.h"
@@ -60,13 +58,6 @@ constexpr double kInputSymmetryKpointMatchTol = 1e-5;
 constexpr double kBzSamplingWeightSumTol = 1e-6;
 constexpr std::int32_t READER_SHRINK_SINVS_V1_MARKER = -30241621;
 constexpr std::int32_t EIGENVECTOR_V1_MARKER = -12345678;
-
-bool any_symmetry_speedup_enabled()
-{
-    return driver::get_bool(driver::opts.use_symmetry_exx)
-           || driver::get_bool(driver::opts.use_symmetry_gw)
-           || driver::get_bool(driver::opts.use_symmetry_rpa);
-}
 
 bool nearly_same_kpoint(const librpa_int::Vector3_Order<double> &lhs,
                        const librpa_int::Vector3_Order<double> &rhs,
@@ -128,6 +119,39 @@ double parse_stru_double_token(const std::string &token, const std::string &cont
     {
     }
     throw LIBRPA_RUNTIME_ERROR("Invalid floating-point value in " + context + ": " + token);
+}
+
+void sync_driver_ibz_kpoints_from_mapping(const std::vector<double> &kvecs,
+                                          const std::vector<int> &map_q_ks,
+                                          const int n_kpoints)
+{
+    if (kvecs.size() != static_cast<std::size_t>(3 * n_kpoints)
+        || map_q_ks.size() != static_cast<std::size_t>(n_kpoints))
+    {
+        throw LIBRPA_RUNTIME_ERROR("invalid k-point buffer or k-to-q mapping size");
+    }
+
+    std::vector<int> q_ids;
+    driver::ibz_kpoints.clear();
+    for (const int iq : map_q_ks)
+    {
+        if (iq < 0 || iq >= n_kpoints)
+        {
+            throw LIBRPA_RUNTIME_ERROR("k-to-q mapping index out of range");
+        }
+        if (std::find(q_ids.cbegin(), q_ids.cend(), iq) != q_ids.cend())
+        {
+            continue;
+        }
+        q_ids.emplace_back(iq);
+        // ponytail: print-only cache from parsed kvecs; use pbc.klist_coul if exact
+        // shifted q-vectors become required.
+        driver::ibz_kpoints.push_back({
+            kvecs[3 * iq],
+            kvecs[3 * iq + 1],
+            kvecs[3 * iq + 2]});
+    }
+    driver::n_ibz_kpoints = static_cast<int>(driver::ibz_kpoints.size());
 }
 
 bool try_legacy_stru_kpoint_layout(const std::vector<std::string> &tokens,
@@ -1309,7 +1333,7 @@ void read_bz_sampling(const std::string &file_path)
 
     std::vector<double> kvecs(3 * n_kpoints_scf);
     std::vector<double> kweights(n_kpoints_scf);
-    std::vector<int> map_ibzk(n_kpoints_scf, -1);
+    std::vector<int> map_q_ks(n_kpoints_scf, -1);
     std::vector<int> ibz_label_to_rep(nk_ibz, -1);
     std::vector<int> ibz_representatives;
     double weight_sum = 0.0;
@@ -1348,21 +1372,21 @@ void read_bz_sampling(const std::string &file_path)
         {
             throw LIBRPA_RUNTIME_ERROR("BZ sampling representative k-point index out of range");
         }
-        map_ibzk[i] = ik_rep - 1;
+        map_q_ks[i] = ik_rep - 1;
         auto &label_rep = ibz_label_to_rep[static_cast<std::size_t>(ik_ibz - 1)];
         if (label_rep < 0)
         {
-            label_rep = map_ibzk[i];
+            label_rep = map_q_ks[i];
         }
-        else if (label_rep != map_ibzk[i])
+        else if (label_rep != map_q_ks[i])
         {
             throw LIBRPA_RUNTIME_ERROR(
                 "BZ sampling irreducible Coulomb k-point label maps to multiple representatives");
         }
-        if (std::find(ibz_representatives.cbegin(), ibz_representatives.cend(), map_ibzk[i])
+        if (std::find(ibz_representatives.cbegin(), ibz_representatives.cend(), map_q_ks[i])
             == ibz_representatives.cend())
         {
-            ibz_representatives.emplace_back(map_ibzk[i]);
+            ibz_representatives.emplace_back(map_q_ks[i]);
         }
         weight_sum += kweights[i];
     }
@@ -1386,29 +1410,9 @@ void read_bz_sampling(const std::string &file_path)
             "BZ sampling does not contain every irreducible Coulomb k-point label");
     }
 
-    auto pds = api::get_dataset_instance(driver::h);
-    auto &pbc = pds->pbc;
-    if (n_kpoints_scf < nk_full)
-    {
-        if (!any_symmetry_speedup_enabled())
-        {
-            throw LIBRPA_RUNTIME_ERROR(
-                "BZ sampling contains a symmetry-reduced SCF k-point list; "
-                "switch on use_symmetry_exx, use_symmetry_gw, or use_symmetry_rpa to use this input");
-        }
-        auto &symmetry_context = pds->symmetry_context;
-        if (symmetry_context.rspace_operations.empty())
-        {
-            throw LIBRPA_RUNTIME_ERROR(
-                "BZ sampling contains a symmetry-reduced SCF k-point list, "
-                "but no symmetry operations were loaded from stru_out");
-        }
-    }
-
-    pbc.set_kgrids_kvec(nk[0], nk[1], nk[2], kvecs);
-    pbc.set_ibz_mapping(map_ibzk, {}, kweights);
-    driver::ibz_kpoints = pbc.klist_coul;
-    driver::n_ibz_kpoints = static_cast<int>(driver::ibz_kpoints.size());
+    driver::h.set_kgrids_kvec(nk[0], nk[1], nk[2], kvecs, kweights);
+    driver::h.set_kq_mapping(map_q_ks);
+    sync_driver_ibz_kpoints_from_mapping(kvecs, map_q_ks, n_kpoints_scf);
 }
 
 void read_bz_sampling_from_stru(const std::string &file_path)
@@ -1496,7 +1500,7 @@ void read_bz_sampling_from_stru(const std::string &file_path)
     if (n_k_rows < nk_full && !has_full_mapping)
     {
         throw LIBRPA_RUNTIME_ERROR(
-            "Legacy stru_out symmetry-reduced k-point list requires the full-to-IBZ mapping");
+            "Legacy stru_out symmetry-reduced k-point list requires the full-to-q mapping");
     }
 
     std::vector<double> kvecs(static_cast<std::size_t>(3 * n_k_rows));
@@ -1510,38 +1514,38 @@ void read_bz_sampling_from_stru(const std::string &file_path)
         }
     }
 
-    std::vector<int> map_ibzk(static_cast<std::size_t>(n_k_rows));
+    std::vector<int> map_q_ks(static_cast<std::size_t>(n_k_rows));
     for (int ik = 0; ik != n_k_rows; ++ik)
     {
-        map_ibzk[static_cast<std::size_t>(ik)] = ik;
+        map_q_ks[static_cast<std::size_t>(ik)] = ik;
     }
     std::vector<double> kweights;
 
     if (has_full_mapping)
     {
-        std::vector<int> full_to_ibzk(static_cast<std::size_t>(nk_full));
+        std::vector<int> full_to_q(static_cast<std::size_t>(nk_full));
         for (int ik = 0; ik != nk_full; ++ik)
         {
-            full_to_ibzk[static_cast<std::size_t>(ik)] =
+            full_to_q[static_cast<std::size_t>(ik)] =
                 parse_stru_int_token(tokens[pos++], file_path) - 1;
-            if (full_to_ibzk[static_cast<std::size_t>(ik)] < 0
-                || full_to_ibzk[static_cast<std::size_t>(ik)] >= n_k_rows)
+            if (full_to_q[static_cast<std::size_t>(ik)] < 0
+                || full_to_q[static_cast<std::size_t>(ik)] >= n_k_rows)
             {
                 throw LIBRPA_RUNTIME_ERROR(
-                    "Legacy stru_out irreducible k-point mapping index out of range");
+                    "Legacy stru_out full-to-q mapping index out of range");
             }
         }
 
         if (n_k_rows == nk_full)
         {
-            map_ibzk = std::move(full_to_ibzk);
+            map_q_ks = std::move(full_to_q);
         }
         else
         {
             kweights.assign(static_cast<std::size_t>(n_k_rows), 0.0);
-            for (const int ik_ibz : full_to_ibzk)
+            for (const int iq : full_to_q)
             {
-                kweights[static_cast<std::size_t>(ik_ibz)] += 1.0 / nk_full;
+                kweights[static_cast<std::size_t>(iq)] += 1.0 / nk_full;
             }
             for (double weight : kweights)
             {
@@ -1554,28 +1558,9 @@ void read_bz_sampling_from_stru(const std::string &file_path)
         }
     }
 
-    auto pds = api::get_dataset_instance(driver::h);
-    if (n_k_rows < nk_full)
-    {
-        if (!any_symmetry_speedup_enabled())
-        {
-            throw LIBRPA_RUNTIME_ERROR(
-                "Legacy stru_out contains a symmetry-reduced SCF k-point list; "
-                "switch on use_symmetry_exx, use_symmetry_gw, or use_symmetry_rpa to use this input");
-        }
-        if (pds->symmetry_context.rspace_operations.empty())
-        {
-            throw LIBRPA_RUNTIME_ERROR(
-                "Legacy stru_out contains a symmetry-reduced SCF k-point list, "
-                "but no symmetry operations were loaded from stru_out");
-        }
-    }
-
-    auto &pbc = pds->pbc;
-    pbc.set_kgrids_kvec(nk[0], nk[1], nk[2], kvecs);
-    pbc.set_ibz_mapping(map_ibzk, {}, kweights);
-    driver::ibz_kpoints = pbc.klist_coul;
-    driver::n_ibz_kpoints = static_cast<int>(driver::ibz_kpoints.size());
+    driver::h.set_kgrids_kvec(nk[0], nk[1], nk[2], kvecs, kweights);
+    driver::h.set_kq_mapping(map_q_ks);
+    sync_driver_ibz_kpoints_from_mapping(kvecs, map_q_ks, n_k_rows);
 }
 
 void read_basis(const std::string &file_path)

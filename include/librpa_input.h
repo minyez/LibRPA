@@ -177,21 +177,26 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int* types, const doub
  * @param[in] nk1    Number of k-points along direction 1.
  * @param[in] nk2    Number of k-points along direction 2.
  * @param[in] nk3    Number of k-points along direction 3.
- * @param[in] kvecs  K-point vectors (nk1*nk2*nk3, Cartesian coordinates, in Bohr^-1).
+ * @param[in] nkpts     Number of loaded SCF k-points.
+ * @param[in] kvecs     K-point vectors (3*nkpts, Cartesian coordinates, in Bohr^-1).
+ * @param[in] kweights  Optional k-point weights, normalized internally to sum to one.
+ *                      Pass NULL if unavailable.
  */
-void librpa_set_kgrids_kvec(LibrpaHandler* h, int nk1, int nk2, int nk3, const double* kvecs);
+void librpa_set_kgrids_kvec(LibrpaHandler* h, int nk1, int nk2, int nk3,
+                            int nkpts, const double* kvecs, const double* kweights);
 
 /**
- * @brief Set the mapping from full k-point list to the irreducible sector.
+ * @brief Set the mapping from loaded SCF k-points to Coulomb q-points.
  *
- * @param[in] h         Handler.
- * @param[in] nkpts     Number of k-points in the full Brillouin zone.
- * @param[in] map_ibzk  Mapping to the k-point in the irreducible sector (0-based).
+ * @param[in] h          Handler.
+ * @param[in] nkpts      Number of loaded SCF k-points.
+ * @param[in] map_q_ks   Mapping from each loaded SCF k-point to the representative q-point,
+ *                       indexed in the loaded SCF k-list (0-based).
  *
- * Example: four-k-point case where the first two and last points are in the irreducible sector,
- *         and the third point is mapped to the second, then map_ibzk should be (0, 1, 1, 3).
+ * Example: four loaded k-points where the first two and last are Coulomb q-points,
+ *         and the third point maps to the second q-point, then map_q_ks is (0, 1, 1, 3).
  */
-void librpa_set_ibz_mapping(LibrpaHandler* h, int nkpts, const int* map_ibzk);
+void librpa_set_kq_mapping(LibrpaHandler* h, int nkpts, const int* map_q_ks);
 
 /**
  * @brief Set local RI coefficients.

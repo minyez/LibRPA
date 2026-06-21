@@ -58,19 +58,53 @@ static void test_kgrids_with_weighted_coulomb_mapping()
 
     const std::vector<double> kvecs{
         0.0, 0.0, 0.0,
-        librpa_int::TWO_PI * 0.5, 0.0, 0.0,
-        0.0, librpa_int::TWO_PI * 0.5, 0.0,
+        librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+        librpa_int::TWO_PI * 2.0 / 3.0, 0.0, 0.0,
     };
     pbc.set_kgrids_kvec(3, 1, 1, kvecs);
-    pbc.set_ibz_mapping({0, 0, 2}, {}, {0.25, 0.25, 0.5});
+    pbc.set_kq_mapping({0, 0, 2});
 
     assert(pbc.klist.size() == 3);
     assert(pbc.klist_full.size() == 3);
+    assert(std::abs(pbc.weight_k[0] - 1.0 / 3.0) < 1e-12);
+    assert(std::abs(pbc.weight_k[1] - 1.0 / 3.0) < 1e-12);
+    assert(std::abs(pbc.weight_k[2] - 1.0 / 3.0) < 1e-12);
     assert(pbc.klist_coul.size() == 2);
-    assert(std::abs(pbc.kweight_ibz[0] - 0.5) < 1e-12);
-    assert(std::abs(pbc.kweight_ibz[1] - 0.5) < 1e-12);
+    assert(std::abs(pbc.weight_q[0] - 2.0 / 3.0) < 1e-12);
+    assert(std::abs(pbc.weight_q[1] - 1.0 / 3.0) < 1e-12);
     assert(pbc.map_irk_ks.at(pbc.klist_coul[0]).size() == 2);
     assert(pbc.map_irk_ks.at(pbc.klist_coul[1]).size() == 1);
+
+    pbc.set_period(3, 1, 1);
+    assert(pbc.klist.size() == 3);
+    pbc.set_period(1, 1, 1);
+    assert(pbc.klist.empty());
+    assert(pbc.klist_full.empty());
+    assert(pbc.klist_coul.empty());
+}
+
+static void test_full_scf_kgrids_keep_loaded_order()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1, 0, 0, 0, 1, 0, 0, 0, 1});
+
+    const std::vector<double> kvecs{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI * 2.0 / 3.0, 0.0, 0.0,
+        librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+    };
+    pbc.set_kgrids_kvec(3, 1, 1, kvecs);
+
+    assert(pbc.klist_full == pbc.klist);
+    assert(pbc.kfrac_list_full == pbc.kfrac_list);
+    assert(pbc.k_to_kfull == std::vector<int>({0, 1, 2}));
+    assert(pbc.kfull_to_k == std::vector<int>({0, 1, 2}));
+    assert(pbc.kfull_to_k_relation == std::vector<KFullToKRelation>({
+        KFullToKRelation::DIRECT,
+        KFullToKRelation::DIRECT,
+        KFullToKRelation::DIRECT,
+    }));
+    assert(!pbc.kgrid_uses_time_reversal);
 }
 
 static void test_reduced_scf_kgrids()
@@ -80,16 +114,58 @@ static void test_reduced_scf_kgrids()
 
     const std::vector<double> kvecs{
         0.0, 0.0, 0.0,
-        0.0, librpa_int::TWO_PI * 0.5, 0.0,
+        librpa_int::TWO_PI / 3.0, 0.0, 0.0,
     };
-    pbc.set_kgrids_kvec(2, 2, 1, kvecs);
-    pbc.set_ibz_mapping({0, 1}, {}, {0.5, 0.5});
+    pbc.set_kgrids_kvec(3, 1, 1, kvecs, {1.0 / 3.0, 2.0 / 3.0});
+    pbc.set_kq_mapping({0, 1});
 
     assert(pbc.klist.size() == 2);
-    assert(pbc.klist_full.size() == 2);
+    assert(pbc.klist_full.size() == 3);
+    assert(pbc.k_to_kfull == std::vector<int>({0, 1}));
+    assert(pbc.kfull_to_k == std::vector<int>({0, 1, 1}));
+    assert(pbc.kfull_to_k_relation == std::vector<KFullToKRelation>({
+        KFullToKRelation::DIRECT,
+        KFullToKRelation::DIRECT,
+        KFullToKRelation::TIME_REVERSAL,
+    }));
+    assert(pbc.kgrid_uses_time_reversal);
     assert(pbc.klist_coul.size() == 2);
-    assert(std::abs(pbc.kweight_ibz[0] - 0.5) < 1e-12);
-    assert(std::abs(pbc.kweight_ibz[1] - 0.5) < 1e-12);
+    assert(std::abs(pbc.weight_q[0] - 1.0 / 3.0) < 1e-12);
+    assert(std::abs(pbc.weight_q[1] - 2.0 / 3.0) < 1e-12);
+}
+
+static void test_incomplete_time_reversal_reduced_scf_kgrids()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1, 0, 0, 0, 1, 0, 0, 0, 1});
+
+    const std::vector<double> kvecs{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI * 0.25, 0.0, 0.0,
+    };
+    pbc.set_kgrids_kvec(4, 1, 1, kvecs, {0.25, 0.75});
+
+    assert(pbc.kfull_to_k == std::vector<int>({0, 1, -1, 1}));
+    assert(pbc.weight_k == std::vector<double>({0.25, 0.75}));
+    assert(pbc.kfull_to_k_relation == std::vector<KFullToKRelation>({
+        KFullToKRelation::DIRECT,
+        KFullToKRelation::DIRECT,
+        KFullToKRelation::NONE,
+        KFullToKRelation::TIME_REVERSAL,
+    }));
+    assert(!pbc.kgrid_uses_time_reversal);
+
+    pbc.set_kgrids_kvec(4, 1, 1, kvecs, {1.0, 3.0});
+    assert(std::abs(pbc.weight_k[0] - 0.25) < 1e-12);
+    assert(std::abs(pbc.weight_k[1] - 0.75) < 1e-12);
+
+    PeriodicBoundaryData pbc_without_weights;
+    pbc_without_weights.set_latvec({1, 0, 0, 0, 1, 0, 0, 0, 1});
+    pbc_without_weights.set_kgrids_kvec(4, 1, 1, kvecs);
+    assert(pbc_without_weights.klist_coul.size() == 2);
+    assert(pbc_without_weights.weight_k.empty());
+    assert(pbc_without_weights.weight_q.empty());
+    assert(pbc_without_weights.map_q_weight.empty());
 }
 
 static void test_atom_pair_bvk_remap()
@@ -142,7 +218,9 @@ int main (int argc, char *argv[])
     test_get_R_index();
     test_periodic_boundary_data();
     test_kgrids_with_weighted_coulomb_mapping();
+    test_full_scf_kgrids_keep_loaded_order();
     test_reduced_scf_kgrids();
+    test_incomplete_time_reversal_reduced_scf_kgrids();
     test_atom_pair_bvk_remap();
     return 0;
 }

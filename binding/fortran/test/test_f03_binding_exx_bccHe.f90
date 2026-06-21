@@ -22,7 +22,7 @@ program test_f03_binding_exx_bccHe
    integer :: ierr, myid, size
    real(dp) :: efermi
    real(dp) :: latt(3,3), recplatt(3,3), posi_cart(3, natoms), kpoints(3,nkpts)
-   integer :: nbs_wfc(natoms), nbs_aux(natoms), types(natoms), map_ibzk(nkpts)
+   integer :: nbs_wfc(natoms), nbs_aux(natoms), types(natoms)
    integer :: i_kpoints_task(nkpts)
 
    real(dp), allocatable :: vexx(:,:,:)
@@ -100,7 +100,7 @@ program test_f03_binding_exx_bccHe
    kpoints(2,7) = sum(recplatt(2,:)) / 2.0_dp
    kpoints(2,8) = sum(recplatt(2,:)) / 2.0_dp
    kpoints(3,8) = sum(recplatt(3,:)) / 2.0_dp
-   call h%set_kgrids_kvec(nk1, nk2, nk3, kpoints)
+   call h%set_kgrids_kvec(nk1, nk2, nk3, nkpts, kpoints)
 
    call initialize_lri
    opts%parallel_routing = LIBRPA_ROUTING_LIBRI

@@ -300,7 +300,7 @@ module librpa_f03
          procedure :: set_latvec_and_G => librpa_set_latvec_and_G
          procedure :: set_atoms => librpa_set_atoms
          procedure :: set_kgrids_kvec => librpa_set_kgrids_kvec
-         procedure :: set_ibz_mapping => librpa_set_ibz_mapping
+         procedure :: set_kq_mapping => librpa_set_kq_mapping
          procedure :: set_lri_coeff => librpa_set_lri_coeff
          procedure :: set_aux_bare_coulomb_k_atom_pair => librpa_set_aux_bare_coulomb_k_atom_pair
          procedure :: set_aux_cut_coulomb_k_atom_pair => librpa_set_aux_cut_coulomb_k_atom_pair
@@ -654,32 +654,35 @@ contains
    !> @param[in]     nk1    Number of k-points along direction 1.
    !> @param[in]     nk2    Number of k-points along direction 2.
    !> @param[in]     nk3    Number of k-points along direction 3.
-   !> @param[in]     kvecs  K-point vectors (3 x nk1*nk2*nk3, Cartesian).
+   !> @param[in]     nkpts  Number of loaded SCF k-points.
+   !> @param[in]     kvecs    K-point vectors (3 x nkpts, Cartesian).
+   !> @param[in]     kweights Optional k-point weights, normalized internally to sum to one.
    !>
-   subroutine librpa_set_kgrids_kvec(this, nk1, nk2, nk3, kvecs)
+   subroutine librpa_set_kgrids_kvec(this, nk1, nk2, nk3, nkpts, kvecs, kweights)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
-      integer, intent(in) :: nk1, nk2, nk3
-      real(dp), intent(in) :: kvecs(3, nk1*nk2*nk3)
+      integer, intent(in) :: nk1, nk2, nk3, nkpts
+      real(dp), intent(in) :: kvecs(3, nkpts)
+      real(dp), intent(in), optional :: kweights(nkpts)
       call error_on_call("librpa_set_kgrids_kvec")
    end subroutine librpa_set_kgrids_kvec
 
-   !> @brief Set the mapping from full k-point list to the irreducbile sector
+   !> @brief Set the mapping from loaded SCF k-points to Coulomb q-points
    !>
-   !> Example: four-k-point case where the first two and last points are in the irreducbile sector,
-   !>          and the third point is mapped to the second, then map_ibzk should be (1, 2, 2, 4)
+   !> Example: four loaded k-points where the first two and last are Coulomb q-points,
+   !>          and the third point maps to the second q-point, then map_q_ks should be (1, 2, 2, 4)
    !>
    !> @param[in,out] this      Handler.
-   !> @param[in]     nkpts     Number of k-points in the full Brillouin zone.
-   !> @param[in]     map_ibzk  Mapping to the k-point in the irreducible sector.
+   !> @param[in]     nkpts     Number of loaded SCF k-points.
+   !> @param[in]     map_q_ks  Mapping from each loaded SCF k-point to a q-point.
    !>
-   subroutine librpa_set_ibz_mapping(this, nkpts, map_ibzk)
+   subroutine librpa_set_kq_mapping(this, nkpts, map_q_ks)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
       integer, intent(in) :: nkpts
-      integer, dimension(nkpts), intent(in) :: map_ibzk
-      call error_on_call("librpa_set_ibz_mapping")
-   end subroutine librpa_set_ibz_mapping
+      integer, dimension(nkpts), intent(in) :: map_q_ks
+      call error_on_call("librpa_set_kq_mapping")
+   end subroutine librpa_set_kq_mapping
 
    !> @brief Set the local RI coefficients
    !>

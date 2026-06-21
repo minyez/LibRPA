@@ -21,7 +21,8 @@ program test_f03_binding_libri
    type(LibrpaOptions) :: opts
    real(dp), allocatable :: wg(:,:,:), ekb(:,:,:), ri_coeff(:,:,:), omegas(:), df(:)
    real(dp) :: latt(3, 3), recplatt(3, 3), posi_cart(3, natoms), kpoints(3,nkpts)
-   integer :: nbs_wfc(natoms), nbs_aux(natoms), types(natoms), map_ibzk(nkpts)
+   real(dp) :: kweights(nkpts)
+   integer :: nbs_wfc(natoms), nbs_aux(natoms), types(natoms), map_q_ks(nkpts)
    complex(dp) :: wfc(nbasis, nstates, nkpts, nspins)
    complex(dp), allocatable :: vq(:,:), contrib_ibzk(:)
    real(dp) :: efermi, rpa_corr
@@ -98,17 +99,16 @@ program test_f03_binding_libri
 
    ! K-points
    kpoints(:,:) = 0.0_dp
-   ! 1 = Gamma, 2 = K, 3 = K'
-   kpoints(1,2) = sum(recplatt(1,:)) / 3.0_dp
-   kpoints(2,2) = sum(recplatt(2,:)) / 3.0_dp
-   kpoints(1,3) = 2.0_dp * sum(recplatt(1,:)) / 3.0_dp
-   kpoints(2,3) = 2.0_dp * sum(recplatt(2,:)) / 3.0_dp
-   call h%set_kgrids_kvec(nk1, nk2, nk3, kpoints)
-   ! Irreducible k-points mapping
-   map_ibzk(1) = 1
-   map_ibzk(2) = 2
-   map_ibzk(3) = 2
-   call h%set_ibz_mapping(nkpts, map_ibzk)
+   kweights(:) = 1.0_dp / nkpts
+   ! 1 = Gamma, 2 = b1/3, 3 = 2*b1/3
+   kpoints(:,2) = recplatt(:,1) / 3.0_dp
+   kpoints(:,3) = 2.0_dp * recplatt(:,1) / 3.0_dp
+   call h%set_kgrids_kvec(nk1, nk2, nk3, nkpts, kpoints, kweights)
+   ! SCF k-point to Coulomb q-point mapping
+   map_q_ks(1) = 1
+   map_q_ks(2) = 2
+   map_q_ks(3) = 2
+   call h%set_kq_mapping(nkpts, map_q_ks)
 
    ! Atoms position
    types(1) = 1

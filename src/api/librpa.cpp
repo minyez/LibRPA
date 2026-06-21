@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <complex>
+#include <limits>
 #include <utility>
 
 // Internal headers
@@ -242,15 +243,36 @@ LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
 
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
     set_kgrids_kvec,
-    (int nk1, int nk2, int nk3, const double* kvecs),
-    (nk1, nk2, nk3, kvecs)
+    (int nk1, int nk2, int nk3, int nkpts, const double* kvecs, const double* kweights),
+    (nk1, nk2, nk3, nkpts, kvecs, kweights)
 )
 
-LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
-    set_ibz_mapping,
-    (const std::vector<int> &map_ibzk),
-    (map_ibzk.size(), map_ibzk.data())
-)
+void Handler::set_kgrids_kvec(const int nk1, const int nk2, const int nk3,
+                              const std::vector<double> &kvecs,
+                              const std::vector<double> &kweights)
+{
+    const auto n_kpoints = kvecs.size() / 3;
+    if (kvecs.size() != 3 * n_kpoints)
+    {
+        throw LIBRPA_RUNTIME_ERROR("invalid k-point vector buffer size");
+    }
+    if (!kweights.empty() && kweights.size() != n_kpoints)
+    {
+        throw LIBRPA_RUNTIME_ERROR("k-point weight count does not match loaded k-point count");
+    }
+    if (n_kpoints > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+    {
+        throw LIBRPA_RUNTIME_ERROR("loaded k-point count exceeds C API integer range");
+    }
+
+    ::librpa_set_kgrids_kvec(this->h_, nk1, nk2, nk3, static_cast<int>(n_kpoints),
+                             kvecs.data(), kweights.empty() ? nullptr : kweights.data());
+}
+
+void Handler::set_kq_mapping(const std::vector<int> &map_q_ks)
+{
+    ::librpa_set_kq_mapping(this->h_, static_cast<int>(map_q_ks.size()), map_q_ks.data());
+}
 
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
     set_lri_coeff,

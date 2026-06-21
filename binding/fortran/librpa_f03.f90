@@ -480,7 +480,7 @@ module librpa_f03
          procedure :: set_latvec_and_G => librpa_set_latvec_and_G
          procedure :: set_atoms => librpa_set_atoms
          procedure :: set_kgrids_kvec => librpa_set_kgrids_kvec
-         procedure :: set_ibz_mapping => librpa_set_ibz_mapping
+         procedure :: set_kq_mapping => librpa_set_kq_mapping
          procedure :: set_lri_coeff => librpa_set_lri_coeff
          procedure :: set_aux_bare_coulomb_k_atom_pair => librpa_set_aux_bare_coulomb_k_atom_pair
          procedure :: set_aux_cut_coulomb_k_atom_pair => librpa_set_aux_cut_coulomb_k_atom_pair
@@ -632,21 +632,22 @@ module librpa_f03
          real(c_double), dimension(*), intent(in) :: posi_cart
       end subroutine librpa_set_atoms_c
 
-      subroutine librpa_set_kgrids_kvec_c(h, nk1, nk2, nk3, kvecs) &
+      subroutine librpa_set_kgrids_kvec_c(h, nk1, nk2, nk3, nkpts, kvecs, kweights) &
             bind(c, name="librpa_set_kgrids_kvec")
          import :: c_ptr, c_int, c_double
          type(c_ptr), value :: h
-         integer(c_int), value :: nk1, nk2, nk3
+         integer(c_int), value :: nk1, nk2, nk3, nkpts
          real(c_double), dimension(*), intent(in) :: kvecs
+         type(c_ptr), value :: kweights
       end subroutine librpa_set_kgrids_kvec_c
 
-      subroutine librpa_set_ibz_mapping_c(h, nkpts, map_ibzk) &
-            bind(c, name="librpa_set_ibz_mapping")
+      subroutine librpa_set_kq_mapping_c(h, nkpts, map_q_ks) &
+            bind(c, name="librpa_set_kq_mapping")
          import :: c_ptr, c_int
          type(c_ptr), value :: h
          integer(c_int), value :: nkpts
-         integer(c_int), dimension(*), intent(in) :: map_ibzk
-      end subroutine librpa_set_ibz_mapping_c
+         integer(c_int), dimension(*), intent(in) :: map_q_ks
+      end subroutine librpa_set_kq_mapping_c
 
       subroutine librpa_set_lri_coeff_c(h, routing, i_atom, j_atom, nao_i, nao_j, naux_i, &
                                         r, coeff, shrink_aux) &
@@ -1713,56 +1714,71 @@ contains
    !> @param[in]     nk1    Number of k-points along direction 1.
    !> @param[in]     nk2    Number of k-points along direction 2.
    !> @param[in]     nk3    Number of k-points along direction 3.
-   !> @param[in]     kvecs  K-point vectors (3 x nk1*nk2*nk3, Cartesian).
+   !> @param[in]     nkpts  Number of loaded SCF k-points.
+   !> @param[in]     kvecs    K-point vectors (3 x nkpts, Cartesian).
+   !> @param[in]     kweights Optional k-point weights, normalized internally to sum to one.
    !>
-   subroutine librpa_set_kgrids_kvec(this, nk1, nk2, nk3, kvecs)
+   subroutine librpa_set_kgrids_kvec(this, nk1, nk2, nk3, nkpts, kvecs, kweights)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
-      integer, intent(in) :: nk1, nk2, nk3
-      real(dp), intent(in) :: kvecs(3, nk1*nk2*nk3)
+      integer, intent(in) :: nk1, nk2, nk3, nkpts
+      real(dp), intent(in) :: kvecs(3, nkpts)
+      real(dp), intent(in), optional :: kweights(nkpts)
 
-      integer(c_int) :: nk1_c, nk2_c, nk3_c
+      integer(c_int) :: nk1_c, nk2_c, nk3_c, nkpts_c
       real(c_double), allocatable :: kvecs_c(:,:)
+      real(c_double), allocatable, target :: kweights_c(:)
+      type(c_ptr) :: kweights_ptr
 
       nk1_c = int(nk1, kind=c_int)
       nk2_c = int(nk2, kind=c_int)
       nk3_c = int(nk3, kind=c_int)
+      nkpts_c = int(nkpts, kind=c_int)
+      kweights_ptr = c_null_ptr
+      if (present(kweights)) then
+         allocate(kweights_c(nkpts))
+         kweights_c = real(kweights, kind=c_double)
+         kweights_ptr = c_loc(kweights_c)
+      end if
 
       if (dp == c_double) then
-         call librpa_set_kgrids_kvec_c(this%ptr_c_handle, nk1_c, nk2_c, nk3_c, kvecs)
+         call librpa_set_kgrids_kvec_c(this%ptr_c_handle, nk1_c, nk2_c, nk3_c, &
+                                       nkpts_c, kvecs, kweights_ptr)
       else
-         allocate(kvecs_c(3, nk1*nk2*nk3))
+         allocate(kvecs_c(3, nkpts))
          kvecs_c = real(kvecs, kind=c_double)
-         call librpa_set_kgrids_kvec_c(this%ptr_c_handle, nk1_c, nk2_c, nk3_c, kvecs_c)
+         call librpa_set_kgrids_kvec_c(this%ptr_c_handle, nk1_c, nk2_c, nk3_c, &
+                                       nkpts_c, kvecs_c, kweights_ptr)
          deallocate(kvecs_c)
       end if
+      if (allocated(kweights_c)) deallocate(kweights_c)
    end subroutine librpa_set_kgrids_kvec
 
-   !> @brief Set the mapping from full k-point list to the irreducbile sector
+   !> @brief Set the mapping from loaded SCF k-points to Coulomb q-points
    !>
-   !> Example: four-k-point case where the first two and last points are in the irreducbile sector,
-   !>          and the third point is mapped to the second, then map_ibzk should be (1, 2, 2, 4)
+   !> Example: four loaded k-points where the first two and last are Coulomb q-points,
+   !>          and the third point maps to the second q-point, then map_q_ks should be (1, 2, 2, 4)
    !>
    !> @param[in,out] this      Handler.
-   !> @param[in]     nkpts     Number of k-points in the full Brillouin zone.
-   !> @param[in]     map_ibzk  Mapping to the k-point in the irreducible sector.
+   !> @param[in]     nkpts     Number of loaded SCF k-points.
+   !> @param[in]     map_q_ks  Mapping from each loaded SCF k-point to a q-point.
    !>
-   subroutine librpa_set_ibz_mapping(this, nkpts, map_ibzk)
+   subroutine librpa_set_kq_mapping(this, nkpts, map_q_ks)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
       integer, intent(in) :: nkpts
-      integer, dimension(nkpts), intent(in) :: map_ibzk
+      integer, dimension(nkpts), intent(in) :: map_q_ks
 
       integer :: ik
       integer(c_int) :: nkpts_c
-      integer(c_int), allocatable :: map_ibzk_c(:)
+      integer(c_int), allocatable :: map_q_ks_c(:)
 
-      allocate(map_ibzk_c(nkpts))
-      map_ibzk_c = int(map_ibzk, kind=c_int) - 1
+      allocate(map_q_ks_c(nkpts))
+      map_q_ks_c = int(map_q_ks, kind=c_int) - 1
       nkpts_c = int(nkpts, kind=c_int)
-      call librpa_set_ibz_mapping_c(this%ptr_c_handle, nkpts_c, map_ibzk_c)
-      deallocate(map_ibzk_c)
-   end subroutine librpa_set_ibz_mapping
+      call librpa_set_kq_mapping_c(this%ptr_c_handle, nkpts_c, map_q_ks_c)
+      deallocate(map_q_ks_c)
+   end subroutine librpa_set_kq_mapping
 
    !> @brief Set the local RI coefficients
    !>

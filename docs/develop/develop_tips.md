@@ -112,8 +112,11 @@ Below are a few specific guidelines for LibRPA:
   utility components such as `src/math`, `src/mpi`, `src/io`, or `src/utils`;
   implement those pieces in the appropriate place and assemble the core
   algorithm under `src/core`.
-- Source files outside `src/core` should not include headers from `src/core`,
-  except for those in `src/api`.
+- Source files outside `src/core` should not include headers from `src/core`;
+  C APIs and dataset instances in `src/api` are the exceptions.
+- Implement public behavior in the C API first; the C++ API
+  (`src/api/librpa.cpp`) and Fortran bindings (`binding/fortran`) should wrap
+  that C layer.
 - Files in `src/interface` should not include internal headers outside
   `src/interface`.
 - In principle, do not read input files in library code (`src/`). Restart
