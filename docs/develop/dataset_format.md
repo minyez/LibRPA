@@ -419,8 +419,12 @@ unit, respectively.
 For spin-unpolarized calculation, `f_n` is a number from 0 to 2, otherwise it is from 0 to 1.
 
 (ks-eigenvector-scf)=
-## `KS_eigenvector_xxx.txt`
+## `KS_eigenvector*`
 These files contain the wave functions (eigenvectors) from the starting-point calculation expanded by orbital basis.
+LibRPA auto-detects the legacy text format and the binary v1 format from the file header.
+Do not mix legacy and v1 files under the same `prefix_eigvecs_scf`.
+
+### Legacy text format
 Each file can be divided in blocks of `n_states*n_basis*n_spins+1` lines,
 where `n_states`, `n_basis` and `n_spins` will be extracted from
 [`band_out`](#band-out).
@@ -436,6 +440,47 @@ The first line contains single integer, the index of the SCF k-point of followin
 The remaining lines store the data with running index $i$, $n$, $\sigma$ in C-style row-major order,
 i. e., spin index runs fastest, then state index and finally basis index.
 Each line has two float numbers, which are the real and imaginary part of $c^i_{n,k\sigma}$.
+
+### Binary v1 format
+
+The binary v1 format is intended for parallel k-point reading. Values are
+native-endian; integers are `int32` unless stated otherwise. The leading header stores:
+
+```
+int32 marker          = -12345679
+int32 kind            = 28
+int32 nkpoints_local
+int32 nspins
+int32 nstates
+int32 nbasis_wfc
+```
+
+Only `kind = 28`, packed `complex<double>`, is currently implemented. Each
+complex number is stored as two consecutive `double` values, real then
+imaginary.
+
+The header is followed by `nkpoints_local` block records:
+
+```
+int32 ik              # 1-based SCF k-point index
+int64 payload_offset  # absolute byte offset in this file
+```
+
+Each payload block contains one k-point with
+`nspins * nspinor * nstates * nbasis` complex numbers. For non-spinor data,
+`nspinor = 1` and `nbasis = nbasis_wfc`. For spinor data, `nspinor = 2` and
+`nbasis = nbasis_wfc / 2`.
+
+The payload order is:
+
+```
+for ispin
+  for ispinor
+    for istate
+      for ibasis
+```
+
+where `ibasis` is the fastest index.
 
 (coulomb-mat)=
 ## `coulomb_mat*`
