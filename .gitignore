@@ -83,6 +83,7 @@ install/
 utilities/*
 !utilities/Makefile
 !utilities/*.sh
+!utilities/*.md
 !utilities/*.py
 !utilities/*.cpp
 
