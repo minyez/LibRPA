@@ -114,6 +114,7 @@ static void finalize_librpa(bool success)
     mpi_comm_global_h.barrier();
     librpa::finalize_global();
 
+    // If outputs have been redirected, they are now restored
     if (is_root)
     {
         librpa::print_profile();

@@ -111,6 +111,8 @@ public:
     }
     //! Stop a timer and record the timing
     void stop(const std::string &tname) noexcept;
+    //! Stop all active timers and record their timing
+    void terminate() noexcept;
     //! Get cpu time of last call of timer
     double get_cpu_time_last(const std::string &tname) noexcept;
     //! Get wall time of last call of timer

@@ -97,6 +97,8 @@ void librpa_finalize_global(void)
     }
 #endif
 
+    // terminate all timers for the coming summary
+    profiler.terminate();
     // print per-process profiling
     if (ofs_myid.is_open())
     {

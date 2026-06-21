@@ -171,6 +171,16 @@ void Profiler::stop(const std::string &tname) noexcept
     }
 }
 
+void Profiler::terminate() noexcept
+{
+    if (omp_get_thread_num() != 0) return;
+    while (current)
+    {
+        const auto tname = current->name;
+        stop(tname);
+    }
+}
+
 std::shared_ptr<Profiler::Timer> Profiler::find_timer_in_hierarchy(const std::string &tname)
 {
     if (current)
