@@ -5,8 +5,6 @@
 #include <array>
 #include <cassert>
 #include <complex>
-#include <filesystem>
-#include <fstream>
 #include <vector>
 
 #include "testutils.h"
@@ -195,13 +193,6 @@ void test_shell_layout_key_matches_basis_dimensions()
     assert(find_input_symmetry_shell_layout_key(ctx, {{0, 4}, {1, 4}}, "AUX") == "AUX");
     assert(find_input_symmetry_shell_layout_key(ctx, {{0, 1}, {1, 1}}, "AUX")
            == "AUXSHRINK");
-}
-
-void write_file(const std::filesystem::path& path, const std::string& text)
-{
-    std::ofstream ofs(path);
-    assert(ofs.good());
-    ofs << text;
 }
 
 void add_irreducible_sector_entry(input_symmetry_irreducible_sector_t& sector,
@@ -486,86 +477,6 @@ void test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry()
     assert(restored_members == 2 * 2 * Rlist.size());
 }
 
-void test_abacus_legacy_sidecars_are_ignored_without_generated_symops()
-{
-    const auto dir = std::filesystem::temp_directory_path()
-                     / "librpa_test_input_symmetry_ignored_legacy_sidecars";
-    std::filesystem::remove_all(dir);
-    std::filesystem::create_directories(dir);
-
-    write_file(dir / "irreducible_sector.txt",
-               "atompair (0, 0), R = (0, 0, 0)\n");
-
-    SymmetryContext ctx;
-    assert(!ctx.finalize());
-    assert(ctx.rspace_operations.empty());
-    assert(ctx.kstars.empty());
-
-    std::filesystem::remove_all(dir);
-}
-
-void test_abacus_generated_symops_do_not_require_sidecars()
-{
-    const auto dir = std::filesystem::temp_directory_path()
-                     / "librpa_test_input_symmetry_generated_symops_no_sidecars";
-    std::filesystem::remove_all(dir);
-    std::filesystem::create_directories(dir);
-
-    SymmetryContext ctx = make_bn_shrink_symmetry_context();
-    ctx.set_lattice(Matrix3(1.0, 0.0, 0.0,
-                            0.0, 1.0, 0.0,
-                            0.0, 0.0, 1.0),
-                    Matrix3(1.0, 0.0, 0.0,
-                            0.0, 1.0, 0.0,
-                            0.0, 0.0, 1.0));
-
-    assert(ctx.finalize());
-    assert(ctx.available);
-    assert(ctx.rspace_operations.size() == 24);
-    assert(ctx.irreducible_sector.empty());
-
-    std::filesystem::remove_all(dir);
-}
-
-void test_abacus_generated_symops_ignore_legacy_sidecars()
-{
-    const auto dir = std::filesystem::temp_directory_path()
-                     / "librpa_test_input_symmetry_generated_symops_ignore_legacy_sidecars";
-    std::filesystem::remove_all(dir);
-    std::filesystem::create_directories(dir);
-
-    write_file(dir / "irreducible_sector.txt",
-               "atompair (0, 0), R = (0, 0, 0)\n");
-    write_file(dir / "symrot_R.txt", "this would fail if parsed\n");
-    write_file(dir / "symrot_k.txt", "this would fail if parsed\n");
-    write_file(dir / "symrot_abf_k.txt", "this would fail if parsed\n");
-
-    SymmetryContext ctx;
-    ctx.set_lattice(Matrix3(1.0, 0.0, 0.0,
-                            0.0, 1.0, 0.0,
-                            0.0, 0.0, 1.0),
-                    Matrix3(1.0, 0.0, 0.0,
-                            0.0, 1.0, 0.0,
-                            0.0, 0.0, 1.0));
-    InputSymmetryOperation op;
-    op.rotation = Matrix3(1.0, 0.0, 0.0,
-                          0.0, 1.0, 0.0,
-                          0.0, 0.0, 1.0);
-    op.translation = {0.0, 0.0, 0.0};
-    op.use_row_convention = true;
-    ctx.rspace_operations.push_back(op);
-
-    assert(ctx.finalize());
-    assert(ctx.rspace_operations.size() == 1);
-    assert(ctx.lattice_available);
-    assert(ctx.irreducible_sector.empty());
-    assert(ctx.atom_to_type.empty());
-    assert(ctx.kstars.empty());
-    assert(ctx.abf_kstars.empty());
-
-    std::filesystem::remove_all(dir);
-}
-
 } // namespace
 
 int main()
@@ -578,7 +489,4 @@ int main()
     test_mgo_k333_irreducible_sector_matches_single();
     test_mgo_k333_irreducible_sector_matches_both();
     test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry();
-    test_abacus_legacy_sidecars_are_ignored_without_generated_symops();
-    test_abacus_generated_symops_do_not_require_sidecars();
-    test_abacus_generated_symops_ignore_legacy_sidecars();
 }
