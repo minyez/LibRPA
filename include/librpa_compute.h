@@ -126,8 +126,9 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts,
  * \f[
  * \Sigma_c(E - E_F - \Delta).
  * \f]
- * The Hedin-shift reference must be included in the selected k-point and state
- * range so its vxc and vexx inputs are available.
+ * If p_opts->istate_ref_hedin_shift is negative, Delta is computed separately
+ * for each selected state. Otherwise, that absolute zero-based reference state
+ * at each k-point and spin provides Delta for all states in the same channel.
  *
  * @param[out] eqp              Quasi-particle energy solved by the selected QPE solver.
  *                              It should be at least as long as sigc_re/sigc_im.
@@ -201,8 +202,9 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts,
  * \f[
  * \Sigma_c(E - E_F - \Delta).
  * \f]
- * The Hedin-shift reference must be included in the selected band k-point and
- * state range so its vxc_band and vexx_band inputs are available.
+ * If p_opts->istate_ref_hedin_shift is negative, Delta is computed separately
+ * for each selected band state. Otherwise, that absolute zero-based reference
+ * state at each band k-point and spin provides Delta for all states in the same channel.
  *
  * @param[out] eqp_band         Quasi-particle energy solved by the selected QPE solver.
  *                              It should be at least as long as sigc_band_re/sigc_band_im.

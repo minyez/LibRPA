@@ -181,7 +181,6 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             normal_pair(qpe_solver_n_iter_max),
             normal_pair(libri_chi0_collect_s0_chunk),
             normal_pair(istate_ref_hedin_shift),
-            normal_pair(ikpt_ref_hedin_shift),
             normal_pair(ifreq_output_wc_start),
             normal_pair(ifreq_output_wc_end),
         };

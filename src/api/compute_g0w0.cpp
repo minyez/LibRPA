@@ -112,42 +112,8 @@ std::vector<librpa_int::cplxdb> extract_sigc_state(
     return sigc_state;
 }
 
-struct HedinShiftReference
-{
-    int ik;
-    int i_state;
-};
-
-HedinShiftReference find_hedin_shift_reference(const librpa_int::MeanField &mf,
-                                               const int ik_hint,
-                                               const int istate_hint,
-                                               const int isp)
-{
-    const int n_kpoints = mf.get_n_kpoints();
-    const int n_states = mf.get_n_states();
-
-    if (ik_hint >= n_kpoints)
-        throw LIBRPA_RUNTIME_ERROR("Hedin shift reference k-point index out of range: "
-                                  + std::to_string(ik_hint));
-    if (istate_hint >= n_states)
-        throw LIBRPA_RUNTIME_ERROR("Hedin shift reference state index out of range: "
-                                  + std::to_string(istate_hint));
-    if (ik_hint >= 0 && istate_hint >= 0) return {ik_hint, istate_hint};
-
-    const auto [ik_occ, state_occ] = mf.find_highest_occupied_state(isp, ik_hint);
-    if (ik_occ < 0)
-    {
-        throw LIBRPA_RUNTIME_ERROR(
-            "failed to find default Hedin shift reference: no occupied state found");
-    }
-
-    return {ik_hint >= 0 ? ik_hint : ik_occ,
-            istate_hint >= 0 ? istate_hint : state_occ};
-}
-
 std::vector<double> compute_hedin_shifts(
     const LibrpaOptions &opts, const librpa_int::MeanField &mf,
-    const librpa_int::MpiCommHandler &comm_h,
     const std::vector<librpa_int::cplxdb> &sigc_diag,
     const std::vector<int> &iks_collect, const std::vector<double> &freq_nodes,
     const std::vector<librpa_int::cplxdb> &imagfreqs, const int n_spins,
@@ -155,74 +121,77 @@ std::vector<double> compute_hedin_shifts(
     const int n_states_calc, const double *vxc, const double *vexx,
     const char *api_name)
 {
-    std::vector<double> shifts(n_spins, 0.0);
+    std::vector<double> shifts(n_spins * n_kpts_this * n_states_calc, 0.0);
     if (opts.use_hedin_shift != LIBRPA_SWITCH_ON) return shifts;
-    if (iks_collect.empty()) return shifts;
+    if (shifts.empty()) return shifts;
+    if (iks_collect.empty())
+        throw LIBRPA_RUNTIME_ERROR("failed to collect inputs for Hedin shift in "
+                                  + std::string(api_name));
+
+    const int i_state_ref_abs = opts.istate_ref_hedin_shift;
+    if (i_state_ref_abs >= mf.get_n_states())
+        throw LIBRPA_RUNTIME_ERROR("Hedin shift reference state index out of range: "
+                                  + std::to_string(i_state_ref_abs));
+    if (i_state_ref_abs >= 0
+        && (i_state_ref_abs < i_state_low || i_state_ref_abs >= i_state_low + n_states_calc))
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "Hedin shift absolute reference state " + std::to_string(i_state_ref_abs)
+            + " is outside selected absolute state range [" + std::to_string(i_state_low)
+            + ", " + std::to_string(i_state_low + n_states_calc) + ") in "
+            + api_name);
+    }
 
     const auto ik_pos = make_ik_pos_map(iks_collect);
     const int nk_collect = static_cast<int>(iks_collect.size());
     const int nfreq = static_cast<int>(freq_nodes.size());
-    std::vector<double> delta_local(n_spins, 0.0);
-    std::vector<double> delta_sum(n_spins, 0.0);
-    std::vector<int> owner_local(n_spins, 0);
-    std::vector<int> owner_sum(n_spins, 0);
-    std::vector<HedinShiftReference> refs;
-    refs.reserve(n_spins);
 
     for (int isp = 0; isp != n_spins; ++isp)
     {
-        const auto ref = find_hedin_shift_reference(
-            mf, opts.ikpt_ref_hedin_shift, opts.istate_ref_hedin_shift, isp);
-        refs.push_back(ref);
-        if (ref.i_state < i_state_low || ref.i_state >= i_state_low + n_states_calc)
-        {
-            throw LIBRPA_RUNTIME_ERROR(
-                "Hedin shift reference state " + std::to_string(ref.i_state)
-                + " is outside selected state range [" + std::to_string(i_state_low)
-                + ", " + std::to_string(i_state_low + n_states_calc) + ") in "
-                + api_name);
-        }
-        if (ik_pos.count(ref.ik) == 0)
-        {
-            throw LIBRPA_RUNTIME_ERROR(
-                "Hedin shift reference k-point " + std::to_string(ref.ik)
-                + " is not among requested k-points in " + api_name);
-        }
-
-        const int i_ref = ref.i_state - i_state_low;
-        const int ik_collect = ik_pos.at(ref.ik);
-        const auto sigc_ref_state = extract_sigc_state(
-            sigc_diag, isp, ik_collect, i_ref, nk_collect, nfreq, n_states_calc);
-        const librpa_int::AnalyContPade pade(
-            opts.n_params_anacon, imagfreqs, sigc_ref_state);
-        const auto sigc_ref = pade.get(librpa_int::cplxdb{
-            mf.get_eigenvals()[isp](ref.ik, ref.i_state) - mf.get_efermi(), 0.0});
-
+        const int start_isp = isp * n_kpts_this * n_states_calc;
         for (int ik_this = 0; ik_this != n_kpts_this; ++ik_this)
         {
-            if (iks_this[ik_this] != ref.ik) continue;
-            const int idx = (isp * n_kpts_this + ik_this) * n_states_calc + i_ref;
-            delta_local[isp] += sigc_ref.real() + vexx[idx] - vxc[idx];
-            ++owner_local[isp];
+            const int ik = iks_this[ik_this];
+            const auto ik_pos_it = ik_pos.find(ik);
+            if (ik_pos_it == ik_pos.end())
+            {
+                throw LIBRPA_RUNTIME_ERROR(
+                    "Hedin shift k-point " + std::to_string(ik)
+                    + " is not among requested k-points in " + api_name);
+            }
+            const int ik_collect = ik_pos_it->second;
+            const int start_k = start_isp + ik_this * n_states_calc;
+
+            const auto compute_shift = [&](const int i_ref, const int state_ref) {
+                const int ref_idx = start_k + i_ref;
+                const auto sigc_ref_state = extract_sigc_state(
+                    sigc_diag, isp, ik_collect, i_ref, nk_collect, nfreq, n_states_calc);
+                const librpa_int::AnalyContPade pade(
+                    opts.n_params_anacon, imagfreqs, sigc_ref_state);
+                const auto sigc_ref = pade.get(librpa_int::cplxdb{
+                    mf.get_eigenvals()[isp](ik, state_ref) - mf.get_efermi(), 0.0});
+                return sigc_ref.real() + vexx[ref_idx] - vxc[ref_idx];
+            };
+
+            if (i_state_ref_abs >= 0)
+            {
+                const double shift = compute_shift(i_state_ref_abs - i_state_low,
+                                                   i_state_ref_abs);
+                for (int i = 0; i != n_states_calc; ++i) shifts[start_k + i] = shift;
+                continue;
+            }
+
+            for (int i = 0; i != n_states_calc; ++i)
+            {
+                shifts[start_k + i] = compute_shift(i, i_state_low + i);
+            }
         }
     }
 
-    comm_h.allreduce(delta_local.data(), delta_sum.data(), n_spins, MPI_SUM);
-    comm_h.allreduce(owner_local.data(), owner_sum.data(), n_spins, MPI_SUM);
-
-    for (int isp = 0; isp != n_spins; ++isp)
-    {
-        if (owner_sum[isp] <= 0)
-        {
-            throw LIBRPA_RUNTIME_ERROR(
-                "failed to locate Hedin shift reference inputs for spin "
-                + std::to_string(isp + 1));
-        }
-        shifts[isp] = delta_sum[isp] / owner_sum[isp];
-        ofs_myid << "Hedin shift for spin " << isp + 1 << " from kpoint " << refs[isp].ik + 1
-                 << " state " << refs[isp].i_state + 1 << ": " << shifts[isp] << " Ha" << std::endl;
-    }
-
+    ofs_myid << "Computed Hedin shifts in " << api_name
+             << (i_state_ref_abs >= 0 ? " from one reference state per k-point"
+                                      : " per state")
+             << std::endl;
     return shifts;
 }
 
@@ -842,7 +811,7 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
         imagfreqs.push_back(cplxdb{0.0, freq});
     }
     const auto hedin_shifts = compute_hedin_shifts(
-        opts, pds->mf, pds->comm_h, sigc_diag, iks_collect, freq_nodes, imagfreqs,
+        opts, pds->mf, sigc_diag, iks_collect, freq_nodes, imagfreqs,
         n_spins, n_kpts_this, iks_this, i_state_low, n_states_calc, vxc, vexx,
         "librpa_get_g0w0_qpe_kgrid");
 
@@ -887,7 +856,7 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
                 eqp[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
                 int flag_qpe_solver = solve_qpe_with_option(
-                    option_qpe_solver, pade, eks_state, efermi + hedin_shifts[isp],
+                    option_qpe_solver, pade, eks_state, efermi + hedin_shifts[start_k+i],
                     vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
                     n_iter_max, damp_fac, use_adaptive_damp,
                     use_legacy_nonadaptive_update);
@@ -1054,9 +1023,9 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
         imagfreqs.push_back(cplxdb{0.0, freq});
     }
     const auto hedin_shifts = compute_hedin_shifts(
-        opts, pds->mf_band, pds->comm_h, sigc_diag, iks_collect, freq_nodes,
-        imagfreqs, n_spins, n_kpts_band_this, iks_band_this, i_state_low,
-        n_states_calc, vxc_band, vexx_band, "librpa_get_g0w0_qpe_band_k");
+        opts, pds->mf_band, sigc_diag, iks_collect, freq_nodes, imagfreqs,
+        n_spins, n_kpts_band_this, iks_band_this, i_state_low, n_states_calc,
+        vxc_band, vexx_band, "librpa_get_g0w0_qpe_band_k");
 
     const auto thres_qpe = opts.qpe_solver_thres;
     const auto n_iter_max = opts.qpe_solver_n_iter_max;
@@ -1099,7 +1068,7 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                 eqp_band[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
                 int flag_qpe_solver = solve_qpe_with_option(
-                    option_qpe_solver, pade, eks_state, efermi + hedin_shifts[isp],
+                    option_qpe_solver, pade, eks_state, efermi + hedin_shifts[start_k+i],
                     vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
                     n_iter_max, damp_fac, use_adaptive_damp,
                     use_legacy_nonadaptive_update);
