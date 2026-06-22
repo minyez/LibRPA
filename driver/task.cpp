@@ -27,8 +27,8 @@ static std::map<std::string, task_t> map_lowstr_task{
 
 static std::map<task_t, std::string> map_task_lowstr{
     {task_t::RPA,           "RPA correlation energy"},
-    {task_t::G0W0,          "One-shot GW for quasi-paricle energies on k-grid"},
-    {task_t::G0W0_band,     "One-shot GW for quasi-paricle band structure"},
+    {task_t::G0W0,          "One-shot GW for quasi-paricle energies"},
+    {task_t::G0W0_band,     "One-shot GW for quasi-paricle energies"},
     {task_t::EXX,           "Non-self-consistent exact-exchange (EXX) calculation"},
     {task_t::EXX_band,      "Non-self-consistent exact-exchange (EXX) calculation for band structure"},
     {task_t::Wc_Rf,         "Real-space frequency-domain screened Coulomb (correlation part)"},

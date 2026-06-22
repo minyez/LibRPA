@@ -37,7 +37,7 @@ These parameters are available only through the standalone driver.
 
 | Parameter Name        | Description                                                          | Type   | Default Value (Options)                         | Status       |
 |-----------------------|----------------------------------------------------------------------|--------|-------------------------------------------------|--------------|
-| `task`                | Task type                                                            | string | required (`rpa`, `g0w0`, `exx`, `g0w0_band`, `exx_band`) |              |
+| `task`                | Task type                                                            | string | required (`rpa`, `g0w0`, `exx`, `exx_band`) |              |
 | `constants_choice`    | Physical constants source                                            | string | `internal` (`internal`, `aims`)                |              |
 | `cs_threshold`        | Screening threshold when reading the RI coefficient data             | double | 1e-6                                           |              |
 | `use_spinor_wfc`      | Read wavefunctions in spinor format                                  | bool   | `false`                                        |              |
@@ -52,6 +52,10 @@ These parameters are available only through the standalone driver.
 | `sf_omega_step`       | Frequency step for spectral-function output                          | double | 0.1                                            | Experimental |
 | `sf_state_start`      | First state index for spectral-function output (inclusive)           | int    | 0                                              | Experimental |
 | `sf_state_end`        | Last state index for spectral-function output (exclusive)            | int    | 10000                                          | Experimental |
+
+`g0w0_band` is accepted as a deprecated alias of `g0w0`. The `g0w0` task
+automatically writes band-structure outputs when `fn_band_kpath_info` and the
+companion band input files are present under `input_dir`.
 
 When either `i_state_low` or `i_state_high` is negative, the missing bound is selected from
 the energy window `[E_F - 0.5 * gap - 0.5 Ha, E_F + 0.5 * gap + 0.5 Ha]`, where `gap` is the energy gap of the mean-field reference.
