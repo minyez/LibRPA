@@ -177,8 +177,26 @@ Regular k-grid calculations are not affected by BvK remapping.
 | `use_qpe_adaptive_damp`  | Adapt the quasi-particle equation damping factor during the solve              | bool   | `false`                               |              |
 | `use_qpe_legacy_update` | Test-only: recover the legacy non-adaptive update for QPE solver 0; ignored when adaptive damping is enabled | bool | `false` | Diagnostic |
 | `override_qpe_solver_nan` | Keep the final unconverged QPE iterate instead of outputting NaN            | bool   | `false`                               | Diagnostic   |
+| `use_hedin_shift`       | Compute and apply the Hedin shift when evaluating the correlation self-energy in QP solves | bool | `false` | Experimental |
+| `istate_ref_hedin_shift` | Zero-based state index of the Hedin-shift reference; negative values select the highest occupied state, optionally restricted by `ikpt_ref_hedin_shift` | int | -1 | Experimental |
+| `ikpt_ref_hedin_shift`  | Zero-based k-point index of the Hedin-shift reference; negative values select the k-point of the highest occupied state | int | -1 | Experimental |
 | `sf_gf_omega_shift`   | Broadening/shift used for Green's function in spectral-function APIs, in Hartree | double | 0.01                                | Experimental |
 | `sf_sigc_omega_shift` | Broadening/shift used for continued correlation self-energy in spectral-function APIs, in Hartree | double | 0.01             | Experimental |
+
+With `use_hedin_shift = true`, LibRPA computes a per-spin shift from the reference state,
+
+$$
+\Delta = \mathrm{Re}\,\Sigma_c(e_\mathrm{ref} - E_F) + \Sigma_x(\mathrm{ref}) - v_{xc}(\mathrm{ref})
+$$
+
+and evaluates the correlation self-energy while solving QP energies at
+
+$$
+\Sigma_c(E - E_F - \Delta).
+$$
+
+The reference state must be included in the selected k-point and state range used
+for the QP calculation.
 
 ## LibRI Parameters
 

@@ -104,7 +104,8 @@ public:
     double get_E_min_max(double& emin, double& emax) const;
     double get_band_gap() const;
     //! Highest-energy occupied state for a spin. Use ikpt < 0 to search all k-points.
-    //! occupation_tol is in unscaled occupation units.
+    //! occupation_tol is in unscaled occupation units; stored k-point weights are
+    //! compared against occupation_tol / n_kpoints.
     //! Returns {-1, -1} when no occupied state is found.
     std::pair<int, int> find_highest_occupied_state(int ispin, int ikpt = -1,
                                                     double occupation_tol = 1.0e-8) const;

@@ -122,6 +122,12 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts,
 //! Obtain correlation self-energies and QP energies for selected states.
 /**
  * Same inputs and SigC outputs as librpa_get_g0w0_sigc_kgrid.
+ * If p_opts->use_hedin_shift is enabled, the QP solver evaluates
+ * \f[
+ * \Sigma_c(E - E_F - \Delta).
+ * \f]
+ * The Hedin-shift reference must be included in the selected k-point and state
+ * range so its vxc and vexx inputs are available.
  *
  * @param[out] eqp              Quasi-particle energy solved by the selected QPE solver.
  *                              It should be at least as long as sigc_re/sigc_im.
@@ -191,6 +197,12 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts,
 //! Obtain correlation self-energies and QP energies for selected band-k states.
 /**
  * Same inputs and SigC outputs as librpa_get_g0w0_sigc_band_k.
+ * If p_opts->use_hedin_shift is enabled, the QP solver evaluates
+ * \f[
+ * \Sigma_c(E - E_F - \Delta).
+ * \f]
+ * The Hedin-shift reference must be included in the selected band k-point and
+ * state range so its vxc_band and vexx_band inputs are available.
  *
  * @param[out] eqp_band         Quasi-particle energy solved by the selected QPE solver.
  *                              It should be at least as long as sigc_band_re/sigc_band_im.

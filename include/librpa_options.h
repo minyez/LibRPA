@@ -189,13 +189,23 @@ typedef struct
     //! If enabled, keep the final unconverged QPE iterate instead of outputting NaN.
     LibrpaSwitch override_qpe_solver_nan;
 
-    //! If enabled, Hedin shift will be calculated and applied to all states
+    //! If enabled, compute a Hedin shift from a reference state,
+    //! \f[
+    //! \Delta = \mathrm{Re}\,\Sigma_c(e_\mathrm{ref} - E_F)
+    //!        + \Sigma_x(\mathrm{ref}) - v_{xc}(\mathrm{ref})
+    //! \f]
+    //! and evaluate the correlation self-energy in QP solves at
+    //! \f[
+    //! \Sigma_c(E - E_F - \Delta).
+    //! \f]
     LibrpaSwitch use_hedin_shift;
 
-    //! State index of reference to compute Hedin shift. Negative value to use default, i.e. highest occupied state
+    //! Zero-based state index of the Hedin-shift reference. A negative value
+    //! selects the highest occupied state, optionally restricted by ikpt_ref_hedin_shift.
     int istate_ref_hedin_shift;
 
-    //! K-point index of reference to compute Hedin shift. Negative value to use default, i.e. highest occupied state
+    //! Zero-based k-point index of the Hedin-shift reference. A negative value
+    //! selects the k-point of the highest occupied state.
     int ikpt_ref_hedin_shift;
 
     //! Broadening/shift used for Green's function in spectral-function output, in Hartree.
