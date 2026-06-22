@@ -326,6 +326,9 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_switch(opts, use_cholesky_gw_wc);
     _parse_switch(opts, use_gpu_replace_scalapack);
     _parse_switch(opts, use_elpa_sqrt_coulomb);
+    _parse_switch(opts, use_hedin_shift);
+    _parse_int(opts, istate_ref_hedin_shift);
+    _parse_int(opts, ikpt_ref_hedin_shift);
     _parse_double(opts, libri_g0w0_threshold_C);
     _parse_double(opts, libri_g0w0_threshold_G);
     _parse_double(opts, libri_g0w0_threshold_Wc);

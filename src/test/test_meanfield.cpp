@@ -4,6 +4,7 @@
 #include <array>
 #include <map>
 #include <stdexcept>
+#include <utility>
 
 #include "testutils.h"
 
@@ -86,6 +87,33 @@ void test_state_index_energy_bounds()
     assert(mf.get_min_state_above_energy(1.0) == 3);
     assert(mf.get_min_state_above_energy(-0.75) == 2);
     assert(mf.get_min_state_above_energy(-4.0) == 0);
+}
+
+void test_find_highest_occupied_state()
+{
+    using namespace librpa_int;
+
+    MeanField mf(1, 2, 4, 1);
+    mf.get_eigenvals()[0](0, 0) = -4.0;
+    mf.get_eigenvals()[0](0, 1) = -1.0;
+    mf.get_eigenvals()[0](0, 2) = 0.0;
+    mf.get_eigenvals()[0](0, 3) = 1.0;
+    mf.get_eigenvals()[0](1, 0) = -3.0;
+    mf.get_eigenvals()[0](1, 1) = -0.5;
+    mf.get_eigenvals()[0](1, 2) = 0.5;
+    mf.get_eigenvals()[0](1, 3) = 2.0;
+    mf.get_weight()[0].zero_out();
+    mf.get_weight()[0](0, 1) = 1.0;
+    mf.get_weight()[0](1, 0) = 1.0;
+
+    assert(mf.find_highest_occupied_state(0) == std::make_pair(0, 1));
+    assert(mf.find_highest_occupied_state(0, 1) == std::make_pair(1, 0));
+
+    mf.get_weight()[0].zero_out();
+    assert(mf.find_highest_occupied_state(0) == std::make_pair(-1, -1));
+
+    mf.get_weight()[0](1, 2) = 0.75e-8;
+    assert(mf.find_highest_occupied_state(0) == std::make_pair(1, 2));
 }
 
 void test_dmat_cplx_Rs_matches_single_R_accumulation()
@@ -252,6 +280,7 @@ int main(int argc, char *argv[])
 {
     test_BCC_He_gamma_minimal_basis_aims();
     test_state_index_energy_bounds();
+    test_find_highest_occupied_state();
     test_dmat_cplx_Rs_matches_single_R_accumulation();
     test_input_symmetry_kstar_restored_dmat_uses_full_star_phases();
     test_input_symmetry_kstar_restored_dmat_uses_target_kpoint_gauge();

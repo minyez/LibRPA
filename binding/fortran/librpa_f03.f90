@@ -195,6 +195,9 @@ module librpa_f03
       integer(c_int) :: use_qpe_adaptive_damp
       integer(c_int) :: use_qpe_legacy_update
       integer(c_int) :: override_qpe_solver_nan
+      integer(c_int) :: use_hedin_shift
+      integer(c_int) :: istate_ref_hedin_shift
+      integer(c_int) :: ikpt_ref_hedin_shift
       real(c_double) :: sf_gf_omega_shift
       real(c_double) :: sf_sigc_omega_shift
       integer(c_int) :: use_scalapack_gw_wc
@@ -315,6 +318,12 @@ module librpa_f03
       logical :: use_qpe_legacy_update
       !> Keep the final unconverged QPE iterate instead of outputting NaN.
       logical :: override_qpe_solver_nan
+      !> Use Hedin's poor-man's self-consistency
+      logical :: use_hedin_shift
+      !> Index (zero-based) of state of reference for Hedin shift
+      integer :: istate_ref_hedin_shift
+      !> Index (zero-based) of k-point of reference for Hedin shift
+      integer :: ikpt_ref_hedin_shift
       !> Broadening/shift used for Green's function in spectral-function output, in Hartree.
       real(dp) :: sf_gf_omega_shift
       !> Broadening/shift used for correlation self-energy in spectral-function output, in Hartree.
@@ -1130,6 +1139,9 @@ contains
       call sync_opt(opts%use_qpe_adaptive_damp,   opts%opts_c%use_qpe_adaptive_damp,   direction)
       call sync_opt(opts%use_qpe_legacy_update, opts%opts_c%use_qpe_legacy_update, direction)
       call sync_opt(opts%override_qpe_solver_nan, opts%opts_c%override_qpe_solver_nan, direction)
+      call sync_opt(opts%use_hedin_shift,         opts%opts_c%use_hedin_shift, direction)
+      call sync_opt(opts%istate_ref_hedin_shift,  opts%opts_c%istate_ref_hedin_shift,  direction)
+      call sync_opt(opts%ikpt_ref_hedin_shift,    opts%opts_c%ikpt_ref_hedin_shift,  direction)
       call sync_opt(opts%sf_gf_omega_shift,       opts%opts_c%sf_gf_omega_shift,       direction)
       call sync_opt(opts%sf_sigc_omega_shift,     opts%opts_c%sf_sigc_omega_shift,     direction)
       call sync_opt(opts%option_dielect_func,     opts%opts_c%option_dielect_func,     direction)

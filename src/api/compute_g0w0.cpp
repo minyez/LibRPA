@@ -37,6 +37,10 @@
 #include <RI/comm/mix/Communicate_Tensors_Map_Judge.h>
 #endif
 
+using librpa_int::global::profiler;
+using librpa_int::global::ofs_myid;
+using librpa_int::global::lib_printf;
+
 namespace
 {
 
@@ -106,6 +110,120 @@ std::vector<librpa_int::cplxdb> extract_sigc_state(
         sigc_state.emplace_back(sigc_diag[idx]);
     }
     return sigc_state;
+}
+
+struct HedinShiftReference
+{
+    int ik;
+    int i_state;
+};
+
+HedinShiftReference find_hedin_shift_reference(const librpa_int::MeanField &mf,
+                                               const int ik_hint,
+                                               const int istate_hint,
+                                               const int isp)
+{
+    const int n_kpoints = mf.get_n_kpoints();
+    const int n_states = mf.get_n_states();
+
+    if (ik_hint >= n_kpoints)
+        throw LIBRPA_RUNTIME_ERROR("Hedin shift reference k-point index out of range: "
+                                  + std::to_string(ik_hint));
+    if (istate_hint >= n_states)
+        throw LIBRPA_RUNTIME_ERROR("Hedin shift reference state index out of range: "
+                                  + std::to_string(istate_hint));
+    if (ik_hint >= 0 && istate_hint >= 0) return {ik_hint, istate_hint};
+
+    const auto [ik_occ, state_occ] = mf.find_highest_occupied_state(isp, ik_hint);
+    if (ik_occ < 0)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "failed to find default Hedin shift reference: no occupied state found");
+    }
+
+    return {ik_hint >= 0 ? ik_hint : ik_occ,
+            istate_hint >= 0 ? istate_hint : state_occ};
+}
+
+std::vector<double> compute_hedin_shifts(
+    const LibrpaOptions &opts, const librpa_int::MeanField &mf,
+    const librpa_int::MpiCommHandler &comm_h,
+    const std::vector<librpa_int::cplxdb> &sigc_diag,
+    const std::vector<int> &iks_collect, const std::vector<double> &freq_nodes,
+    const std::vector<librpa_int::cplxdb> &imagfreqs, const int n_spins,
+    const int n_kpts_this, const int *iks_this, const int i_state_low,
+    const int n_states_calc, const double *vxc, const double *vexx,
+    const char *api_name)
+{
+    std::vector<double> shifts(n_spins, 0.0);
+    if (opts.use_hedin_shift != LIBRPA_SWITCH_ON) return shifts;
+    if (iks_collect.empty()) return shifts;
+
+    const auto ik_pos = make_ik_pos_map(iks_collect);
+    const int nk_collect = static_cast<int>(iks_collect.size());
+    const int nfreq = static_cast<int>(freq_nodes.size());
+    std::vector<double> delta_local(n_spins, 0.0);
+    std::vector<double> delta_sum(n_spins, 0.0);
+    std::vector<int> owner_local(n_spins, 0);
+    std::vector<int> owner_sum(n_spins, 0);
+    std::vector<HedinShiftReference> refs;
+    refs.reserve(n_spins);
+
+    for (int isp = 0; isp != n_spins; ++isp)
+    {
+        const auto ref = find_hedin_shift_reference(
+            mf, opts.ikpt_ref_hedin_shift, opts.istate_ref_hedin_shift, isp);
+        refs.push_back(ref);
+        if (ref.i_state < i_state_low || ref.i_state >= i_state_low + n_states_calc)
+        {
+            throw LIBRPA_RUNTIME_ERROR(
+                "Hedin shift reference state " + std::to_string(ref.i_state)
+                + " is outside selected state range [" + std::to_string(i_state_low)
+                + ", " + std::to_string(i_state_low + n_states_calc) + ") in "
+                + api_name);
+        }
+        if (ik_pos.count(ref.ik) == 0)
+        {
+            throw LIBRPA_RUNTIME_ERROR(
+                "Hedin shift reference k-point " + std::to_string(ref.ik)
+                + " is not among requested k-points in " + api_name);
+        }
+
+        const int i_ref = ref.i_state - i_state_low;
+        const int ik_collect = ik_pos.at(ref.ik);
+        const auto sigc_ref_state = extract_sigc_state(
+            sigc_diag, isp, ik_collect, i_ref, nk_collect, nfreq, n_states_calc);
+        const librpa_int::AnalyContPade pade(
+            opts.n_params_anacon, imagfreqs, sigc_ref_state);
+        const auto sigc_ref = pade.get(librpa_int::cplxdb{
+            mf.get_eigenvals()[isp](ref.ik, ref.i_state) - mf.get_efermi(), 0.0});
+
+        for (int ik_this = 0; ik_this != n_kpts_this; ++ik_this)
+        {
+            if (iks_this[ik_this] != ref.ik) continue;
+            const int idx = (isp * n_kpts_this + ik_this) * n_states_calc + i_ref;
+            delta_local[isp] += sigc_ref.real() + vexx[idx] - vxc[idx];
+            ++owner_local[isp];
+        }
+    }
+
+    comm_h.allreduce(delta_local.data(), delta_sum.data(), n_spins, MPI_SUM);
+    comm_h.allreduce(owner_local.data(), owner_sum.data(), n_spins, MPI_SUM);
+
+    for (int isp = 0; isp != n_spins; ++isp)
+    {
+        if (owner_sum[isp] <= 0)
+        {
+            throw LIBRPA_RUNTIME_ERROR(
+                "failed to locate Hedin shift reference inputs for spin "
+                + std::to_string(isp + 1));
+        }
+        shifts[isp] = delta_sum[isp] / owner_sum[isp];
+        ofs_myid << "Hedin shift for spin " << isp + 1 << " from kpoint " << refs[isp].ik + 1
+                 << " state " << refs[isp].i_state + 1 << ": " << shifts[isp] << " Ha" << std::endl;
+    }
+
+    return shifts;
 }
 
 void validate_spectral_function_inputs(const int n_omegas, const double *omegas,
@@ -221,7 +339,6 @@ void ensure_band_sigc_ks_blacs(librpa_int::Dataset &ds, const LibrpaOptions &opt
 void write_sigc_matrices_KS_binary(librpa_int::Dataset &ds, const std::string &output_dir,
                                    const std::string &source)
 {
-    using librpa_int::global::profiler;
     profiler.start("g0w0_export_sigc_KS", "Export self-energy in KS basis");
     ds.p_g0w0->write_sigc_matrices_KS_binary(output_dir, source);
     profiler.stop("g0w0_export_sigc_KS");
@@ -477,7 +594,6 @@ void dump_analycont_source_data(std::ostream &os, const librpa_int::AnalyCont &a
 void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
 {
     using namespace librpa_int;
-    using librpa_int::global::profiler;
     using librpa_int::global::lib_printf;
 
     auto pds = librpa_int::api::get_dataset_instance(h);
@@ -674,8 +790,6 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
                                double *sigc_re, double *sigc_im, double *eqp)
 {
     using namespace librpa_int;
-    using librpa_int::global::profiler;
-    using librpa_int::global::lib_printf;
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
@@ -683,7 +797,7 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
     i_state_high = std::min(pds->mf.get_n_states(), i_state_high);
     if (n_spins != pds->mf.get_n_spins())
     {
-        global::ofs_myid << "n_spins != pds->mf.get_n_spins(): " << n_spins << " != " << pds->mf.get_n_spins() << std::endl;
+        ofs_myid << "n_spins != pds->mf.get_n_spins(): " << n_spins << " != " << pds->mf.get_n_spins() << std::endl;
         throw LIBRPA_RUNTIME_ERROR("parsed nspins is not consitent with the SCF starting poing");
     }
     if (i_state_high <= i_state_low) return;
@@ -727,6 +841,10 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
     {
         imagfreqs.push_back(cplxdb{0.0, freq});
     }
+    const auto hedin_shifts = compute_hedin_shifts(
+        opts, pds->mf, pds->comm_h, sigc_diag, iks_collect, freq_nodes, imagfreqs,
+        n_spins, n_kpts_this, iks_this, i_state_low, n_states_calc, vxc, vexx,
+        "librpa_get_g0w0_qpe_kgrid");
 
     const auto thres_qpe = opts.qpe_solver_thres;
     const auto n_iter_max = opts.qpe_solver_n_iter_max;
@@ -747,7 +865,7 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
             const int start_k = start_isp + ik_this * n_states_calc;
             const int ik = *(iks_this + ik_this);
             const int ik_collect = ik_pos.at(ik);
-            global::ofs_myid << "Start QPE solver for spin " << isp + 1
+            ofs_myid << "Start QPE solver for spin " << isp + 1
                              << " kpoint " << ik + 1 << std::endl;
             for (int i = 0; i < n_states_calc; i++)
             {
@@ -769,21 +887,22 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
                 eqp[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
                 int flag_qpe_solver = solve_qpe_with_option(
-                    option_qpe_solver, pade, eks_state, efermi, vxc_state, exx_state, e_qp,
-                    sigc, diff_init, thres_qpe, n_iter_max, damp_fac, use_adaptive_damp,
+                    option_qpe_solver, pade, eks_state, efermi + hedin_shifts[isp],
+                    vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
+                    n_iter_max, damp_fac, use_adaptive_damp,
                     use_legacy_nonadaptive_update);
                 if (flag_qpe_solver != 0)
                 {
-                    global::ofs_myid << "Warning! QPE solver failed for spin " << isp + 1
+                    ofs_myid << "Warning! QPE solver failed for spin " << isp + 1
                                      << " kpoint " << ik + 1 << " state " << i_state + 1
                                      << std::endl;
-                    dump_analycont_source_data(global::ofs_myid, pade,
+                    dump_analycont_source_data(ofs_myid, pade,
                                                "librpa_get_g0w0_sigc_kgrid", isp, ik, i_state);
                     if (override_qpe_solver_nan)
                     {
-                        global::ofs_myid
-                            << "Using final unconverged QPE result because override_qpe_solver_nan is on"
-                            << std::endl;
+                        ofs_myid << "Using final unconverged QPE result because "
+                                    "override_qpe_solver_nan is on"
+                                 << std::endl;
                     }
                 }
                 if (flag_qpe_solver == 0 || override_qpe_solver_nan)
@@ -818,7 +937,6 @@ void librpa_get_g0w0_spectral_function_kgrid(
     double *spectral_function, double *sigc)
 {
     using namespace librpa_int;
-    using librpa_int::global::profiler;
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
@@ -831,7 +949,7 @@ void librpa_get_g0w0_spectral_function_kgrid(
     i_state_high = std::min(pds->mf.get_n_states(), i_state_high);
     if (n_spins != pds->mf.get_n_spins())
     {
-        global::ofs_myid << "n_spins != pds->mf.get_n_spins(): " << n_spins << " != "
+        ofs_myid << "n_spins != pds->mf.get_n_spins(): " << n_spins << " != "
                          << pds->mf.get_n_spins() << std::endl;
         throw LIBRPA_RUNTIME_ERROR("parsed nspins is not consitent with the SCF starting poing");
     }
@@ -877,8 +995,6 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                                 double *sigc_band_im, double *eqp_band)
 {
     using namespace librpa_int;
-    using librpa_int::global::profiler;
-    using librpa_int::global::lib_printf;
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
@@ -889,7 +1005,7 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
     const int n_spins_band = pds->mf_band.get_n_spins();
     if (n_spins != n_spins_band)
     {
-        global::ofs_myid << "n_spins != pds->mf_band.get_n_spins(): " << n_spins << " != " << n_spins_band << std::endl;
+        ofs_myid << "n_spins != pds->mf_band.get_n_spins(): " << n_spins << " != " << n_spins_band << std::endl;
         throw LIBRPA_RUNTIME_ERROR("parsed n_spins is not consitent with the band input data");
     }
     if (i_state_high <= i_state_low) return;
@@ -937,6 +1053,10 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
     {
         imagfreqs.push_back(cplxdb{0.0, freq});
     }
+    const auto hedin_shifts = compute_hedin_shifts(
+        opts, pds->mf_band, pds->comm_h, sigc_diag, iks_collect, freq_nodes,
+        imagfreqs, n_spins, n_kpts_band_this, iks_band_this, i_state_low,
+        n_states_calc, vxc_band, vexx_band, "librpa_get_g0w0_qpe_band_k");
 
     const auto thres_qpe = opts.qpe_solver_thres;
     const auto n_iter_max = opts.qpe_solver_n_iter_max;
@@ -957,7 +1077,7 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
             const int start_k = start_isp + ik_this * n_states_calc;
             const int ik = *(iks_band_this + ik_this);
             const int ik_collect = ik_pos.at(ik);
-            global::ofs_myid << "Start QPE solver for spin " << isp + 1
+            ofs_myid << "Start QPE solver for spin " << isp + 1
                              << " kpoint " << ik + 1 << std::endl;
             for (int i = 0; i < n_states_calc; i++)
             {
@@ -979,19 +1099,20 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                 eqp_band[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
                 int flag_qpe_solver = solve_qpe_with_option(
-                    option_qpe_solver, pade, eks_state, efermi, vxc_state, exx_state, e_qp,
-                    sigc, diff_init, thres_qpe, n_iter_max, damp_fac, use_adaptive_damp,
+                    option_qpe_solver, pade, eks_state, efermi + hedin_shifts[isp],
+                    vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
+                    n_iter_max, damp_fac, use_adaptive_damp,
                     use_legacy_nonadaptive_update);
                 if (flag_qpe_solver != 0)
                 {
-                    global::ofs_myid << "Warning! QPE solver failed for spin " << isp + 1
+                    ofs_myid << "Warning! QPE solver failed for spin " << isp + 1
                                      << " kpoint " << ik + 1 << " state " << i_state + 1
                                      << std::endl;
-                    dump_analycont_source_data(global::ofs_myid, pade,
+                    dump_analycont_source_data(ofs_myid, pade,
                                                "librpa_get_g0w0_sigc_band_k", isp, ik, i_state);
                     if (override_qpe_solver_nan)
                     {
-                        global::ofs_myid
+                        ofs_myid
                             << "Using final unconverged QPE result because override_qpe_solver_nan is on"
                             << std::endl;
                     }
@@ -1031,7 +1152,6 @@ void librpa_get_g0w0_spectral_function_band_k(
     double *sigc_band)
 {
     using namespace librpa_int;
-    using librpa_int::global::profiler;
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
@@ -1047,7 +1167,7 @@ void librpa_get_g0w0_spectral_function_band_k(
     const int n_spins_band = pds->mf_band.get_n_spins();
     if (n_spins != n_spins_band)
     {
-        global::ofs_myid << "n_spins != pds->mf_band.get_n_spins(): " << n_spins << " != "
+        ofs_myid << "n_spins != pds->mf_band.get_n_spins(): " << n_spins << " != "
                          << n_spins_band << std::endl;
         throw LIBRPA_RUNTIME_ERROR("parsed n_spins is not consitent with the band input data");
     }

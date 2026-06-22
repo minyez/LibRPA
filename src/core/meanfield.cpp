@@ -528,6 +528,39 @@ double MeanField::get_band_gap() const
     return gap;
 }
 
+std::pair<int, int> MeanField::find_highest_occupied_state(const int ispin, const int ikpt,
+                                                           const double occupation_tol) const
+{
+    if (ispin < 0 || ispin >= n_spins)
+        throw LIBRPA_RUNTIME_ERROR("spin index out of range: " + std::to_string(ispin));
+    if (ikpt >= n_kpoints)
+        throw LIBRPA_RUNTIME_ERROR("k-point index out of range: " + std::to_string(ikpt));
+
+    const int ik_begin = ikpt >= 0 ? ikpt : 0;
+    const int ik_end = ikpt >= 0 ? ikpt + 1 : n_kpoints;
+    const double weight_tol = occupation_tol / n_kpoints;
+    int ik_occ = -1;
+    int state_occ = -1;
+    double e_occ = -std::numeric_limits<double>::infinity();
+
+    for (int ik = ik_begin; ik != ik_end; ++ik)
+    {
+        for (int i_state = 0; i_state != n_states; ++i_state)
+        {
+            if (wg[ispin](ik, i_state) <= weight_tol) continue;
+            const double e_state = eskb[ispin](ik, i_state);
+            if (ik_occ < 0 || e_state > e_occ)
+            {
+                ik_occ = ik;
+                state_occ = i_state;
+                e_occ = e_state;
+            }
+        }
+    }
+
+    return {ik_occ, state_occ};
+}
+
 int MeanField::get_max_state_below_energy(double energy) const
 {
     int i_state_bound = -1;

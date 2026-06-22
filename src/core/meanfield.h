@@ -8,6 +8,7 @@
 #include <array>
 #include <vector>
 #include <map>
+#include <utility>
 #include "atom.h"
 #include "pbc.h"
 #include "input_symmetry.h"
@@ -102,6 +103,11 @@ public:
     const ComplexMatrix* find_wfc(int ispin, int ispinor, int ikpt) const noexcept;
     double get_E_min_max(double& emin, double& emax) const;
     double get_band_gap() const;
+    //! Highest-energy occupied state for a spin. Use ikpt < 0 to search all k-points.
+    //! occupation_tol is in unscaled occupation units.
+    //! Returns {-1, -1} when no occupied state is found.
+    std::pair<int, int> find_highest_occupied_state(int ispin, int ikpt = -1,
+                                                    double occupation_tol = 1.0e-8) const;
     //! Largest state index whose state and all lower-indexed states are below energy.
     //! Returns -1 if no state satisfies the condition.
     int get_max_state_below_energy(double energy) const;

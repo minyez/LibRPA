@@ -180,6 +180,8 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             normal_pair(rpa_headwing_body_start),
             normal_pair(qpe_solver_n_iter_max),
             normal_pair(libri_chi0_collect_s0_chunk),
+            normal_pair(istate_ref_hedin_shift),
+            normal_pair(ikpt_ref_hedin_shift),
             normal_pair(ifreq_output_wc_start),
             normal_pair(ifreq_output_wc_end),
         };
@@ -219,6 +221,7 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             bool_pair(use_qpe_adaptive_damp),
             bool_pair(use_qpe_legacy_update),
             bool_pair(override_qpe_solver_nan),
+            bool_pair(use_hedin_shift),
         };
 
     for (const auto &[k, v] : str_params) ss << k << " = " << v << endl;

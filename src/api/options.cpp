@@ -61,6 +61,9 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->use_qpe_adaptive_damp = LIBRPA_SWITCH_OFF;
     opts->use_qpe_legacy_update = LIBRPA_SWITCH_OFF;
     opts->override_qpe_solver_nan = LIBRPA_SWITCH_OFF;
+    opts->use_hedin_shift = LIBRPA_SWITCH_OFF;
+    opts->istate_ref_hedin_shift = -1;
+    opts->ikpt_ref_hedin_shift = -1;
     opts->sf_gf_omega_shift = 0.01;
     opts->sf_sigc_omega_shift = 0.01;
     opts->use_scalapack_gw_wc = LIBRPA_SWITCH_ON;

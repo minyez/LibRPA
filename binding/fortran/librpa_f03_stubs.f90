@@ -206,6 +206,12 @@ module librpa_f03
       logical :: use_qpe_legacy_update
       !> Keep the final unconverged QPE iterate instead of outputting NaN.
       logical :: override_qpe_solver_nan
+      !> Use Hedin's poor-man's self-consistency
+      logical :: use_hedin_shift
+      !> Index (zero-based) of state of reference for Hedin shift
+      integer :: istate_ref_hedin_shift
+      !> Index (zero-based) of k-point of reference for Hedin shift
+      integer :: ikpt_ref_hedin_shift
       !> Broadening/shift used for Green's function in spectral-function output, in Hartree.
       real(dp) :: sf_gf_omega_shift
       !> Broadening/shift used for correlation self-energy in spectral-function output, in Hartree.
