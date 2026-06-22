@@ -9,6 +9,7 @@
 #include "../utils/base_utility.h"
 #include "../utils/error.h"
 #include "../utils/profiler.h"
+#include "librpa_enums.h"
 
 // #include "../io/stl_io_helper.h"
 
@@ -81,7 +82,7 @@ IndexScheduler::init_impl_(const ap_p_map<int> &map_IJ_proc,
     const auto n = as_size(ad.n());
     const auto myid = ad.myid();
 
-    global::profiler.start("index_scheduler_ids_rc");
+    global::profiler.start("index_scheduler_ids_rc", LIBRPA_VERBOSE_DEBUG);
     // std::unordered_map<atom_t, std::vector<size_t>> row_ids_ap;
     // std::unordered_map<atom_t, std::vector<size_t>> col_ids_ap;
     // for (size_t I = 0; I < atbasis_r.n_atoms; I++) row_ids_ap[I] = atbasis_r.get_global_indices(I);
@@ -94,7 +95,7 @@ IndexScheduler::init_impl_(const ap_p_map<int> &map_IJ_proc,
     const auto &n_loc = ad.n_loc();
     global::profiler.stop("index_scheduler_ids_rc");
 
-    global::profiler.start("index_scheduler_compute_map"); // most intensive part, not paralleized
+    global::profiler.start("index_scheduler_compute_map", LIBRPA_VERBOSE_DEBUG); // most intensive part, not paralleized
     // const auto n_avg = m * n / ad.nprocs();
     // proc_ap_locid.reserve(n_avg);
     // proc_ap_ipair.reserve(n_avg);
@@ -175,7 +176,7 @@ IndexScheduler::init_impl_(const ap_p_map<int> &map_IJ_proc,
     disp_blacs.resize(nprocs, 0);
     counts_blacs.resize(nprocs, 0);
 
-    global::profiler.start("index_scheduler_flatten");
+    global::profiler.start("index_scheduler_flatten", LIBRPA_VERBOSE_DEBUG);
     // flatten the map and save
     total_count_ap = 0;
     for (int i = 0; i < nprocs; i++)
@@ -234,7 +235,7 @@ IndexScheduler::init(const std::unordered_map<int, std::set<atpair_t>> &map_proc
     assert(ad.n() > 0 && atbasis_c.nb_total == as_size(ad.n()));
     assert(atbasis_r.n_atoms == atbasis_c.n_atoms);
 
-    global::profiler.start("index_scheduler_init_pairs_unordered_map");
+    global::profiler.start("index_scheduler_init_pairs_unordered_map", LIBRPA_VERBOSE_DEBUG);
     ap_p_map<int> map_IJ_proc;
     for (const auto &proc_IJs: map_proc_IJs)
     {
@@ -269,7 +270,7 @@ IndexScheduler::init(const std::map<int, std::set<atpair_t>> &map_proc_IJs,
     assert(ad.n() > 0 && atbasis_c.nb_total == as_size(ad.n()));
     assert(atbasis_r.n_atoms == atbasis_c.n_atoms);
 
-    global::profiler.start("index_scheduler_init_pairs_map");
+    global::profiler.start("index_scheduler_init_pairs_map", LIBRPA_VERBOSE_DEBUG);
     ap_p_map<int> map_IJ_proc;
     for (const auto &proc_IJs: map_proc_IJs)
     {
@@ -396,16 +397,16 @@ _get_communicate_ids_list_ap_and_blacs(const int &myid,
     const std::vector<atpair_t> &IJs =
         map_proc_IJs.count(myid) ? map_proc_IJs.at(myid) : std::vector<atpair_t>();
     // if (myid == 0) std::cout << "IJs_avail " << IJs_avail << std::endl;
-    global::profiler.start("get_2d_mat_indices_atpair");
+    global::profiler.start("get_2d_mat_indices_atpair", LIBRPA_VERBOSE_DEBUG);
     const auto ids_ap = get_2d_mat_indices_atpair(atbasis_r, atbasis_c, IJs, row_fast);
     global::profiler.stop("get_2d_mat_indices_atpair");
 
     // global basis indices required by BLACS
-    global::profiler.start("get_2d_mat_indices_blacs");
+    global::profiler.start("get_2d_mat_indices_blacs", LIBRPA_VERBOSE_DEBUG);
     const auto ids_blacs = get_2d_mat_indices_blacs(ad, myid, row_fast);
     global::profiler.stop("get_2d_mat_indices_blacs");
 
-    global::profiler.start("ap_and_blacs_map_proc_map_id2d_ap");
+    global::profiler.start("ap_and_blacs_map_proc_map_id2d_ap", LIBRPA_VERBOSE_DEBUG);
     std::unordered_map<int, atom_mapping<std::vector<std::pair<size_t, size_t>>>::pair_t> map_proc_map_id2d_ap;
     std::unordered_map<int, std::vector<atpair_t>> map_proc_IJs_save_order;
     for (const auto &id: ids_ap)
@@ -458,7 +459,7 @@ _get_communicate_ids_list_ap_and_blacs(const int &myid,
     }
     global::profiler.stop("ap_and_blacs_map_proc_map_id2d_ap");
 
-    global::profiler.start("reverse_map_proc_IJs_avail");
+    global::profiler.start("reverse_map_proc_IJs_avail", LIBRPA_VERBOSE_DEBUG);
     // reverse map of map_proc_IJs_avail
     atom_mapping<int>::pair_t map_IJs_proc;
     for (const auto &proc_IJs: map_proc_IJs)
@@ -471,7 +472,7 @@ _get_communicate_ids_list_ap_and_blacs(const int &myid,
     }
     global::profiler.stop("reverse_map_proc_IJs_avail");
 
-    global::profiler.start("map_proc_id2d_blacs");
+    global::profiler.start("map_proc_id2d_blacs", LIBRPA_VERBOSE_DEBUG);
     Cblacs_pcoord(ad.ictxt(), myid, &myprow, &mypcol);
     for (const auto &id: ids_blacs)
     {
