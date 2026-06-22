@@ -112,3 +112,6 @@ cache/
 .dirty
 
 .codegraph/
+
+AGENTS.md
+CLAUDE.md
