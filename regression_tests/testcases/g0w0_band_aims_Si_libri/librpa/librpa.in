@@ -1,5 +1,6 @@
 # Driver parameters
-task = g0w0_band
+# task = g0w0_band  # deprecated
+task = g0w0
 input_dir = ../dataset
 i_state_low = 10
 i_state_high = 18
