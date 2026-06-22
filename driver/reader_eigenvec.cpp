@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "../src/io/global_io.h"
 #include "driver.h"
 
 namespace
@@ -320,6 +321,8 @@ int read_eigenvector(const std::string &dir_path)
         if (version_first < 0)
         {
             version_first = version;
+            librpa_int::global::lib_printf_root("KS eigenvector reader: %s\n",
+                                                version == 1 ? "binary v1" : "legacy text");
         }
         else
         {
@@ -358,19 +361,27 @@ int read_eigenvector(const std::string &dir_path, librpa_int::MeanField &mf, boo
                          mf.get_n_aos(),   mf.get_n_kpoints(), use_spinor_wfc};
 
     int files_read = 0;
+    bool printed_reader_version = false;
     for (const auto &file_path : eigenvector_files(dir_path))
     {
-        const bool binary = check_KS_file_version(file_path);
+        const int version = check_KS_file_version(file_path);
+        if (!printed_reader_version)
+        {
+            librpa_int::global::lib_printf_root("KS eigenvector reader: %s\n",
+                                                version == 1 ? "binary v1" : "legacy text");
+            printed_reader_version = true;
+        }
         const auto should_read_ik = [&](const int ik) { return selected_ik(iks_selected, ik); };
         const auto store_ik =
             [&](const int ik, const std::vector<double> &re, const std::vector<double> &im)
         { set_meanfield_wfc(mf, shape, ik, re, im); };
         const auto ret =
-            binary ? read_binary_v1_file(
-                         file_path, shape, should_read_ik,
-                         [&](const int ik, const std::vector<std::complex<double>> &block_data)
-                         { set_meanfield_wfc_packed(mf, shape, ik, block_data); })
-                   : read_legacy_text_file(file_path, shape, should_read_ik, store_ik);
+            version == 1
+                ? read_binary_v1_file(
+                      file_path, shape, should_read_ik,
+                      [&](const int ik, const std::vector<std::complex<double>> &block_data)
+                      { set_meanfield_wfc_packed(mf, shape, ik, block_data); })
+                : read_legacy_text_file(file_path, shape, should_read_ik, store_ik);
         if (ret != 0) return ret;
         ++files_read;
     }

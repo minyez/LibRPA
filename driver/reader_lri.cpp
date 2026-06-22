@@ -1002,6 +1002,8 @@ size_t read_Cs(const string &dir_path, double threshold,
     {
         reader_version = detect_Cs_reader_version(dir_path, keyword);
     }
+    librpa_int::global::lib_printf_root("LRI coefficient reader (%s): %s\n", keyword.c_str(),
+                                        reader_version == 1 ? "binary v1" : "legacy");
 
     size_t cs_discard = 0;
     if (reader_version == 1)
@@ -1012,10 +1014,6 @@ size_t read_Cs(const string &dir_path, double threshold,
             throw std::logic_error(
                 "No LRI coefficient reader v1 files found with prefix " +
                 keyword);
-        }
-        if (librpa_int::global::myid_global == 0)
-        {
-            cout << "Binary Cs reader v1 enabled" << endl;
         }
         for (const auto &fn: files)
         {
@@ -1408,6 +1406,11 @@ size_t read_Cs_evenly_distribute(const string &dir_path, double threshold, int m
     if (reader_version < 0)
     {
         reader_version = detect_Cs_reader_version(dir_path, keyword);
+    }
+    if (myid == 0)
+    {
+        lib_printf("LRI coefficient reader (%s): %s\n", keyword.c_str(),
+                   reader_version == 1 ? "binary v1" : "legacy");
     }
 
     if (reader_version == 1)

@@ -933,6 +933,8 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
     {
         reader_version = detect_coulomb_reader_version(dir_path, vq_fprefix);
     }
+    lib_printf_root("Coulomb reader (%s): %s\n", vq_fprefix.c_str(),
+                    reader_version == 1 ? "binary v1" : "legacy");
 
     if (reader_version == 1)
     {
@@ -1277,6 +1279,8 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
     {
         reader_version = detect_coulomb_reader_version(dir_path, vq_fprefix);
     }
+    lib_printf_root("Coulomb reader (%s): %s\n", vq_fprefix.c_str(),
+                    reader_version == 1 ? "binary v1" : "legacy");
 
     if (reader_version == 1)
     {
