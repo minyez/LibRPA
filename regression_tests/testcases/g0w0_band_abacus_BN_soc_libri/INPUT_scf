@@ -35,3 +35,4 @@ exx_singularity_correction massidda
 exx_ccp_rmesh_times		1
 rpa_ccp_rmesh_times	    1
 exx_real_number         1
+out_librpa_reader_version 1

@@ -35,3 +35,4 @@ out_wfc_lcao       1
 out_mat_hs2        1
 out_mat_r          1
 exx_singularity_correction massidda
+out_librpa_reader_version 1
