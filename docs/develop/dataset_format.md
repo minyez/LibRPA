@@ -50,6 +50,35 @@ Its contents are arranged in the following order:
 - **Number of atoms**: 1 line containing the number of atoms in the unit cell, `n_atoms`.
 - **Atomic coordinates and types**: `n_atoms` lines, each containing the Cartesian coordinates and the atom type of one atom.
 
+After the atom rows, `stru_out` may end or may contain an optional tail. The
+tail can contain a symmetry block directly. In older files, the legacy
+Brillouin-zone section below may come before the symmetry block.
+
+The symmetry block starts with one line containing the number of operations and
+the fractional-coordinate convention:
+
+```text
+n_symops row
+```
+
+or
+
+```text
+n_symops col
+```
+
+Use `row` for operations applied as `x' = x * R + t`. Use `col` for operations
+applied as `x' = R * x + t`, which is the Spglib convention. Each of the next
+`n_symops` lines contains one integer rotation matrix and one fractional
+translation:
+
+```text
+R11 R12 R13 R21 R22 R23 R31 R32 R33 t1 t2 t3
+```
+
+Include the identity operation when providing the block; symmetry-enabled
+calculations require it.
+
 Older `stru_out` files may also contain the following Brillouin-zone sampling
 entries. LibRPA no longer reads k-points from `stru_out`; datasets must provide
 [`bz_sampling_out`](#bz-sampling-out).
