@@ -51,7 +51,9 @@ extensions = [
     "sphinx_design",
     "sphinx_copybutton",
     "sphinxcontrib.doxylink",
+    "sphinxcontrib.bibtex",
 ]
+bibtex_bibfiles = ["references.bib"]
 
 # -- Options for Doxylink -------------------------------------------------
 doxygen_build_dir = "doxygen/librpa"
