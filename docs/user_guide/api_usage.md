@@ -118,7 +118,7 @@ Input parsing APIs common to all tasks include (C/C++/Fortran):
 - {librpa}`librpa_set_latvec_and_G` / {librpa}`Handler::set_latvec_and_G` / {librpa}`handler%set_latvec_and_G <librpahandler::set_latvec_and_g>`
 - {librpa}`librpa_set_atoms` / {librpa}`Handler::set_atoms` / {librpa}`handler%set_atoms <librpahandler::set_atoms>`
 - {librpa}`librpa_set_kgrids_kvec` / {librpa}`Handler::set_kgrids_kvec` / {librpa}`handler%set_kgrids_kvec <librpahandler::set_kgrids_kvec>`
-- {librpa}`librpa_set_ibz_mapping` / {librpa}`Handler::set_ibz_mapping` / {librpa}`handler%set_ibz_mapping <librpahandler::set_ibz_mapping>`
+- {librpa}`librpa_set_kq_mapping` / {librpa}`Handler::set_kq_mapping` / {librpa}`handler%set_kq_mapping <librpahandler::set_kq_mapping>`
 - {librpa}`librpa_set_lri_coeff` / {librpa}`Handler::set_lri_coeff` / {librpa}`handler%set_lri_coeff <librpahandler::set_lri_coeff>`
 - {librpa}`librpa_set_aux_bare_coulomb_k_atom_pair` / {librpa}`Handler::set_aux_bare_coulomb_k_atom_pair` / {librpa}`handler%set_aux_bare_coulomb_k_atom_pair <librpahandler::set_aux_bare_coulomb_k_atom_pair>`
 - {librpa}`librpa_set_aux_cut_coulomb_k_atom_pair` / {librpa}`Handler::set_aux_cut_coulomb_k_atom_pair` / {librpa}`handler%set_aux_cut_coulomb_k_atom_pair <librpahandler::set_aux_cut_coulomb_k_atom_pair>`
@@ -139,6 +139,11 @@ These functions parse information from the hosting DFT code to LibRPA, such as:
 
 They have to be called after the runtime environment is initialized,
 see [Environment setup](#environment-setup) above.
+
+`set_kgrids_kvec` takes the k-grid dimensions, the number of loaded SCF k-points,
+their Cartesian vectors, and optional weights. If the loaded SCF k-points are
+symmetry-reduced for the Coulomb calculation, call `set_kq_mapping` with the
+0-based mapping from each loaded SCF k-point to its representative Coulomb q-point.
 
 For spinor workflows, initialize the handler with two spinor components, then use the spinor
 wavefunction setters. Internally, LibRPA selects the normal or spinor path from the mean-field
@@ -212,8 +217,8 @@ int main()
     h.set_scf_dimension(nspins, nkpts, nstates, nbasis);
     h.set_wg_ekb_efermi(nspins, nkpts, nstates, wg, ekb, efermi);
     h.set_latvec_and_G(lat_mat, G_mat);
-    h.set_kgrids_kvec(nk1, nk2, nk3, kvecs);
-    h.set_ibz_mapping(ibz_map);
+    h.set_kgrids_kvec(nk1, nk2, nk3, nkpts, kvecs, kweights);
+    h.set_kq_mapping(map_q_ks);
     h.set_ao_basis_wfc(nbs_wfc);
     h.set_ao_basis_aux(nbs_aux);
 
@@ -284,6 +289,8 @@ call h%init(comm)
 call h%set_scf_dimension(nspins, nkpts, nstates, nbasis)
 call h%set_wg_ekb_efermi(nspins, nkpts, nstates, wg, ekb, efermi)
 call h%set_latvec_and_G(lat, recplatt)
+call h%set_kgrids_kvec(nk1, nk2, nk3, nkpts, kpoints, kweights)
+call h%set_kq_mapping(nkpts, map_q_ks)
 ! ... more input calls ...
 
 ! Compute RPA correlation energy
