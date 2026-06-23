@@ -130,9 +130,17 @@ Below are a few specific guidelines for LibRPA:
 
 ## Adding new runtime options
 
-- `LibrpaSwitch`-type runtime options must begin with `output_` or `use_`, and vice versa.
+- Prefer `output_` or `use_` prefixes for `LibrpaSwitch` options when they
+  describe the behavior clearly; use another verb prefix when it is more precise,
+  such as `read_sigc_mat_rf`.
 - Option with a few available values can either be an `int` type starting with `option_`,
   or a dedicated `enum` type defined in `librpa_enums.h`.
 - Try to keep the option name short, favorably no longer than 25 characters.
+- Doxygen docstrings in `driver/driver.h` and `include/librpa_options.h` are
+  the source of truth for runtime-parameter documentation. Put the explanation,
+  default value, status, version information, and deprecation note there.
+- Add the option to the appropriate block in
+  `docs/user_guide/runtime_parameters.yml`; this controls where the generated
+  user-guide table places the keyword.
 - Use `utilities/check_librpa_options.py` to cross-check the consistency between the C
   struct, Fortran interface and high-level wrapper of `LibrpaOptions`.
