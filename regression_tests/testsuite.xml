@@ -245,7 +245,7 @@
     </testcase>
 
     <testcase name="Water molecule in box (aims input)" directory="g0w0_aims_mole_H2O_libri">
-      <labels refhash="a56500a434d0f57e06eb8cfed2dacd3f66833f78"
+      <labels refhash="c73c66ebffc116a58df3d514db125f81c01ea843"
       />
       <build require_libri="true"
       />
@@ -254,6 +254,17 @@
                 headers="2"
                 rows="24"
                 comparison="cmp_table.abs_diff(5e-4)"
+      />
+      <validate name="energy_qp output"
+                file="librpa/energy_qp"
+                regex="K_point\s+\d+ :"
+                headers="2"
+                rows="24"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="Wc(R,iw) in atom-pair blocks"
+                file="librpa/librpa.d/Wc_Mu_*_Nu_*_iR_*_ifreq_*.mtx"
+                comparison="cmp_mtx.abs_diff(5e-4)"
       />
     </testcase>
 
