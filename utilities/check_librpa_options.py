@@ -360,13 +360,14 @@ def parse_cpp_initialized_fields(path: Path) -> Dict[str, List[int]]:
     body = extract_c_function(path, "librpa_init_options")
     initialized: Dict[str, List[int]] = {}
     assign_re = re.compile(r"\bopts\s*->\s*([A-Za-z_][A-Za-z0-9_]*)\s*=")
-    output_dir_re = re.compile(r"\blibrpa_set_output_dir\s*\(\s*opts\s*,")
+    setter_re = re.compile(r"\blibrpa_set_([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*opts\s*,")
 
     for line_no, line in body:
         for match in assign_re.finditer(line):
             initialized.setdefault(match.group(1), []).append(line_no)
-        if output_dir_re.search(line):
-            initialized.setdefault("output_dir", []).append(line_no)
+        setter_match = setter_re.search(line)
+        if setter_match:
+            initialized.setdefault(setter_match.group(1), []).append(line_no)
 
     return initialized
 

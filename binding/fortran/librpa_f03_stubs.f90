@@ -131,6 +131,8 @@ module librpa_f03
    type :: LibrpaOptions
       !> Output directory for result files.
       character(len=LIBRPA_MAX_STRLEN) :: output_dir
+      !> Experimental: directory to read restart checkpoint files from; empty uses output_dir.
+      character(len=LIBRPA_MAX_STRLEN) :: restart_from_dir
       !> Parallel distribution strategy; use LIBRPA_ROUTING_* constants.
       integer :: parallel_routing
       !> Real-space Coulomb matrix screening threshold.
@@ -272,6 +274,7 @@ module librpa_f03
       contains
          procedure :: init => librpa_init_options
          procedure :: set_output_dir => librpa_set_output_dir
+         procedure :: set_restart_from_dir => librpa_set_restart_from_dir
    end type LibrpaOptions
 
    !> @brief High-level Fortran wrapper for LibRPA handler.
@@ -371,6 +374,17 @@ contains
       character(len=*), intent(in) :: output_dir
       call error_on_call("librpa_set_output_dir")
    end subroutine librpa_set_output_dir
+
+   !> @brief Set the directory to read restart checkpoint files from.
+   !>
+   !> @param[in,out] opts           Options structure.
+   !> @param[in]     restart_from_dir Path to directory containing restart files.
+   subroutine librpa_set_restart_from_dir(opts, restart_from_dir)
+      implicit none
+      class(LibrpaOptions), intent(inout) :: opts
+      character(len=*), intent(in) :: restart_from_dir
+      call error_on_call("librpa_set_restart_from_dir")
+   end subroutine librpa_set_restart_from_dir
 
    !> @brief Initialize the global computing environment of LibRPA
    !>

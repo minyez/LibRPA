@@ -39,6 +39,9 @@ typedef struct
     //! Output directory
     char output_dir[LIBRPA_MAX_STRLEN];
 
+    //! Directory to read restart checkpoint files from. Empty uses output_dir.
+    char restart_from_dir[LIBRPA_MAX_STRLEN];
+
     //! Scheme of parallelization.
     LibrpaParallelRouting parallel_routing;
 
@@ -323,6 +326,14 @@ void librpa_init_options(LibrpaOptions *opts);
  * @param[in]     output_dir Path to directory where output files will be written.
  */
 void librpa_set_output_dir(LibrpaOptions *opts, const char *output_dir);
+
+/**
+ * @brief Set the directory to read restart checkpoint files from.
+ *
+ * @param[in,out] opts           Pointer to the options structure.
+ * @param[in]     restart_from_dir Path to directory containing restart files. Empty uses output_dir.
+ */
+void librpa_set_restart_from_dir(LibrpaOptions *opts, const char *restart_from_dir);
 
 #ifdef __cplusplus
 }

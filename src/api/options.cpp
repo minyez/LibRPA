@@ -12,10 +12,41 @@
 #include <ddla/ddla_connector.h>
 #endif
 
+namespace
+{
+
+void set_directory_option(char *dst, const char *src, const char *name, bool allow_empty)
+{
+    if (src == nullptr)
+    {
+        throw LIBRPA_RUNTIME_ERROR(std::string(name) + " is null");
+    }
+
+    if (allow_empty && src[0] == '\0')
+    {
+        dst[0] = '\0';
+        return;
+    }
+
+    std::string dir = librpa_int::path_as_directory(src);
+    if (dir.size() >= LIBRPA_MAX_STRLEN)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            std::string(name) + " is too long; maximum length is "
+            + std::to_string(LIBRPA_MAX_STRLEN - 1)
+            + " characters including the appended trailing slash");
+    }
+
+    std::memcpy(dst, dir.c_str(), dir.size() + 1);
+}
+
+}
+
 // C APIs
 void librpa_init_options(LibrpaOptions *opts)
 {
     librpa_set_output_dir(opts, "librpa.d");
+    librpa_set_restart_from_dir(opts, "");
 
     opts->parallel_routing = LIBRPA_ROUTING_AUTO;
     opts->vq_threshold = 0.0e0;
@@ -111,19 +142,10 @@ void librpa_init_options(LibrpaOptions *opts)
 
 void librpa_set_output_dir(LibrpaOptions *opts, const char *output_dir)
 {
-    if (output_dir == nullptr)
-    {
-        throw LIBRPA_RUNTIME_ERROR("output_dir is null");
-    }
+    set_directory_option(opts->output_dir, output_dir, "output_dir", false);
+}
 
-    std::string output_dir_s = librpa_int::path_as_directory(output_dir);
-    if (output_dir_s.size() >= LIBRPA_MAX_STRLEN)
-    {
-        throw LIBRPA_RUNTIME_ERROR(
-            "output_dir is too long; maximum length is "
-            + std::to_string(LIBRPA_MAX_STRLEN - 1)
-            + " characters including the appended trailing slash");
-    }
-
-    std::memcpy(opts->output_dir, output_dir_s.c_str(), output_dir_s.size() + 1);
+void librpa_set_restart_from_dir(LibrpaOptions *opts, const char *restart_from_dir)
+{
+    set_directory_option(opts->restart_from_dir, restart_from_dir, "restart_from_dir", true);
 }

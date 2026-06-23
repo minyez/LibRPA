@@ -150,6 +150,7 @@ module librpa_f03
    type, bind(c) :: LibrpaOptions_c
       ! Common runtime control
       character(kind=c_char, len=1) :: output_dir(LIBRPA_MAX_STRLEN)
+      character(kind=c_char, len=1) :: restart_from_dir(LIBRPA_MAX_STRLEN)
       integer(c_int) :: parallel_routing
       real(c_double) :: vq_threshold
       integer(c_int) :: use_kpara_scf_eigvec
@@ -242,6 +243,8 @@ module librpa_f03
 
       !> Output directory for result files.
       character(len=LIBRPA_MAX_STRLEN) :: output_dir
+      !> Experimental: directory to read restart checkpoint files from; empty uses output_dir.
+      character(len=LIBRPA_MAX_STRLEN) :: restart_from_dir
       !> Parallel distribution strategy; use LIBRPA_ROUTING_* constants.
       integer :: parallel_routing
       !> Real-space Coulomb matrix screening threshold.
@@ -384,6 +387,7 @@ module librpa_f03
       contains
          procedure :: init => librpa_init_options
          procedure :: set_output_dir => librpa_set_output_dir
+         procedure :: set_restart_from_dir => librpa_set_restart_from_dir
    end type LibrpaOptions
 
    !> \cond INTERNAL
@@ -1102,6 +1106,7 @@ contains
       end if
 
       call sync_opt(opts%output_dir,              opts%opts_c%output_dir,              direction)
+      call sync_opt(opts%restart_from_dir,        opts%opts_c%restart_from_dir,        direction)
       call sync_opt(opts%parallel_routing,        opts%opts_c%parallel_routing,        direction)
       call sync_opt(opts%vq_threshold,            opts%opts_c%vq_threshold,            direction)
       call sync_opt(opts%use_kpara_scf_eigvec,    opts%opts_c%use_kpara_scf_eigvec,    direction)
@@ -1196,6 +1201,18 @@ contains
       opts%output_dir = trim(output_dir)
       call sync_opt(opts%output_dir, opts%opts_c%output_dir, SYNC_OPTS_F2C)
    end subroutine librpa_set_output_dir
+
+   !> @brief Set the directory to read restart checkpoint files from.
+   !>
+   !> @param[in,out] opts           Options structure.
+   !> @param[in]     restart_from_dir Path to directory containing restart files.
+   subroutine librpa_set_restart_from_dir(opts, restart_from_dir)
+      implicit none
+      class(LibrpaOptions), intent(inout) :: opts
+      character(len=*), intent(in) :: restart_from_dir
+      opts%restart_from_dir = trim(restart_from_dir)
+      call sync_opt(opts%restart_from_dir, opts%opts_c%restart_from_dir, SYNC_OPTS_F2C)
+   end subroutine librpa_set_restart_from_dir
 
    !> @brief Initialize the global computing environment of LibRPA
    !>

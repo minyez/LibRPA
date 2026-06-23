@@ -239,6 +239,9 @@ void parse_inputfile_to_params(const std::string &fn)
     parser.parse_string("output_dir", stmp, flag);
     if (flag == 0)
         opts.set_output_dir(stmp.c_str());
+    parser.parse_string("restart_from_dir", stmp, flag);
+    if (flag == 0)
+        opts.set_restart_from_dir(stmp.c_str());
     _parse_string_post(opts, parallel_routing, get_parallel_routing);
 
     parser.parse_bool("debug", btmp, false, flag);  // backward-compatible

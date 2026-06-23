@@ -78,6 +78,16 @@ public:
      * @param[in] output_dir   Path for output data files.
      */
     void set_output_dir(const char *output_dir) { ::librpa_set_output_dir(this, output_dir); }
+
+    /**
+     * @brief Set directory to read restart checkpoint files from.
+     *
+     * @param[in] restart_from_dir   Path containing restart checkpoint files.
+     */
+    void set_restart_from_dir(const char *restart_from_dir)
+    {
+        ::librpa_set_restart_from_dir(this, restart_from_dir);
+    }
 };
 
 
