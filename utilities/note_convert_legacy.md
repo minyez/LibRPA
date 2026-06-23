@@ -2,6 +2,18 @@
 
 Run these commands from the repository root unless noted otherwise.
 
+## Structure, BZ sampling, and basis metadata
+
+Convert legacy metadata in a dataset directory:
+
+```bash
+./utilities/convert_legacy_metadata.py /path/to/dataset
+```
+
+The script updates `stru_out`, writes or trims `bz_sampling_out`, and writes
+`basis_wfc_out`/`basis_aux_out` from legacy `Cs_data*` when `basis_out` is
+absent. Existing files are backed up as `*.legacy_backup` before replacement.
+
 ## LRI coefficients (`Cs_data`)
 
 Build the converter if needed:
