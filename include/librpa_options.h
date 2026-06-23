@@ -295,6 +295,9 @@ typedef struct
     //! Output Wc matrix in ABFs (real space, imaginary frequency domain).
     LibrpaSwitch output_wc_rf;
 
+    //! Output Wc(R, iw) as atom-pair blocks instead of full matrices.
+    LibrpaSwitch output_wc_rf_atom_pair;
+
     //! First zero-based Wc frequency index to output.
     int ifreq_output_wc_start;
 

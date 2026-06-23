@@ -67,6 +67,7 @@ public:
     bool output_sigc_mat_rt;
     bool output_sigc_mat_rf;
     bool output_wc_rf;
+    bool output_wc_rf_atom_pair;
     int ifreq_output_wc_start;
     int ifreq_output_wc_end;
 

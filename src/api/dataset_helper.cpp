@@ -667,6 +667,7 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts)
     ds.p_g0w0->output_sigc_mat_rt = opts.output_gw_sigc_mat_rt == LIBRPA_SWITCH_ON;
     ds.p_g0w0->output_sigc_mat_rf = opts.output_gw_sigc_mat_rf == LIBRPA_SWITCH_ON;
     ds.p_g0w0->output_wc_rf = opts.output_wc_rf == LIBRPA_SWITCH_ON;
+    ds.p_g0w0->output_wc_rf_atom_pair = opts.output_wc_rf_atom_pair == LIBRPA_SWITCH_ON;
     ds.p_g0w0->ifreq_output_wc_start = opts.ifreq_output_wc_start;
     ds.p_g0w0->ifreq_output_wc_end = opts.ifreq_output_wc_end;
     global::profiler.stop("initialize_ds_g0w0");

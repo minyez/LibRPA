@@ -226,6 +226,7 @@ These parameters are active for LibRI-enabled builds and LibRI routing.
 | `output_gw_sigc_mat_rt`   | Output NAO-basis correlation self-energy matrix (real-space, imaginary time) | bool | `false`                                | Experimental |
 | `output_gw_sigc_mat_rf`   | Output NAO-basis correlation self-energy matrix (real-space, imaginary frequencies) | bool | `false`                         | Experimental |
 | `output_wc_rf`            | Output $W^c$ matrix in real space and imaginary frequency where supported | bool | `false`                                   | Experimental |
+| `output_wc_rf_atom_pair`  | When `output_wc_rf` is enabled, write $W^c(R,i\omega)$ as atom-pair block files instead of full matrix files | bool | `false` | Experimental |
 | `ifreq_output_wc_start`   | First zero-based $W^c$ frequency index to output                         | int  | 0                                         | Experimental |
 | `ifreq_output_wc_end`     | Half-open $W^c$ frequency output end index; negative means all remaining frequencies | int | -1 | Experimental |
 

@@ -3625,7 +3625,8 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
     std::map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
     const PeriodicBoundaryData &pbc, const TFGrids &tfg, bool remove_freq_q,
     bool output_wc_rf, int ifreq_output_wc_start, int ifreq_output_wc_end,
-    const std::string &output_dir, const ArrayDesc *ad_Wc)
+    bool output_wc_rf_atom_pair, const std::string &output_dir,
+    const ArrayDesc *ad_Wc, const AtomicBasis *atbasis_Wc)
 {
     using std::endl;
 
@@ -3669,6 +3670,8 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
     {
         if (ad_Wc == nullptr)
             throw LIBRPA_RUNTIME_ERROR("output_wc_rf needs a Wc matrix descriptor");
+        if (output_wc_rf_atom_pair && atbasis_Wc == nullptr)
+            throw LIBRPA_RUNTIME_ERROR("output_wc_rf_atom_pair needs a Wc atomic basis");
         if (ifreq_output_wc_start < 0)
             throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_start must be non-negative");
         if (ifreq_output_wc_end >= 0 &&
@@ -3681,6 +3684,15 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
         if (ifreq_end > as_int(n_freq))
             throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_end is outside the Wc frequency grid");
 
+        IndexScheduler sched;
+        if (output_wc_rf_atom_pair)
+        {
+            const auto map_atpairs_balanced =
+                get_balanced_ap_distribution_for_consec_descriptor(*atbasis_Wc, *atbasis_Wc, *ad_Wc);
+            sched.init(map_atpairs_balanced, *atbasis_Wc, *atbasis_Wc, *ad_Wc,
+                       major_orig == MAJOR::ROW);
+        }
+
         global::profiler.start("write_Wc_freq_R", "Export Wc(R,w) to file");
         for (int ifreq = ifreq_output_wc_start; ifreq != ifreq_end; ++ifreq)
         {
@@ -3690,6 +3702,21 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
             for (const auto &[R, Wc] : freq_iter->second)
             {
                 const auto iR = pbc.get_R_index(R);
+                if (output_wc_rf_atom_pair)
+                {
+                    const auto pair_mat = get_ap_map_from_blacs_dist_scheduler(
+                        Wc, sched, *atbasis_Wc, *atbasis_Wc, *ad_Wc);
+                    for (const auto &[IJ, Wc_block] : pair_mat)
+                    {
+                        std::ostringstream ss;
+                        ss << path_as_directory(output_dir)
+                           << "Wc_Mu_" << IJ.first << "_Nu_" << IJ.second
+                           << "_iR_" << iR << "_ifreq_" << ifreq << ".mtx";
+                        print_matrix_mm_file(Wc_block, ss.str(), "", 1e-10);
+                    }
+                    continue;
+                }
+
                 std::stringstream ss;
                 std::string info = "Wc at iR " + std::to_string(iR) + " ( " + std::to_string(R.x) +
                                    " " + std::to_string(R.y) + " " + std::to_string(R.z) +

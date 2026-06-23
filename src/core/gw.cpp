@@ -407,6 +407,42 @@ void write_wc_rf_atom_blocks(
     }
 }
 
+void write_wc_rf_full_matrix_from_atom_blocks(
+    const atom_mapping<std::map<Vector3_Order<int>, Matz>>::pair_t_old &Wc_R,
+    const AtomicBasis &atbasis_abf, const ArrayDesc &ad_Wc,
+    const PeriodicBoundaryData &pbc, const std::string &output_dir, const int ifreq,
+    const double freq)
+{
+    for (const auto &R : pbc.Rlist)
+    {
+        Matz Wc(ad_Wc.m_loc(), ad_Wc.n_loc(), MAJOR::COL);
+        Wc.zero_out();
+        for (const auto &[I, J_RWc] : Wc_R)
+        {
+            for (const auto &[J, R_Wc] : J_RWc)
+            {
+                const auto Wc_iter = R_Wc.find(R);
+                if (Wc_iter == R_Wc.end()) continue;
+                collect_block_from_IJ_storage(
+                    Wc, ad_Wc, atbasis_abf, atbasis_abf, as_int(I), as_int(J),
+                    cplxdb{1.0, 0.0}, Wc_iter->second.ptr(), Wc_iter->second.major());
+            }
+        }
+
+        const auto iR = pbc.get_R_index(R);
+        std::stringstream ss;
+        std::string info = "Wc at iR " + std::to_string(iR) + " ( " + std::to_string(R.x) +
+                           " " + std::to_string(R.y) + " " + std::to_string(R.z) +
+                           " ) and ifreq " + std::to_string(ifreq) + " ( " +
+                           std::to_string(freq) + " a.u. )";
+        ss << path_as_directory(output_dir)
+           << "Wc_iR_" << std::setfill('0') << std::setw(5) << iR
+           << "_ifreq_" << std::setfill('0') << std::setw(5) << ifreq
+           << ".mtx";
+        print_matrix_mm_file_parallel(ss.str(), Wc, ad_Wc, info, 1e-10);
+    }
+}
+
 void write_sigc_matrix_binary(const Matz &mat, const std::string &fn)
 {
     const std::int32_t n_states = mat.nr();
@@ -510,6 +546,7 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
     output_sigc_mat_rt = false;
     output_sigc_mat_rf = false;
     output_wc_rf = false;
+    output_wc_rf_atom_pair = false;
     ifreq_output_wc_start = 0;
     ifreq_output_wc_end = -1;
 }
@@ -855,7 +892,11 @@ void G0W0::build_spacetime(
 
                 auto Wc_R = FT_Wc_q2R(comm_h, *basis_aux_unfold, symmetry_context, Wc_q, tfg,
                                       pbc, pbc.Rlist, true, output_dir, this->use_symmetry_context);
-                write_wc_rf_atom_blocks(Wc_R, pbc, output_dir, ifreq);
+                if (output_wc_rf_atom_pair)
+                    write_wc_rf_atom_blocks(Wc_R, pbc, output_dir, ifreq);
+                else
+                    write_wc_rf_full_matrix_from_atom_blocks(
+                        Wc_R, atbasis_abf, ad_Wc, pbc, output_dir, ifreq, freq);
             }
             profiler.stop("write_Wc_freq_R");
         }
@@ -952,7 +993,7 @@ void G0W0::build_spacetime(
         profiler.start("g0w0_build_spacetime_ct_ft_real_work", "Perform transformation");
         auto Wc_tau_R_blacs = CT_FT_Wc_freq_q(
             comm_h, Wc_freq_q, pbc, tfg, true, output_wc_rf, ifreq_output_wc_start,
-            ifreq_output_wc_end, output_dir, &ad_Wc);
+            ifreq_output_wc_end, output_wc_rf_atom_pair, output_dir, &ad_Wc, &atbasis_abf);
         release_free_mem();
         profiler.stop("g0w0_build_spacetime_ct_ft_real_work");
 
