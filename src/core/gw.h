@@ -110,6 +110,9 @@ public:
     //! Check if the real-space self-energy matrix is built
     bool is_rspace_built() const { return is_rspace_built_; }
 
+    //! Read real-space imaginary-frequency correlation self-energy matrices from disk
+    void read_sigc(const std::string &input_dir);
+
     //! Build the real-space correlation self-energy matrix on imaginary frequencies with space-time method using LibRI
     //!
     //! Wc_freq_q is destroyed on exit.

@@ -586,6 +586,31 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     if (opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON)
         pds->redistribute_eigvecs_kpara();
 
+    auto ensure_exx = [&]()
+    {
+        if (pds->p_exx) return;
+
+        profiler.start("g0w0_exx", "Build exchange self-energy");
+        initialize_ds_exx(*pds, opts);
+        const bool use_shrink_abfs = opts.use_shrink_abfs == LIBRPA_SWITCH_ON;
+        const auto &basis_aux_exx = use_shrink_abfs ? pds->basis_aux_shrink : pds->basis_aux;
+        const auto &cs_data_exx = use_shrink_abfs ? pds->cs_data_shrink : pds->cs_data;
+        const auto &coul = opts.use_fullcoul_exx ? pds->vq : pds->vq_cut;
+        profiler.start("ft_vq_cut", "Fourier transform truncated Coulomb");
+        const auto VR = librpa_int::FT_Vq(
+            basis_aux_exx, pds->symmetry_context, coul, pds->pbc, true,
+            opts.use_symmetry_exx == LIBRPA_SWITCH_ON);
+        profiler.stop("ft_vq_cut");
+
+        profiler.start("g0w0_exx_real_work");
+        pds->p_exx->build(routing, basis_aux_exx, cs_data_exx, VR);
+        // pds->p_exx->build_KS_kgrid_blacs(pds->blacs_h);
+        profiler.stop("g0w0_exx_real_work");
+        profiler.stop("g0w0_exx");
+        pds->comm_h.barrier();
+        release_free_mem();
+    };
+
     // Determine the atom pairs that this process is responsible for
     initialize_ds_atpairs_local(*pds, routing);
     // Redistribute 2D Coulomb matrices to atom-pair blocks if they are parsed
@@ -596,6 +621,16 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     // Initialize response function object
     initialize_ds_chi0(*pds, opts);
     auto &chi0 = *(pds->p_chi0);
+
+    if (opts.read_sigc_mat_rf == LIBRPA_SWITCH_ON)
+    {
+        ensure_exx();
+        initialize_ds_g0w0(*pds, opts);
+        const char *restart_from_dir = opts.restart_from_dir[0] ? opts.restart_from_dir : opts.output_dir;
+        pds->p_g0w0->read_sigc(restart_from_dir);
+        profiler.stop("api_build_g0w0_sigma");
+        return;
+    }
 
     profiler.start("chi0_build", "Build response function chi0");
     chi0.build(routing, pds->cs_data, pds->atpairs_local, pds->basis_aux, pds->sinvS,
@@ -625,28 +660,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     }
     pds->comm_h.barrier();
 
-    if (!pds->p_exx)
-    {
-        profiler.start("g0w0_exx", "Build exchange self-energy");
-        initialize_ds_exx(*pds, opts);
-        const bool use_shrink_abfs = opts.use_shrink_abfs == LIBRPA_SWITCH_ON;
-        const auto &basis_aux_exx = use_shrink_abfs ? pds->basis_aux_shrink : pds->basis_aux;
-        const auto &cs_data_exx = use_shrink_abfs ? pds->cs_data_shrink : pds->cs_data;
-        const auto &coul = opts.use_fullcoul_exx ? pds->vq : pds->vq_cut;
-        profiler.start("ft_vq_cut", "Fourier transform truncated Coulomb");
-        const auto VR = librpa_int::FT_Vq(
-            basis_aux_exx, pds->symmetry_context, coul, pds->pbc, true,
-            opts.use_symmetry_exx == LIBRPA_SWITCH_ON);
-        profiler.stop("ft_vq_cut");
-
-        profiler.start("g0w0_exx_real_work");
-        pds->p_exx->build(routing, basis_aux_exx, cs_data_exx, VR);
-        // pds->p_exx->build_KS_kgrid_blacs(pds->blacs_h);
-        profiler.stop("g0w0_exx_real_work");
-        profiler.stop("g0w0_exx");
-        pds->comm_h.barrier();
-        release_free_mem();
-    }
+    ensure_exx();
 
     profiler.start("g0w0_wc", "Build screened interaction");
 

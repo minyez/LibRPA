@@ -135,6 +135,118 @@ std::string make_sigc_ks_imagfreq_band_stem(const std::string &output_dir, const
     return ss.str();
 }
 
+std::vector<std::string> make_sigc_rf_filenames(
+    const std::string &input_dir, const int ispin, const int ispinor_bra,
+    const int ispinor_ket, const int n_spinor, const int iomega, const int myid)
+{
+    const auto dir = path_as_directory(input_dir);
+    std::vector<std::string> names;
+
+    std::ostringstream ss;
+    ss << dir << "SigcRF_ispin_" << std::setfill('0') << std::setw(2) << ispin
+       << "_s_" << std::setw(1) << ispinor_bra << std::setw(1) << ispinor_ket
+       << "_iomega_" << std::setfill('0') << std::setw(3) << iomega
+       << "_myid_" << std::setfill('0') << std::setw(5) << myid << ".dat";
+    names.emplace_back(ss.str());
+
+    ss.str("");
+    ss.clear();
+    // Fallback sigc saved files
+    ss << dir << "SigcRF_ispin_" << std::setfill('0') << std::setw(5) << ispin;
+    if (n_spinor > 1)
+    {
+        ss << "_spinor_" << ispinor_bra << "_" << ispinor_ket;
+    }
+    ss << "_iomega_" << std::setfill('0') << std::setw(5) << iomega
+       << "_myid_" << std::setfill('0') << std::setw(5) << myid << ".dat";
+    names.emplace_back(ss.str());
+
+    return names;
+}
+
+int parse_sigc_rf_myid(const std::string &file_path)
+{
+    const auto name = base_name(file_path);
+    const auto tag = std::string{"_myid_"};
+    const auto pos = name.rfind(tag);
+    const auto suffix = std::string{".dat"};
+    if (pos == std::string::npos || name.size() < suffix.size()
+        || name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0)
+        return -1;
+
+    const auto begin = pos + tag.size();
+    const auto end = name.size() - suffix.size();
+    if (begin >= end) return -1;
+
+    int myid = 0;
+    for (auto i = begin; i != end; ++i)
+    {
+        const char ch = name[i];
+        if (ch < '0' || ch > '9') return -1;
+        myid = myid * 10 + (ch - '0');
+    }
+    return myid;
+}
+
+int discover_sigc_rf_nprocs_old(const std::string &input_dir)
+{
+    // ponytail: old SigcRF files have no manifest; largest _myid_ is the old rank count.
+    int myid_max = -1;
+    for (const auto &file_path: discover_files_with_prefix(input_dir, "SigcRF_"))
+    {
+        myid_max = std::max(myid_max, parse_sigc_rf_myid(file_path));
+    }
+    return myid_max + 1;
+}
+
+int count_sigc_rf_files_for_rank(const int nfiles, const int nprocs, const int myid)
+{
+    const int count_base = nfiles / nprocs;
+    const int count_extra = nfiles % nprocs;
+    for (int iextra = 0; iextra != count_extra; ++iextra)
+    {
+        if (myid == iextra * nprocs / count_extra) return count_base + 1;
+    }
+    return count_base;
+}
+
+std::pair<int, int> sigc_rf_file_range_for_rank(
+    const int nfiles, const int nprocs, const int myid)
+{
+    int begin = 0;
+    for (int rank = 0; rank != myid; ++rank)
+    {
+        begin += count_sigc_rf_files_for_rank(nfiles, nprocs, rank);
+    }
+    return {begin, begin + count_sigc_rf_files_for_rank(nfiles, nprocs, myid)};
+}
+
+std::string find_sigc_rf_file(
+    const std::string &input_dir, const int ispin, const int ispinor_bra,
+    const int ispinor_ket, const int n_spinor, const int iomega, const int myid,
+    bool *found)
+{
+    const auto candidates = make_sigc_rf_filenames(
+        input_dir, ispin, ispinor_bra, ispinor_ket, n_spinor, iomega, myid);
+    for (const auto &candidate: candidates)
+    {
+        if (file_exists(candidate))
+        {
+            if (found != nullptr) *found = true;
+            return candidate;
+        }
+    }
+    if (found != nullptr) *found = false;
+    return candidates.front();
+}
+
+void read_exact(std::ifstream &ifs, void *dst, const std::streamsize n,
+                const std::string &fn)
+{
+    if (!ifs.read(static_cast<char *>(dst), n))
+        throw LIBRPA_RUNTIME_ERROR("failed to read SigC checkpoint file: " + fn);
+}
+
 std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
 {
     std::map<atom_t, size_t> atom_nw;
@@ -568,6 +680,120 @@ void G0W0::reset_rspace()
 void G0W0::reset_kspace()
 {
     sigc_is_ik_f_KS.clear(); sigc_diag_is_ik_f_KS.clear(); is_kspace_built_ = false;
+}
+
+void G0W0::read_sigc(const std::string &input_dir)
+{
+    reset_rspace();
+    reset_kspace();
+
+    global::lib_printf_root("Reading real-space imaginary-frequency NAO sigma_c matrices from %s\n",
+                            path_as_directory(input_dir).c_str());
+    global::profiler.start("g0w0_read_sigc(R,iw) in NAO");
+
+    const int nprocs_old = discover_sigc_rf_nprocs_old(input_dir);
+    if (nprocs_old == 0)
+        throw LIBRPA_RUNTIME_ERROR("no SigC checkpoint files found in: " + path_as_directory(input_dir));
+
+    const auto myid_old_range = sigc_rf_file_range_for_rank(
+        nprocs_old, global::size_global, global::myid_global);
+    const int myid_old_begin = myid_old_range.first;
+    const int myid_old_end = myid_old_range.second;
+    global::lib_printf_root("Detected SigcRF files from %d MPI rank(s); current job has %d rank(s).\n",
+                            nprocs_old, global::size_global);
+
+    const int n_spinor = mf.get_n_spinor();
+    int missing_file_local = 0;
+    std::string missing_file;
+    for (int ispin = 0; ispin != mf.get_n_spins(); ++ispin)
+    {
+        for (int ispinor_bra = 0; ispinor_bra != n_spinor; ++ispinor_bra)
+        {
+            for (int ispinor_ket = 0; ispinor_ket != n_spinor; ++ispinor_ket)
+            {
+                for (size_t iomega = 0; iomega != tfg.get_n_grids(); ++iomega)
+                {
+                    for (int myid_old = myid_old_begin; myid_old != myid_old_end; ++myid_old)
+                    {
+                        bool found = false;
+                        const auto fn = find_sigc_rf_file(
+                            input_dir, ispin, ispinor_bra, ispinor_ket,
+                            n_spinor, as_int(iomega), myid_old, &found);
+                        if (!found)
+                        {
+                            missing_file_local = 1;
+                            if (missing_file.empty()) missing_file = fn;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    int missing_file_any = 0;
+    comm_h.allreduce(&missing_file_local, &missing_file_any, 1, MPI_MAX);
+    if (missing_file_any)
+    {
+        if (missing_file_local)
+            global::ofs_myid << "Missing SigC checkpoint file: " << missing_file << std::endl;
+        throw LIBRPA_RUNTIME_ERROR("missing SigC checkpoint file(s) in: "
+                                  + path_as_directory(input_dir));
+    }
+
+    for (int ispin = 0; ispin != mf.get_n_spins(); ++ispin)
+    {
+        for (int ispinor_bra = 0; ispinor_bra != n_spinor; ++ispinor_bra)
+        {
+            for (int ispinor_ket = 0; ispinor_ket != n_spinor; ++ispinor_ket)
+            {
+                for (size_t iomega = 0; iomega != tfg.get_n_grids(); ++iomega)
+                {
+                    for (int myid_old = myid_old_begin; myid_old != myid_old_end; ++myid_old)
+                    {
+                        const auto fn = find_sigc_rf_file(
+                            input_dir, ispin, ispinor_bra, ispinor_ket,
+                            n_spinor, as_int(iomega), myid_old, nullptr);
+                        std::ifstream ifs_sigmac_r(fn, std::ios::binary);
+                        if (!ifs_sigmac_r)
+                            throw LIBRPA_RUNTIME_ERROR("cannot open SigC checkpoint file: " + fn);
+
+                        size_t n_IJR_myid = 0;
+                        read_exact(ifs_sigmac_r, &n_IJR_myid, sizeof(n_IJR_myid), fn);
+
+                        const auto omega = tfg.get_freq_nodes()[iomega];
+                        for (size_t idx = 0; idx != n_IJR_myid; ++idx)
+                        {
+                            size_t dims[5];
+                            read_exact(ifs_sigmac_r, dims, 5 * sizeof(size_t), fn);
+
+                            if (dims[0] >= pbc.Rlist.size())
+                                throw LIBRPA_RUNTIME_ERROR("SigC checkpoint R index is out of range: " + fn);
+                            if (dims[1] >= atbasis_wfc.n_atoms || dims[2] >= atbasis_wfc.n_atoms)
+                                throw LIBRPA_RUNTIME_ERROR("SigC checkpoint atom index is out of range: " + fn);
+
+                            const int I = as_int(dims[1]);
+                            const int J = as_int(dims[2]);
+                            const auto n_I = atbasis_wfc.get_atom_nb(I);
+                            const auto n_J = atbasis_wfc.get_atom_nb(J);
+                            if (dims[3] != n_I || dims[4] != n_J)
+                                throw LIBRPA_RUNTIME_ERROR("SigC checkpoint block size mismatch: " + fn);
+
+                            Matz sigc(as_int(n_I), as_int(n_J), MAJOR::ROW);
+                            read_exact(ifs_sigmac_r, sigc.ptr(),
+                                       static_cast<std::streamsize>(n_I * n_J * sizeof(cplxdb)),
+                                       fn);
+                            sigc_is_f_IJ_R[ispin][ispinor_bra][ispinor_ket][omega][{I, J}]
+                                          [pbc.Rlist[dims[0]]] = std::move(sigc);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    is_rspace_built_ = true;
+    comm_h.barrier();
+    global::lib_printf_root("Finished reading real-space imaginary-frequency NAO sigma_c matrices.\n");
+    global::profiler.stop("g0w0_read_sigc(R,iw) in NAO");
 }
 
 void G0W0::write_sigc_matrices_KS_binary(const std::string &output_dir,
@@ -1608,16 +1834,10 @@ void G0W0::build_spacetime(
                     for (size_t iomega = 0; iomega != tfg.get_n_grids(); iomega++)
                     {
                         size_t n_IJR_myid = 0;
-                        std::stringstream ss;
-                        ss << path_as_directory(this->output_dir) << "SigcRF"
-                           << "_ispin_" << std::setfill('0') << std::setw(5) << ispin;
-                        if (n_spinor > 1)
-                        {
-                           ss << "_spinor_" << ispinor_bra << "_" << ispinor_ket;
-                        }
-                        ss << "_iomega_" << std::setfill('0') << std::setw(5) << iomega
-                           << "_myid_" << std::setfill('0') << std::setw(5) << global::myid_global << ".dat";
-                        ofs_sigmac_r.open(ss.str(), std::ios::out | std::ios::binary);
+                        const auto fn = make_sigc_rf_filenames(
+                            this->output_dir, ispin, ispinor_bra, ispinor_ket,
+                            n_spinor, as_int(iomega), global::myid_global).front();
+                        ofs_sigmac_r.open(fn, std::ios::out | std::ios::binary);
                         ofs_sigmac_r.write((char *) &n_IJR_myid, sizeof(size_t)); // placeholder
 
                         const auto omega = tfg.get_freq_nodes()[iomega];
