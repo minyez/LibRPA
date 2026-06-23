@@ -5,3 +5,10 @@ input_dir = ../dataset
 nfreq = 16
 parallel_routing = libri
 n_params_anacon = 16
+# Since the structure only has xOz mirror,
+# and the resulted irreducible sector is the same as the full sector,
+# it has no speed-up effect regardless of whether symmetry reduction
+# is used.
+# Switching on them here is to ensure the above behavior is reproduced.
+use_symmetry_exx = t
+use_symmetry_gw = t
