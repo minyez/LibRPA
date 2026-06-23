@@ -319,6 +319,56 @@
       />
     </testcase>
 
+    <testcase name="NaCl band, restart by reading Sigma_c(R,iw) NAO (aims input)"
+              directory="g0w0_band_aims_NaCl_read_sigc_mat_rf_libri">
+      <labels refhash="3ed0f4177a05039eed314027df86e94ef3e67109"
+      />
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+           copy_files="librpa.d_restart"
+      />
+      <validate name="Quasi-particle energies on k-grid (nosym)"
+                file_test="librpa/librpa.out"
+                file_refr="librpa/nosym_np4/librpa.out"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="15"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="Non-SCF EXX band structure (nosym)"
+                file_test="librpa/EXX_band_spin_*.dat"
+                file_refr="librpa/nosym_np4/EXX_band_spin_*.dat"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="QP band structure (nosym)"
+                file_test="librpa/GW_band_spin_*.dat"
+                file_refr="librpa/nosym_np4/GW_band_spin_*.dat"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="Quasi-particle energies on k-grid (sym)"
+                file_test="librpa/librpa.out"
+                file_refr="librpa/sym_np1/librpa.out"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="15"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="Non-SCF EXX band structure (sym)"
+                file_test="librpa/EXX_band_spin_*.dat"
+                file_refr="librpa/sym_np1/EXX_band_spin_*.dat"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="QP band structure (sym)"
+                file_test="librpa/GW_band_spin_*.dat"
+                file_refr="librpa/sym_np1/GW_band_spin_*.dat"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+    </testcase>
+
     <testcase name="Lithium atom, spin-polarized (aims input)" directory="g0w0_aims_Li_atom_libri">
       <labels refhash="a56500a434d0f57e06eb8cfed2dacd3f66833f78"
       />
