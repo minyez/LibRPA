@@ -1,4 +1,5 @@
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
+from pathlib import Path
 
 
 def get_parser():
@@ -65,7 +66,11 @@ def _add_execute_options(p: ArgumentParser, dummy: bool = False):
     suffix = ""
     if dummy:
         suffix = " (dummy)"
-    p.add_argument("librpa_exec", help="Path to LibRPA executable for test" + suffix)
+    help = "Path to LibRPA executable for test" + suffix
+    if dummy:
+        p.add_argument("librpa_exec", nargs="?", type=Path, default=".", help=help)
+    else:
+        p.add_argument("librpa_exec", help=help)
     p.add_argument("-f", "--force", dest="force",
                    action="store_true", help="Force running" + suffix)
     p.add_argument("--mpiexec", type=str, default="mpirun",
