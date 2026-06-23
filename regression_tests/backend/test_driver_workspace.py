@@ -10,6 +10,8 @@ from regression_tests.backend.driver import (
     _prepare_librpa_workspace,
     _validate_scope_filter,
 )
+from regression_tests.backend import validate as validate_module
+from regression_tests.backend.xmlparser import XMLParser
 
 
 class TestPrepareLibrpaWorkspace(unittest.TestCase):
@@ -89,6 +91,39 @@ class TestDriverRunFailure(unittest.TestCase):
             )
             self.assertEqual(driver.analyze(), 1)
             self.assertIn("exit code 3", tc["run_failure"])
+
+
+class TestValidateFileOverrides(unittest.TestCase):
+
+    def test_analyze_compares_test_and_reference_override_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "testcases").mkdir()
+            (root / "refs" / "case").mkdir(parents=True)
+            (root / "workspace" / "testcases" / "case").mkdir(parents=True)
+            (root / "workspace" / "testcases" / "case" / "actual.out").write_text("same\n")
+            (root / "refs" / "case" / "reference.out").write_text("same\n")
+
+            xml = pathlib.Path(tmp) / "testsuite.xml"
+            xml.write_text(
+                '<testsuite><group name="g"><testcase name="n" directory="case">'
+                '<validate name="v" file="common.out" file_test="actual.out" '
+                'file_refr="reference.out" comparison="dummy" />'
+                '</testcase></group></testsuite>'
+            )
+            groups = XMLParser(xml).groups
+
+            old_import = validate_module._import_comparison
+            validate_module._import_comparison = lambda _: lambda lhs, rhs: (lhs == rhs, "ok")
+            try:
+                driver = TestDriver(root / "testcases", root / "refs",
+                                    root / "workspace", groups)
+                driver.initialize(1, 1, False)
+                self.assertEqual(driver.analyze(), 0)
+            finally:
+                validate_module._import_comparison = old_import
+
+            self.assertEqual(groups["g"][0]["results"], [[True, "ok"]])
 
 
 class TestScopeFilter(unittest.TestCase):

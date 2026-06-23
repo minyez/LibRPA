@@ -186,6 +186,8 @@ Useful `<validate>` attributes:
 - `name`: human-readable label printed in the regression report.
 - `file`: file pattern to search under both the test workspace and reference
   directory. The default is `librpa/librpa.out`.
+- `file_test`, `file_refr`: optional file patterns for the test workspace and
+  reference directory. Each one overrides `file` only for that side.
 - `regex`: Python regular expression used to find the quantity or table. If the
   matched line has one capture group, that group is compared. If it has multiple
   capture groups, they are joined with spaces before comparison.

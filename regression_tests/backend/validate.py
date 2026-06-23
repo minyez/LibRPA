@@ -49,6 +49,21 @@ def _extract_plain(directory: str, file: str,
     return raw
 
 
+def _align_extracted_files(test, refr, align):
+    if not align or not isinstance(test, dict) or not isinstance(refr, dict):
+        return test, refr
+    if set(test) == set(refr) or len(test) != len(refr):
+        return test, refr
+
+    test_items = sorted(test.items(), key=lambda item: str(item[0]))
+    refr_items = sorted(refr.items(), key=lambda item: str(item[0]))
+    keys = [key for key, _ in test_items]
+    return (
+        dict(zip(keys, [value for _, value in test_items])),
+        dict(zip(keys, [value for _, value in refr_items])),
+    )
+
+
 def _process_regex(regex: str):
     if regex is not None:
         regex = re.compile(regex)
@@ -126,9 +141,12 @@ def _process_occurences(occurences: str):
 class Validate():
 
     def __init__(self, name: str, file: str, comparison: str, headers: str, rows: str,
-                 regex: str, occurences: str, binary_extract: str):
+                 regex: str, occurences: str, binary_extract: str,
+                 file_test: str = None, file_refr: str = None):
         self._name = name
-        self._file = file
+        self._file_test = file_test if file_test is not None else file
+        self._file_refr = file_refr if file_refr is not None else file
+        self._align_files = self._file_test != self._file_refr
         self._comparison = _import_comparison(comparison)
         self._headers = _process_headers(headers)
         self._rows = _process_rows(rows)
@@ -138,11 +156,13 @@ class Validate():
 
     def evaluate(self, dir_test, dir_refr):
         if self._binary_extract is None:
-            test = _extract_plain(dir_test, self._file, self._regex, self._headers, self._rows, self._occurences)
-            refr = _extract_plain(dir_refr, self._file, self._regex, self._headers, self._rows, self._occurences)
+            test = _extract_plain(dir_test, self._file_test, self._regex, self._headers, self._rows, self._occurences)
+            refr = _extract_plain(dir_refr, self._file_refr, self._regex, self._headers, self._rows, self._occurences)
         else:
-            test = self._binary_extract(dir_test, self._file)
-            refr = self._binary_extract(dir_refr, self._file)
+            test = self._binary_extract(dir_test, self._file_test)
+            refr = self._binary_extract(dir_refr, self._file_refr)
+
+        test, refr = _align_extracted_files(test, refr, self._align_files)
 
         # print(dir_test, dir_refr)
         return self._comparison(test, refr)

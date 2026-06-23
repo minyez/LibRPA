@@ -313,8 +313,10 @@ class TestDriver:
                                  v["regex"],
                                  v["occurences"],
                                  v["binary_extract"],
+                                 file_test=v.get("file_test"),
+                                 file_refr=v.get("file_refr"),
                                  )
-                good, msg = entry.evaluate(refr, test)
+                good, msg = entry.evaluate(test, refr)
                 good_all.append(good)
                 results.append([good, msg])
             tc["results"] = results

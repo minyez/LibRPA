@@ -72,9 +72,11 @@ def _process_validate_parameters(node_validate):
     # name is manditory
     name = nv.get('name')
     file = nv.get('file', 'librpa/librpa.out')
+    file_test = nv.get('file_test', file)
+    file_refr = nv.get('file_refr', file)
 
     pars = ["regex", "occurences", "headers", "rows", "comparison", "binary_extract"]
-    ret = dict(name=name, file=file)
+    ret = dict(name=name, file=file, file_test=file_test, file_refr=file_refr)
     for p in pars:
         ret[p] = nv.get(p, None)
 
