@@ -1,0 +1,18 @@
+# Driver paramters
+task = g0w0
+input_dir = ../dataset
+# API runtime
+nfreq = 6
+option_dielect_func = 0
+replace_w_head = t
+parallel_routing = libri
+# Reading real-space-frequency Sigma_c NAO from restart directory.
+# librpa.d_restart/ was simply from `mv librpa.d librpa.d_restart`
+# from previous normal calculation with `output_gw_sigc_mat_rf = t`
+read_sigc_mat_rf = t
+restart_from_dir = librpa.d_restart/
+# Restart sigc mats were generated with symmetry switches on
+# Keep symmetry off to cover symmetry on/off comparison
+use_symmetry_exx = f
+use_symmetry_gw = f
+use_symmetry_rpa = f

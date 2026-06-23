@@ -1,0 +1,7 @@
+# 'Cl1 Na1', NA, NaCl type
+# reference: Inorganic Chemistry vol 45, pp 7367#
+lattice_vector     0.000000000     2.828650000     2.828650000
+lattice_vector     2.828650000     0.000000000     2.828650000
+lattice_vector     2.828650000     2.828650000     0.000000000
+atom_frac     0.000000000     0.000000000     0.000000000 Na
+atom_frac     0.500000000     0.500000000     0.500000000 Cl

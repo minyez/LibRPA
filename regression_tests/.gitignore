@@ -6,5 +6,8 @@ testcases/*/*
 !testcases/*/dataset.tar.gz
 testcases/*/librpa/*
 !testcases/*/librpa/librpa.in
+# Files to check read/restart features
+!testcases/*/librpa/librpa.d_restart
 
 !refs/*/*/*
+!refs/*/*/*/*
