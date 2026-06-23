@@ -16,6 +16,11 @@ in C++ with MPI/OpenMP parallelism and equipped with C and Fortran
 interfaces, LibRPA can be integrated with density functional theory (DFT) codes
 through both file-based and API-based workflows.
 
+.. note::
+
+   LibRPA is under active development, and its input/output interfaces are
+   prone to change.
+
 LibRPA is :doc:`licensed <develop/licensing>` under LGPL-3.0.
 
 **Key Features**

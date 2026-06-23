@@ -11,6 +11,9 @@ implemented in C++ with MPI/OpenMP parallelism, provides C and Fortran
 interfaces, and can be integrated with density functional theory (DFT) codes
 through both file-based and API-based workflows.
 
+**Note:** LibRPA is under active development, and its input/output interfaces
+are prone to change.
+
 ## Features
 
 - RPA correlation-energy calculations and one-shot GW quasiparticle calculations
