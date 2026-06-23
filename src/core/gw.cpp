@@ -1066,6 +1066,10 @@ void G0W0::build_spacetime(
     }
 
     const auto& symmetry_ctx = this->symmetry_context;
+    const auto n_full_rspace_blocks =
+        static_cast<std::size_t>(natom) * static_cast<std::size_t>(natom) * pbc.Rlist.size();
+    const bool input_symmetry_reduces_rspace =
+        symmetry_ctx.count_irreducible_blocks() < n_full_rspace_blocks;
     const bool use_input_sigc_symmetry =
         this->use_symmetry_context
         && symmetry_ctx.available
@@ -1073,7 +1077,8 @@ void G0W0::build_spacetime(
         && !symmetry_ctx.irreducible_sector.empty()
         && !symmetry_ctx.rspace_operations.empty()
         && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(natom)
-        && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(natom);
+        && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(natom)
+        && input_symmetry_reduces_rspace;
     const auto libri_sigc_irreducible_sector =
         use_input_sigc_symmetry
             ? convert_input_symmetry_irreducible_sector_to_libri_gw(

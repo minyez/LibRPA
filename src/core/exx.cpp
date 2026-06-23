@@ -100,9 +100,15 @@ convert_input_symmetry_irreducible_sector_to_libri(
 
 bool exx_coulomb_uses_input_symmetry_irreducible_sector_layout(
     const atpair_R_mat_t& coul_mat,
-    const librpa_int::SymmetryContext& symmetry_ctx)
+    const librpa_int::SymmetryContext& symmetry_ctx,
+    const std::size_t n_R_blocks)
 {
     if (coul_mat.empty())
+    {
+        return false;
+    }
+    const auto n_atoms = symmetry_ctx.atom_to_type.size();
+    if (symmetry_ctx.count_irreducible_blocks() >= n_atoms * n_atoms * n_R_blocks)
     {
         return false;
     }
@@ -489,6 +495,10 @@ void Exx::build(const LibrpaParallelRouting routing,
         exx_libri.set_parallel(comm_h.comm, atoms_pos, this->pbc.latvec_array, this->pbc.period_array);
 
     const auto& symmetry_ctx = this->symmetry_context;
+    const auto n_full_rspace_blocks =
+        static_cast<std::size_t>(n_atoms) * static_cast<std::size_t>(n_atoms) * Rlist.size();
+    const bool input_symmetry_reduces_rspace =
+        symmetry_ctx.count_irreducible_blocks() < n_full_rspace_blocks;
     const bool use_symmetry_exx =
         this->use_symmetry_context
         && symmetry_ctx.available
@@ -496,7 +506,8 @@ void Exx::build(const LibrpaParallelRouting routing,
         && !symmetry_ctx.irreducible_sector.empty()
         && !symmetry_ctx.rspace_operations.empty()
         && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(n_atoms)
-        && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(n_atoms);
+        && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(n_atoms)
+        && input_symmetry_reduces_rspace;
     const auto libri_irreducible_sector =
         use_symmetry_exx
             ? convert_input_symmetry_irreducible_sector_to_libri(
@@ -577,7 +588,8 @@ void Exx::build(const LibrpaParallelRouting routing,
     const atpair_R_mat_t* exx_coul_mat_ptr = &coul_mat;
     const bool use_input_exx_coulomb_restore =
         use_symmetry_exx
-        && exx_coulomb_uses_input_symmetry_irreducible_sector_layout(coul_mat, symmetry_ctx);
+        && exx_coulomb_uses_input_symmetry_irreducible_sector_layout(
+            coul_mat, symmetry_ctx, Rlist.size());
     if (use_input_exx_coulomb_restore)
     {
         const auto abf_layout_key = find_input_symmetry_shell_layout_key(
