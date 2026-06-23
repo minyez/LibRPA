@@ -246,8 +246,8 @@ typedef struct
     //! Zero uses channel 1 in the current analytic 3D/2D head/wing path.
     int rpa_headwing_body_start;
 
-    //! Flag of loading correlation self-energy matrix (real-space, imaginary frequency) from file
-    LibrpaSwitch load_sigc_from_file;
+    //! Flag of reading NAO correlation self-energy matrix in real-space/frequency form
+    LibrpaSwitch read_sigc_mat_rf;
 
     //! Threshold of eigenvalues to perform square root of Coulomb matrices
     double sqrt_coulomb_threshold;

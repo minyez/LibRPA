@@ -118,7 +118,7 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->use_2d_dielectric = LIBRPA_SWITCH_OFF;
     opts->rpa_headwing_body_start = 0;
     opts->sqrt_coulomb_threshold = 0.0e0;
-    opts->load_sigc_from_file = LIBRPA_SWITCH_OFF;
+    opts->read_sigc_mat_rf = LIBRPA_SWITCH_OFF;
 
     opts->libri_chi0_threshold_C = 0.0e0;
     opts->libri_chi0_threshold_G = 0.0e0;

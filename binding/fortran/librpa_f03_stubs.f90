@@ -232,8 +232,8 @@ module librpa_f03
       logical :: use_2d_dielectric
       !> First regular Coulomb-eigenbasis channel used by RPA head/wing correction.
       integer :: rpa_headwing_body_start
-      !> Experimental: load correlation self-energy matrix from file where supported.
-      logical :: load_sigc_from_file
+      !> Experimental: read NAO correlation self-energy matrix in real-space/frequency form.
+      logical :: read_sigc_mat_rf
       !> Threshold for eigenvalues when taking the square root of Coulomb matrices.
       real(dp) :: sqrt_coulomb_threshold
       !> LibRI threshold of LRI triple coefficients for response function.

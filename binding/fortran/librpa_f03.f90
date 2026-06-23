@@ -208,7 +208,7 @@ module librpa_f03
       integer(c_int) :: option_dielect_func
       integer(c_int) :: use_2d_dielectric
       integer(c_int) :: rpa_headwing_body_start
-      integer(c_int) :: load_sigc_from_file
+      integer(c_int) :: read_sigc_mat_rf
       real(c_double) :: sqrt_coulomb_threshold
       real(c_double) :: libri_chi0_threshold_C
       real(c_double) :: libri_chi0_threshold_G
@@ -345,8 +345,8 @@ module librpa_f03
       logical :: use_2d_dielectric
       !> First regular Coulomb-eigenbasis channel used by RPA head/wing correction.
       integer :: rpa_headwing_body_start
-      !> Experimental: load correlation self-energy matrix from file where supported.
-      logical :: load_sigc_from_file
+      !> Experimental: read NAO correlation self-energy matrix in real-space/frequency form.
+      logical :: read_sigc_mat_rf
       !> Threshold for eigenvalues when taking the square root of Coulomb matrices.
       real(dp) :: sqrt_coulomb_threshold
       !> LibRI threshold of LRI triple coefficients for response function.
@@ -1151,7 +1151,7 @@ contains
       call sync_opt(opts%option_dielect_func,     opts%opts_c%option_dielect_func,     direction)
       call sync_opt(opts%use_2d_dielectric,       opts%opts_c%use_2d_dielectric,       direction)
       call sync_opt(opts%rpa_headwing_body_start, opts%opts_c%rpa_headwing_body_start, direction)
-      call sync_opt(opts%load_sigc_from_file,     opts%opts_c%load_sigc_from_file,     direction)
+      call sync_opt(opts%read_sigc_mat_rf,        opts%opts_c%read_sigc_mat_rf,        direction)
       call sync_opt(opts%use_scalapack_gw_wc,     opts%opts_c%use_scalapack_gw_wc,     direction)
       call sync_opt(opts%use_cholesky_gw_wc,      opts%opts_c%use_cholesky_gw_wc,      direction)
       call sync_opt(opts%use_gpu_replace_scalapack, opts%opts_c%use_gpu_replace_scalapack, direction)

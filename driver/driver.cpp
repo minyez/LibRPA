@@ -212,6 +212,7 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             bool_pair(use_gpu_replace_scalapack),
             bool_pair(use_elpa_sqrt_coulomb),
             bool_pair(use_kpara_scf_eigvec),
+            bool_pair(read_sigc_mat_rf),
             bool_pair(output_gw_sigc_ks_kf),
             bool_pair(output_gw_sigc_ks_mat_kf),
             bool_pair(output_gw_sigc_mat_kf),

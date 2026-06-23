@@ -325,7 +325,12 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_int(opts, n_params_anacon);
     _parse_double(opts, sqrt_coulomb_threshold);
     _parse_switch(opts, use_scalapack_gw_wc);
-    _parse_switch(opts, load_sigc_from_file);
+    _parse_switch(opts, read_sigc_mat_rf);
+    if (flag != 0)  // backward-compatible
+    {
+        parser.parse_bool("read_sigc", btmp, flag);
+        if (flag == 0) opts.read_sigc_mat_rf = get_switch(btmp);
+    }
     _parse_switch(opts, use_cholesky_gw_wc);
     _parse_switch(opts, use_gpu_replace_scalapack);
     _parse_switch(opts, use_elpa_sqrt_coulomb);
