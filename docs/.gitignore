@@ -4,3 +4,5 @@ doxygen/Doxyfile
 doxygen/doxygen-awesome-css*
 doxygen/librpa
 !Makefile
+# Now generated via user_guide/runtime_parameters.yml
+user_guide/runtime_parameters.md

@@ -6,6 +6,7 @@ sphinx-copybutton
 sphinxcontrib-doxylink
 sphinxcontrib-bibtex
 myst-parser
+PyYAML
 # sphinx_rtd_theme
 # doxyphinx is not available on conda, use pip to install
 # doxysphinx

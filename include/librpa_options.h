@@ -36,43 +36,86 @@ typedef struct
     /* ============================================================================= */
     /* Common runtime control */
 
-    //! Output directory
+    //! Output directory for results.
+    //! @par Details
+    //! Set with `librpa_set_output_dir()` or `librpa::Options::set_output_dir()`
+    //! so directory normalization is applied.
+    //! @par Default
+    //! librpa.d/
     char output_dir[LIBRPA_MAX_STRLEN];
 
     //! Directory to read restart checkpoint files from. Empty uses output_dir.
+    //! @par Details
+    //! Set with `librpa_set_restart_from_dir()` or `librpa::Options::set_restart_from_dir()`
+    //! so directory normalization is applied.
+    //! @par Default
+    //! empty
+    //! @par Status
+    //! Experimental
     char restart_from_dir[LIBRPA_MAX_STRLEN];
 
     //! Scheme of parallelization.
+    /*!
+     * Available driver values: `auto`, `atompair`, `rtau`, `libri`.
+     *
+     * @par Default
+     * LIBRPA_ROUTING_AUTO
+     */
     LibrpaParallelRouting parallel_routing;
 
-    //! Threshold for real-space Coulomb matrices
+    //! Threshold for real-space Coulomb matrices.
+    //! @par Default
+    //! 0.0
     double vq_threshold;
 
-    //! Flag to specify parallel distribution of eigenvectors of SCF starting point
+    //! Flag to specify parallel distribution of eigenvectors of SCF starting point.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch use_kpara_scf_eigvec;
 
     //! Type of time/frequency grids.
+    /*!
+     * Available driver values: `GL`, `GC-I`, `GL-II`, `minimax`, `evenspaced`, `evenspaced_tf`.
+     * The driver maps the unset API value to `minimax`.
+     *
+     * @par Default
+     * LIBRPA_TFGRID_UNSET
+     */
     LibrpaTimeFreqGrid tfgrids_type;
 
-    //! Number of time/frequency points
+    //! Number of time/frequency points.
+    //! @par Default
+    //! 6
     int nfreq;
 
     /* ============================================================================= */
     /* Parameters for time and freqeuncy grids.
      * Different grid types will use none/part/all of the parameters. */
     //! Minimum frequency for grid generation, in Hartree.
+    //! @par Default
+    //! 0.005
     double tfgrids_freq_min;
 
     //! Frequency interval for even-spaced grids, in Hartree.
+    //! @par Default
+    //! 0.0
     double tfgrids_freq_interval;
 
     //! Maximum frequency for grid generation, in Hartree.
+    //! @par Default
+    //! 1000.0
     double tfgrids_freq_max;
 
     //! Minimum time for grid generation, in Hartree^-1.
+    //! @par Default
+    //! 0.005
     double tfgrids_time_min;
 
     //! Time interval for even-spaced grids, in Hartree^-1.
+    //! @par Default
+    //! 0.0
     double tfgrids_time_interval;
 
     //! Minimal transition energy when generating minimax grids.
@@ -80,49 +123,93 @@ typedef struct
      * When set negative (the default), the minimal energy is decided by the mean-field input
      * and set to the energy gap.
      * For now, it is suggested to manually set this option for gapless systems.
+     *
+     * @par Default
+     * -1.0
+     * @par Status
+     * Experimental
      */
     double minimax_emin;
 
     //! Maximal transition energy when generating minimax grids.
     /*!
      * This option is introduced for test of supercell to fix the minimax frequency points
+     *
+     * @par Default
+     * -1.0
+     * @par Status
+     * Experimental
      */
     double minimax_emax;
 
-    //! Regulation for minimax grids generation
+    //! Regulation for minimax grids generation.
+    //! @par Default
+    //! 0.0
+    //! @par Status
+    //! Experimental
     double minimax_regulation;
 
     /* ============================================================================= */
     /* Coulomb matrices usage */
 
     //! Switch of using full Coulomb interaction in exact-exchange operator.
+    //! @par Default
+    //! false
     LibrpaSwitch use_fullcoul_exx;
 
     //! Switch of using full Coulomb interaction in \f$\varepsilon = 1 - v \chi^0\f$
+    //! @par Default
+    //! true
     LibrpaSwitch use_fullcoul_eps;
 
     //! Switch of using full Coulomb interaction in \f$W^c = (\varepsilon^{-1} - 1) v\f$.
+    //! @par Default
+    //! false
     LibrpaSwitch use_fullcoul_wc;
 
     //! Switch of using the symmetry context in exact-exchange paths.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch use_symmetry_exx;
 
     //! Switch of using the symmetry context in GW paths.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch use_symmetry_gw;
 
     //! Switch of using the symmetry context in RPA/chi0 paths.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch use_symmetry_rpa;
 
     //! Switch of outputting ABACUS-compatible GW Green's-function data.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch output_abacus_gw_gf;
 
     /* ============================================================================= */
     /* Sum of states */
 
-    //! Maximal number of bands for computing response function
+    //! Maximal number of bands for computing response function.
+    //! @par Default
+    //! -1 (< 0 for all bands)
+    //! @par Status
+    //! Experimental
     int n_bands_chi0;
 
-    //! Maximal number of bands for computing correlation self-energy
+    //! Maximal number of bands for computing correlation self-energy.
+    //! @par Default
+    //! -1 (< 0 for all bands)
+    //! @par Status
+    //! Experimental
     int n_bands_sigc;
 
     //! BvK remapping convention for band interpolation.
@@ -130,37 +217,62 @@ typedef struct
      * Available values:
      * - 0: map each atom-pair R to one nearest BvK image.
      * - 1: Wigner-Seitz remapping; split over all nearest BvK images at equal distance.
+     *
+     * @par Default
+     * 1
      */
     int option_bvk_remap;
 
     /* ============================================================================= */
     /* RPA specific */
 
-    //! Threshold for real-space Green's function in response function calculation
+    //! Threshold for real-space Green's function in response function calculation.
+    //! @par Default
+    //! 0.0
     double gf_threshold;
 
     //! Number of first-index atoms per LibRI chi0 collection chunk; 0 keeps one-shot collection.
+    //! @par Default
+    //! 0
+    //! @par Status
+    //! Experimental
     int libri_chi0_collect_s0_chunk;
 
     //! Maximum estimated local chi0 tensor bytes per LibRI collection chunk; 0 keeps one-shot collection.
+    //! @par Default
+    //! 0
+    //! @par Status
+    //! Experimental
     long long libri_chi0_collect_max_bytes;
 
-    //! Flag to control whether to use ScaLAPACK to compute RPA correlation energy
+    //! Flag to control whether to use ScaLAPACK to compute RPA correlation energy.
+    //! @par Default
+    //! true
     LibrpaSwitch use_scalapack_ecrpa;
 
     /* ============================================================================= */
     /* ABF compression */
 
-    //! Flag to use a compressed auxiliary basis
+    //! Flag to use a compressed auxiliary basis.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch use_shrink_abfs;
 
     //! Flag to compress response function using shrinked basis.
+    //! @par Default
+    //! true
+    //! @par Status
+    //! Experimental
     LibrpaSwitch use_shrink_chi;
 
     /* ============================================================================= */
     /* GW specific */
 
-    //! Number of parameters for analytic continuation
+    //! Number of parameters for analytic continuation.
+    //! @par Default
+    //! -1 (uses all `nfreq` data)
     int n_params_anacon;
 
     //! Quasi-particle equation solver option.
@@ -169,30 +281,50 @@ typedef struct
      * - 0: damped residual-mixing self-consistent solver
      * - 1: quasi-Newton self-consistent solver using the Pade derivative
      * - 2: perturbative solver linearized at the mean-field energy
+     *
+     * @par Default
+     * 0
      */
     int option_qpe_solver;
 
     //! Convergence threshold for the quasi-particle equation solver, in Hartree.
+    //! @par Default
+    //! 1.0e-6
     double qpe_solver_thres;
 
     //! Maximum number of iterations for the quasi-particle equation solver; must be positive.
+    //! @par Default
+    //! 10000
     int qpe_solver_n_iter_max;
 
     //! Damping factor for quasi-particle equation solver updates.
     //! Used as the initial and maximum factor when adaptive damping is enabled.
+    //! @par Default
+    //! 0.1
     double qpe_solver_damp_factor;
 
     //! If enabled, adapt the QPE damping factor during the solve.
+    //! @par Default
+    //! false
     LibrpaSwitch use_qpe_adaptive_damp;
 
     //! Test-only switch to recover the legacy non-adaptive QPE update.
     //! Ignored when adaptive damping is enabled.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Diagnostic
     LibrpaSwitch use_qpe_legacy_update;
 
     //! If enabled, keep the final unconverged QPE iterate instead of outputting NaN.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Diagnostic
     LibrpaSwitch override_qpe_solver_nan;
 
-    //! If enabled, compute Hedin shifts from selected states,
+    //! Compute and apply Hedin shifts in QP solves.
+    //! @par Details
     //! \f[
     //! \Delta_{rks} = \mathrm{Re}\,\Sigma_c(\epsilon_{rks} - E_F)
     //!        + \Sigma_x(rks) - v_{xc}(rks)
@@ -201,110 +333,214 @@ typedef struct
     //! \f[
     //! \Sigma_c(E - E_F - \Delta_{rks}).
     //! \f]
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch use_hedin_shift;
 
-    //! Absolute zero-based reference state index for Hedin shifts, not relative
-    //! to i_state_low. A negative value applies a per-state shift; a nonnegative
+    //! Absolute zero-based reference state index for Hedin shifts.
+    //! @par Details
+    //! This index is not relative to i_state_low. A negative value applies a per-state shift; a nonnegative
     //! value uses that state at each k-point and spin channel for all states in
     //! the same channel.
+    //! @par Default
+    //! -1
+    //! @par Status
+    //! Experimental
     int istate_ref_hedin_shift;
 
     //! Broadening/shift used for Green's function in spectral-function output, in Hartree.
+    //! @par Default
+    //! 0.01
+    //! @par Status
+    //! Experimental
     double sf_gf_omega_shift;
 
     //! Broadening/shift used for correlation self-energy in spectral-function output, in Hartree.
+    //! @par Default
+    //! 0.01
+    //! @par Status
+    //! Experimental
     double sf_sigc_omega_shift;
 
-    //! Flag of using ScaLAPACK for computing Wc from chi0
+    //! Flag of using ScaLAPACK for computing Wc from chi0.
+    //! @par Default
+    //! true
     LibrpaSwitch use_scalapack_gw_wc;
 
-    //! Flag of using cholesky factorization for computing Wc from chi0
+    //! Flag of using cholesky factorization for computing Wc from chi0.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch use_cholesky_gw_wc;
 
-    //! Flag of using GPU for computing Wc from chi0
+    //! Flag of using GPU for computing Wc from chi0.
+    //! @par Default
+    //! Build-dependent: true when a CUDA/HIP build detects a device, false otherwise.
+    //! @par Status
+    //! Experimental
     LibrpaSwitch use_gpu_replace_scalapack;
 
-    //! Flag of using elpa for sqrt coulomb matrix
+    //! Flag of using ELPA for sqrt Coulomb matrix.
+    //! @par Default
+    //! Build-dependent: true with `LIBRPA_USE_ELPA`, false otherwise.
+    //! @par Status
+    //! Experimental
     LibrpaSwitch use_elpa_sqrt_coulomb;
 
-    //! Flag of replacing head of screened interaction by macroscopic dielectric function
+    //! Flag of replacing head of screened interaction by macroscopic dielectric function.
+    //! @par Default
+    //! false
     LibrpaSwitch replace_w_head;
 
-    //! Option of computing dielectric function on imaginary axis
+    //! Option of computing dielectric function on imaginary axis.
     /*!
      * Available values:
      * - 0: use data directly read from input
-     * - 1: dielectric model fitting from input data
-     * - 2: cubic-spline interpolation from input data
+     * - 1: cubic-spline interpolation from input data
+     * - 2: dielectric model fitting from input data
+     * - 3: analytic head and wing correction
+     * - 4: analytic head correction
+     *
+     * @par Default
+     * 0
      */
     int option_dielect_func;
 
-    //! Switch of using 2D dielectric function
+    //! Switch of using 2D dielectric function.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch use_2d_dielectric;
 
     //! First regular Coulomb-eigenbasis channel used by RPA head/wing correction.
     //! Zero uses channel 1 in the current analytic 3D/2D head/wing path.
+    //! @par Default
+    //! 0
+    //! @par Status
+    //! Experimental
     int rpa_headwing_body_start;
 
-    //! Flag of reading NAO correlation self-energy matrix in real-space/frequency form
+    //! Flag of reading NAO correlation self-energy matrix in real-space/frequency form.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch read_sigc_mat_rf;
 
-    //! Threshold of eigenvalues to perform square root of Coulomb matrices
+    //! Threshold of eigenvalues to perform square root of Coulomb matrices.
+    //! @par Default
+    //! 0.0
     double sqrt_coulomb_threshold;
 
     /* ============================================================================= */
     /* LibRI related */
 
-    //! Threshold of real-space LRI triple coefficients to compute response function using LibRI
+    //! Threshold of real-space LRI triple coefficients to compute response function using LibRI.
+    //! @par Default
+    //! 0.0
     double libri_chi0_threshold_C;
 
-    //! Threshold of real-space Green's function to compute response function using LibRI
+    //! Threshold of real-space Green's function to compute response function using LibRI.
+    //! @par Default
+    //! 0.0
     double libri_chi0_threshold_G;
 
-    //! Threshold of real-space LRI triple coefficients to compute exact exchange using LibRI
+    //! Threshold of real-space LRI triple coefficients to compute exact exchange using LibRI.
+    //! @par Default
+    //! 0.0
     double libri_exx_threshold_C;
 
-    //! Threshold of real-space density matrices to compute exact exchange using LibRI
+    //! Threshold of real-space density matrices to compute exact exchange using LibRI.
+    //! @par Default
+    //! 0.0
     double libri_exx_threshold_D;
 
-    //! Threshold of real-space Coulomb matrices to compute exact exchange using LibRI
+    //! Threshold of real-space Coulomb matrices to compute exact exchange using LibRI.
+    //! @par Default
+    //! 0.0
     double libri_exx_threshold_V;
 
-    //! Threshold of real-space LRI triple coefficients to compute GW correlation self-energy using LibRI
+    //! Threshold of real-space LRI triple coefficients to compute GW correlation self-energy using LibRI.
+    //! @par Default
+    //! 0.0
     double libri_g0w0_threshold_C;
 
-    //! Threshold of real-space Green's function to compute GW correlation self-energy using LibRI
+    //! Threshold of real-space Green's function to compute GW correlation self-energy using LibRI.
+    //! @par Default
+    //! 0.0
     double libri_g0w0_threshold_G;
 
-    //! Threshold of correlation screened Coulomb matrix to compute GW correlation self-energy using LibRI
+    //! Threshold of correlation screened Coulomb matrix to compute GW correlation self-energy using LibRI.
+    //! @par Default
+    //! 0.0
     double libri_g0w0_threshold_Wc;
 
     /* Output controls */
     //! Output KS-diagonal correlation self-energy in k-space, imaginary frequency domain.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch output_gw_sigc_ks_kf;
 
     //! Output correlation self-energy matrix in KS basis (k-space, imaginary frequency domain).
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch output_gw_sigc_ks_mat_kf;
 
     //! Output correlation self-energy matrix in NAO basis (k-space, imaginary frequency domain).
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch output_gw_sigc_mat_kf;
 
     //! Output correlation self-energy matrix in NAO basis (real space, imaginary time domain).
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch output_gw_sigc_mat_rt;
 
     //! Output correlation self-energy matrix in NAO basis (real space, imaginary frequency domain).
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch output_gw_sigc_mat_rf;
 
     //! Output Wc matrix in ABFs (real space, imaginary frequency domain).
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
     LibrpaSwitch output_wc_rf;
 
     //! Output Wc(R, iw) as atom-pair blocks instead of full matrices.
+    //! @par Default
+    //! true
+    //! @par Status
+    //! Experimental
     LibrpaSwitch output_wc_rf_atom_pair;
 
     //! First zero-based Wc frequency index to output.
+    //! @par Default
+    //! 0
+    //! @par Status
+    //! Experimental
     int ifreq_output_wc_start;
 
     //! Half-open Wc frequency output end index; negative means all remaining frequencies.
+    //! @par Default
+    //! -1
+    //! @par Status
+    //! Experimental
     int ifreq_output_wc_end;
 
 } LibrpaOptions;

@@ -12,12 +12,15 @@ SOURCEDIR     = .
 BUILDDIR      = _build
 
 # Targets
-.PHONY: html help clean doxygen doxysphinx
+.PHONY: html help clean doxygen doxysphinx runtime_parameters
 
-html: doxygen doxysphinx sphinx
+html: runtime_parameters doxygen doxysphinx sphinx
 
-sphinx:
+sphinx: runtime_parameters
 	@$(SPHINXBUILD) -M html "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS)
+
+runtime_parameters:
+	@python3 user_guide/generate_runtime_parameters.py
 
 doxygen:
 	@cd $(DOXY_SOURCE) && $(MAKE)

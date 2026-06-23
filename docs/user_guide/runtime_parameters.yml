@@ -1,0 +1,189 @@
+title: Runtime Parameters
+sources:
+  api:
+    path: ../../include/librpa_options.h
+    struct: LibrpaOptions
+  driver:
+    path: ../../driver/driver.h
+    struct: DriverParams
+
+intro: |
+  Runtime parameters and options in LibRPA are generally managed through the `LibrpaOptions` object.
+
+  - When using the **API**, assign values to the corresponding attributes before calling compute routines.
+    API defaults are set by {librpa}`librpa_init_options`, the C++ {librpa}`librpa::Options` constructor, or `opts%init()` in the Fortran API.
+  - When using the **driver**, parameters are read from `librpa.in` in the working directory using `key = value` syntax.
+    Unlike the API, the driver requires [`task`](#runtime-parameter-task) to be explicitly specified.
+
+  ```{note}
+  Rows marked `Experimental` expose development, diagnostic, or less-tested code paths.
+  Use them as opt-in features and validate results against reference calculations before production use.
+  ```
+
+  For API use, switch values are set with `LIBRPA_SWITCH_ON` and `LIBRPA_SWITCH_OFF` in C/C++.
+  The Fortran wrapper exposes these fields as logical values.
+
+blocks:
+  - heading: Driver
+    text: |
+      These parameters are available only through the standalone driver.
+    fields:
+      - driver.task
+      - driver.constants_choice
+      - driver.cs_threshold
+      - driver.use_spinor_wfc
+      - driver.output_energy_qp
+      - driver.i_state_low
+      - driver.i_state_high
+      - driver.output_hamgnn
+      - driver.use_pyatb
+      - driver.output_gw_spec_func
+      - driver.sf_omega_start
+      - driver.sf_omega_end
+      - driver.sf_omega_step
+      - driver.sf_state_start
+      - driver.sf_state_end
+      - driver.output_level
+
+  - heading: Input Files
+    text: |
+      These parameters are used to locate dataset files.
+      Filename parameters are interpreted relative to [`input_dir`](#runtime-parameter-input-dir).
+      Prefix parameters match all files in [`input_dir`](#runtime-parameter-input-dir) whose names begin with the given value.
+    fields:
+      - driver.input_dir
+      - driver.fn_stru
+      - driver.fn_bz_sampling
+      - driver.fn_basis
+      - driver.fn_basis_wfc
+      - driver.fn_basis_aux
+      - driver.fn_basis_aux_shrink
+      - driver.fn_eigocc_scf
+      - driver.fn_dielfunc
+      - driver.fn_vxc_scf
+      - driver.fn_band_kpath_info
+      - driver.prefix_lri_coeff
+      - driver.prefix_lri_coeff_shrink
+      - driver.prefix_shrink_sinvS
+      - driver.prefix_coul_full
+      - driver.prefix_coul_cut
+      - driver.prefix_eigvecs_scf
+      - driver.version_coul_reader
+      - driver.version_lri_reader
+
+  - heading: Common Settings
+    fields:
+      - api.output_dir
+      - api.restart_from_dir
+      - api.parallel_routing
+      - api.vq_threshold
+      - api.use_kpara_scf_eigvec
+      - api.tfgrids_type
+      - api.nfreq
+      - api.tfgrids_freq_min
+      - api.tfgrids_freq_interval
+      - api.tfgrids_freq_max
+      - api.tfgrids_time_min
+      - api.tfgrids_time_interval
+      - api.minimax_emin
+      - api.minimax_emax
+      - api.minimax_regulation
+      - api.option_bvk_remap
+
+  - heading: Coulomb Matrices
+    fields:
+      - api.use_fullcoul_eps
+      - api.use_fullcoul_exx
+      - api.use_fullcoul_wc
+      - api.use_symmetry_exx
+      - api.use_symmetry_gw
+      - api.use_symmetry_rpa
+      - api.output_abacus_gw_gf
+
+  - heading: Response function
+    text: |
+      These parameters may affect subsequent calculations
+      using response function as input, e.g. RPA, GW.
+    fields:
+      - api.gf_threshold
+      - api.n_bands_chi0
+      - api.libri_chi0_collect_s0_chunk
+      - api.libri_chi0_collect_max_bytes
+
+  - heading: RPA correlation
+    fields:
+      - api.use_scalapack_ecrpa
+
+  - heading: ABF Compression
+    fields:
+      - api.use_shrink_abfs
+      - api.use_shrink_chi
+
+  - heading: GW
+    fields:
+      - api.n_params_anacon
+      - api.option_qpe_solver
+      - api.qpe_solver_thres
+      - api.qpe_solver_n_iter_max
+      - api.qpe_solver_damp_factor
+      - api.use_qpe_adaptive_damp
+      - api.use_qpe_legacy_update
+      - api.override_qpe_solver_nan
+      - api.use_hedin_shift
+      - api.istate_ref_hedin_shift
+      - api.sf_gf_omega_shift
+      - api.sf_sigc_omega_shift
+      - api.use_scalapack_gw_wc
+      - api.use_cholesky_gw_wc
+      - api.use_gpu_replace_scalapack
+      - api.use_elpa_sqrt_coulomb
+      - api.replace_w_head
+      - api.option_dielect_func
+      - api.use_2d_dielectric
+      - api.rpa_headwing_body_start
+      - api.read_sigc_mat_rf
+      - api.sqrt_coulomb_threshold
+      - api.n_bands_sigc
+
+  - heading: LibRI Filtering
+    text: |
+      These parameters are active for LibRI-enabled builds and LibRI routing.
+    fields:
+      - api.libri_chi0_threshold_C
+      - api.libri_chi0_threshold_G
+      - api.libri_exx_threshold_C
+      - api.libri_exx_threshold_D
+      - api.libri_exx_threshold_V
+      - api.libri_g0w0_threshold_C
+      - api.libri_g0w0_threshold_G
+      - api.libri_g0w0_threshold_Wc
+
+  - heading: Output Control
+    fields:
+      - api.output_gw_sigc_ks_kf
+      - api.output_gw_sigc_ks_mat_kf
+      - api.output_gw_sigc_mat_kf
+      - api.output_gw_sigc_mat_rt
+      - api.output_gw_sigc_mat_rf
+      - api.output_wc_rf
+      - api.output_wc_rf_atom_pair
+      - api.ifreq_output_wc_start
+      - api.ifreq_output_wc_end
+
+  - heading: Driver Compatibility Aliases
+    markdown: |
+      The driver still accepts a few older input keys for backward compatibility, and may remove them in the future.
+
+      | Alias Name | Preferred Name | Notes |
+      |------------|----------------|-------|
+      | `debug` | [`output_level`](#runtime-parameter-output-level) | `debug = true` maps to `output_level = debug` |
+      | `use_soc` | [`use_spinor_wfc`](#runtime-parameter-use-spinor-wfc) | Old spelling for selecting spinor-format driver input |
+      | `tfgrid_type` | [`tfgrids_type`](#runtime-parameter-tfgrids-type) | Old spelling |
+      | `gf_R_threshold` | [`gf_threshold`](#runtime-parameter-gf-threshold) | Old spelling |
+      | `output_gw_sigc_ks_if` | [`output_gw_sigc_ks_kf`](#runtime-parameter-output-gw-sigc-ks-kf) | Old spelling |
+      | `output_gw_sigc_mat` | [`output_gw_sigc_ks_mat_kf`](#runtime-parameter-output-gw-sigc-ks-mat-kf) | Old spelling |
+      | `option_output_Wc_Rf_mat` | [`output_wc_rf`](#runtime-parameter-output-wc-rf), [`ifreq_output_wc_start`](#runtime-parameter-ifreq-output-wc-start), [`ifreq_output_wc_end`](#runtime-parameter-ifreq-output-wc-end) | `0` disables output, `1` maps to `[0,1)`, `2` maps to `[0,all)` |
+
+      `g0w0_band` is accepted as a deprecated alias of `g0w0`.
+
+      For details on all API parameters, see section below or visit the API documentation of struct {librpa}`LibrpaOptions`.
