@@ -3709,10 +3709,14 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
                     for (const auto &[IJ, Wc_block] : pair_mat)
                     {
                         std::ostringstream ss;
+                        std::string info = "Wc at iR " + std::to_string(iR) + " ( " + std::to_string(R.x) +
+                                           " " + std::to_string(R.y) + " " + std::to_string(R.z) +
+                                           " ) and ifreq " + std::to_string(ifreq) + " ( " +
+                                           std::to_string(freq) + " a.u. )";
                         ss << path_as_directory(output_dir)
                            << "Wc_Mu_" << IJ.first << "_Nu_" << IJ.second
                            << "_iR_" << iR << "_ifreq_" << ifreq << ".mtx";
-                        print_matrix_mm_file(Wc_block, ss.str(), "", 1e-10);
+                        print_matrix_mm_file(Wc_block, ss.str(), info, 1e-10);
                     }
                     continue;
                 }

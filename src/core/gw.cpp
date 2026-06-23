@@ -388,7 +388,8 @@ int wc_rf_checked_ifreq_end(const int start, const int end, const int n_freq)
 
 void write_wc_rf_atom_blocks(
     const atom_mapping<std::map<Vector3_Order<int>, Matz>>::pair_t_old &Wc_R,
-    const PeriodicBoundaryData &pbc, const std::string &output_dir, const int ifreq)
+    const PeriodicBoundaryData &pbc, const std::string &output_dir, const int ifreq,
+    const double freq)
 {
     for (const auto &[I, J_RWc] : Wc_R)
     {
@@ -396,12 +397,17 @@ void write_wc_rf_atom_blocks(
         {
             for (const auto &[R, Wc] : R_Wc)
             {
+                const auto iR = pbc.get_R_index(R);
                 std::ostringstream ss;
+                std::string info = "Wc at iR " + std::to_string(iR) + " ( " + std::to_string(R.x) +
+                                   " " + std::to_string(R.y) + " " + std::to_string(R.z) +
+                                   " ) and ifreq " + std::to_string(ifreq) + " ( " +
+                                   std::to_string(freq) + " a.u. )";
                 ss << path_as_directory(output_dir)
                    << "Wc_Mu_" << I << "_Nu_" << J
-                   << "_iR_" << pbc.get_R_index(R)
+                   << "_iR_" << iR
                    << "_ifreq_" << ifreq << ".mtx";
-                print_matrix_mm_file(Wc, ss.str(), "", 1e-10);
+                print_matrix_mm_file(Wc, ss.str(), info, 1e-10);
             }
         }
     }
@@ -893,7 +899,7 @@ void G0W0::build_spacetime(
                 auto Wc_R = FT_Wc_q2R(comm_h, *basis_aux_unfold, symmetry_context, Wc_q, tfg,
                                       pbc, pbc.Rlist, true, output_dir, this->use_symmetry_context);
                 if (output_wc_rf_atom_pair)
-                    write_wc_rf_atom_blocks(Wc_R, pbc, output_dir, ifreq);
+                    write_wc_rf_atom_blocks(Wc_R, pbc, output_dir, ifreq, freq);
                 else
                     write_wc_rf_full_matrix_from_atom_blocks(
                         Wc_R, atbasis_abf, ad_Wc, pbc, output_dir, ifreq, freq);
