@@ -169,10 +169,12 @@ Entry fields:
 - `<labels refhash="...">` records the commit hash used to generate the
   reference data. It is informational metadata for maintainers.
 - `<build require_libri="true">` skips the case unless `--use-libri` is passed.
-- `<run>` filters by runtime layout. Use `ntasks_enable` or `nthreads_enable`
-  to allow only selected values, and `ntasks_disable` or `nthreads_disable` to
-  reject selected values. Values can be comma- or space-separated integers, or
-  `none`.
+- `<run>` configures runtime setup. Use `ntasks_enable` or `nthreads_enable` to
+  allow only selected runtime MPI/threads layouts, and `ntasks_disable` or
+  `nthreads_disable` to reject selected layouts. Values can be comma- or
+  space-separated integers, or `none`. Use space- or comma-separated
+  `copy_files` to copy extra files or directories from `testcases/${CASE}/librpa`
+  into the run workspace `librpa` directory.
 - `<validate>` adds one comparison. If `file` is omitted, the default is
   `librpa/librpa.out`. `regex` locates the reference/output block, `headers`
   and `rows` select table regions when needed, and `comparison` names a

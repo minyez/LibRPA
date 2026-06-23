@@ -40,7 +40,7 @@ def _format_command(args):
     return " ".join(shlex.quote(str(arg)) for arg in args)
 
 
-def _prepare_librpa_workspace(src: pathlib.Path, dst: pathlib.Path):
+def _prepare_librpa_workspace(src: pathlib.Path, dst: pathlib.Path, copy_files=()):
     """Prepare one test case and return the directory where LibRPA should run."""
     src_librpa = src / "librpa"
     dst_librpa = dst / "librpa"
@@ -48,6 +48,22 @@ def _prepare_librpa_workspace(src: pathlib.Path, dst: pathlib.Path):
 
     if (src_librpa / "librpa.in").is_file() and (src / "dataset.tar.gz").is_file():
         shutil.copy2(src_librpa / "librpa.in", dst_librpa)
+        for file in copy_files:
+            path = pathlib.PurePosixPath(file)
+            if path.is_absolute() or ".." in path.parts:
+                raise ValueError("copy_files entries must stay inside librpa/: {}".format(file))
+            source = src_librpa / pathlib.Path(file)
+            target = dst_librpa / pathlib.Path(file)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_dir():
+                if target.exists():
+                    if target.is_dir():
+                        shutil.rmtree(target)
+                    else:
+                        target.unlink()
+                shutil.copytree(source, target)
+            else:
+                shutil.copy2(source, target)
         with tarfile.open(src / "dataset.tar.gz", "r:gz") as tar:
             tar.extractall(path=dst)
         return dst_librpa
@@ -267,7 +283,7 @@ class TestDriver:
             dname = tc["directory"]
             src = self._dir_input / dname
             dst = self._dir_testcase / dname
-            run_dir = _prepare_librpa_workspace(src, dst)
+            run_dir = _prepare_librpa_workspace(src, dst, tc["run"].get("copy_files", ()))
             out = pathlib.Path("librpa.out")
             err = pathlib.Path("librpa.err")
             print("Running {} [{}]".format(tc["name"], dname))

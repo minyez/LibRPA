@@ -64,6 +64,14 @@ def _process_run_parameters(node_testcase):
         except ValueError:
             value = None
         ret[p] = value
+    try:
+        copy_files = r.get("copy_files", "")
+    except AttributeError:
+        copy_files = ""
+    if copy_files.lower() in ["none", "false"]:
+        ret["copy_files"] = tuple()
+    else:
+        ret["copy_files"] = tuple(x for x in copy_files.replace(',', ' ').split())
     return ret
 
 

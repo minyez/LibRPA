@@ -38,6 +38,38 @@ class TestPrepareLibrpaWorkspace(unittest.TestCase):
                              "input_dir = ../dataset\n")
             self.assertEqual((dst / "dataset" / "marker.txt").read_text(), "data\n")
 
+    def test_copies_extra_librpa_files_and_directories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = pathlib.Path(tmp) / "src"
+            dst = pathlib.Path(tmp) / "dst"
+            (src / "librpa" / "nested").mkdir(parents=True)
+            (src / "librpa" / "extra_dir" / "sub").mkdir(parents=True)
+            (src / "librpa" / "librpa.in").write_text("input_dir = ../dataset\n")
+            (src / "librpa" / "extra.in").write_text("extra\n")
+            (src / "librpa" / "nested" / "more.in").write_text("more\n")
+            (src / "librpa" / "extra_dir" / "sub" / "file.in").write_text("dir\n")
+            (dst / "librpa" / "extra_dir" / "sub").mkdir(parents=True)
+            (dst / "librpa" / "extra_dir" / "stale.in").write_text("stale\n")
+            self._write_archive(src, "dataset.tar.gz", "dataset")
+
+            _prepare_librpa_workspace(src, dst, ("extra.in", "nested/more.in", "extra_dir"))
+
+            self.assertEqual((dst / "librpa" / "extra.in").read_text(), "extra\n")
+            self.assertEqual((dst / "librpa" / "nested" / "more.in").read_text(), "more\n")
+            self.assertEqual((dst / "librpa" / "extra_dir" / "sub" / "file.in").read_text(), "dir\n")
+            self.assertFalse((dst / "librpa" / "extra_dir" / "stale.in").exists())
+
+    def test_rejects_extra_file_outside_librpa(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = pathlib.Path(tmp) / "src"
+            dst = pathlib.Path(tmp) / "dst"
+            (src / "librpa").mkdir(parents=True)
+            (src / "librpa" / "librpa.in").write_text("input_dir = ../dataset\n")
+            self._write_archive(src, "dataset.tar.gz", "dataset")
+
+            with self.assertRaises(ValueError):
+                _prepare_librpa_workspace(src, dst, ("../outside.in",))
+
     def test_rejects_legacy_input_librpa_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
             src = pathlib.Path(tmp) / "src"
@@ -124,6 +156,22 @@ class TestValidateFileOverrides(unittest.TestCase):
                 validate_module._import_comparison = old_import
 
             self.assertEqual(groups["g"][0]["results"], [[True, "ok"]])
+
+
+class TestRunCopyFiles(unittest.TestCase):
+
+    def test_xml_parser_reads_copy_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            xml = pathlib.Path(tmp) / "testsuite.xml"
+            xml.write_text(
+                '<testsuite><group name="g"><testcase name="n" directory="case">'
+                '<run copy_files="extra.in nested/more.in" />'
+                '</testcase></group></testsuite>'
+            )
+
+            run = XMLParser(xml).groups["g"][0]["run"]
+
+            self.assertEqual(run["copy_files"], ("extra.in", "nested/more.in"))
 
 
 class TestScopeFilter(unittest.TestCase):
