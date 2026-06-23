@@ -5,6 +5,10 @@ input_dir = ../dataset
 nfreq = 16
 parallel_routing = libri
 n_params_anacon = 16
+output_wc_rf = t
+output_wc_rf_atom_pair = t
+ifreq_output_wc_end = 1
+output_energy_qp = t
 # Since the structure only has xOz mirror,
 # and the resulted irreducible sector is the same as the full sector,
 # it has no speed-up effect regardless of whether symmetry reduction
