@@ -61,8 +61,8 @@ namespace
 //! mirrors the legacy Tensor::conjugate used by the patched cal_cvcd_k_hartree.
 inline RI::Tensor<std::complex<double>> conj_tensor(const RI::Tensor<std::complex<double>> &t)
 {
-    auto out = std::make_shared<std::valarray<std::complex<double>>>(t.shape.get_shape_all());
-    for (std::size_t i = 0; i < t.shape.get_shape_all(); ++i)
+    auto out = std::make_shared<std::valarray<std::complex<double>>>(t.get_shape_all());
+    for (std::size_t i = 0; i < t.get_shape_all(); ++i)
         (*out)[i] = std::conj((*t.data)[i]);
     return RI::Tensor<std::complex<double>>(t.shape, out);
 }

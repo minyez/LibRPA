@@ -1,5 +1,6 @@
 #include "global.h"
 
+#include <iomanip>
 #include <iostream>
 #ifdef LIBRPA_USE_LIBRI
 #include <RI/physics/Exx.h>
