@@ -51,6 +51,7 @@ public:
 	T norm(void) const	{ return sqrt(norm2()); }
 	Vector3<T>& normalize(void){ const T m=norm(); x/=m; y/=m; z/=m; return *this; }	// Peize Lin update return 2019-09-08
 	Vector3<T>& reverse(void){ x=-x; y=-y; z=-z; return *this; }						// Peize Lin update return 2019-09-08
+	std::array<T, 3> to_array() const { return {x, y, z}; }
 
 	void print(void)const ;		// mohan add 2009-11-29
 };
