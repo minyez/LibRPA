@@ -42,7 +42,6 @@
 
 // Ported QSGW modules (Tasks A/B/C/F)
 #include "../../src/qsgw/qsgw_state.h"                 // QsgwState (H2)
-#include "../../src/qsgw/mixing.h"                     // PulayMixer
 #include "../../src/qsgw/fermi_energy_occupation.h"    // calculate_fermi_energy / update / calculate_total_weight
 #include "../../src/qsgw/hamiltonian_qsgw.h"           // construct_H0_GW / diagonalize_and_store_fixed_basis / apply_qsgw_hround
 #include "../../src/qsgw/correlation_potential.h"      // build_correlation_potential_spin_k
@@ -107,7 +106,6 @@ void driver::task_qsgw()
     //          temperature, eigdiff_focus_nbands, hamiltonian_cut_above_fermi,
     //          hamiltonian_cut_diag_shift_ev, qsgw_checkpoint_every, qsgw_restart_dir.
     const int max_iterations = 500;
-    const int mixing_history = 12;
     const double mixing_beta = 0.2;
     const double temperature = 0.0;            // TODO(D): knob
     const int eigdiff_focus_nbands = 10;       // convergence focus window
@@ -185,8 +183,8 @@ void driver::task_qsgw()
                           pds->scfk_blacs_ctxt, pds->desc_wfc_kb_full);
     SpinKMatrixMap Hartree_0; // iter-1 anchor (legacy task_qsgw.cpp:416-428)
 
-    // --- mixing (Task A) ---
-    PulayMixer mixer(mixing_history, mixing_beta);
+    // --- mixing (Task A): owning copy of previous mixed H0_GW for linear mix ---
+    SpinKMatrixMap prev_H0_GW_all;
 
     // --- checkpoint restart (legacy L1069-L1093) ---
     int iteration = 0;
@@ -291,21 +289,34 @@ void driver::task_qsgw()
             H0_GW_all = construct_H0_GW(H_KS0, vxc0, Hexx_all, Vc_all,
                                         n_spins, n_kpoints, n_bands);
 
-        // ---- Pulay mixing (Task A): pack H0_GW_all -> real matrix, mix, unpack ----
-        // Legacy pack: all (spin,kpt) into one real matrix, width doubled [Re|Im]
-        // (task_qsgw.cpp:1740-1800).
-        // TODO(D): pack/unpack helpers; on iter<=linear_mixing_steps rely on the
-        //          mixer's internal linear fallback (mixing.h: history_size<=1).
-        if (!mixer.get_history_size()) // first step: initialize
+        // ---- Linear mixing (Task A): H_new = H_old + beta * (H_current - H_old) ----
+        double max_abs_delta = 0.0;
+        if (iteration == 1)
         {
-            // matrix mixed_input = pack(H0_GW_all); // TODO(D)
-            // mixer.initialize(mixed_input);
+            // iter-1: store current H0_GW_all as the mixing anchor, no modification.
+            for (int ispin = 0; ispin < n_spins; ++ispin)
+                for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
+                    prev_H0_GW_all[ispin][ikpt] = H0_GW_all[ispin][ikpt].copy();
         }
         else
         {
-            // matrix mixed_input = pack(H0_GW_all);
-            // matrix mixed_output = mixer.mix(mixed_input);
-            // H0_GW_all = unpack(mixed_output);
+            for (int ispin = 0; ispin < n_spins; ++ispin)
+                for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
+                {
+                    Matz &H = H0_GW_all[ispin][ikpt];
+                    const Matz &H_prev = prev_H0_GW_all[ispin][ikpt];
+                    for (int i = 0; i < n_bands; ++i)
+                        for (int j = 0; j < n_bands; ++j)
+                        {
+                            const cplxdb delta = H(i, j) - H_prev(i, j);
+                            max_abs_delta = std::max(max_abs_delta, std::abs(delta));
+                            H(i, j) = H_prev(i, j) + mixing_beta * delta;
+                        }
+                    prev_H0_GW_all[ispin][ikpt] = H.copy();
+                }
+            if (mpi_comm_global_h.is_root() && should_output())
+                cout << "QSGW iter " << iteration << " linear mix beta=" << mixing_beta
+                     << " max_abs_delta_H=" << max_abs_delta << endl;
         }
 
         // ---- H2: diagonalize using the fixed wfc0 anchor (Task B) ----
