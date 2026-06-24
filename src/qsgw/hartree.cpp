@@ -197,7 +197,13 @@ std::array<int, 3> Hartree::nearest_R(atom_t I, atom_t J,
     // returns k-space and requires a manual k->R Fourier (as the legacy
     // cal_cvcd_k_hartree path did); the A1 cal_loop3 path returns real-space Hs
     // and may not call this.
+    //
+    // Molecule inputs have no fractional coordinates in input_coord_frac; in that
+    // case there is no BvK folding to perform, so return R unchanged (H2O smoke
+    // bug: coord_frac.at(I/J) threw std::out_of_range).
     const auto &coord_frac = symmetry_context.input_coord_frac;
+    if (coord_frac.count(I) == 0 || coord_frac.count(J) == 0)
+        return R;
     const auto &cI_arr = coord_frac.at(I);
     const auto &cJ_arr = coord_frac.at(J);
     const Vector3<double> cI(cI_arr[0], cI_arr[1], cI_arr[2]);
