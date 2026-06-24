@@ -2,10 +2,10 @@
 //
 // Single-file driver mirroring driver/tasks/g0w0.cpp. Implements the SCF loop
 // integrating the ported QSGW modules (Tasks A/B/C/F) per qsgw_driver_design.md.
-// Status: SKELETON for review — SCF structure + H1..H5/Hartree/convergence/
-// checkpoint integration points are wired with the real module APIs; details
-// marked `TODO(D)` are deferred for the refine pass after review. Not all paths
-// compile yet (some assembly helpers / knob readers are stubs).
+// Status: iter-1 driver skeleton — SCF structure + H1..H5/Hartree/SigC/EXX
+// integration points are wired with real module APIs; mixing/convergence/
+// checkpoint/velocity0/MPI-bcast details marked `TODO(D)` are deferred for the
+// refine pass after review.
 //
 // Hard constraints (LEADER_AUDIT §3): H1 reset cached kernels each step;
 // H2 QsgwState wfc0 anchor snapshot before first wfc mutation; H3 Hartree
@@ -27,11 +27,12 @@
 #include <librpa_enums.h>
 
 #include "../../src/api/instance_manager.h" // get_dataset_instance
+#include "../../src/api/dataset_helper.h"  // initialize_ds_exx
 #include "../../src/core/input_symmetry.h"
 #include "../../src/core/coulmat.h"      // FT_Vq (Hartree Coulomb, H3)
 #include "../../src/io/fs.h"
 #include "../../src/io/global_io.h"
-#include "../../src/io/input_elsi.h"   // load_matrix_cplx (hf_exchange CSC reader, H4)
+#include "../../src/io/input_elsi.h"   // load_matrix_cplx (full xc_matr CSC reader, H4)
 #include "../../src/utils/constants.h" // HA2EV
 #include "../../src/utils/profiler.h"
 #include "../driver.h"
@@ -117,49 +118,51 @@ void driver::task_qsgw()
     double efermi = mf.get_efermi();
     const double total_electrons = calculate_total_weight(mf); // replaces get_total_weight
 
-    // --- H_KS0 + H4 vxc0 assembly (legacy task_qsgw.cpp L882-L905) ---
-    // H_KS0[ispin][ikpt] = diag(eigvals) (KS orthonormal band space, n_bands x n_bands).
-    // vxc0 = vxc_dft + hf_ks, hf_ks = conj(wfc)*hf_nao*transpose(wfc), hf_nao read
-    // from hf_exchange_*.csc (hard fact #7; construct_H0_GW does H_KS - vxc0 + Hexx + Vc).
-    const int n_aos = mf.get_n_aos();
+    // --- (B)-fixed H4: DFT HF exchange from the kernel (no hf_exchange file) ---
+    // coremath APPROVED with guardrails. Si G0W0 testcase has no hf_exchange_*.csc,
+    // so source the DFT HF exchange from the new-arch Exx kernel instead. Build Exx
+    // once at setup with the SAME settings as the SCF loop (compute_g0w0.cpp:628-645);
+    // the mf here is the DFT (step-0) wfc, so exx_KS = DFT HF exchange in KS basis =
+    // legacy hf_ks (sign/factor parity pending coremath bookkeeping + spike).
+    initialize_ds_exx(*pds, opts);
+    const bool use_shrink_exx = opts.use_shrink_abfs == LIBRPA_SWITCH_ON;
+    const auto &basis_aux_exx = use_shrink_exx ? pds->basis_aux_shrink : pds->basis_aux;
+    const auto &cs_data_exx = use_shrink_exx ? pds->cs_data_shrink : pds->cs_data;
+    const auto &coul_exx = opts.use_fullcoul_exx ? pds->vq : pds->vq_cut;
+    const auto VR_exx = librpa_int::FT_Vq(basis_aux_exx, pds->symmetry_context, coul_exx,
+                                          pds->pbc, true,
+                                          opts.use_symmetry_exx == LIBRPA_SWITCH_ON);
+    pds->p_exx->build(routing, basis_aux_exx, cs_data_exx, VR_exx);
+    pds->p_exx->build_KS_kgrid_blacs(pds->blacs_h);
+    // Deep-copy exx_KS into hf0_ks (owning). matrix_m's copy ctor is shallow (shared
+    // storage), and H1 resets/rebuilds p_exx each SCF step, so a shallow copy would be
+    // invalidated. copy() detaches. (coremath guardrail: hf0_ks survives p_exx reset.)
+    SpinKMatrixMap hf0_ks;
+    for (const auto &sp : pds->p_exx->exx_KS)
+        for (const auto &kp : sp.second)
+            hf0_ks[sp.first][kp.first] = kp.second.copy();
+
+    // --- H_KS0 + vxc0 assembly (legacy task_qsgw.cpp L882-L905) ---
+    // H_KS0[ispin][ikpt] = diag(eigvals) (KS band space). vxc0 = xc + hf0_ks (fixed
+    // DFT HF). construct_H0_GW does H_KS - vxc0 + Hexx_iter + Vc; Hexx_iter comes from
+    // the per-iteration Exx KS rotation in the loop (separate from this fixed hf0_ks).
     SpinKMatrixMap vxc0;
     SpinKMatrixMap H_KS0;
     for (int ispin = 0; ispin < n_spins; ++ispin)
         for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
         {
-            // H_KS0 = diag(eigvals) (KS orthonormal band space).
             Matz H_KS0_sk(n_bands, n_bands, MAJOR::COL);
             for (int ib = 0; ib < n_bands; ++ib)
                 H_KS0_sk(ib, ib) = mf.get_eigenvals()[ispin](ikpt, ib);
 
-            // KS wfc (n_bands x n_aos), non-SOC (ispinor=0).
-            // SOC spinor folding (H8) TODO(D-review): wfc1(ib, iao*n_spinor+ispinor)
-            // per legacy L688, plus spinor-summed density for Hartree.
-            Matz wfc1(n_bands, n_aos, MAJOR::COL);
-            for (int ib = 0; ib < n_bands; ++ib)
-                for (int iao = 0; iao < n_aos; ++iao)
-                    wfc1(ib, iao) = mf.get_eigenvectors()[ispin].at(0).at(ikpt)(ib, iao);
-
-            // #4 (coremath): load the FULL xc_matr (KS band space; H0_GW is a full
-            // matrix so off-diagonal xc must be kept — the diagonal read_vxc path
-            // drops it). Pattern matches legacy: xc_matr_spin_{S}_kpt_{000006K}.csc
-            // (S=ispin+1, NO leading zero on spin — coremath prefix fix).
+            // #4 (coremath): full xc_matr (KS band space; H0_GW is full so off-diag xc
+            // is kept). Pattern: xc_matr_spin_{S}_kpt_{000006K}.csc (no leading zero).
             std::ostringstream oss_xc;
             oss_xc << driver_params.input_dir << "xc_matr_spin_" << (ispin + 1)
                    << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
-            Matz vxc0_sk = load_matrix_cplx(oss_xc.str()); // full n_bands x n_bands (KS)
+            // (B)-fixed: vxc0 = xc + hf0_ks (fixed DFT HF from kernel, deep-copied).
+            Matz vxc0_sk = load_matrix_cplx(oss_xc.str()) + hf0_ks.at(ispin).at(ikpt);
 
-            // H4: hf rotation. hf_exchange_*.csc is NAO (n_aos x n_aos) -> KS via wfc1;
-            // vxc0 = xc + hf (hard fact #7). (#5 TODO(D): HF mandatory -> hard error if
-            // absent; interim: skip when the file is missing.)
-            std::ostringstream oss_hf;
-            oss_hf << driver_params.input_dir << "hf_exchange_spin_0" << (ispin + 1)
-                   << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
-            if (librpa_int::path_exists(oss_hf.str().c_str()))
-            {
-                Matz hf_nao = load_matrix_cplx(oss_hf.str());
-                vxc0_sk = vxc0_sk + conj(wfc1) * hf_nao * transpose(wfc1);
-            }
             vxc0[ispin][ikpt] = vxc0_sk;
             H_KS0[ispin][ikpt] = H_KS0_sk;
         }
