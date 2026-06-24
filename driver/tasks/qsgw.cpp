@@ -236,6 +236,12 @@ void driver::task_qsgw()
             }
 
         // ---- H3: Hartree (Task C) — recompute from the updated density ----
+        // #7 (coremath): Hartree::build has an is_rspace_built_ cache guard
+        // (hartree.cpp:217); without reset, iter>1 build() returns early and
+        // Hartree_i goes stale -> Hartree_i_delta silently 0. Reset both spaces
+        // each step so build() + build_KS_kgrid0 recompute from the live density.
+        hartree.reset_rspace();
+        hartree.reset_kspace();
         profiler.start("hartree_build", "Build Hartree kernel + KS projection");
         hartree.build(basis_aux_h, cs_h, VR_h);              // 3 params, no routing
         hartree.build_KS_kgrid0(qsgw_state);                 // H2 wfc0 anchor
@@ -313,7 +319,11 @@ void driver::task_qsgw()
 
         // ---- MPI sync (legacy L2022-L2028) ----
         mpi_comm_global_h.barrier();
-        mpi_comm_global_h.bcast(&converged, 1, 0); // MpiCommHandler::bcast (base_mpi.h:84)
+        // bcast int, not bool: mpi_datatype has no bool specialization (base_mpi.h:86,
+        // caught by Fisherd compile-test). int has the specialization.
+        int conv_int = converged ? 1 : 0;
+        mpi_comm_global_h.bcast(&conv_int, 1, 0);
+        converged = conv_int;
         mpi_comm_global_h.barrier();
         // TODO(D): broadcast updated mf across ranks (legacy meanfield.broadcast(...))
         mpi_comm_global_h.barrier();
