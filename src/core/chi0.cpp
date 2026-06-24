@@ -26,6 +26,7 @@
 #include "../utils/base_utility.h"
 #include "../utils/constants.h"
 #include "../io/global_io.h"
+#include "../utils/dev_options.h"
 #include "../utils/error.h"
 #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
@@ -1463,8 +1464,8 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     const auto all_atpairs_ABF = generate_atom_pair_from_nat(atbasis_abf.n_atoms, false);
     const auto q_uhap_process_shape = resolve_chi0_q_uhap_process_shape(
         comm_h.nprocs, qlist.size(), all_atpairs_ABF.size());
-    const bool use_q_uhap_split =
-        !use_shrink_chi && comm_h.nprocs > 1 && q_uhap_process_shape.nprocs_outer > 1;
+    const bool use_q_uhap_split = global::dev_opts.use_chi0_q_uhap_split && !use_shrink_chi &&
+                                  comm_h.nprocs > 1 && q_uhap_process_shape.nprocs_outer > 1;
     TwoLevelParallelContext q_uhap_ctxt;
     std::vector<Vector3_Order<double>> qlist_chi0(qlist.begin(), qlist.end());
     std::vector<atpair_t> atpairs_chi0(atpairs_ABF.begin(), atpairs_ABF.end());
