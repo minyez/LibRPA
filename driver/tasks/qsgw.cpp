@@ -28,6 +28,7 @@
 
 #include "../../src/api/instance_manager.h" // get_dataset_instance
 #include "../../src/core/input_symmetry.h"
+#include "../../src/core/coulmat.h"      // FT_Vq (Hartree Coulomb, H3)
 #include "../../src/io/fs.h"
 #include "../../src/io/global_io.h"
 #include "../../src/io/input_elsi.h"   // load_matrix_cplx (hf_exchange CSC reader, H4)
@@ -159,11 +160,22 @@ void driver::task_qsgw()
             H_KS0[ispin][ikpt] = H_KS0_sk;
         }
 
-    // --- H3: Hartree object (Task C) + Hartree_0 anchor storage ---
-    // Hartree ctor needs MeanField, AtomicBasis(wfc), PBC, SymmetryContext,
-    // KPointBlacsParallelContext, ArrayDesc; build() needs AtomicBasis(abf),
-    // Cs_LRI, Coulomb(atpair_R_mat_t). TODO(D): obtain these from read_data/ri.
-    // Hartree hartree(mf, ..., symmetry_context, ..., ...); // TODO(D)
+    // --- H3: Hartree object (Task C) — holds const MeanField& so it reads the
+    // live mf; constructed once, build() called per iteration to recompute from
+    // the updated density. Recipe from hartree, mirroring Exx (compute_g0w0.cpp:
+    // 628-645). basis/Cs/VR are iteration-invariant; coul uses vq_cut for spike
+    // ground-truth alignment (final parity may switch to pds->vq, coremath review).
+    const bool use_shrink_h = opts.use_shrink_abfs == LIBRPA_SWITCH_ON;
+    const auto &basis_aux_h = use_shrink_h ? pds->basis_aux_shrink : pds->basis_aux;
+    const auto &cs_h = use_shrink_h ? pds->cs_data_shrink : pds->cs_data;
+    const auto &coul_h = pds->vq_cut;
+    profiler.start("hartree_ft_vq", "Fourier transform Coulomb for Hartree");
+    const auto VR_h = librpa_int::FT_Vq(basis_aux_h, pds->symmetry_context, coul_h,
+                                        pds->pbc, true,
+                                        opts.use_symmetry_exx == LIBRPA_SWITCH_ON);
+    profiler.stop("hartree_ft_vq");
+    qsgw::Hartree hartree(pds->mf, pds->basis_wfc, pds->pbc, pds->symmetry_context,
+                          pds->scfk_blacs_ctxt, pds->desc_wfc_kb_full);
     SpinKMatrixMap Hartree_0; // iter-1 anchor (legacy task_qsgw.cpp:416-428)
 
     // --- mixing (Task A) ---
@@ -209,20 +221,21 @@ void driver::task_qsgw()
                 Vc_all[ispin][ikpt] = build_correlation_potential_spin_k(sigc_blocks, n_bands);
             }
 
-        // ---- H3: Hartree (Task C) ----
-        // hartree.build(atbasis_abf, Cs, coul_mat);
-        // hartree.build_KS_kgrid0(qsgw_state); // reads QsgwState::wfc0 (H2 anchor)
-        // SpinKMatrixMap Hartree_i = hartree.Hartree_is_ik_KS;
-        SpinKMatrixMap Hartree_i; // TODO(D): = hartree.Hartree_is_ik_KS
+        // ---- H3: Hartree (Task C) — recompute from the updated density ----
+        profiler.start("hartree_build", "Build Hartree kernel + KS projection");
+        hartree.build(basis_aux_h, cs_h, VR_h);              // 3 params, no routing
+        hartree.build_KS_kgrid0(qsgw_state);                 // H2 wfc0 anchor
+        profiler.stop("hartree_build");
+        const SpinKMatrixMap &Hartree_i = hartree.Hartree_is_ik_KS;
         SpinKMatrixMap Hartree_i_delta;
         for (int ispin = 0; ispin < n_spins; ++ispin)
             for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
             {
                 if (iteration == 1)
-                    Hartree_0[ispin][ikpt] = Hartree_i[ispin][ikpt]; // iter-1 anchor
+                    Hartree_0[ispin][ikpt] = Hartree_i.at(ispin).at(ikpt); // iter-1 anchor
                 else
                     Hartree_i_delta[ispin][ikpt] =
-                        Hartree_i[ispin][ikpt] - Hartree_0[ispin][ikpt]; // legacy L430
+                        Hartree_i.at(ispin).at(ikpt) - Hartree_0.at(ispin).at(ikpt); // legacy L430
             }
 
         // iter>1: Vc includes the Hartree delta (legacy task_qsgw.cpp:725-728)
