@@ -132,3 +132,39 @@ module load gcc/13.4.0
 ```
 
 Then rerun CMake from a clean build directory.
+
+### ELPA `<complex.h>` macro conflict
+
+When compiling LibRPA with external ELPA, C++ compilation may fail after
+including `elpa/elpa.h` with errors similar to
+
+```text
+error: expected identifier before '(' token
+error: expected ']' before '(' token
+```
+
+This can happen when `elpa/elpa.h` includes the C header `<complex.h>`, which
+defines the macro `I`. The macro can then conflict with LibRPA C++ code that
+uses `I` as a normal variable name. Official ELPA releases up to `2025.01.x`
+may be affected; `2025.06.001` and newer use a C++ guard so C++ code sees
+`<complex>` instead.
+
+The recommended solution is to use ELPA `2025.06.001` or newer. If you must use
+an affected ELPA version, a local workaround is to patch the installed
+`elpa/elpa.h` header by replacing
+
+```c
+#include <complex.h>
+```
+
+with
+
+```c
+#ifdef __cplusplus
+#include <complex>
+#else
+#include <complex.h>
+#endif
+```
+
+Then rerun CMake from a clean build directory.
