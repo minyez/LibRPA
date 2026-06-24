@@ -674,7 +674,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
     using global::ofs_myid;
     using global::profiler;
 
-    profiler.start(__FUNCTION__);
+    profiler.start(__FUNCTION__, LIBRPA_VERBOSE_DEBUG);
 
     assert (A_local.is_col_major() && Z_local.is_col_major());
     const bool is_int_power = fabs(power - int(power)) < 1e-4;
@@ -704,7 +704,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
     auto Z_local_opt = init_local_mat<std::complex<T>>(ad_Z_opt, MAJOR::COL);
     // printf("Z_local_opt size: %d\n", Z_local_opt.size());
 
-    profiler.start("power_hemat_blacs_1");
+    profiler.start("power_hemat_blacs_1", LIBRPA_VERBOSE_DEBUG);
     int lwork = -1, lrwork = -1, info = 0;
     std::complex<T> *work;
     T *rwork;
@@ -725,7 +725,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
     }
     profiler.stop("power_hemat_blacs_1");
 
-    profiler.start("power_hemat_blacs_2");
+    profiler.start("power_hemat_blacs_2", LIBRPA_VERBOSE_DEBUG);
     work = new std::complex<T> [lwork];
     rwork = new T [lrwork];
     ScalapackConnector::pheev_f(jobz, uplo,
@@ -735,7 +735,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
     delete [] rwork;
     profiler.stop("power_hemat_blacs_2");
     // Optimized A no longer used
-    profiler.start("power_hemat_blacs_3");
+    profiler.start("power_hemat_blacs_3", LIBRPA_VERBOSE_DEBUG);
     A_local_opt.clear();
     // send back the eigenvector matrix
     ScalapackConnector::pgemr2d_f(n, n, Z_local_opt.ptr(), 1, 1, ad_Z_opt.desc,
@@ -753,7 +753,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
         }
 
     // filter and scale the eigenvalues, store in a temp array
-    profiler.start("power_hemat_blacs_4");
+    profiler.start("power_hemat_blacs_4", LIBRPA_VERBOSE_DEBUG);
     std::vector<T> W_temp(n);
     for (size_t i = 0; i < n_filtered; i++) W_temp[i] = 0.0;
     for (size_t i = n_filtered; i != n; i++)
@@ -783,7 +783,7 @@ matrix_m<std::complex<T>> power_hemat_blacs(matrix_m<std::complex<T>> &A_local,
     //     librpa_int::global::lib_printf("%d %f %f\n", i, W[i], W_temp[i]);
     // }
 
-    profiler.start("power_hemat_blacs_5");
+    profiler.start("power_hemat_blacs_5", LIBRPA_VERBOSE_DEBUG);
     // create scaled eigenvectors
     auto scaled_opt = Z_local_opt.copy();
     for (size_t i = 0; i != n; i++)
@@ -814,7 +814,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_desc(matrix_m<std::complex<T>> &A_lo
     using global::ofs_myid;
     using global::profiler;
 
-    profiler.start(__FUNCTION__);
+    profiler.start(__FUNCTION__, LIBRPA_VERBOSE_DEBUG);
 
     A_local *= -1.0;
     assert(A_local.is_col_major() && Z_local.is_col_major());
@@ -845,7 +845,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_desc(matrix_m<std::complex<T>> &A_lo
     auto Z_local_opt = init_local_mat<std::complex<T>>(ad_Z_opt, MAJOR::COL);
     // printf("Z_local_opt size: %d\n", Z_local_opt.size());
 
-    profiler.start("power_hemat_blacs_1");
+    profiler.start("power_hemat_blacs_1", LIBRPA_VERBOSE_DEBUG);
     int lwork = -1, lrwork = -1, info = 0;
     std::complex<T> *work;
     T *rwork;
@@ -866,7 +866,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_desc(matrix_m<std::complex<T>> &A_lo
     }
     profiler.stop("power_hemat_blacs_1");
 
-    profiler.start("power_hemat_blacs_2");
+    profiler.start("power_hemat_blacs_2", LIBRPA_VERBOSE_DEBUG);
     work = new std::complex<T>[lwork];
     rwork = new T[lrwork];
     ScalapackConnector::pheev_f(jobz, uplo, n, A_local_opt.ptr(), 1, 1, ad_A_opt.desc, W,
@@ -904,7 +904,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_desc(matrix_m<std::complex<T>> &A_lo
         }
 
     // filter and scale the eigenvalues, store in a temp array
-    profiler.start("power_hemat_blacs_3");
+    profiler.start("power_hemat_blacs_3", LIBRPA_VERBOSE_DEBUG);
     std::vector<T> W_temp(as_size(n), T(0));
     const auto n_kept = as_size(n) - n_filtered;
     for (std::size_t i = 0; i != n_kept; i++)
@@ -934,7 +934,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_desc(matrix_m<std::complex<T>> &A_lo
     //     LIBRPA::utils::lib_printf("%d %f %f\n", i, W[i], W_temp[i]);
     // }
 
-    profiler.start("power_hemat_blacs_4");
+    profiler.start("power_hemat_blacs_4", LIBRPA_VERBOSE_DEBUG);
 
     // create scaled eigenvectors
     auto scaled_opt = Z_local_opt.copy();
@@ -966,7 +966,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
     using global::ofs_myid;
     using global::profiler;
 
-    profiler.start(__FUNCTION__);
+    profiler.start(__FUNCTION__, LIBRPA_VERBOSE_DEBUG);
     // Step 1: Extract real part of the complex matrix
     auto A_local_real = A_local.get_real();
     A_local_real *= -1.0;
@@ -998,7 +998,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
     // Initialize Z as real matrix initially
     auto Z_local_opt = init_local_mat<T>(ad_Z_opt, MAJOR::COL);
 
-    profiler.start("power_hemat_blacs_1");
+    profiler.start("power_hemat_blacs_1", LIBRPA_VERBOSE_DEBUG);
     int lwork = -1, lrwork = -1, info = 0;
 
     // Query optimal workspace using the provided psyev_f interface
@@ -1012,7 +1012,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
 
     std::vector<T> work(lwork);
     std::vector<T> rwork(lrwork);
-    profiler.start("power_hemat_blacs_2");
+    profiler.start("power_hemat_blacs_2", LIBRPA_VERBOSE_DEBUG);
     // Perform real symmetric diagonalization using the provided interface
     ofs_myid << lwork << " " << lrwork << " " << n << std::endl;
     ScalapackConnector::psyev_f(jobz, uplo, n, A_local_opt.ptr(), 1, 1, ad_A_opt.desc, W,
@@ -1045,7 +1045,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
     }
 
     // Filter and scale eigenvalues
-    profiler.start("power_hemat_blacs_3");
+    profiler.start("power_hemat_blacs_3", LIBRPA_VERBOSE_DEBUG);
     std::vector<T> W_temp(as_size(n), T(0));
     const std::size_t n_kept = as_size(n) - n_filtered;
     for (std::size_t i = 0; i < n_kept; i++)
@@ -1070,7 +1070,7 @@ matrix_m<std::complex<T>> power_hemat_blacs_real(matrix_m<std::complex<T>> &A_lo
     }
     profiler.stop("power_hemat_blacs_3");
 
-    profiler.start("power_hemat_blacs_4");
+    profiler.start("power_hemat_blacs_4", LIBRPA_VERBOSE_DEBUG);
     // Scale eigenvectors using complex matrix operations
     auto scaled_opt = Z_local_opt_complex.copy();
     for (int i = 0; i < n; i++)
@@ -1224,7 +1224,7 @@ void fill_local_mat_from_ap_dist_scheduler(matrix_m<T> &m_loc,
                                            const AtomicBasis &atbasis_c,
                                            const ArrayDesc &ad)
 {
-    global::profiler.start(__FUNCTION__);
+    global::profiler.start(__FUNCTION__, LIBRPA_VERBOSE_DEBUG);
     assert(sched.initialized());
     assert(ad.initialized());
     const auto major_data = m_loc.major();
@@ -1651,7 +1651,7 @@ void fill_ap_map_from_blacs_dist_scheduler(ap_p_map<matrix_m<T>> &data,
                                            const AtomicBasis &atbasis_c,
                                            const ArrayDesc &ad)
 {
-    global::profiler.start(__FUNCTION__);
+    global::profiler.start(__FUNCTION__, LIBRPA_VERBOSE_DEBUG);
 
     assert(ad.initialized());
     assert(sched.initialized());
