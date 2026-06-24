@@ -115,3 +115,8 @@ cache/
 
 AGENTS.md
 CLAUDE.md
+
+# Local build/scratch directories (team members) - do not commit
+/build-*/
+/.verify-*/
+/.verify-infra/

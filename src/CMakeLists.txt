@@ -127,8 +127,9 @@ list(APPEND lib_sources
         mpi/two_level_parallel_context.cpp
         mpi/kpoint_blacs_parallel_context.cpp
 
-        # qsgw/fermi_energy_occupation.cpp
-        # qsgw/Hamiltonian.cpp
+        # NOTE: all qsgw sources are registered in qsgw/CMakeLists.txt and pulled
+        # in below via add_subdirectory(qsgw). Do not list qsgw/*.cpp here
+        # (would double-register).
 
         utils/constants.cpp
         utils/dev_options.cpp
@@ -169,6 +170,12 @@ endif()
 
 # source must be PRIVATE to avoid recompilation when linking driver to this library
 target_sources(rpa_lib PRIVATE ${lib_sources})
+
+# QSGW self-consistency modules. Task A files (qsgw_state/mixing/fermi) are
+# registered via the subdirectory; Task B files (correlation_potential/
+# hamiltonian_qsgw) are listed in lib_sources above. The two lists are disjoint.
+add_subdirectory(qsgw)
+
 target_link_libraries(rpa_lib PRIVATE ${math_libs} ${parallel_libs})
 
 install(TARGETS rpa_lib

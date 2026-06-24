@@ -62,6 +62,7 @@ foreach(target
     test_timefreq
     test_vector3
     test_wigner_rotation
+    test_pulay_mixer
     )
   config_test(${target} 1)
 endforeach()
