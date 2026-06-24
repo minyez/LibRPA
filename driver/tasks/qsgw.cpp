@@ -49,6 +49,65 @@
 #include "../../src/qsgw/hartree.h"                    // Hartree (H3)
 #include "../qsgw_io.h"                                // export_qsgw_hamiltonian_bundle (Task F)
 
+namespace
+{
+using librpa_int::Matz;
+
+struct MatrixChecksum
+{
+    int nr = 0, nc = 0;
+    int major = 0;
+    size_t nnz = 0;
+    double sum_real = 0.0, sum_imag = 0.0;
+    double sum_abs = 0.0, sum_sq = 0.0, max_abs = 0.0;
+};
+
+MatrixChecksum compute_checksum(const Matz &m, double threshold = 1e-15)
+{
+    MatrixChecksum c;
+    c.nr = m.nr();
+    c.nc = m.nc();
+    c.major = static_cast<int>(m.major());
+    const size_t n = m.size();
+    for (size_t i = 0; i < n; ++i)
+    {
+        const auto v = m.ptr()[i];
+        const double a = std::abs(v);
+        if (a > threshold) c.nnz++;
+        c.sum_real += v.real();
+        c.sum_imag += v.imag();
+        c.sum_abs += a;
+        c.sum_sq += a * a;
+        c.max_abs = std::max(c.max_abs, a);
+    }
+    return c;
+}
+
+void write_checksum_file(const MatrixChecksum &c, const std::string &fn,
+                         const std::string &label)
+{
+    std::ofstream fs(fn);
+    if (!fs)
+        throw LIBRPA_RUNTIME_ERROR("QSGW dump: failed to open checksum file " + fn);
+    fs << "# " << label << "\n";
+    fs << "shape " << c.nr << " " << c.nc << "\n";
+    fs << "major " << c.major << "\n";
+    fs << "nnz " << c.nnz << "\n";
+    fs << std::scientific << std::setprecision(15);
+    fs << "sum_real " << c.sum_real << "\n";
+    fs << "sum_imag " << c.sum_imag << "\n";
+    fs << "sum_abs " << c.sum_abs << "\n";
+    fs << "sum_sq " << c.sum_sq << "\n";
+    fs << "max_abs " << c.max_abs << "\n";
+    fs << "frobenius " << std::sqrt(c.sum_sq) << "\n";
+}
+
+void dump_matz(const Matz &m, const std::string &fn_base, const std::string &label)
+{
+    librpa_int::print_matrix_mm_file(m, fn_base + ".mm", label, 1e-15, true);
+}
+} // unnamed namespace
+
 void driver::task_qsgw()
 {
     using std::cout;
@@ -134,6 +193,25 @@ void driver::task_qsgw()
             std::cout << "[QSGW] min_iterations=" << qsgw_min_iterations << std::endl;
     }
 
+    // --- env-gated iter-1 diagnostic dump (default off) ---
+    bool qsgw_dump_iter1 = false;
+    std::string qsgw_dump_dir;
+    {
+        const char *env_dump = std::getenv("QSGW_DUMP_ITER1");
+        qsgw_dump_iter1 = (env_dump != nullptr && std::string(env_dump) == "1");
+        const char *env_dir = std::getenv("QSGW_DUMP_DIR");
+        if (env_dir != nullptr)
+            qsgw_dump_dir = librpa_int::path_as_directory(std::string(env_dir));
+        else
+            qsgw_dump_dir = librpa_int::path_as_directory(std::string(opts.output_dir)) +
+                            "qsgw_dump/";
+        if (qsgw_dump_iter1 && mpi_comm_global_h.is_root())
+        {
+            std::cout << "[QSGW] iter-1 diagnostic dump enabled: " << qsgw_dump_dir << std::endl;
+            librpa_int::create_directories(qsgw_dump_dir.c_str(), 0);
+        }
+    }
+
     double efermi = mf.get_efermi();
     const double total_electrons = calculate_total_weight(mf); // replaces get_total_weight
 
@@ -160,6 +238,11 @@ void driver::task_qsgw()
     for (const auto &sp : pds->p_exx->exx_KS)
         for (const auto &kp : sp.second)
             hf0_ks[sp.first][kp.first] = kp.second.copy();
+    if (qsgw_dump_iter1 && mpi_comm_global_h.is_root())
+    {
+        const std::string base = qsgw_dump_dir + "hf0_ks_spin0_kpt0";
+        dump_matz(hf0_ks.at(0).at(0), base, "hf0_ks spin=0 kpt=0");
+    }
 
     // --- H_KS0 + vxc0 assembly (legacy task_qsgw.cpp L882-L905) ---
     // H_KS0[ispin][ikpt] = diag(eigvals) (KS band space). vxc0 = xc + hf0_ks (fixed
@@ -180,7 +263,18 @@ void driver::task_qsgw()
             oss_xc << driver_params.input_dir << "xc_matr_spin_" << (ispin + 1)
                    << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
             // (B)-fixed: vxc0 = xc + hf0_ks (fixed DFT HF from kernel, deep-copied).
-            Matz vxc0_sk = load_matrix_cplx(oss_xc.str()) + hf0_ks.at(ispin).at(ikpt);
+            Matz xc_matr = load_matrix_cplx(oss_xc.str());
+            Matz vxc0_sk = xc_matr + hf0_ks.at(ispin).at(ikpt);
+
+            if (qsgw_dump_iter1 && ispin == 0 && ikpt == 0 && mpi_comm_global_h.is_root())
+            {
+                const std::string base = qsgw_dump_dir + "xc_matr_raw_spin0_kpt0";
+                dump_matz(xc_matr, base, "xc_matr_raw spin=0 kpt=0");
+                write_checksum_file(compute_checksum(xc_matr), base + ".chk",
+                                    "xc_matr_raw spin=0 kpt=0");
+                dump_matz(vxc0_sk, qsgw_dump_dir + "vxc0_spin0_kpt0", "vxc0 spin=0 kpt=0");
+                dump_matz(H_KS0_sk, qsgw_dump_dir + "H_KS0_spin0_kpt0", "H_KS0 spin=0 kpt=0");
+            }
 
             vxc0[ispin][ikpt] = vxc0_sk;
             H_KS0[ispin][ikpt] = H_KS0_sk;
@@ -264,6 +358,12 @@ void driver::task_qsgw()
                 const auto sigc_blocks = build_sigma_real_axis_blocks_qsgw(
                     mf, freq_nodes, sigc_spin_k, ispin, ikpt, n_bands, opts.n_params_anacon);
                 Vc_all[ispin][ikpt] = build_correlation_potential_spin_k(sigc_blocks, n_bands);
+                if (qsgw_dump_iter1 && iteration == 1 && ispin == 0 && ikpt == 0 &&
+                    mpi_comm_global_h.is_root())
+                {
+                    dump_matz(Vc_all[ispin][ikpt], qsgw_dump_dir + "Vc_all_spin0_kpt0",
+                              "Vc_all spin=0 kpt=0");
+                }
             }
 
         // ---- H3: Hartree (Task C) — recompute from the updated density ----
@@ -278,6 +378,11 @@ void driver::task_qsgw()
         hartree.build_KS_kgrid0(qsgw_state);                 // H2 wfc0 anchor
         profiler.stop("hartree_build");
         const SpinKMatrixMap &Hartree_i = hartree.Hartree_is_ik_KS;
+        if (qsgw_dump_iter1 && iteration == 1 && mpi_comm_global_h.is_root())
+        {
+            dump_matz(Hartree_i.at(0).at(0), qsgw_dump_dir + "Hartree_i_spin0_kpt0",
+                      "Hartree_i spin=0 kpt=0");
+        }
         SpinKMatrixMap Hartree_i_delta;
         for (int ispin = 0; ispin < n_spins; ++ispin)
             for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
@@ -297,6 +402,11 @@ void driver::task_qsgw()
 
         // ---- Hexx (exchange) from the rebuilt p_exx (Exx::exx_KS, exx.h:56) ----
         const SpinKMatrixMap &Hexx_all = pds->p_exx->exx_KS;
+        if (qsgw_dump_iter1 && iteration == 1 && mpi_comm_global_h.is_root())
+        {
+            dump_matz(Hexx_all.at(0).at(0), qsgw_dump_dir + "Hexx_iter_spin0_kpt0",
+                      "Hexx_iter spin=0 kpt=0");
+        }
 
         // ---- construct H0_GW (Task B; HROUND inside; H4 vxc0 + H8 via n_spinor) ----
         // NOTE: new signature drops the legacy meanfield param (qsgw_driver_design §3).
@@ -309,6 +419,11 @@ void driver::task_qsgw()
         else
             H0_GW_all = construct_H0_GW(H_KS0, vxc0, Hexx_all, Vc_all,
                                         n_spins, n_kpoints, n_bands);
+        if (qsgw_dump_iter1 && iteration == 1 && mpi_comm_global_h.is_root())
+        {
+            dump_matz(H0_GW_all.at(0).at(0), qsgw_dump_dir + "H0_GW_all_spin0_kpt0",
+                      "H0_GW_all spin=0 kpt=0");
+        }
 
         // ---- Linear mixing (Task A): H_new = H_old + beta * (H_current - H_old) ----
         double max_abs_delta = 0.0;
