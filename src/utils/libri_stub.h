@@ -58,6 +58,26 @@ public:
     Tensor(): data(std::make_shared<std::valarray<Tdata>>())
     {};
 
+    Tensor(const std::vector<int> &dimension)
+    {
+        shape = normalize_shape_(dimension);
+        if(!this->shape.empty())
+        {
+            const auto size = shape_size_(shape);
+			data = std::make_shared<std::valarray<Tdata>>(0, size);
+        }
+    }
+
+    Tensor(const std::initializer_list<std::size_t> &dimension)
+    {
+        shape = std::vector<std::size_t>(dimension);
+        if(!this->shape.empty())
+        {
+            const auto size = shape_size_(shape);
+			data = std::make_shared<std::valarray<Tdata>>(0, size);
+        }
+    }
+
     Tensor(const std::vector<int> &dimension, std::shared_ptr<std::valarray<Tdata>> data_in)
     {
         reset_(normalize_shape_(dimension), std::move(data_in));
