@@ -22,6 +22,7 @@ list(APPEND exe_sources
   tasks/exx_band.cpp
   tasks/g0w0.cpp
   tasks/g0w0_band.cpp
+  tasks/qsgw.cpp
   tasks/rpa.cpp
   tasks/print_minimax.cpp
   qsgw_io.cpp
