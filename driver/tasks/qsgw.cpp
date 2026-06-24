@@ -142,9 +142,10 @@ void driver::task_qsgw()
 
             // #4 (coremath): load the FULL xc_matr (KS band space; H0_GW is a full
             // matrix so off-diagonal xc must be kept — the diagonal read_vxc path
-            // drops it). Pattern: xc_matr_spin_0{S}_kpt_{000006K}.csc, S=ispin+1.
+            // drops it). Pattern matches legacy: xc_matr_spin_{S}_kpt_{000006K}.csc
+            // (S=ispin+1, NO leading zero on spin — coremath prefix fix).
             std::ostringstream oss_xc;
-            oss_xc << driver_params.input_dir << "xc_matr_spin_0" << (ispin + 1)
+            oss_xc << driver_params.input_dir << "xc_matr_spin_" << (ispin + 1)
                    << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
             Matz vxc0_sk = load_matrix_cplx(oss_xc.str()); // full n_bands x n_bands (KS)
 
@@ -214,6 +215,14 @@ void driver::task_qsgw()
         // off at gw.cpp:1798) then run the KS rotation (#1) which populates it.
         pds->p_g0w0->output_sigc_ks_mat_kf = true;
         pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
+
+        // Exx KS rotation (parallel to the sigc #1 fix; coremath final review):
+        // build_g0w0_sigma builds Exx real-space only — compute_g0w0.cpp:644
+        // build_KS_kgrid_blacs is commented out, so p_exx->exx_KS stays empty and
+        // construct_H0_GW's Hexx_all (= p_exx->exx_KS) would be empty/out_of_range.
+        // Project to KS here. iter-1 current=wfc0, so the current-basis call is right;
+        // a fixed-basis (wfc0) wrapper for iter>1 is TODO.
+        pds->p_exx->build_KS_kgrid_blacs(pds->blacs_h);
 
         // ---- H5 + Vc: full non-diagonal sigc -> correlation potential (mode B) ----
         // sigc_is_ik_f_KS : [ispin][ikpt][freq] -> Matz (gw.h:80). For each (spin,kpt)
