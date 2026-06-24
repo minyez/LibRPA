@@ -331,8 +331,12 @@ void Hartree::build(const AtomicBasis &atbasis_abf,
     // N_mu MPI all-gather over set_IJ (patched LRI-cal_hartree.hpp L217, path-C framework).
     N = RI::Communicate_Tensors_Map_Judge::comm_map(comm_h.comm, std::move(N), set_IJ);
 
-    // --- 5. H_st[k] = sum_mu (Csk[mu][s][t][k] + conj(Csk[mu][t][s][k])^T) · N[mu]
-    //     (legacy L219-274). Output H[s][t][k] {nao_s, nao_t}.
+    // --- 5. H_st[k] = Csk[s][t][k]·N[s] + (conj(Csk[t][s][k])·N[t])^T
+    //     (legacy L219-274, TWO Hermitian atom-pair-endpoint terms). Output H[s][t][k]
+    //     {nao_s, nao_t}. Fixed per coremath: the legacy patch sums two terms with
+    //     mu = s and mu = t (NOT a single sum over all mu); the t-term carries a
+    //     conjugate + transpose (Hermitian cross term). A single-term version
+    //     silently breaks the Hartree numerics. Csk is 3-level map[I][J][k].
     std::map<int, std::map<int, std::map<int, RI::Tensor<std::complex<double>>>>> Hk;
     for (const int s : list_I)
     {
@@ -342,15 +346,20 @@ void Hartree::build(const AtomicBasis &atbasis_abf,
             {
                 bool has = false;
                 RI::Tensor<std::complex<double>> H_st;
-                // H_st[k] += Csk[mu][s][t][k] · N[mu]  (Csk shape {aux_mu, nao_s, nao_t})
-                for (const int mu : list_IJ)
+                // term 1: Csk[s][t][k] · N[s]  -> {nao_s, nao_t}
+                if (Csk.count(s) && Csk.at(s).count(t) && Csk.at(s).at(t).count(k) &&
+                    N.count(s) && !N.at(s).empty())
                 {
-                    if (Csk.count(mu) && Csk.at(mu).count(s) && Csk.at(mu).at(s).count(t) &&
-                        Csk.at(mu).at(s).at(t).count(k) && N.count(mu) && !N.at(mu).empty())
-                    {
-                        const auto h = contract_3_1_to_2(Csk.at(mu).at(s).at(t).at(k), N.at(mu));
-                        if (!has) { H_st = h; has = true; } else H_st = H_st + h;
-                    }
+                    const auto h1 = contract_3_1_to_2(Csk.at(s).at(t).at(k), N.at(s));
+                    if (!has) { H_st = h1; has = true; } else H_st = H_st + h1;
+                }
+                // term 2: conj(Csk[t][s][k]) · N[t] -> {nao_t, nao_s}, transpose -> {nao_s, nao_t}
+                if (Csk.count(t) && Csk.at(t).count(s) && Csk.at(t).at(s).count(k) &&
+                    N.count(t) && !N.at(t).empty())
+                {
+                    auto h2 = contract_3_1_to_2(conj_tensor(Csk.at(t).at(s).at(k)), N.at(t));
+                    h2 = h2.transpose();
+                    if (!has) { H_st = h2; has = true; } else H_st = H_st + h2;
                 }
                 if (has) Hk[s][t][k] = H_st;
             }
