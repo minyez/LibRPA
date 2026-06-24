@@ -30,6 +30,7 @@
 #include "../../src/core/input_symmetry.h"
 #include "../../src/io/fs.h"
 #include "../../src/io/global_io.h"
+#include "../../src/io/input_elsi.h"   // load_matrix_cplx (hf_exchange CSC reader, H4)
 #include "../../src/utils/constants.h" // HA2EV
 #include "../../src/utils/profiler.h"
 #include "../driver.h"
@@ -118,12 +119,45 @@ void driver::task_qsgw()
     double efermi = mf.get_efermi();
     const double total_electrons = calculate_total_weight(mf); // replaces get_total_weight
 
-    // --- H4: vxc0 = vxc_dft + hf_rotated (hard fact #7) ---
-    // vxc0[ispin][ikpt] is the KS-basis xc incl. rotated HF. hf_nao source +
-    // rotation hf_ks = conj(wfc)*hf_nao*transpose(wfc) is TODO(D) wiring; legacy
-    // reads hf_exchange_*.csc and rotates at task_qsgw.cpp:882.
-    SpinKMatrixMap vxc0; // TODO(D): assemble vxc0 = vxc_dft + hf_ks (H4)
-    SpinKMatrixMap H_KS0; // TODO(D): KS Hamiltonian (NAO/band basis) for construct_H0_GW
+    // --- H_KS0 + H4 vxc0 assembly (legacy task_qsgw.cpp L882-L905) ---
+    // H_KS0[ispin][ikpt] = diag(eigvals) (KS orthonormal band space, n_bands x n_bands).
+    // vxc0 = vxc_dft + hf_ks, hf_ks = conj(wfc)*hf_nao*transpose(wfc), hf_nao read
+    // from hf_exchange_*.csc (hard fact #7; construct_H0_GW does H_KS - vxc0 + Hexx + Vc).
+    const int n_aos = mf.get_n_aos();
+    SpinKMatrixMap vxc0;
+    SpinKMatrixMap H_KS0;
+    for (int ispin = 0; ispin < n_spins; ++ispin)
+        for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
+        {
+            Matz H_KS0_sk(n_bands, n_bands, MAJOR::COL);
+            Matz vxc_dft_sk(n_bands, n_bands, MAJOR::COL);
+            for (int ib = 0; ib < n_bands; ++ib)
+            {
+                H_KS0_sk(ib, ib) = mf.get_eigenvals()[ispin](ikpt, ib);
+                vxc_dft_sk(ib, ib) = vxc_dft[ispin](ikpt, ib);
+            }
+            // KS wfc (n_bands x n_aos), non-SOC path (ispinor=0).
+            // SOC spinor folding (H8) TODO(D-review): wfc1(ib, iao*n_spinor+ispinor)
+            // per legacy L688, plus spinor-summed density for Hartree.
+            Matz wfc1(n_bands, n_aos, MAJOR::COL);
+            for (int ib = 0; ib < n_bands; ++ib)
+                for (int iao = 0; iao < n_aos; ++iao)
+                    wfc1(ib, iao) = mf.get_eigenvectors()[ispin].at(0).at(ikpt)(ib, iao);
+
+            vxc0[ispin][ikpt] = vxc_dft_sk;
+            // hf rotation; skip gracefully if hf_exchange file is absent (TODO(D-review):
+            // gate via a knob; for parity the file is expected to be present).
+            std::ostringstream oss_hf;
+            oss_hf << driver_params.input_dir << "hf_exchange_spin_0" << (ispin + 1)
+                   << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
+            if (librpa_int::path_exists(oss_hf.str().c_str()))
+            {
+                Matz hf_nao = load_matrix_cplx(oss_hf.str()); // n_aos x n_aos (verify on Fisherd)
+                Matz hf_ks = conj(wfc1) * hf_nao * transpose(wfc1); // -> n_bands x n_bands
+                vxc0[ispin][ikpt] = vxc_dft_sk + hf_ks;             // vxc0 = vxc_dft + hf (#7)
+            }
+            H_KS0[ispin][ikpt] = H_KS0_sk;
+        }
 
     // --- H3: Hartree object (Task C) + Hartree_0 anchor storage ---
     // Hartree ctor needs MeanField, AtomicBasis(wfc), PBC, SymmetryContext,
@@ -160,21 +194,19 @@ void driver::task_qsgw()
         // ---- recompute G0W0 self-energy with updated mf (g0w0.cpp pattern) ----
         h.build_g0w0_sigma(opts);
 
-        // ---- H5: read FULL non-diagonal sigc (hard fact #5) ----
-        // pds->p_g0w0->sigc_is_ik_f_KS : [ispin][ikpt][freq] Matz (gw.h:80).
-        // Build SigmaRealAxisBlocks for build_correlation_potential (mode B).
-        // TODO(D): assemble sigc_blocks from pds->p_g0w0->sigc_is_ik_f_KS.
-        // const auto &sigc = pds->p_g0w0->sigc_is_ik_f_KS;
-
-        // ---- Vc = correlation potential (Task B, mode B) ----
+        // ---- H5 + Vc: full non-diagonal sigc -> correlation potential (mode B) ----
+        // sigc_is_ik_f_KS : [ispin][ikpt][freq] -> Matz (gw.h:80). For each (spin,kpt)
+        // build SigmaRealAxisBlocks (Pade AC via the coremath Task B helper) then Vc.
+        // (hard fact #5; legacy built sigcmat inline at task_qsgw.cpp:1370-1490.)
+        const auto freq_nodes = pds->tfg.get_freq_nodes();
         SpinKMatrixMap Vc_all;
         for (int ispin = 0; ispin < n_spins; ++ispin)
             for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
             {
-                // TODO(D): assemble SigmaRealAxisBlocks sigc_sk for (ispin,ikpt).
-                // SigmaRealAxisBlocks sigc_sk; // from pds->p_g0w0->sigc_is_ik_f_KS
-                // Vc_all[ispin][ikpt] = build_correlation_potential_spin_k(sigc_sk, n_bands);
-                (void)ispin; (void)ikpt; // skeleton placeholder
+                const auto &sigc_spin_k = pds->p_g0w0->sigc_is_ik_f_KS.at(ispin).at(ikpt);
+                const auto sigc_blocks = build_sigma_real_axis_blocks_qsgw(
+                    mf, freq_nodes, sigc_spin_k, ispin, ikpt, n_bands, opts.n_params_anacon);
+                Vc_all[ispin][ikpt] = build_correlation_potential_spin_k(sigc_blocks, n_bands);
             }
 
         // ---- H3: Hartree (Task C) ----
