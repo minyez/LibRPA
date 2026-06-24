@@ -89,12 +89,9 @@ void driver::task_qsgw()
                     driver::get_bool(driver::opts.use_shrink_abfs));
     profiler.stop("read_vq_cut");
 
-    // --- read DFT xc (g0w0.cpp:78; reads DFT xc only, H4 adds hf) ---
-    profiler.start("read_vxc", "Load DFT xc potential");
-    std::vector<matrix> vxc_dft;
-    if (read_vxc(driver_params.input_dir + driver_params.fn_vxc_scf, vxc_dft) != 0)
-        throw LIBRPA_RUNTIME_ERROR("Failed to read DFT xc potential");
-    profiler.stop("read_vxc");
+    // --- DFT xc: loaded per (spin,kpt) as the FULL xc_matr CSC below (H4 #4 fix,
+    //     coremath review: H0_GW is a full matrix, off-diagonal xc must be kept;
+    //     the diagonal read_vxc path drops off-diag). hf added in the same loop. ---
 
     // --- H2: snapshot step-0 anchors BEFORE the loop mutates wfc ---
     QsgwState qsgw_state;
@@ -130,14 +127,12 @@ void driver::task_qsgw()
     for (int ispin = 0; ispin < n_spins; ++ispin)
         for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
         {
+            // H_KS0 = diag(eigvals) (KS orthonormal band space).
             Matz H_KS0_sk(n_bands, n_bands, MAJOR::COL);
-            Matz vxc_dft_sk(n_bands, n_bands, MAJOR::COL);
             for (int ib = 0; ib < n_bands; ++ib)
-            {
                 H_KS0_sk(ib, ib) = mf.get_eigenvals()[ispin](ikpt, ib);
-                vxc_dft_sk(ib, ib) = vxc_dft[ispin](ikpt, ib);
-            }
-            // KS wfc (n_bands x n_aos), non-SOC path (ispinor=0).
+
+            // KS wfc (n_bands x n_aos), non-SOC (ispinor=0).
             // SOC spinor folding (H8) TODO(D-review): wfc1(ib, iao*n_spinor+ispinor)
             // per legacy L688, plus spinor-summed density for Hartree.
             Matz wfc1(n_bands, n_aos, MAJOR::COL);
@@ -145,18 +140,26 @@ void driver::task_qsgw()
                 for (int iao = 0; iao < n_aos; ++iao)
                     wfc1(ib, iao) = mf.get_eigenvectors()[ispin].at(0).at(ikpt)(ib, iao);
 
-            vxc0[ispin][ikpt] = vxc_dft_sk;
-            // hf rotation; skip gracefully if hf_exchange file is absent (TODO(D-review):
-            // gate via a knob; for parity the file is expected to be present).
+            // #4 (coremath): load the FULL xc_matr (KS band space; H0_GW is a full
+            // matrix so off-diagonal xc must be kept — the diagonal read_vxc path
+            // drops it). Pattern: xc_matr_spin_0{S}_kpt_{000006K}.csc, S=ispin+1.
+            std::ostringstream oss_xc;
+            oss_xc << driver_params.input_dir << "xc_matr_spin_0" << (ispin + 1)
+                   << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
+            Matz vxc0_sk = load_matrix_cplx(oss_xc.str()); // full n_bands x n_bands (KS)
+
+            // H4: hf rotation. hf_exchange_*.csc is NAO (n_aos x n_aos) -> KS via wfc1;
+            // vxc0 = xc + hf (hard fact #7). (#5 TODO(D): HF mandatory -> hard error if
+            // absent; interim: skip when the file is missing.)
             std::ostringstream oss_hf;
             oss_hf << driver_params.input_dir << "hf_exchange_spin_0" << (ispin + 1)
                    << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
             if (librpa_int::path_exists(oss_hf.str().c_str()))
             {
-                Matz hf_nao = load_matrix_cplx(oss_hf.str()); // n_aos x n_aos (verify on Fisherd)
-                Matz hf_ks = conj(wfc1) * hf_nao * transpose(wfc1); // -> n_bands x n_bands
-                vxc0[ispin][ikpt] = vxc_dft_sk + hf_ks;             // vxc0 = vxc_dft + hf (#7)
+                Matz hf_nao = load_matrix_cplx(oss_hf.str());
+                vxc0_sk = vxc0_sk + conj(wfc1) * hf_nao * transpose(wfc1);
             }
+            vxc0[ispin][ikpt] = vxc0_sk;
             H_KS0[ispin][ikpt] = H_KS0_sk;
         }
 
@@ -206,10 +209,21 @@ void driver::task_qsgw()
         // ---- recompute G0W0 self-energy with updated mf (g0w0.cpp pattern) ----
         h.build_g0w0_sigma(opts);
 
+        // #1/#2 (coremath review): build_g0w0_sigma only does build_spacetime; it does
+        // NOT fill sigc_is_ik_f_KS. Enable the KS-matrix storage flag (#2, gated default
+        // off at gw.cpp:1798) then run the KS rotation (#1) which populates it.
+        pds->p_g0w0->output_sigc_ks_mat_kf = true;
+        pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
+
         // ---- H5 + Vc: full non-diagonal sigc -> correlation potential (mode B) ----
         // sigc_is_ik_f_KS : [ispin][ikpt][freq] -> Matz (gw.h:80). For each (spin,kpt)
         // build SigmaRealAxisBlocks (Pade AC via the coremath Task B helper) then Vc.
         // (hard fact #5; legacy built sigcmat inline at task_qsgw.cpp:1370-1490.)
+        // #6 (coremath review): sigc_is_ik_f_KS is BLACS-distributed (gw.cpp:2096 stores
+        // the local block); build_sigma_real_axis_blocks_qsgw indexes i,j over n_bands so
+        // it needs the FULL matrix. Correct as-is for serial / 1-proc BLACS (local==full);
+        // parallel needs a gather (pdgemr2d to a 1x1 grid) or root-collect + bcast Vc —
+        // TODO(D-review) with coremath on the preferred utility.
         const auto freq_nodes = pds->tfg.get_freq_nodes();
         SpinKMatrixMap Vc_all;
         for (int ispin = 0; ispin < n_spins; ++ispin)
