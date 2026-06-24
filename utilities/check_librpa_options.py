@@ -18,6 +18,8 @@ The checker compares:
 * binding/fortran/librpa_f03.f90           LibrpaOptions high-level wrapper
 * binding/fortran/librpa_f03.f90           sync_opts() coverage
 * src/api/options.cpp                      librpa_init_options() coverage
+* driver/driver.h                          DriverParams documentation
+* docs/user_guide/runtime_parameters.yml   user-guide coverage
 
 It intentionally uses lightweight parsers for the declaration patterns used by
 these files, so it can run without external dependencies.
@@ -41,6 +43,14 @@ class SyncPair:
     c_name: str
     path: Path
     line: int
+
+
+@dataclass(frozen=True)
+class DocField:
+    name: str
+    path: Path
+    line: int
+    doc: str = ""
 
 
 def rel(path: Path, root: Path) -> str:
@@ -95,6 +105,155 @@ def strip_fortran_comment(line: str) -> str:
     if "!" not in line:
         return line
     return line.split("!", 1)[0]
+
+
+def clean_c_doc_line(line: str) -> str:
+    text = line.strip()
+    for prefix in ("//!", "///", "/*!", "/**", "*/"):
+        if text.startswith(prefix):
+            text = text[len(prefix):].strip()
+    if text.startswith("*"):
+        text = text[1:].strip()
+    return text
+
+
+def iter_c_doc_lines(lines: Sequence[str], start: int) -> Tuple[List[str], int]:
+    text = lines[start].lstrip()
+    if text.startswith(("//!", "///")):
+        out: List[str] = []
+        i = start
+        while i < len(lines) and lines[i].lstrip().startswith(("//!", "///")):
+            out.append(clean_c_doc_line(lines[i]))
+            i += 1
+        return out, i
+
+    out = [clean_c_doc_line(lines[start])]
+    i = start + 1
+    while i < len(lines):
+        out.append(clean_c_doc_line(lines[i]))
+        if "*/" in lines[i]:
+            return out, i + 1
+        i += 1
+    return out, i
+
+
+def parse_c_doc_field_name(line: str) -> Optional[str]:
+    text = line.strip()
+    if not text.endswith(";") or "(" in text or ")" in text or text.startswith("static "):
+        return None
+
+    declaration = text[:-1].strip()
+    match = re.match(
+        r"(?P<type>(?:std::)?[A-Za-z_][A-Za-z0-9_:<>]*"
+        r"(?:\s+[A-Za-z_][A-Za-z0-9_:<>]*)*)\s+"
+        r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?:\s*\[[^\]]+\])?$",
+        declaration,
+    )
+    return match.group("name") if match else None
+
+
+def parse_documented_c_struct_fields(path: Path, struct_name: str) -> List[DocField]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    fields: List[DocField] = []
+    pending_doc: List[str] = []
+    in_struct = False
+    saw_open = False
+    i = 0
+
+    while i < len(lines):
+        text = lines[i].strip()
+        if not in_struct:
+            if struct_name == "LibrpaOptions":
+                if re.search(r"\btypedef\s+struct\b", text):
+                    in_struct = True
+                    saw_open = "{" in text
+            elif re.search(rf"\bstruct\s+{re.escape(struct_name)}\b", text):
+                in_struct = True
+                saw_open = "{" in text
+            i += 1
+            continue
+
+        if not saw_open:
+            saw_open = "{" in text
+            i += 1
+            continue
+
+        if struct_name == "LibrpaOptions" and re.match(r"}\s*LibrpaOptions\s*;", text):
+            break
+        if struct_name != "LibrpaOptions" and re.match(r"}\s*;", text):
+            break
+
+        if text.startswith(("//!", "///", "/*!", "/**")):
+            doc, i = iter_c_doc_lines(lines, i)
+            pending_doc.extend(doc)
+            continue
+
+        code = strip_c_comments([lines[i]])[0].strip()
+        name = parse_c_doc_field_name(code)
+        if name:
+            fields.append(DocField(name=name, path=path, line=i + 1, doc="\n".join(pending_doc).strip()))
+            pending_doc = []
+        elif text and not text.startswith(("/*", "*", "//")):
+            pending_doc = []
+        i += 1
+
+    return fields
+
+
+def clean_fortran_doc_line(line: str) -> str:
+    text = line.strip()
+    for prefix in ("!>", "!!"):
+        if text.startswith(prefix):
+            return text[len(prefix):].strip()
+    return text
+
+
+def parse_fortran_type_field_docs(path: Path, type_name: str) -> List[DocField]:
+    fields: List[DocField] = []
+    pending_doc: List[str] = []
+
+    for line_no, raw in extract_fortran_type(path, type_name):
+        text = raw.strip()
+        if text.startswith(("!>", "!!")):
+            pending_doc.append(clean_fortran_doc_line(raw))
+            continue
+
+        code = strip_fortran_comment(raw).strip()
+        if not code:
+            continue
+        if re.match(r"^\s*contains\b", code, flags=re.IGNORECASE):
+            break
+        if "::" not in code:
+            if not text.startswith("!"):
+                pending_doc = []
+            continue
+
+        left, rhs = code.split("::", 1)
+        if re.match(r"^\s*(procedure|generic|private|public)\b", left, flags=re.IGNORECASE):
+            pending_doc = []
+            continue
+
+        for var in split_top_level_commas(rhs):
+            name, kind, _ = fortran_decl_kind(left, var)
+            if name and kind != "derived":
+                fields.append(DocField(name=name, path=path, line=line_no, doc="\n".join(pending_doc).strip()))
+        pending_doc = []
+
+    return fields
+
+
+def parse_runtime_parameter_refs(path: Path) -> Dict[str, set[str]]:
+    refs: Dict[str, set[str]] = {}
+    ref_re = re.compile(r"^\s*-\s+([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s*(?:#.*)?$")
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = ref_re.match(line)
+        if match:
+            refs.setdefault(match.group(1), set()).add(match.group(2))
+    return refs
+
+
+def has_doc_text(text: str) -> bool:
+    return any(line.strip() for line in text.splitlines())
 
 
 def split_top_level_commas(text: str) -> List[str]:
@@ -699,19 +858,80 @@ def check_wrapper_init(issues: List[str], fortran_path: Path, root: Path) -> Non
         )
 
 
+def check_source_docs(
+    warnings: List[str],
+    fields: Sequence[Field],
+    documented_fields: Sequence[DocField],
+    label: str,
+    root: Path,
+) -> None:
+    docs = {field.name: field for field in documented_fields}
+    missing = [field for field in fields if field.name not in docs or not has_doc_text(docs[field.name].doc)]
+    if missing:
+        names = ", ".join(f"{field.name} ({loc(field.path, field.line, root)})" for field in missing)
+        warnings.append(f"[{label}] fields lack source documentation: {names}")
+
+
+def check_docfield_docs(
+    warnings: List[str],
+    fields: Sequence[DocField],
+    label: str,
+    root: Path,
+) -> None:
+    missing = [field for field in fields if not has_doc_text(field.doc)]
+    if missing:
+        names = ", ".join(f"{field.name} ({loc(field.path, field.line, root)})" for field in missing)
+        warnings.append(f"[{label}] fields lack source documentation: {names}")
+
+
+def check_runtime_parameter_coverage(
+    warnings: List[str],
+    c_fields: Sequence[Field],
+    driver_fields: Sequence[DocField],
+    refs: Dict[str, set[str]],
+    runtime_parameters: Path,
+    root: Path,
+) -> None:
+    label = "Runtime parameter guide"
+    api_names = {field.name for field in c_fields}
+    driver_names = {field.name for field in driver_fields}
+    ref_api = refs.get("api", set())
+    ref_driver = refs.get("driver", set())
+
+    missing_api = [field for field in c_fields if field.name not in ref_api]
+    missing_driver = [field for field in driver_fields if field.name not in ref_driver]
+    extra_api = sorted(ref_api - api_names)
+    extra_driver = sorted(ref_driver - driver_names)
+
+    if missing_api:
+        names = ", ".join(f"{field.name} ({loc(field.path, field.line, root)})" for field in missing_api)
+        warnings.append(f"[{label}] API fields are not listed in {rel(runtime_parameters, root)}: {names}")
+    if missing_driver:
+        names = ", ".join(f"{field.name} ({loc(field.path, field.line, root)})" for field in missing_driver)
+        warnings.append(f"[{label}] driver fields are not listed in {rel(runtime_parameters, root)}: {names}")
+    if extra_api:
+        warnings.append(f"[{label}] unknown API fields listed in {rel(runtime_parameters, root)}: {', '.join(extra_api)}")
+    if extra_driver:
+        warnings.append(f"[{label}] unknown driver fields listed in {rel(runtime_parameters, root)}: {', '.join(extra_driver)}")
+
+
 def print_summary(
     c_fields: Sequence[Field],
     bindc_fields: Sequence[Field],
     wrapper_fields: Sequence[Field],
+    driver_fields: Sequence[DocField],
     initialized: Dict[str, List[int]],
     pairs: Sequence[SyncPair],
+    runtime_refs: Dict[str, set[str]],
 ) -> None:
     print("Parsed option sources:")
     print(f"  C struct fields:             {len(c_fields)}")
     print(f"  Fortran bind(c) fields:      {len(bindc_fields)}")
     print(f"  Fortran wrapper fields:      {len(wrapper_fields)}")
+    print(f"  Driver fields:               {len(driver_fields)}")
     print(f"  C++ initialized fields:      {len(initialized)}")
     print(f"  Fortran sync_opts pairs:     {len(pairs)}")
+    print(f"  Runtime guide field refs:    {sum(len(names) for names in runtime_refs.values())}")
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -745,6 +965,18 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Path to options.cpp, relative to --root unless absolute",
     )
     parser.add_argument(
+        "--driver-header",
+        type=Path,
+        default=Path("driver/driver.h"),
+        help="Path to driver.h, relative to --root unless absolute",
+    )
+    parser.add_argument(
+        "--runtime-parameters",
+        type=Path,
+        default=Path("docs/user_guide/runtime_parameters.yml"),
+        help="Path to runtime_parameters.yml, relative to --root unless absolute",
+    )
+    parser.add_argument(
         "--strict-wrapper-order",
         action="store_true",
         help="Also require LibrpaOptions wrapper field order to match the C struct",
@@ -752,7 +984,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--quiet",
         action="store_true",
-        help="Only print errors and the final OK line",
+        help="Suppress the parsed-source summary",
     )
     return parser.parse_args(argv)
 
@@ -767,29 +999,47 @@ def main(argv: Sequence[str]) -> int:
     c_header = resolve_under_root(root, args.c_header).resolve()
     fortran_binding = resolve_under_root(root, args.fortran_binding).resolve()
     cpp_options = resolve_under_root(root, args.cpp_options).resolve()
+    driver_header = resolve_under_root(root, args.driver_header).resolve()
+    runtime_parameters = resolve_under_root(root, args.runtime_parameters).resolve()
 
     c_fields = parse_c_options(c_header)
     bindc_fields = parse_fortran_type_fields(fortran_binding, "LibrpaOptions_c")
     wrapper_fields = parse_fortran_type_fields(fortran_binding, "LibrpaOptions")
+    c_doc_fields = parse_documented_c_struct_fields(c_header, "LibrpaOptions")
+    fortran_doc_fields = parse_fortran_type_field_docs(fortran_binding, "LibrpaOptions")
+    driver_fields = parse_documented_c_struct_fields(driver_header, "DriverParams")
+    runtime_refs = parse_runtime_parameter_refs(runtime_parameters)
     initialized = parse_cpp_initialized_fields(cpp_options)
     pairs = parse_sync_pairs(fortran_binding)
 
     issues: List[str] = []
+    warnings: List[str] = []
     if not c_fields:
         issues.append(f"[C struct] no fields found in {rel(c_header, root)}")
     if not bindc_fields:
         issues.append(f"[Fortran bind(c) layout] no fields found in {rel(fortran_binding, root)}")
     if not wrapper_fields:
         issues.append(f"[Fortran high-level wrapper] no fields found in {rel(fortran_binding, root)}")
+    if not driver_fields:
+        warnings.append(f"[Driver documentation] no fields found in {rel(driver_header, root)}")
 
     check_bindc_layout(issues, c_fields, bindc_fields, root)
     check_wrapper_fields(issues, c_fields, wrapper_fields, root, args.strict_wrapper_order)
     check_cpp_initialization(issues, c_fields, initialized, cpp_options, root)
     check_sync_opts(issues, c_fields, bindc_fields, wrapper_fields, pairs, root)
     check_wrapper_init(issues, fortran_binding, root)
+    check_source_docs(warnings, c_fields, c_doc_fields, "C API documentation", root)
+    check_source_docs(warnings, wrapper_fields, fortran_doc_fields, "Fortran wrapper documentation", root)
+    check_docfield_docs(warnings, driver_fields, "Driver documentation", root)
+    check_runtime_parameter_coverage(warnings, c_fields, driver_fields, runtime_refs, runtime_parameters, root)
 
     if not args.quiet:
-        print_summary(c_fields, bindc_fields, wrapper_fields, initialized, pairs)
+        print_summary(c_fields, bindc_fields, wrapper_fields, driver_fields, initialized, pairs, runtime_refs)
+
+    if warnings:
+        print(f"\nFound {len(warnings)} runtime option documentation warning(s):")
+        for warning in warnings:
+            print(f"  - {warning}")
 
     if issues:
         print(f"\nFound {len(issues)} LibrpaOptions consistency issue(s):")
@@ -797,7 +1047,8 @@ def main(argv: Sequence[str]) -> int:
             print(f"  - {issue}")
         return 1
 
-    print(f"OK: LibrpaOptions definitions and initialization are consistent ({len(c_fields)} fields).")
+    suffix = f", {len(warnings)} warning(s)" if warnings else ""
+    print(f"OK: LibrpaOptions definitions and initialization are consistent ({len(c_fields)} fields{suffix}).")
     return 0
 
 
