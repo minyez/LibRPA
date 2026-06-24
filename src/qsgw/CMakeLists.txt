@@ -4,11 +4,12 @@
 #
 # Task A (infra):    qsgw_state / mixing / fermi_energy_occupation
 # Task B (coremath): correlation_potential / hamiltonian_qsgw
-# Task C (hartree):  hartree  (append here when ready)
+# Task C (hartree):  hartree
 target_sources(rpa_lib PRIVATE
     qsgw_state.cpp
     mixing.cpp
     fermi_energy_occupation.cpp
     correlation_potential.cpp
     hamiltonian_qsgw.cpp
+    hartree.cpp
 )
