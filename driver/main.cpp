@@ -26,15 +26,21 @@
 using namespace driver;
 using namespace librpa_int::global;
 
+// Default thread support level.
+// Detailed control is set in project CMakeLists.txt
+#ifndef LIBRPA_MPI_THREAD_LEVEL
+#define LIBRPA_MPI_THREAD_LEVEL MPI_THREAD_MULTIPLE
+#endif
+
 static void initialize_mpi_env(int argc, char **argv)
 {
     // MPI Initialization
     int provided;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
-    if (MPI_THREAD_FUNNELED != provided)
+    MPI_Init_thread(&argc, &argv, LIBRPA_MPI_THREAD_LEVEL, &provided);
+    if (provided < LIBRPA_MPI_THREAD_LEVEL)
     {
         throw std::runtime_error("Error: MPI_Init_thread provide " + std::to_string(provided) +
-                                 " != required " + std::to_string(MPI_THREAD_FUNNELED));
+                                 " < required " + std::to_string(LIBRPA_MPI_THREAD_LEVEL));
     }
 }
 

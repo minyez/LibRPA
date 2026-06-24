@@ -35,6 +35,7 @@ list(APPEND exe_sources
   )
 
 target_sources(rpa_exe PRIVATE ${exe_sources})
+target_compile_definitions(rpa_exe PRIVATE "LIBRPA_MPI_THREAD_LEVEL=${_LIBRPA_MPI_THREAD_LEVEL}")
 
 target_link_libraries(rpa_exe PRIVATE rpa_lib)
 if(BUILD_SHARED_LIBS)
