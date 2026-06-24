@@ -3,10 +3,12 @@
 # Do NOT also list these files in src/CMakeLists.txt (no double-registration).
 #
 # Task A (infra):    qsgw_state / mixing / fermi_energy_occupation
-# (Task B correlation_potential/hamiltonian_qsgw and Task C hartree are
-#  appended by their owners when ready.)
+# Task B (coremath): correlation_potential / hamiltonian_qsgw
+# Task C (hartree):  hartree  (append here when ready)
 target_sources(rpa_lib PRIVATE
     qsgw_state.cpp
     mixing.cpp
     fermi_energy_occupation.cpp
+    correlation_potential.cpp
+    hamiltonian_qsgw.cpp
 )
