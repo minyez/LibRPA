@@ -28,6 +28,7 @@ std::string get_task_string(const task_t &task);
 void task_rpa();
 void task_g0w0();
 void task_g0w0_band();
+void task_qsgw();
 void task_exx();
 void task_exx_band();
 void task_screened_coulomb_real_freq();

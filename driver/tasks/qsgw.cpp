@@ -1,0 +1,275 @@
+// QSGW self-consistent driver (Task D skeleton, for leader review).
+//
+// Single-file driver mirroring driver/tasks/g0w0.cpp. Implements the SCF loop
+// integrating the ported QSGW modules (Tasks A/B/C/F) per qsgw_driver_design.md.
+// Status: SKELETON for review — SCF structure + H1..H5/Hartree/convergence/
+// checkpoint integration points are wired with the real module APIs; details
+// marked `TODO(D)` are deferred for the refine pass after review. Not all paths
+// compile yet (some assembly helpers / knob readers are stubs).
+//
+// Hard constraints (LEADER_AUDIT §3): H1 reset cached kernels each step;
+// H2 QsgwState wfc0 anchor snapshot before first wfc mutation; H3 Hartree
+// build + Hartree_0(iter1)/Hartree_i_delta(iter>1); H4 vxc0 = vxc_dft +
+// hf_rotated; H5 full non-diagonal sigc via pds->p_g0w0->sigc_is_ik_f_KS.
+//
+// Legacy reference: driver/task_qsgw.cpp @ 7a7ff17f (line refs in design note).
+
+#include <cmath>
+#include <exception>
+#include <fstream>
+#include <iomanip>
+#include <map>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include <librpa_enums.h>
+
+#include "../../src/api/instance_manager.h" // get_dataset_instance
+#include "../../src/core/input_symmetry.h"
+#include "../../src/io/fs.h"
+#include "../../src/io/global_io.h"
+#include "../../src/utils/constants.h" // HA2EV
+#include "../../src/utils/profiler.h"
+#include "../driver.h"
+#include "../read_data.h"
+#include "../task.h"
+#include "task_helper.h"
+
+// Ported QSGW modules (Tasks A/B/C/F)
+#include "../../src/qsgw/qsgw_state.h"                 // QsgwState (H2)
+#include "../../src/qsgw/mixing.h"                     // PulayMixer
+#include "../../src/qsgw/fermi_energy_occupation.h"    // calculate_fermi_energy / update / calculate_total_weight
+#include "../../src/qsgw/hamiltonian_qsgw.h"           // construct_H0_GW / diagonalize_and_store_fixed_basis / apply_qsgw_hround
+#include "../../src/qsgw/correlation_potential.h"      // build_correlation_potential_spin_k
+#include "../../src/qsgw/hartree.h"                    // Hartree (H3)
+#include "../qsgw_io.h"                                // export_qsgw_hamiltonian_bundle (Task F)
+
+void driver::task_qsgw()
+{
+    using std::cout;
+    using std::endl;
+    using std::map;
+    using namespace librpa_int;
+    using namespace librpa_int::global;
+    using namespace librpa_int::qsgw;
+
+    profiler.start("qsgw", "QSGW self-consistent quasi-particle calculation");
+
+    // ---- dimensions / dataset (g0w0.cpp pattern) ----
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    auto &mf = pds->mf;
+    const auto &kfrac_list = pds->pbc.kfrac_list;
+    const auto &symmetry_context = pds->symmetry_context;
+    const int n_spins = mf.get_n_spins();
+    const int n_kpoints = mf.get_n_kpoints();
+    const int n_bands = mf.get_n_bands();
+    const int n_spinor = mf.get_n_spinor(); // H8: n_soc -> n_spinor
+
+    // ========================================================================
+    // ONE-TIME SETUP (legacy task_qsgw.cpp L595-L1140)
+    // ========================================================================
+    profiler.start("qsgw_setup", "QSGW one-time setup");
+
+    // --- read truncated Coulomb (g0w0.cpp pattern) ---
+    profiler.start("read_vq_cut", "Load truncated Coulomb");
+    auto routing = opts.parallel_routing;
+    if (routing == LIBRPA_ROUTING_AUTO)
+        routing = librpa_int::decide_auto_routing(n_atoms, n_kpoints * opts.nfreq);
+    if (routing == LIBRPA_ROUTING_RTAU)
+        read_Vq_full(driver_params.input_dir, driver_params.prefix_coul_cut, true,
+                     driver_params.version_coul_reader,
+                     driver::get_bool(driver::opts.use_shrink_abfs));
+    else
+        read_Vq_row(driver_params.input_dir, driver_params.prefix_coul_cut, opts.vq_threshold,
+                    local_atpair, true, driver_params.version_coul_reader,
+                    driver::get_bool(driver::opts.use_shrink_abfs));
+    profiler.stop("read_vq_cut");
+
+    // --- read DFT xc (g0w0.cpp:78; reads DFT xc only, H4 adds hf) ---
+    profiler.start("read_vxc", "Load DFT xc potential");
+    std::vector<matrix> vxc_dft;
+    if (read_vxc(driver_params.input_dir + driver_params.fn_vxc_scf, vxc_dft) != 0)
+        throw LIBRPA_RUNTIME_ERROR("Failed to read DFT xc potential");
+    profiler.stop("read_vxc");
+
+    // --- H2: snapshot step-0 anchors BEFORE the loop mutates wfc ---
+    QsgwState qsgw_state;
+    qsgw_state.snapshot_wfc0(mf);
+    qsgw_state.snapshot_wg0(mf);
+    // velocity0 snapshot deferred until velocity source is wired (TODO(D)).
+
+    // --- QSGW knobs (legacy read them via local parser, NOT Params;
+    //     Params lacks these — qsgw_driver_design.md §6) ---
+    // TODO(D): wire InputParser (driver/inputfile.h) for: max_iter, mixing_history,
+    //          mixing_beta, linear_mixing_steps, eigenvalue_diff_tolerance,
+    //          temperature, eigdiff_focus_nbands, hamiltonian_cut_above_fermi,
+    //          hamiltonian_cut_diag_shift_ev, qsgw_checkpoint_every, qsgw_restart_dir.
+    const int max_iterations = 500;
+    const int mixing_history = 12;
+    const double mixing_beta = 0.2;
+    const double temperature = 0.0;            // TODO(D): knob
+    const int eigdiff_focus_nbands = 10;       // convergence focus window
+    const double eigenvalue_diff_tolerance = 1e-5;
+    const int hamiltonian_cut_above_fermi = -1; // <0 disables fermi_window variant
+    const double hamiltonian_cut_diag_shift_ev = 0.0;
+
+    double efermi = mf.get_efermi();
+    const double total_electrons = calculate_total_weight(mf); // replaces get_total_weight
+
+    // --- H4: vxc0 = vxc_dft + hf_rotated (hard fact #7) ---
+    // vxc0[ispin][ikpt] is the KS-basis xc incl. rotated HF. hf_nao source +
+    // rotation hf_ks = conj(wfc)*hf_nao*transpose(wfc) is TODO(D) wiring; legacy
+    // reads hf_exchange_*.csc and rotates at task_qsgw.cpp:882.
+    SpinKMatrixMap vxc0; // TODO(D): assemble vxc0 = vxc_dft + hf_ks (H4)
+    SpinKMatrixMap H_KS0; // TODO(D): KS Hamiltonian (NAO/band basis) for construct_H0_GW
+
+    // --- H3: Hartree object (Task C) + Hartree_0 anchor storage ---
+    // Hartree ctor needs MeanField, AtomicBasis(wfc), PBC, SymmetryContext,
+    // KPointBlacsParallelContext, ArrayDesc; build() needs AtomicBasis(abf),
+    // Cs_LRI, Coulomb(atpair_R_mat_t). TODO(D): obtain these from read_data/ri.
+    // Hartree hartree(mf, ..., symmetry_context, ..., ...); // TODO(D)
+    SpinKMatrixMap Hartree_0; // iter-1 anchor (legacy task_qsgw.cpp:416-428)
+
+    // --- mixing (Task A) ---
+    PulayMixer mixer(mixing_history, mixing_beta);
+
+    // --- checkpoint restart (legacy L1069-L1093) ---
+    int iteration = 0;
+    bool converged = false;
+    // TODO(D): if (Params::qsgw_restart) load_qsgw_checkpoint(...) -> restore
+    //          H0_GW_all/Hartree_0/efermi/mixer + diagonalize_and_store_fixed_basis.
+
+    profiler.stop("qsgw_setup");
+
+    // ========================================================================
+    // SCF LOOP (legacy task_qsgw.cpp L1141 `while(!converged && iteration<max)`)
+    // ========================================================================
+    while (!converged && iteration < max_iterations)
+    {
+        iteration++;
+        profiler.start("qsgw_iter", "QSGW SCF iteration", true);
+
+        // ---- H1: reset cached kernels so they rebuild with the updated mf ----
+        // p_exx has a real guard (compute_g0w0.cpp:628); p_headwing caches an mf
+        // copy. p_chi0/p_g0w0 rebuild unconditionally. (LEADER_AUDIT §3 H1)
+        pds->p_exx.reset();
+        pds->p_headwing.reset();
+
+        // ---- recompute G0W0 self-energy with updated mf (g0w0.cpp pattern) ----
+        h.build_g0w0_sigma(opts);
+
+        // ---- H5: read FULL non-diagonal sigc (hard fact #5) ----
+        // pds->p_g0w0->sigc_is_ik_f_KS : [ispin][ikpt][freq] Matz (gw.h:80).
+        // Build SigmaRealAxisBlocks for build_correlation_potential (mode B).
+        // TODO(D): assemble sigc_blocks from pds->p_g0w0->sigc_is_ik_f_KS.
+        // const auto &sigc = pds->p_g0w0->sigc_is_ik_f_KS;
+
+        // ---- Vc = correlation potential (Task B, mode B) ----
+        SpinKMatrixMap Vc_all;
+        for (int ispin = 0; ispin < n_spins; ++ispin)
+            for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
+            {
+                // TODO(D): assemble SigmaRealAxisBlocks sigc_sk for (ispin,ikpt).
+                // SigmaRealAxisBlocks sigc_sk; // from pds->p_g0w0->sigc_is_ik_f_KS
+                // Vc_all[ispin][ikpt] = build_correlation_potential_spin_k(sigc_sk, n_bands);
+                (void)ispin; (void)ikpt; // skeleton placeholder
+            }
+
+        // ---- H3: Hartree (Task C) ----
+        // hartree.build(atbasis_abf, Cs, coul_mat);
+        // hartree.build_KS_kgrid0(qsgw_state); // reads QsgwState::wfc0 (H2 anchor)
+        // SpinKMatrixMap Hartree_i = hartree.Hartree_is_ik_KS;
+        SpinKMatrixMap Hartree_i; // TODO(D): = hartree.Hartree_is_ik_KS
+        SpinKMatrixMap Hartree_i_delta;
+        for (int ispin = 0; ispin < n_spins; ++ispin)
+            for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
+            {
+                if (iteration == 1)
+                    Hartree_0[ispin][ikpt] = Hartree_i[ispin][ikpt]; // iter-1 anchor
+                else
+                    Hartree_i_delta[ispin][ikpt] =
+                        Hartree_i[ispin][ikpt] - Hartree_0[ispin][ikpt]; // legacy L430
+            }
+
+        // iter>1: Vc includes the Hartree delta (legacy task_qsgw.cpp:725-728)
+        if (iteration > 1)
+            for (int ispin = 0; ispin < n_spins; ++ispin)
+                for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
+                    Vc_all[ispin][ikpt] = Vc_all[ispin][ikpt] + Hartree_i_delta[ispin][ikpt];
+
+        // ---- Hexx (exchange) from the rebuilt p_exx (Exx::exx_KS, exx.h:56) ----
+        const SpinKMatrixMap &Hexx_all = pds->p_exx->exx_KS;
+
+        // ---- construct H0_GW (Task B; HROUND inside; H4 vxc0 + H8 via n_spinor) ----
+        // NOTE: new signature drops the legacy meanfield param (qsgw_driver_design §3).
+        SpinKMatrixMap H0_GW_all;
+        if (hamiltonian_cut_above_fermi >= 0)
+            H0_GW_all = construct_H0_GW_fermi_window(mf, H_KS0, vxc0, Hexx_all, Vc_all,
+                                                     n_spins, n_kpoints, n_bands,
+                                                     hamiltonian_cut_above_fermi,
+                                                     hamiltonian_cut_diag_shift_ev);
+        else
+            H0_GW_all = construct_H0_GW(H_KS0, vxc0, Hexx_all, Vc_all,
+                                        n_spins, n_kpoints, n_bands);
+
+        // ---- Pulay mixing (Task A): pack H0_GW_all -> real matrix, mix, unpack ----
+        // Legacy pack: all (spin,kpt) into one real matrix, width doubled [Re|Im]
+        // (task_qsgw.cpp:1740-1800).
+        // TODO(D): pack/unpack helpers; on iter<=linear_mixing_steps rely on the
+        //          mixer's internal linear fallback (mixing.h: history_size<=1).
+        if (!mixer.get_history_size()) // first step: initialize
+        {
+            // matrix mixed_input = pack(H0_GW_all); // TODO(D)
+            // mixer.initialize(mixed_input);
+        }
+        else
+        {
+            // matrix mixed_input = pack(H0_GW_all);
+            // matrix mixed_output = mixer.mix(mixed_input);
+            // H0_GW_all = unpack(mixed_output);
+        }
+
+        // ---- H2: diagonalize using the fixed wfc0 anchor (Task B) ----
+        diagonalize_and_store_fixed_basis(mf, H0_GW_all, qsgw_state,
+                                          n_spins, n_kpoints, n_bands);
+
+        // ---- fermi / occupations (Task A) ----
+        efermi = calculate_fermi_energy(mf, temperature, total_electrons);
+        update_fermi_energy_and_occupations(mf, temperature, efermi);
+
+        // ---- convergence: focus-window sorted eigenvalue diff (legacy L1872-L1988) ----
+        double eigdiff_for_conv = 0.0; // TODO(D): compute (focus window if eigdiff_focus_nbands>0)
+        converged = (eigdiff_for_conv < eigenvalue_diff_tolerance);
+        if (mpi_comm_global_h.is_root() && should_output())
+            cout << "QSGW iter " << iteration << " eigdiff_for_conv = " << eigdiff_for_conv
+                 << " eV" << (converged ? "  CONVERGED" : "") << endl;
+
+        // ---- checkpoint save (legacy L2006) ----
+        // TODO(D): if ((iter % qsgw_checkpoint_every == 0) || converged || iter==max)
+        //   write_qsgw_checkpoint(..., H0_GW_all, efermi, &Hartree_0, &mixer);
+
+        profiler.stop("qsgw_iter");
+
+        // ---- MPI sync (legacy L2022-L2028) ----
+        mpi_comm_global_h.barrier();
+        mpi_comm_global_h.bcast(&converged, 1, 0); // MpiCommHandler::bcast (base_mpi.h:84)
+        mpi_comm_global_h.barrier();
+        // TODO(D): broadcast updated mf across ranks (legacy meanfield.broadcast(...))
+        mpi_comm_global_h.barrier();
+        if (converged || iteration == max_iterations) break;
+    }
+
+    // ---- optional HR bundle export (Task F, pure output) ----
+    // SpinKMatrixMap H0_GW_all_final; // TODO(D): keep last H0_GW_all above scope
+    // export_qsgw_hamiltonian_bundle(driver_params.output_dir + "qsgw_bundles/", mf,
+    //                                kfrac_list, H0_GW_all_final, iteration, "kgrid");
+
+    // ========================================================================
+    // BAND SECTION (TODO(D)): mirror g0w0.cpp:257 pattern; read QSGW-band content
+    // from legacy task_qsgw_band.cpp. efermi override: mf_band.efermi = efermi.
+    // ========================================================================
+
+    profiler.stop("qsgw");
+}
