@@ -38,7 +38,7 @@ foreach(_elpa_root IN LISTS _ELPA_ROOT_HINTS)
   )
   file(GLOB _ELPA_VERSIONED_INCLUDE_DIRS
     LIST_DIRECTORIES true
-    "${_elpa_root}/include/elpa-*"
+    "${_elpa_root}/include/elpa*"
   )
   list(APPEND _ELPA_INCLUDE_HINTS ${_ELPA_VERSIONED_INCLUDE_DIRS})
 endforeach()
