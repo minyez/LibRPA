@@ -38,7 +38,7 @@
 #include "../math/lapack_connector.h"          // ScalapackConnector
 #include "../math/utils_matrix_m_mpi.h"        // init_local_mat, collect_block_from_IJ_storage_tensor_transform, get_local_mat
 #include "../utils/constants.h"                // TWO_PI
-#include "utils_atomic_basis_blacs.h"          // get_necessary_IJ_from_block_2D
+#include "../core/utils_atomic_basis_blacs.h"  // get_necessary_IJ_from_block_2D
 #ifdef LIBRPA_USE_LIBRI
 #include <RI/comm/mix/Communicate_Tensors_Map_Judge.h> // comm_map2_first, comm_map
 #include <RI/global/Blas_Interface-Tensor.h>           // Blas_Interface::gemv
