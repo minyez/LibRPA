@@ -286,7 +286,7 @@ void Hartree::build(const AtomicBasis &atbasis_abf,
                         {static_cast<std::size_t>(V->nr), static_cast<std::size_t>(V->nc)},
                         std::make_shared<std::valarray<std::complex<double>>>(n));
                 for (std::size_t i = 0; i < n; ++i)
-                    (*tgt.data)[i] += std::complex<double>((*V->c)[i], 0.0);
+                    (*tgt.data)[i] += std::complex<double>(V->c[i], 0.0);
             }
         }
     }
