@@ -102,6 +102,47 @@ void test_blacs_grid_choice()
     assert(choose_kpoint_blacs_grid(4, 8, true) == std::make_pair(2, 2));
 }
 
+void test_two_level_parallel_context_base(librpa_int::TwoLevelRankLayout rank_layout)
+{
+    using namespace librpa_int;
+
+    const int world_rank = get_mpi_rank(MPI_COMM_WORLD);
+    TwoLevelParallelContext context({2, 2}, MPI_COMM_WORLD, rank_layout);
+
+    assert(context.is_initialized());
+    assert(context.process_shape().nprocs_outer == 2);
+    assert(context.process_shape().nprocs_inner == 2);
+
+    const auto split = split_two_level_rank(world_rank, context.process_shape(), rank_layout);
+    assert(context.outer_group_id() == split.first);
+    assert(context.inner_rank() == split.second);
+    assert(context.global_rank(context.outer_group_id(), context.inner_rank()) == world_rank);
+
+    assert(context.comm_inner_h.nprocs == 2);
+    assert(context.comm_outer_h.nprocs == 2);
+
+    std::vector<int> inner_world_ranks(context.comm_inner_h.nprocs);
+    context.comm_inner_h.allgather(&world_rank, 1, inner_world_ranks.data(), 1);
+    for (int inner_rank = 0; inner_rank != context.comm_inner_h.nprocs; ++inner_rank)
+    {
+        assert(inner_world_ranks[inner_rank] ==
+               two_level_global_rank(context.process_shape(), rank_layout,
+                                     context.outer_group_id(), inner_rank));
+    }
+
+    std::vector<int> outer_world_ranks(context.comm_outer_h.nprocs);
+    context.comm_outer_h.allgather(&world_rank, 1, outer_world_ranks.data(), 1);
+    for (int outer_group_id = 0; outer_group_id != context.comm_outer_h.nprocs; ++outer_group_id)
+    {
+        assert(outer_world_ranks[outer_group_id] ==
+               two_level_global_rank(context.process_shape(), rank_layout,
+                                     outer_group_id, context.inner_rank()));
+    }
+
+    context.finalize();
+    assert(!context.is_initialized());
+}
+
 void test_kpoint_blacs_parallel_context()
 {
     using namespace librpa_int;
@@ -361,6 +402,8 @@ int main(int argc, char *argv[])
 
     test_resolve_process_shape();
     test_blacs_grid_choice();
+    test_two_level_parallel_context_base(librpa_int::TwoLevelRankLayout::CONTIGUOUS_INNER);
+    test_two_level_parallel_context_base(librpa_int::TwoLevelRankLayout::CONTIGUOUS_OUTER);
     test_kpoint_blacs_parallel_context();
     test_kpoint_contiguous_rank_layout();
     test_kpoint_distribution();

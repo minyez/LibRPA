@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "base_blacs.h"
-#include "base_mpi.h"
+#include "two_level_parallel_context.h"
 
 namespace librpa_int
 {
@@ -42,21 +42,19 @@ enum class KPointDistribution
  * mode, the resolver prefers balanced k-point groups: if there is only one
  * k-point, all ranks are assigned to one BLACS context.
  */
-struct KPointBlacsProcessShape
+struct KPointBlacsProcessShape : public TwoLevelProcessShape
 {
-    static constexpr int AUTO = 0;
-
-    int nprocs_kpoint;
-    int nprocs_blacs;
+    int &nprocs_kpoint;
+    int &nprocs_blacs;
     bool favor_square_blacs_grid;
 
     KPointBlacsProcessShape(int nprocs_kpoint_in = AUTO, int nprocs_blacs_in = AUTO,
                             bool favor_square_blacs_grid_in = false);
+    KPointBlacsProcessShape(const KPointBlacsProcessShape &other);
+    KPointBlacsProcessShape &operator=(const KPointBlacsProcessShape &other);
 
-    bool auto_kpoint() const noexcept { return nprocs_kpoint == AUTO; }
-    bool auto_blacs() const noexcept { return nprocs_blacs == AUTO; }
-    bool has_auto() const noexcept { return auto_kpoint() || auto_blacs(); }
-    int total_nprocs() const noexcept;
+    bool auto_kpoint() const noexcept { return auto_outer(); }
+    bool auto_blacs() const noexcept { return auto_inner(); }
     std::string info() const;
 };
 
@@ -106,15 +104,12 @@ std::pair<int, int> choose_kpoint_blacs_grid(int nprocs_blacs, int matrix_size,
  * the context.  K-points are assigned cyclically by default so ordered k-point
  * lists are spread across k-point groups.
  */
-class KPointBlacsParallelContext
+class KPointBlacsParallelContext : public TwoLevelParallelContext
 {
 private:
-    bool initialized_;
     KPointBlacsProcessShape requested_process_shape_;
     KPointBlacsProcessShape process_shape_;
     int n_kpoints_;
-    int kpoint_group_id_;
-    int blacs_rank_;
     int blacs_nprows_;
     int blacs_npcols_;
     CTXT_LAYOUT blacs_layout_;
@@ -123,12 +118,10 @@ private:
     std::vector<int> kpoints_local_;
 
 public:
-    //! Wrapped global communicator. This handler does not own the communicator.
-    MpiCommHandler comm_global_h;
     //! Communicator among k-point groups for the same BLACS rank.
-    MpiCommHandler comm_kpoint_h;
+    MpiCommHandler &comm_kpoint_h;
     //! Communicator inside one k-point group, used to create the BLACS context.
-    MpiCommHandler comm_blacs_h;
+    MpiCommHandler &comm_blacs_h;
     //! BLACS context over comm_blacs_h.
     BlacsCtxtHandler blacs_h;
 
@@ -149,7 +142,7 @@ public:
               KPointDistribution kpoint_distribution = KPointDistribution::CYCLIC);
     void finalize();
 
-    bool is_initialized() const noexcept { return initialized_; }
+    bool is_initialized() const noexcept { return TwoLevelParallelContext::is_initialized(); }
 
     const KPointBlacsProcessShape &requested_process_shape() const noexcept
     {
@@ -157,8 +150,8 @@ public:
     }
     const KPointBlacsProcessShape &process_shape() const noexcept { return process_shape_; }
     int n_kpoints() const noexcept { return n_kpoints_; }
-    int kpoint_group_id() const noexcept { return kpoint_group_id_; }
-    int blacs_rank() const noexcept { return blacs_rank_; }
+    int kpoint_group_id() const noexcept { return outer_group_id(); }
+    int blacs_rank() const noexcept { return inner_rank(); }
     int blacs_nprows() const noexcept { return blacs_nprows_; }
     int blacs_npcols() const noexcept { return blacs_npcols_; }
     KPointBlacsRankLayout rank_layout() const noexcept { return rank_layout_; }

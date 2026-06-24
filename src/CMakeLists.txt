@@ -122,6 +122,7 @@ list(APPEND lib_sources
         mpi/base_mpi.cpp
         mpi/utils_blacs.cpp
         mpi/global_mpi.cpp
+        mpi/two_level_parallel_context.cpp
         mpi/kpoint_blacs_parallel_context.cpp
 
         # qsgw/fermi_energy_occupation.cpp
