@@ -15,6 +15,7 @@
 // Legacy reference: driver/task_qsgw.cpp @ 7a7ff17f (line refs in design note).
 
 #include <cmath>
+#include <cstdlib>
 #include <exception>
 #include <fstream>
 #include <iomanip>
@@ -112,6 +113,26 @@ void driver::task_qsgw()
     const double eigenvalue_diff_tolerance = 1e-5;
     const int hamiltonian_cut_above_fermi = -1; // <0 disables fermi_window variant
     const double hamiltonian_cut_diag_shift_ev = 0.0;
+
+    // --- minimal env knob to force >1 iterations for molecule diagnostics ---
+    int qsgw_min_iterations = 1;
+    {
+        const char *env_min_iter = std::getenv("QSGW_MIN_ITERATIONS");
+        if (env_min_iter != nullptr)
+        {
+            try {
+                qsgw_min_iterations = std::stoi(std::string(env_min_iter));
+            } catch (...) {
+                if (mpi_comm_global_h.is_root())
+                    std::cerr << "[QSGW] Warning: invalid QSGW_MIN_ITERATIONS='"
+                              << env_min_iter << "', keep default 1" << std::endl;
+            }
+        }
+        if (qsgw_min_iterations <= 1)
+            qsgw_min_iterations = 1;
+        if (mpi_comm_global_h.is_root())
+            std::cout << "[QSGW] min_iterations=" << qsgw_min_iterations << std::endl;
+    }
 
     double efermi = mf.get_efermi();
     const double total_electrons = calculate_total_weight(mf); // replaces get_total_weight
@@ -329,9 +350,10 @@ void driver::task_qsgw()
 
         // ---- convergence: focus-window sorted eigenvalue diff (legacy L1872-L1988) ----
         double eigdiff_for_conv = 0.0; // TODO(D): compute (focus window if eigdiff_focus_nbands>0)
-        converged = (eigdiff_for_conv < eigenvalue_diff_tolerance);
+        converged = (iteration >= qsgw_min_iterations) && (eigdiff_for_conv < eigenvalue_diff_tolerance);
         if (mpi_comm_global_h.is_root() && should_output())
-            cout << "QSGW iter " << iteration << " eigdiff_for_conv = " << eigdiff_for_conv
+            cout << "QSGW iter " << iteration << " min_iter=" << qsgw_min_iterations
+                 << " eigdiff_for_conv = " << eigdiff_for_conv
                  << " eV" << (converged ? "  CONVERGED" : "") << endl;
 
         // ---- checkpoint save (legacy L2006) ----
