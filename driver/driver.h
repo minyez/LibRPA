@@ -23,7 +23,7 @@ struct DriverParams
 
     //! Physical constants source.
     //! @par Default
-    //! internal (`internal`, `aims`)
+    //! `internal` (`internal`, `aims`)
     std::string constants_choice;
 
     //! Input directory to find and read the AO dataset.
@@ -36,7 +36,7 @@ struct DriverParams
     //! It is parsed to the global API function `set_output_level`.
     //!
     //! @par Default
-    //! info (`silent`, `critical`, `info`, `warn`, `debug`)
+    //! `info` (`silent`, `critical`, `info`, `warn`, `debug`)
     LibrpaVerbose output_level;
 
     //! Read wavefunctions in spinor format.
@@ -174,6 +174,7 @@ struct DriverParams
     //! First state index for printed QP energies, inclusive.
     /*!
      * Negative values enable automatic selection from a Fermi-level/gap energy window.
+     * The current lower bound is \f$E_F - \frac{1}{2}E_g - 0.5 \text{Ha}\f$.
      *
      * @par Default
      * 0
@@ -183,6 +184,7 @@ struct DriverParams
     //! Last state index for printed QP energies, exclusive.
     /*!
      * Negative values enable automatic selection from a Fermi-level/gap energy window.
+     * The current upper bound is \f$E_F + \frac{1}{2}E_g + 0.5 \text{Ha}\f$.
      * Values larger than the number of states are truncated.
      *
      * @par Default
