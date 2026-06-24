@@ -65,7 +65,8 @@ jobs:
         run: |
           source /opt/intel/oneapi/setvars.sh
           export BUILDDIR="build"
-          CXX=mpiicpx FC=ifx cmake -DLIBRPA_USE_LIBRI=OFF -DBUILD_SHARED_LIBS=ON -B $BUILDDIR -DCMAKE_BUILD_TYPE=Debug -DENABLE_LIBRPA_FORTRAN_BIND=OFF -DENABLE_LIBRPA_TEST=ON -DENABLE_GREENX_CTEST=OFF
+          CXX=mpiicpx FC=ifx cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIBS=ON -B $BUILDDIR \
+            -DLIBRPA_USE_LIBRI=OFF -DLIBRPA_ENABLE_FORTRAN_BIND=OFF -DLIBRPA_ENABLE_TEST=ON -DENABLE_GREENX_CTEST=OFF
           cmake --build $BUILDDIR -j 2
           cmake --build $BUILDDIR --target test
           cd regression_tests && ./run_regression.py full ../$BUILDDIR/chi0_main.exe -d workspace_np4 -n 4 | tee test_np4.log
@@ -73,7 +74,8 @@ jobs:
         run: |
           source /opt/intel/oneapi/setvars.sh
           export BUILDDIR="build_libri"
-          CXX=mpiicpx FC=ifx cmake -DLIBRPA_USE_LIBRI=ON -DBUILD_SHARED_LIBS=ON -B $BUILDDIR -DCMAKE_BUILD_TYPE=Debug -DENABLE_LIBRPA_FORTRAN_BIND=OFF -DENABLE_LIBRPA_TEST=ON
+          CXX=mpiicpx FC=ifx cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIBS=ON -B $BUILDDIR \
+            -DLIBRPA_USE_LIBRI=ON -DLIBRPA_ENABLE_FORTRAN_BIND=OFF -DLIBRPA_ENABLE_TEST=ON -DENABLE_GREENX_CTEST=OFF
           cmake --build $BUILDDIR -j 2
           cmake --build $BUILDDIR --target test
           cd regression_tests && ./run_regression.py full ../$BUILDDIR/chi0_main.exe -d workspace_libri_np4 --use-libri -n 4 | tee test_libri_np4.log
@@ -81,7 +83,8 @@ jobs:
         run: |
           source /opt/intel/oneapi/setvars.sh
           export BUILDDIR="build_fortran_bind"
-          CXX=mpiicpx FC=mpiifx cmake -DLIBRPA_USE_LIBRI=ON -DBUILD_SHARED_LIBS=OFF -B $BUILDDIR -DCMAKE_BUILD_TYPE=Debug -DENABLE_LIBRPA_FORTRAN_BIND=ON -DENABLE_LIBRPA_TEST=ON -DENABLE_LIBRPA_CPP_TEST=OFF -DENABLE_GREENX_CTEST=OFF
+          CXX=mpiicpx FC=mpiifx cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIBS=OFF -B $BUILDDIR \
+            -DLIBRPA_USE_LIBRI=ON -DLIBRPA_ENABLE_FORTRAN_BIND=ON -DLIBRPA_ENABLE_TEST=ON -DENABLE_GREENX_CTEST=OFF -DLIBRPA_ENABLE_CPP_TEST=OFF
           cmake --build $BUILDDIR -j 2
           cmake --build $BUILDDIR --target test
       - name: Save last test log for check
