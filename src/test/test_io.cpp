@@ -1,6 +1,9 @@
 #include <cassert>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
+#include <string>
 #include <tuple>
 
 #include "../src/io/fs.h"
@@ -40,6 +43,8 @@ int main (int argc, char *argv[])
     std::ofstream(join_path("librpa.d/fs_discovery", "alpha_001.dat")).close();
     std::ofstream(join_path("librpa.d/fs_discovery", "alpha_002.txt")).close();
     std::ofstream(join_path("librpa.d/fs_discovery", "beta_001.dat")).close();
+    assert(is_readable_file(join_path("librpa.d/fs_discovery", "alpha_001.dat")));
+    assert(!is_readable_file(join_path("librpa.d/fs_discovery", "missing.dat")));
 
     const auto alpha_all = discover_files_with_prefix("librpa.d/fs_discovery", "alpha_");
     assert(alpha_all.size() == 2);
@@ -50,6 +55,36 @@ int main (int argc, char *argv[])
     const auto alpha_dat = discover_files("librpa.d/fs_discovery", "alpha_", ".dat");
     assert(alpha_dat.size() == 1);
     assert(alpha_dat[0] == join_path("librpa.d/fs_discovery", "alpha_001.dat"));
+
+    auto throws_with = [](const std::string &path, const std::string &text)
+    {
+        try
+        {
+            require_readable_file(path);
+        }
+        catch (const std::runtime_error &err)
+        {
+            return std::string(err.what()).find(text) != std::string::npos;
+        }
+        return false;
+    };
+    assert(throws_with(join_path("librpa.d/fs_discovery", "missing.perm"), "does not exist"));
+    assert(throws_with("librpa.d/nested/path", "not a regular file"));
+
+    const auto unreadable_path = join_path("librpa.d/fs_discovery", "unreadable.perm");
+    if (path_exists(unreadable_path.c_str()))
+    {
+        std::filesystem::permissions(
+            unreadable_path,
+            std::filesystem::perms::owner_read | std::filesystem::perms::owner_write);
+    }
+    std::ofstream(unreadable_path).close();
+    std::filesystem::permissions(unreadable_path, std::filesystem::perms::none);
+    assert(!is_readable_file(unreadable_path));
+    assert(throws_with(unreadable_path, "lacks read permission"));
+    std::filesystem::permissions(
+        unreadable_path,
+        std::filesystem::perms::owner_read | std::filesystem::perms::owner_write);
 
     std::map<int, std::map<int, std::map<int, double>>> nested_map
     {

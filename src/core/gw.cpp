@@ -232,6 +232,7 @@ std::string find_sigc_rf_file(
     {
         if (file_exists(candidate))
         {
+            require_readable_file(candidate);
             if (found != nullptr) *found = true;
             return candidate;
         }

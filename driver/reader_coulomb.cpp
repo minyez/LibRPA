@@ -48,6 +48,7 @@ static const librpa_int::AtomicBasis &target_coulomb_basis(const bool use_shrink
 //! Check if Coulomb matrix data file is in ASCII text or unformatted binary format
 bool check_coulomb_file_binary(const string &file_path)
 {
+    librpa_int::require_readable_file(file_path);
     bool is_binary = true;
     ifstream infile;
     int nirk;
@@ -70,6 +71,7 @@ void read_coulomb(const string &dir_path, const librpa::ParallelRouting routing,
 static int handle_Vq_full_file(const string &file_path, std::map<int, librpa_int::ComplexMatrix> &Vq_full, bool binary)
 {
     // cout << "Begin to read aims vq_real from " << file_path << endl;
+    librpa_int::require_readable_file(file_path);
     ifstream infile;
     int n_irk_points_local;
     int n_irk_points;
@@ -277,6 +279,7 @@ class CoulombV1File
 public:
     explicit CoulombV1File(const std::string &path_in): path(path_in)
     {
+        librpa_int::require_readable_file(path);
         fd = ::open(path.c_str(), O_RDONLY);
         if (fd < 0)
         {
@@ -1076,6 +1079,7 @@ static int handle_Vq_row_file(const string &file_path, double threshold,
 {
     using librpa_int::ComplexMatrix;
     // cout << "Begin to read aims vq_real from " << file_path << endl;
+    librpa_int::require_readable_file(file_path);
     ifstream infile;
     int n_irk_points_local;
     int n_irk_points;

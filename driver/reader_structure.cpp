@@ -2,6 +2,7 @@
 
 #include "driver.h"
 
+#include "../src/io/fs.h"
 #include "../src/io/global_io.h"
 #include "../src/utils/error.h"
 
@@ -219,6 +220,7 @@ void reader_structure(const std::string &file_path)
     using namespace librpa_int;
     global::lib_printf_root("Reading structure file: %s\n", file_path.c_str());
 
+    require_readable_file(file_path);
     std::ifstream infile(file_path);
     if (!infile.good())
         throw LIBRPA_RUNTIME_ERROR("Fail to open structure file " + file_path);

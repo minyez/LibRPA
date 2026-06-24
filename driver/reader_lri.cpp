@@ -217,6 +217,7 @@ bool parse_Cs_binary_v1_header(const string &file_path,
     ncell = 0;
     file_size = 0;
 
+    librpa_int::require_readable_file(file_path);
     ifstream infile(file_path, std::ios::in | std::ios::binary);
     if (!infile.good())
     {
@@ -693,6 +694,7 @@ int detect_Cs_reader_version(const string &dir_path, const string keyword)
 
 static bool has_Cs_binary_layout(const string &file_path)
 {
+    librpa_int::require_readable_file(file_path);
     ifstream infile(file_path, std::ios::in | std::ios::binary);
     if (!infile.good())
     {
@@ -745,6 +747,7 @@ static bool has_Cs_binary_layout(const string &file_path)
 
 static bool has_binary_control_bytes(const string &file_path)
 {
+    librpa_int::require_readable_file(file_path);
     ifstream infile(file_path, std::ios::in | std::ios::binary);
     if (!infile.good())
     {
@@ -764,6 +767,7 @@ static bool has_binary_control_bytes(const string &file_path)
 
 static bool has_Cs_text_header(const string &file_path)
 {
+    librpa_int::require_readable_file(file_path);
     ifstream infile(file_path, std::ios::in);
     if (!infile.good())
     {
@@ -793,6 +797,7 @@ static size_t handle_Cs_file(const string &file_path, double threshold,
 {
     using namespace std;
 
+    librpa_int::require_readable_file(file_path);
     set<size_t> loc_atp_index;
     for (auto &lap : local_atpair)
     {
@@ -868,6 +873,7 @@ static size_t handle_Cs_file_binary(const string &file_path, double threshold,
 {
     using namespace std;
 
+    librpa_int::require_readable_file(file_path);
     if (has_Cs_binary_v1_layout(file_path))
     {
         set<size_t> loc_atp_index;
@@ -1096,6 +1102,7 @@ std::vector<size_t> handle_Cs_file_dry(const string &file_path, double threshold
     using namespace std;
     using namespace librpa_int;
 
+    require_readable_file(file_path);
     std::vector<size_t> Cs_ids_keep;
     string natom_s, ncell_s, ia1_s, ia2_s, ic_1, ic_2, ic_3, i_s, j_s, mu_s, Cs_ele;
     ifstream infile;
@@ -1144,6 +1151,7 @@ std::vector<size_t> handle_Cs_file_dry(const string &file_path, double threshold
 
 std::vector<size_t> handle_Cs_file_binary_dry(const string &file_path, double threshold)
 {
+    librpa_int::require_readable_file(file_path);
     if (has_Cs_binary_v1_layout(file_path))
     {
         int natom = 0;
@@ -1216,6 +1224,7 @@ static size_t handle_Cs_file_by_ids(const std::string &file_path, double thresho
     using namespace std;
     size_t cs_discard = 0;
     string natom_s, ncell_s, ia1_s, ia2_s, ic_1, ic_2, ic_3, i_s, j_s, mu_s, Cs_ele;
+    librpa_int::require_readable_file(file_path);
     ifstream infile;
     // int natom, ncell;
     infile.open(file_path);
@@ -1285,6 +1294,7 @@ static size_t handle_Cs_file_binary_by_ids(const string &file_path, double thres
 {
     using namespace std;
 
+    librpa_int::require_readable_file(file_path);
     if (has_Cs_binary_v1_layout(file_path))
     {
         int natom = 0;
@@ -1602,6 +1612,7 @@ void get_natom_ncell_from_first_Cs_file(int &n_atom, int &n_cell, const string &
 static void get_basis_from_Cs(const string &file_path, std::map<int, size_t> &map_at_wfc, std::map<int, size_t> &map_at_aux)
 {
     string natom_s, ncell_s, ia1_s, ia2_s, ic_1, ic_2, ic_3, i_s, j_s, mu_s, Cs_ele;
+    librpa_int::require_readable_file(file_path);
     ifstream infile;
     infile.open(file_path);
     infile >> natom_s >> ncell_s;
@@ -1633,6 +1644,7 @@ static void get_basis_from_Cs(const string &file_path, std::map<int, size_t> &ma
 
 static void get_basis_from_Cs_binary(const string &file_path, std::map<int, size_t> &map_at_wfc, std::map<int, size_t> &map_at_aux)
 {
+    librpa_int::require_readable_file(file_path);
     if (has_Cs_binary_v1_layout(file_path))
     {
         throw std::runtime_error(

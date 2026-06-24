@@ -5,6 +5,7 @@
 #include <librpa.hpp>
 #include <librpa_enums.h>
 
+#include "../src/io/fs.h"
 #include "../src/io/global_io.h"
 #include "../src/utils/error.h"
 
@@ -352,6 +353,7 @@ BasisInfo read_basis_info_from_basis_file(
     const BasisKind kind,
     const std::string &label)
 {
+    librpa_int::require_readable_file(file_path);
     ifstream infile(file_path);
     if (!infile.good())
     {

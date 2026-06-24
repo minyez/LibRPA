@@ -3,6 +3,8 @@
 #include <iostream>
 #include <regex>
 
+#include "fs.h"
+
 namespace librpa_int
 {
 
@@ -54,6 +56,7 @@ bool read_elsi_to_csc(const std::string& file_path, std::vector<int>& col_ptr,
                       std::vector<std::complex<double>>& nnz_val_cplx, int& n_basis,
                       const bool force_cplx)
 {
+    require_readable_file(file_path);
     std::ifstream ifs(file_path, std::ios::binary);
     if (!ifs)
         throw LIBRPA_RUNTIME_ERROR("Cannot open file " + file_path);

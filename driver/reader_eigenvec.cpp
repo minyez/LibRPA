@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "../src/io/fs.h"
 #include "../src/io/global_io.h"
 #include "driver.h"
 
@@ -317,6 +318,7 @@ int read_eigenvector(const std::string &dir_path)
     int version_first = -1;
     for (const auto &file_path : eigenvector_files(dir_path))
     {
+        librpa_int::require_readable_file(file_path);
         const int version = check_KS_file_version(file_path);
         if (version_first < 0)
         {
@@ -364,6 +366,7 @@ int read_eigenvector(const std::string &dir_path, librpa_int::MeanField &mf, boo
     bool printed_reader_version = false;
     for (const auto &file_path : eigenvector_files(dir_path))
     {
+        librpa_int::require_readable_file(file_path);
         const int version = check_KS_file_version(file_path);
         if (!printed_reader_version)
         {

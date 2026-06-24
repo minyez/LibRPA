@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <string>
 #include <system_error>
 
 #include "../utils/error.h"
@@ -65,12 +66,66 @@ bool ends_with(const std::string &text, const std::string &suffix)
         text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0);
 }
 
+bool has_read_permission(const std::filesystem::perms permissions)
+{
+    using perms = std::filesystem::perms;
+    return (permissions & (perms::owner_read | perms::group_read | perms::others_read)) !=
+           perms::none;
+}
+
+std::string unreadable_file_reason(const std::string &file_path)
+{
+    if (file_path.empty())
+    {
+        return "Input file path is empty";
+    }
+
+    std::error_code ec;
+    if (!std::filesystem::exists(file_path, ec))
+    {
+        if (ec)
+        {
+            return "Cannot inspect input file " + file_path + ": " + ec.message();
+        }
+        return "Input file does not exist: " + file_path;
+    }
+
+    const auto status = std::filesystem::status(file_path, ec);
+    if (ec)
+    {
+        return "Cannot inspect input file permissions: " + file_path + ": " + ec.message();
+    }
+    if (!std::filesystem::is_regular_file(status))
+    {
+        return "Input path is not a regular file: " + file_path;
+    }
+    if (!has_read_permission(status.permissions()))
+    {
+        return "Input file lacks read permission: " + file_path;
+    }
+    return "";
+}
+
 } // namespace
 
 bool file_exists(const std::string &file_path)
 {
     std::error_code ec;
     return std::filesystem::exists(file_path, ec);
+}
+
+bool is_readable_file(const std::string &file_path)
+{
+    return unreadable_file_reason(file_path).empty();
+}
+
+void require_readable_file(const std::string &file_path)
+{
+    const auto reason = unreadable_file_reason(file_path);
+    if (!reason.empty())
+    {
+        throw LIBRPA_RUNTIME_ERROR(reason);
+    }
 }
 
 std::vector<std::string> discover_files(const std::string &dir_path,
@@ -83,7 +138,9 @@ std::vector<std::string> discover_files(const std::string &dir_path,
         const auto filename = entry.path().filename().string();
         if (starts_with(filename, prefix) && ends_with(filename, suffix))
         {
-            files.push_back(entry.path().string());
+            const auto file_path = entry.path().string();
+            require_readable_file(file_path);
+            files.push_back(file_path);
         }
     }
 

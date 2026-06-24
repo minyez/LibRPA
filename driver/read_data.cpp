@@ -278,6 +278,7 @@ void read_scf_occ_eigenvalues(const string &file_path)
     using librpa_int::global::size_global;
 
     // cout << "Begin to read aims-band_out" << endl;
+    librpa_int::require_readable_file(file_path);
     ifstream infile;
     infile.open(file_path);
     if (!infile.good())
@@ -380,6 +381,7 @@ void read_scf_occ_eigenvalues(const string &file_path)
 
 void read_scf_occ_eigenvalues(const string &file_path, MeanField &mf, bool use_spinor_wfc)
 {
+    librpa_int::require_readable_file(file_path);
     ifstream infile;
     infile.open(file_path);
     if (!infile.good())
@@ -444,6 +446,8 @@ void read_scf_occ_eigenvalues(const string &file_path, MeanField &mf, bool use_s
 
 int read_vxc(const string &file_path, std::vector<matrix> &vxc)
 {
+    if (!librpa_int::file_exists(file_path)) return 1;
+    librpa_int::require_readable_file(file_path);
     ifstream infile;
     infile.open(file_path);
     double ha, ev;
@@ -609,6 +613,7 @@ void read_velocity(const string &file_path, const MeanField &mf, velocity_matrix
     using librpa_int::ANG2BOHR;
     using librpa_int::HA2EV;
 
+    librpa_int::require_readable_file(file_path);
     ifstream infile;
     infile.open(file_path);
     string alpha, kk, ss, single_re, single_im;
@@ -679,6 +684,10 @@ void read_velocity_aims(const MeanField &mf, const string &file_path,
         ss << file_path << "mommat_ks_kpt_" << std::setfill('0') << std::setw(6) << ik + 1
            << ".dat";
 
+        if (librpa_int::file_exists(ss.str()))
+        {
+            librpa_int::require_readable_file(ss.str());
+        }
         std::ifstream infile(ss.str(), std::ios::binary);
         if (!infile.is_open())
         {
@@ -725,6 +734,7 @@ void read_velocity_aims(const MeanField &mf, const string &file_path,
 static std::vector<Vector3_Order<double>> read_headwing_k_path_info(
     const string &file_path, int &n_basis, int &n_states, int &n_spin)
 {
+    librpa_int::require_readable_file(file_path);
     ifstream infile;
     infile.open(file_path);
     if (!infile.good())
@@ -905,6 +915,7 @@ void read_dielec_func(const string &file_path, std::vector<double> &omegas,
 {
     std::ifstream ifs;
     double omega, re, im;
+    librpa_int::require_readable_file(file_path);
     ifs.open(file_path);
 
     if (!ifs.good())
@@ -961,6 +972,7 @@ void read_bz_sampling(const std::string &file_path)
 
     global::lib_printf_root("Reading Brillouin zone sampling file: %s\n", file_path.c_str());
 
+    require_readable_file(file_path);
     ifstream infile;
     infile.open(file_path);
     if (!infile.good())
@@ -1087,6 +1099,7 @@ void read_bz_sampling_from_stru(const std::string &file_path)
     global::lib_printf_root("Fallback reading Brillouin zone sampling from structure file: %s\n",
                             file_path.c_str());
 
+    require_readable_file(file_path);
     ifstream infile(file_path);
     if (!infile.good())
     {
@@ -1265,6 +1278,7 @@ void read_band_kpath_info(const string &file_path)
 
     int n_basis_band, n_states_band, n_spin_band;
 
+    librpa_int::require_readable_file(file_path);
     ifstream infile;
     infile.open(file_path);
     if (!infile.good())
@@ -1349,9 +1363,11 @@ void read_band_meanfield_data(const string &dir_path)
         std::stringstream ss;
         ss << dir_path << "band_KS_eigenvalue_k_" << std::setfill('0') << std::setw(5) << ik + 1
            << ".txt";
-        ofs_myid << "Loading band eigenvalues from " << ss.str() << std::endl;
+        const auto file_path = ss.str();
+        librpa_int::require_readable_file(file_path);
+        ofs_myid << "Loading band eigenvalues from " << file_path << std::endl;
         ifstream infile;
-        infile.open(ss.str());
+        infile.open(file_path);
         for (int i_spin = 0; i_spin < n_spins; i_spin++)
         {
             for (int i_state = 0; i_state < n_states; i_state++)
@@ -1380,13 +1396,15 @@ void read_band_meanfield_data(const string &dir_path)
 
         std::stringstream ss;
         ss << dir_path << "band_KS_eigenvector_k_" << std::setfill('0') << std::setw(5) << ik + 1 << ".txt";
+        const auto file_path = ss.str();
+        librpa_int::require_readable_file(file_path);
 
         ifstream infile;
-        infile.open(ss.str(), std::ios::in | std::ios::binary);
+        infile.open(file_path, std::ios::in | std::ios::binary);
         if (!infile.good())
-            throw LIBRPA_RUNTIME_ERROR("Fail to open band eigenvector file " + ss.str());
+            throw LIBRPA_RUNTIME_ERROR("Fail to open band eigenvector file " + file_path);
         else
-            ofs_myid << "Loading band eigenvector file " + ss.str() << endl;
+            ofs_myid << "Loading band eigenvector file " + file_path << endl;
 
         std::vector<std::complex<double>> wfc(n_states * n_basis_wfc);
         // for (int i_spin = 0; i_spin < n_spins; i_spin++)
@@ -1407,7 +1425,7 @@ void read_band_meanfield_data(const string &dir_path)
         infile.read(reinterpret_cast<char *>(vecs.data()), bytes_doubles);
         if (!infile || infile.gcount() != static_cast<ptrdiff_t>(bytes_doubles))
         {
-            throw LIBRPA_RUNTIME_ERROR("Error: failed to read " + ss.str());
+            throw LIBRPA_RUNTIME_ERROR("Error: failed to read " + file_path);
         }
 
         const bool use_spinor_wfc = driver::driver_params.use_spinor_wfc;
@@ -1468,8 +1486,10 @@ std::vector<matrix> read_vxc_band(const string &dir_path, int n_states, int n_sp
         // Load occupation weights and eigenvalues
         std::stringstream ss;
         ss << dir_path << "band_vxc_k_" << std::setfill('0') << std::setw(5) << ik + 1 << ".txt";
+        const auto file_path = ss.str();
+        librpa_int::require_readable_file(file_path);
         ifstream infile;
-        infile.open(ss.str());
+        infile.open(file_path);
         ss.clear();
 
         for (int i_spin = 0; i_spin < n_spin; i_spin++)
@@ -1489,6 +1509,7 @@ std::vector<matrix> read_vxc_band(const string &dir_path, int n_states, int n_sp
 void read_elsi_csc(const string &file_path, bool save_row_major, std::vector<double> &mat,
                    int &n_basis, bool &is_real)
 {
+    librpa_int::require_readable_file(file_path);
     ifstream infile;
     infile.open(file_path, std::ios::binary);
     if (!infile.good())
@@ -1558,6 +1579,7 @@ void read_elsi_csc(const string &file_path, bool save_row_major, std::vector<dou
 static int handle_sinvS_file(const std::string &file_path,
                              std::map<Vector3_Order<double>, ComplexMatrix> &sinvS, bool binary)
 {
+    librpa_int::require_readable_file(file_path);
     ifstream infile;
     int n_irk_points_local;
     // TODO: variables that needs to be adapted into pbc object
@@ -1675,6 +1697,7 @@ static int handle_sinvS_file(const std::string &file_path,
 
 static bool sinvS_file_has_v1_marker(const std::string &file_path)
 {
+    librpa_int::require_readable_file(file_path);
     ifstream infile(file_path, std::ios::in | std::ios::binary);
     if (!infile.good())
     {
@@ -1719,6 +1742,7 @@ static std::size_t checked_sinvS_payload_bytes(const std::int32_t nrow,
 static int handle_sinvS_v1_file(const std::string &file_path,
                                 std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 {
+    librpa_int::require_readable_file(file_path);
     struct Record
     {
         std::int32_t iq = 0;

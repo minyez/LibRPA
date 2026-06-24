@@ -17,6 +17,10 @@ std::string join_path(const std::string &dir_path, const std::string &file_name)
 
 bool file_exists(const std::string &file_path);
 
+bool is_readable_file(const std::string &file_path);
+
+void require_readable_file(const std::string &file_path);
+
 std::vector<std::string> discover_files(const std::string &dir_path,
                                         const std::string &prefix,
                                         const std::string &suffix);

@@ -8,6 +8,7 @@
 #include "driver.h"
 
 #include "librpa_enums.h"
+#include "../src/io/fs.h"
 #include "../src/utils/constants.h"
 #include <regex>
 #include <sstream>
@@ -126,6 +127,10 @@ void InputParser::parse_bool(const std::string &vname, bool &var, const bool &de
 
 InputParser InputFile::load(const std::string &fn, bool error_if_fail_open)
 {
+    if (error_if_fail_open)
+    {
+        librpa_int::require_readable_file(fn);
+    }
     std::ifstream t(fn);
     std::string params;
     if (t.is_open())
