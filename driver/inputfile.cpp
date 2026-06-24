@@ -10,6 +10,7 @@
 #include "librpa_enums.h"
 #include "../src/io/fs.h"
 #include "../src/utils/constants.h"
+#include "../src/utils/dev_options.h"
 #include <regex>
 #include <sstream>
 #include <limits>
@@ -179,6 +180,7 @@ static std::string check_dirpath(const std::string &dirpath)
 void parse_inputfile_to_params(const std::string &fn)
 {
     using namespace driver;
+    using librpa_int::global::dev_opts;
 
     InputFile inputf;
     int flag;
@@ -239,6 +241,10 @@ void parse_inputfile_to_params(const std::string &fn)
         _parse_int(driver_params, sf_state_start);
         _parse_int(driver_params, sf_state_end);
     }
+
+    // Development options, see src/utils/dev_options.h
+    // Only for prototyping, testing and debugging in C++
+    _parse_bool(dev_opts, use_chi0_q_uhap_split);
 
     // general runtime parameters
     parser.parse_string("output_dir", stmp, flag);

@@ -129,6 +129,7 @@ list(APPEND lib_sources
         # qsgw/Hamiltonian.cpp
 
         utils/constants.cpp
+        utils/dev_options.cpp
         utils/profiler.cpp
         utils/utils_cmake.cpp
         utils/utils_mem.cpp

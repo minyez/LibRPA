@@ -5,7 +5,6 @@
 #include <iostream>
 
 #include "../core/dielecmodel.h"
-#include "../core/params.h"
 #include "../math/utils_matrix_m_mpi.h"
 #include "../mpi/base_blacs.h"
 #include "../mpi/base_mpi.h"
@@ -16,7 +15,6 @@ using librpa_int::ArrayDesc;
 using librpa_int::BlacsCtxtHandler;
 using librpa_int::C_ONE;
 using librpa_int::MAJOR;
-using librpa_int::Params;
 using librpa_int::init_local_mat;
 using librpa_int::matrix_m;
 
