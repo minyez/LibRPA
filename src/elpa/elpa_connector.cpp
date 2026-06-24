@@ -246,7 +246,8 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
     // A_local_real.clear();
 
     // Convert real eigenvectors to complex (with zero imaginary part)
-    Z_local = Z_local_real.to_complex();
+    for (size_t i = 0; i < Z_local.size(); i++)
+        Z_local.ptr()[i] = {Z_local_real.ptr()[i], T(0)};
     profiler.stop("power_hemat_blacs_2");
 
     // Check number of non-singular eigenvalues
@@ -321,7 +322,8 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
         ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
     }
 #endif
-    A_local = A_local_real.to_complex();
+    for (size_t i = 0; i < A_local.size(); i++)
+        A_local.ptr()[i] = {A_local_real.ptr()[i], T(0)};
     auto scaled = scaled_real.to_complex();
 
     profiler.stop("power_hemat_blacs_4");
