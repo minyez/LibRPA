@@ -3,7 +3,6 @@ include(ExternalProject)
 # Validate the requested bundled source and avoid clashing with an ELPA target
 # supplied by a parent project.
 set(_LIBRPA_BUNDLED_ELPA_SUPPORTED_VERSIONS
-  2021.11.002
   2026.02.001
 )
 

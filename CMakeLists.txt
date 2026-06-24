@@ -41,8 +41,8 @@ option(LIBRPA_ENABLE_FORTRAN_TEST  "Flag to build tests for Fortran bindings" ON
 # Customizable cmake macro
 set(LIBRPA_FORTRAN_DP "c_double" CACHE STRING "Kind of double precision that the Fortran binding uses to interface the user code")
 set(EXTERNAL_ELPA_DIR "" CACHE PATH "External ELPA installation prefix")
-set(LIBRPA_BUNDLED_ELPA_VERSION "2021.11.002" CACHE STRING "Bundled ELPA version")
-set_property(CACHE LIBRPA_BUNDLED_ELPA_VERSION PROPERTY STRINGS "2021.11.002" "2026.02.001")
+set(LIBRPA_BUNDLED_ELPA_VERSION "2026.02.001" CACHE STRING "Bundled ELPA version")
+set_property(CACHE LIBRPA_BUNDLED_ELPA_VERSION PROPERTY STRINGS "2026.02.001")
 set(LIBRPA_BUNDLED_ELPA_KERNEL "" CACHE STRING "Bundled ELPA x86 SIMD kernel family")
 set_property(CACHE LIBRPA_BUNDLED_ELPA_KERNEL PROPERTY STRINGS "" "SSE" "SSE_ASSEMBLY" "AVX" "AVX2" "AVX512")
 set(LIBRPA_BUNDLED_ELPA_CONFIGURE_ARGS "" CACHE STRING "Extra configure arguments for bundled ELPA")

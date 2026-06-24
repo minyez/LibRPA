@@ -20,7 +20,7 @@
 | [`LIBRPA_USE_EXTERNAL_ELPA`](#librpa-use-external-elpa)     | bool              | `OFF`      |
 | [`EXTERNAL_ELPA_DIR`](#external-elpa-dir)                   | string            | empty      |
 | [`LIBRPA_USE_BUNDLED_ELPA`](#librpa-use-bundled-elpa)       | bool              | `OFF`      |
-| [`LIBRPA_BUNDLED_ELPA_VERSION`](#librpa-bundled-elpa-version) | string          | `2021.11.002` |
+| [`LIBRPA_BUNDLED_ELPA_VERSION`](#librpa-bundled-elpa-version) | string          | `2026.02.001` |
 | [`LIBRPA_BUNDLED_ELPA_KERNEL`](#librpa-bundled-elpa-kernel) | string            | empty      |
 | [`LIBRPA_BUNDLED_ELPA_OPENMP`](#librpa-bundled-elpa-openmp) | bool              | `OFF`      |
 | [`LIBRPA_BUNDLED_ELPA_CONFIGURE_ARGS`](#librpa-bundled-elpa-configure-args) | string | empty |
@@ -87,7 +87,6 @@ Selects which bundled ELPA release is built when
 
 Supported values are:
 
-- `2021.11.002`
 - `2026.02.001`
 
 (librpa-bundled-elpa-kernel)=
