@@ -21,7 +21,7 @@ set(LIBRPA_DRIVER_NAME         "chi0_main.exe")
 # Convention:
 # - `LIBRPA_USE_` for thirdparty/external components
 # - `LIBRPA_ENABLE_` for internal components (binding, test, ...)
-option(LIBRPA_USE_LIBRI            "Use LibRI for tensor contraction in LibRPA" OFF)
+option(LIBRPA_USE_LIBRI            "Use LibRI for tensor contraction in LibRPA" ON)
 option(LIBRPA_USE_LIBRI_GPU        "Use LibRI GPU for tensor contraction in LibRPA" OFF)
 option(LIBRPA_USE_EXTERNAL_ELPA    "Use an external ELPA eigensolver library from an installation prefix" OFF)
 option(LIBRPA_USE_BUNDLED_ELPA     "Build and use a bundled ELPA eigensolver library from thirdparty/ELPA" OFF)
@@ -35,6 +35,7 @@ option(LIBRPA_VERBOSE_OUTPUT       "Flag to print verbose information in stdout 
 option(LIBRPA_USE_CUDA             "Enable CUDA language support" OFF)
 option(LIBRPA_USE_HIP              "Enable HIP language support" OFF)
 
+# Comonent test switches, only used when LIBRPA_ENABLE_TEST is ON
 option(LIBRPA_ENABLE_CPP_TEST      "Flag to build tests for C++ components" ON)
 option(LIBRPA_ENABLE_FORTRAN_TEST  "Flag to build tests for Fortran bindings" ON)
 
@@ -48,8 +49,12 @@ set_property(CACHE LIBRPA_BUNDLED_ELPA_KERNEL PROPERTY STRINGS "" "SSE" "SSE_ASS
 set(LIBRPA_BUNDLED_ELPA_CONFIGURE_ARGS "" CACHE STRING "Extra configure arguments for bundled ELPA")
 set(LIBRPA_BUNDLED_ELPA_LIBS "" CACHE STRING "Libraries passed to bundled ELPA configure through LIBS")
 
+# Deprecation stops
 if (DEFINED USE_GREENX_MINIMAX)
   message(FATAL_ERROR "USE_GREENX_MINIMAX is deprecated: GreenX is now always used. Please remove USE_GREENX_MINIMAX")
+endif()
+if (DEFINED USE_LIBRI)
+  message(FATAL_ERROR "USE_LIBRI is deprecated: superceded by LIBRPA_USE_LIBRI. Please remove USE_LIBRI")
 endif()
 if (DEFINED USE_GREENX_API)
   if (NOT USE_GREENX_API)

@@ -4,7 +4,7 @@
 
 | Option                                                      | Type              | Default    |
 |-------------------------------------------------------------|-------------------|------------|
-| [`LIBRPA_USE_LIBRI`](#librpa-use-libri)                     | bool              | `OFF`      |
+| [`LIBRPA_USE_LIBRI`](#librpa-use-libri)                     | bool              | `ON`       |
 | [`LIBRPA_USE_CMAKE_INC`](#librpa-use-cmake-inc)             | bool              | `OFF`      |
 | [`LIBRPA_USE_EXTERNAL_GREENX`](#librpa-use-external-greenx) | bool              | `OFF`      |
 | [`LIBRPA_ENABLE_FORTRAN_BIND`](#librpa-enable-fortran-bind) | bool              | `OFF`      |
