@@ -49,6 +49,13 @@
 
 namespace
 {
+#ifdef LIBRPA_USE_LIBRI
+// Hartree kernel helpers use the libRI Tensor API (Shape_Vector shape is public
+// in thirdparty/LibRI Tensor.h:25). Only compiled with LIBRPA_USE_LIBRI: the
+// Hartree build() throws without LIBRI, and this guards against the libri_stub
+// Tensor (private std::vector shape, no get_shape_all) used when LIBRI is
+// undefined — root cause of the Fisherd "shape is private / get_shape_all not
+// found / brace-ctor" errors on the helpers.
 //! Element-wise complex conjugate of an RI::Tensor<complex>.
 //! The current libRI Tensor has no conjugate() method (verified), so this
 //! mirrors the legacy Tensor::conjugate used by the patched cal_cvcd_k_hartree.
@@ -115,6 +122,7 @@ inline RI::Tensor<std::complex<double>> contract_3_1_to_2(
 #endif
     return H;
 }
+#endif // LIBRPA_USE_LIBRI (Hartree kernel helpers)
 } // namespace
 
 namespace librpa_int
@@ -125,6 +133,7 @@ namespace qsgw
 Hartree::Hartree(const MeanField &mf_in,
                  const AtomicBasis &atbasis_wfc_in,
                  const PeriodicBoundaryData &pbc_in,
+                 const SymmetryContext &symmetry_context_in,
                  const KPointBlacsParallelContext &kblacs_ctxt_in,
                  const ArrayDesc &desc_wfc_in)
     : mf(mf_in),
