@@ -35,9 +35,14 @@
 
 #include "../core/atom.h"                     // atom_t
 #include "../core/atomic_basis.h"             // AtomicBasis
+#include "../core/geometry.h"                 // Vector3<double>
+#include "../core/input_symmetry.h"           // SymmetryContext (input_coord_frac for nearest_R)
 #include "../core/meanfield.h"                // MeanField
 #include "../core/pbc.h"                      // PeriodicBoundaryData
 #include "../core/ri.h"                       // Cs_LRI, atpair_R_mat_t, libri_types, RI::Tensor
+#ifdef LIBRPA_USE_LIBRI
+#include <RI/ri/LRI.h>                        // RI::LRI (Hartree kernel container, path C-port)
+#endif
 #include "../math/complexmatrix.h"            // ComplexMatrix
 #include "../math/matrix_m.h"                 // Matz, Matd
 #include "../math/vector3_order.h"            // Vector3_Order
@@ -75,10 +80,19 @@ public:
     const AtomicBasis &atbasis_wfc;
     //! Periodic-boundary data (lattice vectors, Rlist, BvK period).
     const PeriodicBoundaryData &pbc;
+    //! Symmetry context; input_coord_frac provides the per-atom fractional
+    //! coordinates needed by nearest_R (mirrors Exx::symmetry_context, exx.h:43).
+    const SymmetryContext &symmetry_context;
     //! Global MPI communicator handler (kblacs_ctxt.comm_global_h).
     const MpiCommHandler &comm_h;
     //! k-point BLACS parallel context.
     const KPointBlacsParallelContext &kblacs_ctxt;
+#ifdef LIBRPA_USE_LIBRI
+    //! libRI LRI container used by the path-C Hartree kernel (mirrors the
+    //! patched LIBRPA::Hartree wrapping RI::LRI; provides set_parallel /
+    //! data_pool / mpi_comm / period for the ported cal_cvcd_k_hartree).
+    RI::LRI<int, int, 3, std::complex<double>> lri_;
+#endif
 
     //! Real-space Hartree matrix, dim (I, (J,R), nao_I, nao_J); spin+spinor
     //! summed since the Hartree kernel couples only to the total charge density.
@@ -95,6 +109,7 @@ public:
     Hartree(const MeanField &mf_in,
             const AtomicBasis &atbasis_wfc_in,
             const PeriodicBoundaryData &pbc_in,
+            const SymmetryContext &symmetry_context_in,
             const KPointBlacsParallelContext &kblacs_ctxt_in,
             const ArrayDesc &desc_wfc_in);
 
