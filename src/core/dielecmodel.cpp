@@ -818,7 +818,8 @@ void diele_func::get_Xv_cpl(double coulomb_eigen_threshold, const librpa_int::at
         comm_h.comm, couleps_libri, s0_s1.first, s0_s1.second);
     collect_block_from_ALL_IJ_Tensor(coulwc_block, desc_nabf_nabf, atomic_basis_abf_, qa,
                                      true, CONE, IJq_coul, MAJOR::ROW);
-    power_hemat_blacs_desc(coulwc_block, desc_nabf_nabf, coul_eigen_block, desc_nabf_nabf,
+    // Gamma Coulomb is real; keep this on the same eigensolver path used by epsilon.
+    power_hemat_blacs_real(coulwc_block, desc_nabf_nabf, coul_eigen_block, desc_nabf_nabf,
                            n_singular, eigenvalues.c, 0.5, coulomb_eigen_threshold);
     this->n_nonsingular = n_abf - n_singular;
 
