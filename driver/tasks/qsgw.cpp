@@ -158,6 +158,7 @@ void scale_spin_k_map_inplace(librpa_int::qsgw::SpinKMatrixMap &in, const double
         for (auto &kp : sp.second)
             kp.second = scaled_matz(kp.second, scale);
 }
+
 } // unnamed namespace
 
 void driver::task_qsgw()
@@ -404,6 +405,15 @@ void driver::task_qsgw()
                    << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
             // (B)-fixed: vxc0 = xc + hf0_ks (fixed DFT HF from kernel, deep-copied).
             Matz xc_matr = load_matrix_cplx(oss_xc.str());
+            if (xc_matr.nr() != n_bands || xc_matr.nc() != n_bands)
+            {
+                std::ostringstream oss;
+                oss << "QSGW xc_matr dimension mismatch for " << oss_xc.str()
+                    << " (spin=" << ispin << ", kpt=" << ikpt << "): got "
+                    << xc_matr.nr() << "x" << xc_matr.nc()
+                    << ", expected " << n_bands << "x" << n_bands;
+                throw std::runtime_error(oss.str());
+            }
             Matz vxc0_sk =
                 qsgw_vxc0_with_hf ? xc_matr + hf0_ks.at(ispin).at(ikpt) : xc_matr.copy();
 
