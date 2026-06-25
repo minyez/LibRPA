@@ -362,7 +362,7 @@ void diagonalize_and_store(
                 meanfield.get_eigenvals()[ispin](ikpt, ib) = w[ib];
             }
             const Matz eigvec_NAO =
-                transpose(eigvec_KS) * collect_wfc_rows(meanfield, ispin, ikpt, nullptr);
+                transpose(eigvec_KS, true) * collect_wfc_rows(meanfield, ispin, ikpt, nullptr);
             store_rotated_wfc(meanfield, ispin, ikpt, eigvec_NAO);
             if (velocity != nullptr)
             {
@@ -426,7 +426,7 @@ void diagonalize_and_store_fixed_basis(
                 meanfield.get_eigenvals()[ispin](ikpt, ib) = w[ib];
             }
             const Matz eigvec_NAO =
-                transpose(eigvec_KS) * collect_wfc_rows(meanfield, ispin, ikpt, &wfc0);
+                transpose(eigvec_KS, true) * collect_wfc_rows(meanfield, ispin, ikpt, &wfc0);
             store_rotated_wfc(meanfield, ispin, ikpt, eigvec_NAO);
             if (velocity != nullptr && velocity0 != nullptr)
             {
