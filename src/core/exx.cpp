@@ -21,6 +21,7 @@
 #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
 #include "symmetry_context.h"
+#include "../qsgw/qsgw_state.h"
 #include "../utils/utils_mem.h"
 #include "atomic_basis.h"
 #include "meanfield_mpi.h"
@@ -1557,10 +1558,11 @@ void Exx::build_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h)
     this->build_KS_blacs(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {}, blacs_ctxt_h);
 }
 
-// void Exx::build_KS0_kgrid_blacs()
-// {
-//     this->build_KS(this->mf_.get_eigenvectors0(), this->kfrac_list_);
-// }
+void Exx::build_KS_kgrid0_blacs(const QsgwState &state,
+                                const BlacsCtxtHandler &blacs_ctxt_h)
+{
+    this->build_KS_blacs(state.wfc0, this->pbc.kfrac_list, {}, blacs_ctxt_h);
+}
 
 void Exx::build_KS_band_blacs(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_band,
                               const std::vector<Vector3_Order<double>> &kfrac_band,

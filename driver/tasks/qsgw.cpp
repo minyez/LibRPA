@@ -388,6 +388,12 @@ void driver::task_qsgw()
     // --- checkpoint restart (legacy L1069-L1093) ---
     int iteration = 0;
     bool converged = false;
+    bool use_fixed_basis_iter_gt1 = true;
+    if (const char *env_fb = std::getenv("QSGW_USE_FIXED_BASIS_ITER_GT1"))
+    {
+        if (std::string(env_fb) == "0")
+            use_fixed_basis_iter_gt1 = false;
+    }
     // TODO(D): if (Params::qsgw_restart) load_qsgw_checkpoint(...) -> restore
     //          H0_GW_all/Hartree_0/efermi/mixer + diagonalize_and_store_fixed_basis.
 
@@ -414,15 +420,21 @@ void driver::task_qsgw()
         // NOT fill sigc_is_ik_f_KS. Enable the KS-matrix storage flag (#2, gated default
         // off at gw.cpp:1798) then run the KS rotation (#1) which populates it.
         pds->p_g0w0->output_sigc_ks_mat_kf = true;
-        pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
+        if (iteration == 1 || !use_fixed_basis_iter_gt1)
+            pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
+        else
+            pds->p_g0w0->build_sigc_matrix_KS_kgrid0_blacs(qsgw_state, pds->blacs_h);
 
         // Exx KS rotation (parallel to the sigc #1 fix; coremath final review):
         // build_g0w0_sigma builds Exx real-space only — compute_g0w0.cpp:644
         // build_KS_kgrid_blacs is commented out, so p_exx->exx_KS stays empty and
         // construct_H0_GW's Hexx_all (= p_exx->exx_KS) would be empty/out_of_range.
-        // Project to KS here. iter-1 current=wfc0, so the current-basis call is right;
-        // a fixed-basis (wfc0) wrapper for iter>1 is TODO.
-        pds->p_exx->build_KS_kgrid_blacs(pds->blacs_h);
+        // Project to KS here. iter-1 current=wfc0, so the current-basis call is right.
+        // For iter>1, keep Hexx_iter in the fixed KS0 basis used by H_KS0/vxc0.
+        if (iteration == 1 || !use_fixed_basis_iter_gt1)
+            pds->p_exx->build_KS_kgrid_blacs(pds->blacs_h);
+        else
+            pds->p_exx->build_KS_kgrid0_blacs(qsgw_state, pds->blacs_h);
 
         // ---- H5 + Vc: full non-diagonal sigc -> correlation potential (mode B) ----
         // sigc_is_ik_f_KS : [ispin][ikpt][freq] -> Matz (gw.h:80). For each (spin,kpt)

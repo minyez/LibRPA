@@ -15,6 +15,8 @@
 namespace librpa_int
 {
 
+class QsgwState;
+
 class Exx
 {
     private:
@@ -77,7 +79,8 @@ class Exx
                            const std::vector<Vector3_Order<double>> &kfrac_band,
                            const AtomPairBvKRemap<atom_t> &bvk_remap);
         void build_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h);
-        // void build_KS0_kgrid_blacs();
+        void build_KS_kgrid0_blacs(const QsgwState &state,
+                                   const BlacsCtxtHandler &blacs_ctxt_h);
         void build_KS_band_blacs(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_band,
                                  const std::vector<Vector3_Order<double>> &kfrac_band,
                                  const AtomPairBvKRemap<atom_t> &bvk_remap,

@@ -28,6 +28,7 @@
 #include "../utils/error.h"
 #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
+#include "../qsgw/qsgw_state.h"
 #include "../gpu/la_connector.h"
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
 #include <ddla/ddla_connector.h>
@@ -2534,6 +2535,21 @@ void G0W0::build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h
     comm_h.barrier();
     global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid with BLACS" << std::endl;
     this->build_sigc_matrix_KS_blacs(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {}, blacs_ctxt_h, use_gpu_replace_scalapack, "kgrid");
+    if (this->output_sigc_ks_kf)
+    {
+        const auto fn = path_as_directory(this->output_dir) + "self_energy_omega.dat";
+        write_self_energy_omega(fn.c_str(), *this, this->mf.get_n_kpoints(),
+                                this->mf.get_n_bands());
+    }
+}
+
+void G0W0::build_sigc_matrix_KS_kgrid0_blacs(const QsgwState &state,
+                                             const BlacsCtxtHandler &blacs_ctxt_h,
+                                             const bool use_gpu_replace_scalapack)
+{
+    comm_h.barrier();
+    librpa_int::global::ofs_myid << "build_sigc_matrix_KS_kgrid0: constructing self-energy matrix for fixed QSGW KS0 basis with BLACS" << std::endl;
+    this->build_sigc_matrix_KS_blacs(state.wfc0, this->pbc.kfrac_list, {}, blacs_ctxt_h, use_gpu_replace_scalapack, "kgrid0");
     if (this->output_sigc_ks_kf)
     {
         const auto fn = path_as_directory(this->output_dir) + "self_energy_omega.dat";

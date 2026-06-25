@@ -19,6 +19,8 @@
 namespace librpa_int
 {
 
+class QsgwState;
+
 class G0W0
 {
 private:
@@ -140,6 +142,9 @@ public:
                                    const std::vector<int> *output_iks = nullptr);
     void build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h,
                                           bool use_gpu_replace_scalapack = false);
+    void build_sigc_matrix_KS_kgrid0_blacs(const QsgwState &state,
+                                           const BlacsCtxtHandler &blacs_ctxt_h,
+                                           bool use_gpu_replace_scalapack = false);
     void build_sigc_matrix_KS_band_blacs(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_band,
                                          const std::vector<Vector3_Order<double>> &kfrac_band,
                                          const AtomPairBvKRemap<atom_t> &bvk_remap,
