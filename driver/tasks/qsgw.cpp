@@ -224,6 +224,78 @@ void driver::task_qsgw()
         }
     }
 
+    // --- env-gated Hartree-only diagnostic harness (default off) ---
+    // Motivation: FHI-aims only writes IBZ xc_matr files, but Hartree only needs
+    // the density matrix and fitted Coulomb vertices.  This path builds the new
+    // qsgw::Hartree kernel for all full-BZ kpts and dumps Hartree_is_ik_KS
+    // without reading xc_matr / SigC / Exx or entering the SCF loop.
+    bool qsgw_hartree_only = false;
+    std::string qsgw_hartree_only_dir;
+    {
+        const char *env_ho = std::getenv("QSGW_HARTREE_ONLY");
+        qsgw_hartree_only = (env_ho != nullptr && std::string(env_ho) == "1");
+        const char *env_ho_dir = std::getenv("QSGW_HARTREE_ONLY_DUMP_DIR");
+        if (env_ho_dir != nullptr)
+            qsgw_hartree_only_dir = librpa_int::path_as_directory(std::string(env_ho_dir));
+        else
+            qsgw_hartree_only_dir =
+                librpa_int::path_as_directory(std::string(opts.output_dir)) +
+                "hartree_only_dump/";
+        if (qsgw_hartree_only)
+        {
+            const bool is_serial_blacs =
+                (mpi_comm_global_h.nprocs == 1) &&
+                (pds->blacs_h.nprocs == 1) &&
+                (pds->blacs_h.nprows == 1) &&
+                (pds->blacs_h.npcols == 1);
+            if (!is_serial_blacs)
+                throw LIBRPA_RUNTIME_ERROR(
+                    "QSGW_HARTREE_ONLY requires serial / 1x1 BLACS execution.");
+            if (mpi_comm_global_h.is_root())
+            {
+                std::cout << "[QSGW] Hartree-only harness enabled: "
+                          << qsgw_hartree_only_dir << std::endl;
+                librpa_int::create_directories(qsgw_hartree_only_dir.c_str(), 0);
+            }
+        }
+    }
+    if (qsgw_hartree_only)
+    {
+        const bool use_shrink_h = opts.use_shrink_abfs == LIBRPA_SWITCH_ON;
+        const auto &basis_aux_h = use_shrink_h ? pds->basis_aux_shrink : pds->basis_aux;
+        const auto &cs_h = use_shrink_h ? pds->cs_data_shrink : pds->cs_data;
+        const auto &coul_h = pds->vq_cut;
+        profiler.start("hartree_ft_vq", "Fourier transform Coulomb for Hartree");
+        const auto VR_h = librpa_int::FT_Vq(basis_aux_h, pds->symmetry_context, coul_h,
+                                            pds->pbc, true,
+                                            opts.use_symmetry_exx == LIBRPA_SWITCH_ON);
+        profiler.stop("hartree_ft_vq");
+        qsgw::Hartree hartree(pds->mf, pds->basis_wfc, pds->pbc, pds->symmetry_context,
+                              pds->scfk_blacs_ctxt, pds->desc_wfc_kb_full);
+        profiler.start("hartree_build", "Build Hartree kernel + KS projection");
+        hartree.build(basis_aux_h, cs_h, VR_h);
+        hartree.build_KS_kgrid0(qsgw_state);
+        profiler.stop("hartree_build");
+
+        const SpinKMatrixMap &Hartree_i = hartree.Hartree_is_ik_KS;
+        if (mpi_comm_global_h.is_root())
+        {
+            for (int ispin = 0; ispin < n_spins; ++ispin)
+                for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
+                {
+                    std::ostringstream oss;
+                    oss << qsgw_hartree_only_dir << "hartree_only_spin" << ispin
+                        << "_kpt" << std::setw(6) << std::setfill('0') << (ikpt + 1);
+                    dump_matz(Hartree_i.at(ispin).at(ikpt), oss.str(),
+                              "Hartree_only spin=" + std::to_string(ispin) +
+                              " kpt=" + std::to_string(ikpt));
+                }
+        }
+        profiler.stop("qsgw_setup");
+        profiler.stop("qsgw");
+        return;
+    }
+
     double efermi = mf.get_efermi();
     const double total_electrons = calculate_total_weight(mf); // replaces get_total_weight
 
