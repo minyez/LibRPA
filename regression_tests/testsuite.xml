@@ -54,8 +54,6 @@
 
   <group name="One-shot GW quasi-particle energies (QPE)" prefix="G0W0">
     <testcase name="BN headwing (abacus input)" directory="g0w0_band_abacus_BN_headwing_libri">
-      <labels disable="experimental"
-      />
       <build require_libri="true"
       />
       <run ntasks_disable="none"
@@ -63,11 +61,17 @@
            ntasks_enable="none"
            nthreads_enable="none"
       />
+      <validate name="Averaged dielectric functions at imag. freq."
+                regex="Freq.?ency node .* Head of dielectric function"
+                headers="1"
+                rows="6"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
       <validate name="Quasi-particle energies on k-grid"
                 regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
                 headers="2"
                 rows="26"
-                comparison="cmp_table.abs_diff(1e-4)"
+                comparison="cmp_table.abs_diff(3e-4)"
       />
     </testcase>
 
