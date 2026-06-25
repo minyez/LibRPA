@@ -205,6 +205,18 @@ void driver::task_qsgw()
         else
             qsgw_dump_dir = librpa_int::path_as_directory(std::string(opts.output_dir)) +
                             "qsgw_dump/";
+        if (qsgw_dump_iter1)
+        {
+            const bool is_serial_blacs =
+                (mpi_comm_global_h.nprocs == 1) &&
+                (pds->blacs_h.nprocs == 1) &&
+                (pds->blacs_h.nprows == 1) &&
+                (pds->blacs_h.npcols == 1);
+            if (!is_serial_blacs)
+                throw LIBRPA_RUNTIME_ERROR(
+                    "QSGW_DUMP_ITER1 requires serial / 1x1 BLACS execution; "
+                    "parallel SigC gather is not yet implemented.");
+        }
         if (qsgw_dump_iter1 && mpi_comm_global_h.is_root())
         {
             std::cout << "[QSGW] iter-1 diagnostic dump enabled: " << qsgw_dump_dir << std::endl;
