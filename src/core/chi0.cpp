@@ -1359,7 +1359,7 @@ static void chi_libri_ft_Rq_from_freq_R(
 #pragma omp parallel for schedule(dynamic)
     for (std::size_t itask = 0; itask < tasks.size(); ++itask)
     {
-        const auto &task = tasks[itask];
+        const FTTask &task = tasks[itask];
         const auto n_mu = atbasis_abf.get_atom_nb(task.Mu);
         const auto n_nu = atbasis_abf.get_atom_nb(task.Nu);
         ComplexMatrix cm_chi0(n_mu, n_nu);
@@ -1376,8 +1376,11 @@ static void chi_libri_ft_Rq_from_freq_R(
                                       reinterpret_cast<double *>(cm_chi0.c), 2);
             }
 
-            const double arg = task.q * (term.R * latvec) * TWO_PI;
-            const complex<double> kphase = complex<double>(cos(arg), sin(arg));
+            const complex<double> kphase = is_gamma_point(task.q)
+                ? complex<double>(1.0, 0.0)
+                : complex<double>(
+                      cos(task.q * (term.R * latvec) * TWO_PI),
+                      sin(task.q * (term.R * latvec) * TWO_PI));
             LapackConnector::axpy(cm_chi0.size, kphase, cm_chi0.c, 1, task.out->c, 1);
         }
     }
@@ -1779,11 +1782,10 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> chi0_q_split;
     auto &chi0_q_work = use_q_uhap_split ? chi0_q_split : chi0_q;
     const auto freq_nodes = tfg.get_freq_nodes();
-    const bool use_delayed_chi0_ft = !use_shrink_chi && qlist_all.size() > 1;
     const double chi0_q_work_mem_gb = estimate_chi0_q_mem_gb(qlist_chi0, atpairs_chi0);
     global::ofs_myid << "Estimated chi0_q work memory [GB]: "
                      << chi0_q_work_mem_gb << std::endl;
-    global::ofs_myid << "chi0 delayed CT/FT enabled: " << use_delayed_chi0_ft
+    global::ofs_myid << "chi0 delayed CT/FT enabled: " << !use_shrink_chi
                      << " (nq = " << qlist_all.size()
                      << ", nfreq = " << freq_nodes.size() << ")\n";
     if (use_q_uhap_split)
@@ -1794,7 +1796,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                          << std::endl;
     }
 
-    if (!use_delayed_chi0_ft)
+    if (use_shrink_chi)
     {
         // Prepare relevant ComplexMatrix objects for the FT work layout.
         create_chi0_q_blocks(chi0_q_work, freq_nodes, qlist_chi0, atpairs_chi0, atbasis_abf);
@@ -1813,7 +1815,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     const MPI_Comm chi0_collect_comm = comm_h.comm;
 
     // local Rlist to collect after chi0s on each process
-    auto s0_s1 = get_s0_s1_for_comm_map2_first<atom_t, int>(atpairs_chi0);
+    const auto s0_s1 = get_s0_s1_for_comm_map2_first<atom_t, int>(atpairs_chi0);
     const auto exact_s0_s1 =
         make_chi0_exact_collect_request(atpairs_chi0, Rlist_chi0_collect);
 
@@ -2141,54 +2143,12 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                 profiler.stop("chi0_libri_routing_ft_tw");
                 chi0_tau_q.clear();
             }
-            else if (use_delayed_chi0_ft)
+            else
             {
                 profiler.start("chi0_libri_routing_ct_R", "Cosine transform to R-space");
                 chi_libri_ct_accumulate_R<Tdata>(
                     isp, mf.get_n_spins(), it, tfg, chi0s_IJR, atpairs_chi0, chi0_freq_R);
                 profiler.stop("chi0_libri_routing_ct_R");
-                chi0s_IJR.clear();
-            }
-            else
-            {
-                profiler.start("chi0_libri_routing_ft_ct", "Fourier and Cosine transform");
-                if (use_q_uhap_split)
-                {
-                    for (int q_owner = 0;
-                         q_owner != q_uhap_process_shape.nprocs_outer; ++q_owner)
-                    {
-                        const auto qlist_owner = dispatch_vector(
-                            qlist_all, q_owner, q_uhap_process_shape.nprocs_outer, true);
-                        map<double, map<Vector3_Order<double>,
-                                         atom_mapping<ComplexMatrix>::pair_t_old>> chi0_q_partial;
-                        for (auto freq : tfg.get_freq_nodes())
-                        {
-                            for (auto q : qlist_owner)
-                            {
-                                for (auto atpair : atpairs_chi0)
-                                {
-                                    auto Mu = atpair.first;
-                                    auto Nu = atpair.second;
-                                    chi0_q_partial[freq][q][Mu][Nu].create(
-                                        atbasis_abf[Mu], atbasis_abf[Nu]);
-                                }
-                            }
-                        }
-                        chi_libri_ft_ct<Tdata>(isp, mf.get_n_spins(), it, tfg, atbasis_abf,
-                                               pbc.latvec, chi0s_IJR, qlist_owner,
-                                               atpairs_chi0, chi0_q_partial);
-                        reduce_chi0_q_partial_to_q_owner(
-                            chi0_q_partial, qlist_owner, atpairs_chi0, atbasis_abf,
-                            q_owner, q_uhap_ctxt.comm_outer_h.comm, chi0_q_work);
-                    }
-                }
-                else
-                {
-                    chi_libri_ft_ct<Tdata>(isp, mf.get_n_spins(), it, tfg, atbasis_abf,
-                                           pbc.latvec, chi0s_IJR, qlist_chi0,
-                                           atpairs_chi0, chi0_q_work);
-                }
-                profiler.stop("chi0_libri_routing_ft_ct");
                 chi0s_IJR.clear();
             }
 
@@ -2211,7 +2171,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         } // ispin
     } // itau
 
-    if (use_delayed_chi0_ft)
+    if (!use_shrink_chi)
     {
         profiler.start("chi0_libri_routing_delayed_ft_Rq", "Delayed Fourier transform");
         for (auto it_freq_R = chi0_freq_R.begin(); it_freq_R != chi0_freq_R.end(); )
