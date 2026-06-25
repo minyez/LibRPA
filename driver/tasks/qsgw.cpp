@@ -106,6 +106,58 @@ void dump_matz(const Matz &m, const std::string &fn_base, const std::string &lab
 {
     librpa_int::print_matrix_mm_file(m, fn_base + ".mm", label, 1e-15, true);
 }
+
+bool read_env_bool(const char *name, const bool default_value)
+{
+    const char *env = std::getenv(name);
+    if (env == nullptr)
+        return default_value;
+    const std::string value(env);
+    if (value == "0" || value == "false" || value == "FALSE" ||
+        value == "off" || value == "OFF")
+        return false;
+    return true;
+}
+
+double read_env_double(const char *name, const double default_value)
+{
+    const char *env = std::getenv(name);
+    if (env == nullptr)
+        return default_value;
+    try {
+        return std::stod(std::string(env));
+    } catch (...) {
+        return default_value;
+    }
+}
+
+Matz scaled_matz(const Matz &m, const double scale)
+{
+    Matz out = m.copy();
+    for (size_t i = 0; i < out.size(); ++i)
+        out.ptr()[i] *= scale;
+    return out;
+}
+
+librpa_int::qsgw::SpinKMatrixMap scaled_spin_k_map(
+    const librpa_int::qsgw::SpinKMatrixMap &in,
+    const double scale)
+{
+    librpa_int::qsgw::SpinKMatrixMap out;
+    for (const auto &sp : in)
+        for (const auto &kp : sp.second)
+            out[sp.first][kp.first] = scaled_matz(kp.second, scale);
+    return out;
+}
+
+void scale_spin_k_map_inplace(librpa_int::qsgw::SpinKMatrixMap &in, const double scale)
+{
+    if (scale == 1.0)
+        return;
+    for (auto &sp : in)
+        for (auto &kp : sp.second)
+            kp.second = scaled_matz(kp.second, scale);
+}
 } // unnamed namespace
 
 void driver::task_qsgw()
@@ -328,6 +380,10 @@ void driver::task_qsgw()
         dump_matz(hf0_ks.at(0).at(0), base, "hf0_ks spin=0 kpt=0");
     }
 
+    const bool qsgw_vxc0_with_hf = read_env_bool("QSGW_VXC0_WITH_HF", true);
+    if (mpi_comm_global_h.is_root())
+        std::cout << "[QSGW] vxc0_with_hf=" << (qsgw_vxc0_with_hf ? 1 : 0) << std::endl;
+
     // --- H_KS0 + vxc0 assembly (legacy task_qsgw.cpp L882-L905) ---
     // H_KS0[ispin][ikpt] = diag(eigvals) (KS band space). vxc0 = xc + hf0_ks (fixed
     // DFT HF). construct_H0_GW does H_KS - vxc0 + Hexx_iter + Vc; Hexx_iter comes from
@@ -348,7 +404,8 @@ void driver::task_qsgw()
                    << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
             // (B)-fixed: vxc0 = xc + hf0_ks (fixed DFT HF from kernel, deep-copied).
             Matz xc_matr = load_matrix_cplx(oss_xc.str());
-            Matz vxc0_sk = xc_matr + hf0_ks.at(ispin).at(ikpt);
+            Matz vxc0_sk =
+                qsgw_vxc0_with_hf ? xc_matr + hf0_ks.at(ispin).at(ikpt) : xc_matr.copy();
 
             if (qsgw_dump_iter1 && ispin == 0 && ikpt == 0 && mpi_comm_global_h.is_root())
             {
@@ -401,8 +458,14 @@ void driver::task_qsgw()
         if (mode == "A" || mode == "a")
             qsgw_vc_mode = "A";
     }
+    const double qsgw_exx_scale = read_env_double("QSGW_EXX_SCALE", 1.0);
+    const double qsgw_vc_scale = read_env_double("QSGW_VC_SCALE", 1.0);
     if (mpi_comm_global_h.is_root())
+    {
         std::cout << "[QSGW] Vc mode=" << qsgw_vc_mode << std::endl;
+        std::cout << "[QSGW] exx_scale=" << qsgw_exx_scale
+                  << " vc_scale=" << qsgw_vc_scale << std::endl;
+    }
     // TODO(D): if (Params::qsgw_restart) load_qsgw_checkpoint(...) -> restore
     //          H0_GW_all/Hartree_0/efermi/mixer + diagonalize_and_store_fixed_basis.
 
@@ -473,6 +536,7 @@ void driver::task_qsgw()
                               "Vc_all spin=0 kpt=0");
                 }
             }
+        scale_spin_k_map_inplace(Vc_all, qsgw_vc_scale);
 
         // ---- H3: Hartree (Task C) — recompute from the updated density ----
         // #7 (coremath): Hartree::build has an is_rspace_built_ cache guard
@@ -510,9 +574,13 @@ void driver::task_qsgw()
 
         // ---- Hexx (exchange) from the rebuilt p_exx (Exx::exx_KS, exx.h:56) ----
         const SpinKMatrixMap &Hexx_all = pds->p_exx->exx_KS;
+        const SpinKMatrixMap Hexx_scaled =
+            (qsgw_exx_scale == 1.0) ? SpinKMatrixMap() : scaled_spin_k_map(Hexx_all, qsgw_exx_scale);
+        const SpinKMatrixMap &Hexx_for_h0 =
+            (qsgw_exx_scale == 1.0) ? Hexx_all : Hexx_scaled;
         if (qsgw_dump_iter1 && iteration == 1 && mpi_comm_global_h.is_root())
         {
-            dump_matz(Hexx_all.at(0).at(0), qsgw_dump_dir + "Hexx_iter_spin0_kpt0",
+            dump_matz(Hexx_for_h0.at(0).at(0), qsgw_dump_dir + "Hexx_iter_spin0_kpt0",
                       "Hexx_iter spin=0 kpt=0");
         }
 
@@ -520,12 +588,12 @@ void driver::task_qsgw()
         // NOTE: new signature drops the legacy meanfield param (qsgw_driver_design §3).
         SpinKMatrixMap H0_GW_all;
         if (hamiltonian_cut_above_fermi >= 0)
-            H0_GW_all = construct_H0_GW_fermi_window(mf, H_KS0, vxc0, Hexx_all, Vc_all,
+            H0_GW_all = construct_H0_GW_fermi_window(mf, H_KS0, vxc0, Hexx_for_h0, Vc_all,
                                                      n_spins, n_kpoints, n_bands,
                                                      hamiltonian_cut_above_fermi,
                                                      hamiltonian_cut_diag_shift_ev);
         else
-            H0_GW_all = construct_H0_GW(H_KS0, vxc0, Hexx_all, Vc_all,
+            H0_GW_all = construct_H0_GW(H_KS0, vxc0, Hexx_for_h0, Vc_all,
                                         n_spins, n_kpoints, n_bands);
         if (qsgw_dump_iter1 && iteration == 1 && mpi_comm_global_h.is_root())
         {
