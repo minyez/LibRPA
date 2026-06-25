@@ -394,6 +394,15 @@ void driver::task_qsgw()
         if (std::string(env_fb) == "0")
             use_fixed_basis_iter_gt1 = false;
     }
+    std::string qsgw_vc_mode = "B";
+    if (const char *env_vc_mode = std::getenv("QSGW_VC_MODE"))
+    {
+        const std::string mode(env_vc_mode);
+        if (mode == "A" || mode == "a")
+            qsgw_vc_mode = "A";
+    }
+    if (mpi_comm_global_h.is_root())
+        std::cout << "[QSGW] Vc mode=" << qsgw_vc_mode << std::endl;
     // TODO(D): if (Params::qsgw_restart) load_qsgw_checkpoint(...) -> restore
     //          H0_GW_all/Hartree_0/efermi/mixer + diagonalize_and_store_fixed_basis.
 
@@ -453,7 +462,10 @@ void driver::task_qsgw()
                 const auto &sigc_spin_k = pds->p_g0w0->sigc_is_ik_f_KS.at(ispin).at(ikpt);
                 const auto sigc_blocks = build_sigma_real_axis_blocks_qsgw(
                     mf, freq_nodes, sigc_spin_k, ispin, ikpt, n_bands, opts.n_params_anacon);
-                Vc_all[ispin][ikpt] = build_correlation_potential_spin_k(sigc_blocks, n_bands);
+                Vc_all[ispin][ikpt] =
+                    (qsgw_vc_mode == "A")
+                        ? build_correlation_potential_spin_k_modeA(sigc_blocks, n_bands)
+                        : build_correlation_potential_spin_k(sigc_blocks, n_bands);
                 if (qsgw_dump_iter1 && iteration == 1 && ispin == 0 && ikpt == 0 &&
                     mpi_comm_global_h.is_root())
                 {
