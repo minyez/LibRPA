@@ -122,12 +122,14 @@ program test_f03_binding_libri
    do ia1 = 1, natoms
       do ia2 = 1, natoms
          allocate(ri_coeff(nbs_aux(ia1), nbs_wfc(ia2), nbs_wfc(ia1)))
+         ri_coeff(:,:,:) = 0.0_dp
          do ik1 = -nint((nk1-0.1)/2.0), nint(nk1/2.0-0.6)
             do ik2 = -nint((nk2-0.1)/2.0), nint(nk2/2.0-0.6)
                do ik3 = -nint((nk3-0.1)/2.0), nint(nk3/2.0-0.6)
                   r(1) = ik1
                   r(2) = ik2
                   r(3) = ik3
+                  ri_coeff(1,1,1) = 0.01_dp * real(100 * ia1 + 10 * ia2 + ik1, kind=dp)
                   call h%set_lri_coeff(opts%parallel_routing, ia1, ia2, &
                                        nbs_wfc(ia1), nbs_wfc(ia2), nbs_aux(ia1), &
                                        r, ri_coeff)
@@ -142,6 +144,7 @@ program test_f03_binding_libri
    do ia1 = 1, natoms
       do ia2 = 1, natoms
          allocate(vq(nbs_aux(ia1), nbs_aux(ia2)))
+         vq(:,:) = (0.0_dp, 0.0_dp)
          do ik = 1, nkpts
             vq(1, 1) = real(10 * ik + ia1 + 0.1_dp * ia2, kind=dp)
             call h%set_aux_bare_coulomb_k_atom_pair(ik, ia1, ia2, nbs_aux(ia1), nbs_aux(ia2), vq, 0.0_dp)
@@ -153,6 +156,8 @@ program test_f03_binding_libri
    end do
 
    allocate(omegas(nfreq), df(nfreq))
+   omegas = [(real(i, kind=dp), i = 1, nfreq)]
+   df = 1.0_dp
    call h%set_dielect_func_imagfreq(nfreq, omegas, df)
    deallocate(omegas, df)
 
