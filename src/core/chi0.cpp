@@ -63,13 +63,14 @@ std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
     return atom_nw;
 }
 
-template <typename Tdata>
-using Chi0BlockKey = std::pair<int, std::array<int, 3>>;
+using Chi0CollectKey = std::pair<int, std::array<int, 3>>;
+using Chi0BlockKey = Chi0CollectKey;
 
 template <typename Tdata>
-using Chi0CollectMap = std::map<int, std::map<Chi0BlockKey<Tdata>, RI::Tensor<Tdata>>>;
+using Chi0CollectMap = std::map<int, std::map<Chi0BlockKey, RI::Tensor<Tdata>>>;
 
 using Chi0CollectRequest = std::pair<std::set<int>, std::set<int>>;
+using Chi0ExactCollectRequest = std::pair<std::set<int>, std::set<Chi0CollectKey>>;
 
 using Chi0QBlockKey = std::pair<int, std::array<double, 3>>;
 using Chi0QCollectMap = std::map<int, std::map<Chi0QBlockKey, RI::Tensor<std::complex<double>>>>;
@@ -83,19 +84,16 @@ static TwoLevelProcessShape resolve_chi0_q_uhap_process_shape(
 
     const int max_outer =
         static_cast<int>(std::min(nqpoints, static_cast<std::size_t>(nprocs)));
-    int best_outer = 1;
     for (int nouter = max_outer; nouter != 0; --nouter)
     {
         if (nprocs % nouter != 0)
             continue;
         const int ninner = nprocs / nouter;
-        if (static_cast<std::size_t>(ninner) <= nuhap)
-        {
-            best_outer = nouter;
-            break;
-        }
+        if (static_cast<std::size_t>(ninner) > nuhap)
+            continue;
+        return TwoLevelProcessShape(nouter, ninner);
     }
-    return TwoLevelProcessShape(best_outer, nprocs / best_outer);
+    return TwoLevelProcessShape(1, nprocs);
 }
 
 template <typename Tdata>
@@ -105,6 +103,16 @@ static Chi0CollectMap<Tdata> collect_chi0_map2_first(
     return RI::Communicate_Tensors_Map_Judge::comm_map2_first(
         comm, chi0s, request.first, request.second);
 }
+
+#ifdef LIBRPA_USE_LIBRI
+template <typename Tdata>
+static Chi0CollectMap<Tdata> collect_chi0_map2(
+    MPI_Comm comm, Chi0CollectMap<Tdata> &chi0s, const Chi0ExactCollectRequest &request)
+{
+    return RI::Communicate_Tensors_Map_Judge::comm_map2(
+        comm, chi0s, request.first, request.second);
+}
+#endif
 
 static Chi0QCollectRequest make_chi0_q_collect_request(
     const std::vector<Vector3_Order<double>> &qlist, const std::vector<atpair_t> &atpairs)
@@ -380,6 +388,34 @@ static std::vector<Chi0CollectRequest> make_local_chi0_request_chunks(
     return chunks;
 }
 
+static Chi0ExactCollectRequest make_chi0_exact_collect_request(
+    const std::vector<atpair_t> &atpairs_ABF,
+    const std::vector<Vector3_Order<int>> &Rlist_gf)
+{
+    Chi0ExactCollectRequest request;
+    for (const auto &atpair : atpairs_ABF)
+    {
+        const int I = static_cast<int>(atpair.first);
+        const int J = static_cast<int>(atpair.second);
+        request.first.insert(I);
+        for (const auto &Rvec : Rlist_gf)
+        {
+            const std::array<int, 3> R{Rvec.x, Rvec.y, Rvec.z};
+            request.second.insert({J, R});
+        }
+    }
+    return request;
+}
+
+static Chi0ExactCollectRequest make_padding_chi0_exact_collect_request(
+    const std::vector<Vector3_Order<int>> &Rlist_gf, const AtomicBasis &atbasis_abf)
+{
+    if (Rlist_gf.empty() || atbasis_abf.n_atoms == 0)
+        return {};
+    const std::array<int, 3> R{Rlist_gf.front().x, Rlist_gf.front().y, Rlist_gf.front().z};
+    return {{0}, {{0, R}}};
+}
+
 template <typename Tdata>
 static std::vector<Chi0CollectMap<Tdata>> split_chi0_map_by_collect_plan(
     const Chi0CollectPlan &plan,
@@ -452,6 +488,50 @@ static void accumulate_chi0_collect_map(
                 dst[I][{J, R}] = RI::Tensor<Tdata>({chi0.shape[0], chi0.shape[1]});
             }
             dst[I][{J, R}] += chi0;
+        }
+    }
+}
+
+static void reduce_chi0_q_partial_to_q_owner(
+    const map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &chi0_q_partial,
+    const std::vector<Vector3_Order<double>> &qlist_owner,
+    const std::vector<atpair_t> &atpairs,
+    const AtomicBasis &atbasis_abf,
+    const int q_owner,
+    MPI_Comm comm_qpoint,
+    map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> &chi0_q_work)
+{
+    int my_q_rank = 0;
+    MPI_Comm_rank(comm_qpoint, &my_q_rank);
+    const bool is_q_owner = my_q_rank == q_owner;
+    const std::complex<double> one(1.0, 0.0);
+
+    for (const auto &freq_q : chi0_q_partial)
+    {
+        const double freq = freq_q.first;
+        for (const auto &q : qlist_owner)
+        {
+            for (const auto &atpair : atpairs)
+            {
+                const auto Mu = atpair.first;
+                const auto Nu = atpair.second;
+                const auto &chi0_partial = freq_q.second.at(q).at(Mu).at(Nu);
+                if (chi0_partial.size == 0)
+                    continue;
+                std::vector<std::complex<double>> chi0_reduced;
+                if (is_q_owner)
+                    chi0_reduced.resize(chi0_partial.size);
+                MPI_Reduce(chi0_partial.c,
+                           is_q_owner ? chi0_reduced.data() : chi0_partial.c,
+                           chi0_partial.size, MPI_DOUBLE_COMPLEX, MPI_SUM,
+                           q_owner, comm_qpoint);
+                if (!is_q_owner)
+                    continue;
+                auto &chi0 = chi0_q_work.at(freq).at(q).at(Mu).at(Nu);
+                if (chi0.size == 0)
+                    chi0.create(atbasis_abf[Mu], atbasis_abf[Nu]);
+                LapackConnector::axpy(chi0.size, one, chi0_reduced.data(), 1, chi0.c, 1);
+            }
         }
     }
 }
@@ -1461,20 +1541,24 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     const bool use_shrink_chi = sinvS.size() > 0;
     global::profiler.start("LibRI_routing", "Loop over LibRI");
     const auto &qlist = this->pbc.klist_coul;
+    const std::vector<Vector3_Order<double>> qlist_all(qlist.begin(), qlist.end());
     const auto all_atpairs_ABF = generate_atom_pair_from_nat(atbasis_abf.n_atoms, false);
     const auto q_uhap_process_shape = resolve_chi0_q_uhap_process_shape(
         comm_h.nprocs, qlist.size(), all_atpairs_ABF.size());
-    const bool use_q_uhap_split = global::dev_opts.use_chi0_q_uhap_split && !use_shrink_chi &&
-                                  comm_h.nprocs > 1 && q_uhap_process_shape.nprocs_outer > 1;
+    const bool use_q_uhap_split =
+        global::dev_opts.use_chi0_q_uhap_split && !use_shrink_chi &&
+        comm_h.nprocs > 1 && q_uhap_process_shape.nprocs_outer > 1;
     TwoLevelParallelContext q_uhap_ctxt;
     std::vector<Vector3_Order<double>> qlist_chi0(qlist.begin(), qlist.end());
+    std::vector<Vector3_Order<int>> Rlist_chi0_collect(Rlist_gf.begin(), Rlist_gf.end());
     std::vector<atpair_t> atpairs_chi0(atpairs_ABF.begin(), atpairs_ABF.end());
     if (use_q_uhap_split)
     {
         q_uhap_ctxt.init(q_uhap_process_shape, comm_h.comm, TwoLevelRankLayout::CONTIGUOUS_INNER);
         qlist_chi0 = dispatch_vector(
-            std::vector<Vector3_Order<double>>(qlist.begin(), qlist.end()),
-            q_uhap_ctxt.outer_group_id(), q_uhap_process_shape.nprocs_outer, true);
+            qlist_all, q_uhap_ctxt.outer_group_id(), q_uhap_process_shape.nprocs_outer, true);
+        Rlist_chi0_collect = dispatch_vector(
+            Rlist_gf, q_uhap_ctxt.outer_group_id(), q_uhap_process_shape.nprocs_outer, true);
         atpairs_chi0 = dispatch_vector(
             all_atpairs_ABF, q_uhap_ctxt.inner_rank(), q_uhap_process_shape.nprocs_inner, true);
         global::ofs_myid << "chi0 q/uhap split enabled: "
@@ -1482,6 +1566,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                          << ", qpoint_group = " << q_uhap_ctxt.outer_group_id()
                          << ", uhap_rank = " << q_uhap_ctxt.inner_rank()
                          << ", local_qpoints = " << qlist_chi0.size()
+                         << ", local_Rs = " << Rlist_chi0_collect.size()
                          << ", local_uhap = " << atpairs_chi0.size() << "\n";
         global::ofs_myid << "chi0 q/uhap local atom-pairs:";
         for (const auto &atpair : atpairs_chi0)
@@ -1490,6 +1575,10 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         global::ofs_myid << "chi0 q/uhap local q-points:";
         for (const auto &q : qlist_chi0)
             global::ofs_myid << " (" << q.x << "," << q.y << "," << q.z << ")";
+        global::ofs_myid << "\n";
+        global::ofs_myid << "chi0 q/uhap local R-vectors:";
+        for (const auto &R : Rlist_chi0_collect)
+            global::ofs_myid << " (" << R.x << "," << R.y << "," << R.z << ")";
         global::ofs_myid << "\n";
     }
     else if (use_shrink_chi && q_uhap_process_shape.nprocs_outer > 1)
@@ -1527,8 +1616,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     {
         global::ofs_myid << "Estimated chi0_q final-layout memory [GB]: "
                          << estimate_chi0_q_mem_gb(
-                                std::vector<Vector3_Order<double>>(qlist.begin(), qlist.end()),
-                                atpairs_ABF)
+                                qlist_all, atpairs_ABF)
                          << std::endl;
     }
 
@@ -1560,6 +1648,8 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
 
     // local Rlist to collect after chi0s on each process
     auto s0_s1 = get_s0_s1_for_comm_map2_first<atom_t, int>(atpairs_chi0);
+    const auto exact_s0_s1 =
+        make_chi0_exact_collect_request(atpairs_chi0, Rlist_chi0_collect);
 
     global::profiler.start("chi0_libri_routing_set_cs", "Set Cs");
     // if (Params::debug)
@@ -1633,10 +1723,11 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         ? make_chi0_collect_plan_by_bytes<Tdata>(
               atbasis_abf.n_atoms, Rlist_gf, atbasis_abf, collect_max_bytes)
         : Chi0CollectPlan{};
-    // LibRI's comm_map2_first collects a sparse nested map according to requested first/second
-    // atom sets.  A full one-shot collect can briefly duplicate every local chi0s tensor on every
-    // rank, so large ABACUS cases split the global (I,J,R) key space into chunks capped by an
-    // estimated tensor byte count.
+    // LibRI's map collectors gather a sparse nested map according to requested
+    // atom or exact (atom, R) keys.  A full one-shot collect can briefly
+    // duplicate every local chi0s tensor on every rank, so large ABACUS cases
+    // split the global (I,J,R) key space into chunks capped by an estimated
+    // tensor byte count.
     const bool use_byte_collect_chunks = comm_h.nprocs > 1 && byte_collect_plan.nchunks() > 0;
     // Each rank only requests the atoms that can contribute to its local atom-pair work after
     // collection.  This keeps communication bounded by the final ownership instead of the full
@@ -1732,11 +1823,30 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                     rpa.free_Gs_pos();
                     global::profiler.stop("chi0_libri_routing_free_gf");
 
-                    // collect chi0 on selected atpairs of all R
-                    global::profiler.start("chi0_libri_routing_collect_Rs", "Collect all R blocks");
+                    // collect chi0 on selected atpairs and, for q/uhap split, selected R vectors
+                    global::profiler.start("chi0_libri_routing_collect_Rs", "Collect R blocks");
                     if (comm_h.nprocs > 1)
                     {
-                        if (use_byte_collect_chunks)
+                        if (use_q_uhap_split)
+                        {
+                            auto request = exact_s0_s1;
+                            const bool padding_request =
+                                request.first.empty() || request.second.empty();
+                            if (padding_request)
+                                request = make_padding_chi0_exact_collect_request(
+                                    Rlist_gf, atbasis_abf);
+                            global::ofs_myid << "chi0_libri_routing_collect_Rs q/uhap exact "
+                                             << "request_s0 = " << request.first.size()
+                                             << ", request_s1 = " << request.second.size()
+                                             << ", padding_request = " << padding_request << "\n";
+                            const Chi0CollectMap<Tdata> tmp_chi0 =
+                                collect_chi0_map2<Tdata>(
+                                    chi0_collect_comm, rpa.chi0s, request);
+                            if (!padding_request)
+                                accumulate_chi0_collect_map(chi0s_IJR, tmp_chi0);
+                            rpa.chi0s.clear();
+                        }
+                        else if (use_byte_collect_chunks)
                         {
                             // Move, not copy, the freshly computed rpa.chi0s blocks into the
                             // byte-budget chunks.  selected_chunks[ichunk] is cleared immediately
@@ -1867,9 +1977,42 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
             else
             {
                 profiler.start("chi0_libri_routing_ft_ct", "Fourier and Cosine transform");
-                chi_libri_ft_ct<Tdata>(isp, mf.get_n_spins(), it, tfg, atbasis_abf,
-                                       pbc.latvec, chi0s_IJR, qlist_chi0,
-                                       atpairs_chi0, chi0_q_work);
+                if (use_q_uhap_split)
+                {
+                    for (int q_owner = 0;
+                         q_owner != q_uhap_process_shape.nprocs_outer; ++q_owner)
+                    {
+                        const auto qlist_owner = dispatch_vector(
+                            qlist_all, q_owner, q_uhap_process_shape.nprocs_outer, true);
+                        map<double, map<Vector3_Order<double>,
+                                         atom_mapping<ComplexMatrix>::pair_t_old>> chi0_q_partial;
+                        for (auto freq : tfg.get_freq_nodes())
+                        {
+                            for (auto q : qlist_owner)
+                            {
+                                for (auto atpair : atpairs_chi0)
+                                {
+                                    auto Mu = atpair.first;
+                                    auto Nu = atpair.second;
+                                    chi0_q_partial[freq][q][Mu][Nu].create(
+                                        atbasis_abf[Mu], atbasis_abf[Nu]);
+                                }
+                            }
+                        }
+                        chi_libri_ft_ct<Tdata>(isp, mf.get_n_spins(), it, tfg, atbasis_abf,
+                                               pbc.latvec, chi0s_IJR, qlist_owner,
+                                               atpairs_chi0, chi0_q_partial);
+                        reduce_chi0_q_partial_to_q_owner(
+                            chi0_q_partial, qlist_owner, atpairs_chi0, atbasis_abf,
+                            q_owner, q_uhap_ctxt.comm_outer_h.comm, chi0_q_work);
+                    }
+                }
+                else
+                {
+                    chi_libri_ft_ct<Tdata>(isp, mf.get_n_spins(), it, tfg, atbasis_abf,
+                                           pbc.latvec, chi0s_IJR, qlist_chi0,
+                                           atpairs_chi0, chi0_q_work);
+                }
                 profiler.stop("chi0_libri_routing_ft_ct");
                 chi0s_IJR.clear();
             }
@@ -1898,7 +2041,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         profiler.start("chi0_q_uhap_redistribute", "Redistribute chi0_q to atom-pair layout");
         redistribute_chi0_q_to_atom_pair_layout(
             chi0_q_split, qlist_chi0, atpairs_chi0,
-            std::vector<Vector3_Order<double>>(qlist.begin(), qlist.end()),
+            qlist_all,
             atpairs_ABF, atbasis_abf, comm_h.comm, chi0_q);
         profiler.stop("chi0_q_uhap_redistribute");
         chi0_q_split.clear();
