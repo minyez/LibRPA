@@ -1349,11 +1349,12 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                         }
                     }
                 }
-	                else // !is_mf_eigvec_k_distributed_
-	                {
-	                    // Everything will be collected to rank 0
-	                    desc_nband_nband_fb.init(n_bands, n_bands, n_bands, n_bands, 0, 0);
-	                    auto Hexx_nband_nband_fb = init_local_mat<complex<double>>(desc_nband_nband_fb, MAJOR::COL);
+                else  // !is_mf_eigvec_k_distributed_
+                {
+                    // Everything will be collected to rank 0
+                    desc_nband_nband_fb.init(n_bands, n_bands, n_bands, n_bands, 0, 0);
+                    auto Hexx_nband_nband_fb =
+                        init_local_mat<complex<double>>(desc_nband_nband_fb, MAJOR::COL);
 
                     // Each process have all KS eigenvectors, extract local blocks
                     for (size_t ik = 0; ik < kfrac_target.size(); ik++)
@@ -1373,78 +1374,73 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                         else
                             collect_block_from_IJ_storage_matrix_transform(Hexx_nao_nao, desc_nao_nao,
                                     this->atbasis_wfc, this->atbasis_wfc, fourier, exx_is_local);
-	                        global::profiler.stop("build_real_space_exx_6");
-	                        // global::lib_printf("%s\n", str(Hexx_nao_nao).c_str());
-	                        if (use_root_dense_projection)
-	                        {
-	                            global::profiler.start(
-	                                "build_real_space_exx_7",
-	                                "Rotate Hexx ij -> KS with root dense IBZ projection");
-	                            auto Hexx_nao_nao_fb =
-	                                init_local_mat<complex<double>>(desc_nao_nao_fb, MAJOR::COL);
-	                            ScalapackConnector::pgemr2d_f(
-	                                n_aos, n_aos,
-	                                Hexx_nao_nao.ptr(), 1, 1, desc_nao_nao.desc,
-	                                Hexx_nao_nao_fb.ptr(), 1, 1, desc_nao_nao_fb.desc,
-	                                desc_nao_nao_fb.ictxt());
+                        global::profiler.stop("build_real_space_exx_6");
+                        // global::lib_printf("%s\n", str(Hexx_nao_nao).c_str());
+                        if (use_root_dense_projection)
+                        {
+                            global::profiler.start(
+                                "build_real_space_exx_7",
+                                "Rotate Hexx ij -> KS with root dense IBZ projection");
+                            auto Hexx_nao_nao_fb =
+                                init_local_mat<complex<double>>(desc_nao_nao_fb, MAJOR::COL);
+                            ScalapackConnector::pgemr2d_f(n_aos, n_aos, Hexx_nao_nao.ptr(), 1, 1,
+                                                          desc_nao_nao.desc, Hexx_nao_nao_fb.ptr(),
+                                                          1, 1, desc_nao_nao_fb.desc,
+                                                          desc_nao_nao_fb.ictxt());
 
-	                            ComplexMatrix Hexx_nband_nband_dense;
-	                            if (comm_h.is_root())
-	                            {
-	                                ComplexMatrix Hexx_nao_nao_dense(n_aos, n_aos);
-	                                for (int iao = 0; iao != n_aos; ++iao)
-	                                {
-	                                    for (int jao = 0; jao != n_aos; ++jao)
-	                                    {
-	                                        Hexx_nao_nao_dense(iao, jao) =
-	                                            Hexx_nao_nao_fb(iao, jao);
-	                                    }
-	                                }
-	                                const auto &wfc_bra =
-	                                    wfc_target.at(isp).at(ispn_bra).at(ik);
-	                                const auto &wfc_ket =
-	                                    wfc_target.at(isp).at(ispn_ket).at(ik);
-	                                Hexx_nband_nband_dense =
-	                                    (-1.0) * (conj(wfc_bra) * Hexx_nao_nao_dense
-	                                              * transpose(wfc_ket, false));
-	                            }
-	                            broadcast_ComplexMatrix(Hexx_nband_nband_dense, 0, comm_h.comm);
-	                            global::profiler.stop("build_real_space_exx_7");
+                            ComplexMatrix Hexx_nband_nband_dense;
+                            if (comm_h.is_root())
+                            {
+                                ComplexMatrix Hexx_nao_nao_dense(n_aos, n_aos);
+                                for (int iao = 0; iao != n_aos; ++iao)
+                                {
+                                    for (int jao = 0; jao != n_aos; ++jao)
+                                    {
+                                        Hexx_nao_nao_dense(iao, jao) = Hexx_nao_nao_fb(iao, jao);
+                                    }
+                                }
+                                const auto &wfc_bra = wfc_target.at(isp).at(ispn_bra).at(ik);
+                                const auto &wfc_ket = wfc_target.at(isp).at(ispn_ket).at(ik);
+                                Hexx_nband_nband_dense =
+                                    (-1.0) * (conj(wfc_bra) * Hexx_nao_nao_dense *
+                                              transpose(wfc_ket, false));
+                            }
+                            broadcast_ComplexMatrix(Hexx_nband_nband_dense, 0, comm_h.comm);
+                            global::profiler.stop("build_real_space_exx_7");
 
-	                            global::profiler.start("build_real_space_exx_8",
-	                                                   "Collect Eexx to root process");
-	                            if (this->exx_KS.count(isp) == 0
-	                                || this->exx_KS.at(isp).count(ik) == 0)
-	                            {
-	                                this->exx_KS[isp][ik] = Matz(
-	                                    n_bands, n_bands, Hexx_nband_nband_dense.c,
-	                                    MAJOR::ROW, MAJOR::COL);
-	                                if (comm_h.is_root())
-	                                {
-	                                    for (int ib = 0; ib != n_bands; ++ib)
-	                                    {
-	                                        this->Eexx[isp][ik][ib] = 0.0;
-	                                    }
-	                                }
-	                            }
-	                            else
-	                            {
-	                                this->exx_KS[isp][ik] += Matz(
-	                                    n_bands, n_bands, Hexx_nband_nband_dense.c,
-	                                    MAJOR::ROW, MAJOR::COL);
-	                            }
-	                            if (comm_h.is_root())
-	                            {
-	                                for (int ib = 0; ib != n_bands; ++ib)
-	                                {
-	                                    this->Eexx[isp][ik][ib] +=
-	                                        Hexx_nband_nband_dense(ib, ib).real();
-	                                }
-	                            }
-	                            global::profiler.stop("build_real_space_exx_8");
-	                            continue;
-	                        }
-	                        const auto &wfc_bra = wfc_target.at(isp).at(ispn_bra).at(ik);
+                            global::profiler.start("build_real_space_exx_8",
+                                                   "Collect Eexx to root process");
+                            if (this->exx_KS.count(isp) == 0 || this->exx_KS.at(isp).count(ik) == 0)
+                            {
+                                this->exx_KS[isp][ik] =
+                                    Matz(n_bands, n_bands, Hexx_nband_nband_dense.c, MAJOR::ROW,
+                                         MAJOR::COL);
+                                if (comm_h.is_root())
+                                {
+                                    for (int ib = 0; ib != n_bands; ++ib)
+                                    {
+                                        this->Eexx[isp][ik][ib] = 0.0;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                this->exx_KS[isp][ik] +=
+                                    Matz(n_bands, n_bands, Hexx_nband_nband_dense.c, MAJOR::ROW,
+                                         MAJOR::COL);
+                            }
+                            if (comm_h.is_root())
+                            {
+                                for (int ib = 0; ib != n_bands; ++ib)
+                                {
+                                    this->Eexx[isp][ik][ib] +=
+                                        Hexx_nband_nband_dense(ib, ib).real();
+                                }
+                            }
+                            global::profiler.stop("build_real_space_exx_8");
+                            continue;
+                        }
+                        const auto &wfc_bra = wfc_target.at(isp).at(ispn_bra).at(ik);
                         blacs_ctxt_h.barrier();
                         const auto wfc_bra_block = get_local_mat(wfc_bra.c, MAJOR::ROW, desc_nband_nao, MAJOR::COL).conj();
                         Matz wfc_ket_block;
