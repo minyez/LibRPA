@@ -1,21 +1,23 @@
 #include "dielecmodel.h"
 
-#include <cassert>
 #include <algorithm>
+#include <array>
+#include <cassert>
 #include <cmath>
+#include <limits>
 #include <sstream>
 #include <utility>
 
 #include "../math/fitting.h"
 #include "../math/interpolate.h"
 #include "../math/lebedev_laikov.h"
-#include "../math/vec.h"
 #include "../math/matrix_m.h"
 #include "../math/utils_matrix_m_mpi.h"
+#include "../math/vec.h"
 #include "../mpi/base_blacs.h"
+#include "../utils/constants.h"
 #include "../utils/error.h"
 #include "../utils/libri_utils.h"
-#include "../utils/constants.h"
 #include "../utils/profiler.h"
 #include "../utils/utils_mem.h"
 #include "atomic_basis.h"
@@ -28,13 +30,14 @@
 #include "../utils/libri_stub.h"
 #endif
 
-namespace librpa_int {
+namespace librpa_int
+{
 
 using RI::Tensor;
 using RI::Communicate_Tensors_Map_Judge::comm_map2_first;
 
-std::complex<double> compute_pi_det_blacs_2d(Matz &loc_piT, const ArrayDesc &arrdesc_pi,
-                                             int *ipiv, int &info);
+std::complex<double> compute_pi_det_blacs_2d(Matz &loc_piT, const ArrayDesc &arrdesc_pi, int *ipiv,
+                                             int &info);
 
 const int DoubleHavriliakNegami::d_npar = 8;
 
@@ -81,6 +84,292 @@ double headwing_spin_prefactor(const int n_spin, const bool spin_orbit_coupled)
     return 2.0 / static_cast<double>(n_spin);
 }
 
+void accumulate_wing_mu_for_pair(const std::vector<double> &omega,
+                                 const std::array<std::complex<double>, 3> &velocity_unocc_occ,
+                                 const std::complex<double> &c_mn, const double egap,
+                                 const double factor1, const double factor2,
+                                 std::complex<double> *wing_mu_for_mu)
+{
+    if (factor1 <= 1.e-8 && factor2 <= 1.e-8)
+    {
+        return;
+    }
+
+    for (std::size_t iomega = 0; iomega != omega.size(); ++iomega)
+    {
+        const double omega_ev = omega[iomega];
+        const double denom = omega_ev * omega_ev + egap * egap;
+        for (int alpha = 0; alpha != 3; ++alpha)
+        {
+            auto &wing = wing_mu_for_mu[iomega * 3 + as_size(alpha)];
+            if (factor1 > 1.e-8)
+            {
+                wing += factor1 * std::conj(c_mn * velocity_unocc_occ[alpha]) / denom;
+            }
+            if (factor2 > 1.e-8)
+            {
+                wing += factor2 * c_mn * velocity_unocc_occ[alpha] / denom;
+            }
+        }
+    }
+}
+
+std::vector<int> headwing_local_kpoints(const int n_kpoints,
+                                        const KPointBlacsParallelContext *kblacs_ctxt)
+{
+    if (kblacs_ctxt && kblacs_ctxt->is_initialized() && kblacs_ctxt->n_kpoints() == n_kpoints)
+    {
+        return kblacs_ctxt->kpoints_local();
+    }
+
+    std::vector<int> kpoints;
+    kpoints.reserve(n_kpoints);
+    for (int ik = 0; ik != n_kpoints; ++ik) kpoints.push_back(ik);
+    return kpoints;
+}
+
+std::vector<int> headwing_local_kpoint_roots(const int n_kpoints,
+                                             const KPointBlacsParallelContext *kblacs_ctxt)
+{
+    if (kblacs_ctxt && kblacs_ctxt->is_initialized() && kblacs_ctxt->n_kpoints() == n_kpoints)
+    {
+        if (kblacs_ctxt->comm_blacs_h.myid != 0) return {};
+        return kblacs_ctxt->kpoints_local();
+    }
+
+    std::vector<int> kpoints;
+    kpoints.reserve(n_kpoints);
+    for (int ik = 0; ik != n_kpoints; ++ik) kpoints.push_back(ik);
+    return kpoints;
+}
+
+namespace
+{
+
+bool use_matching_kpoint_blacs(const int n_kpoints, const KPointBlacsParallelContext *kblacs_ctxt)
+{
+    return kblacs_ctxt && kblacs_ctxt->is_initialized() && kblacs_ctxt->n_kpoints() == n_kpoints;
+}
+
+void allreduce_head_matrices(std::vector<matrix_m<std::complex<double>>> &head, const MPI_Comm comm)
+{
+    for (auto &mat : head)
+    {
+        if (mat.size() == 0) continue;
+        if (mat.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+            throw LIBRPA_RUNTIME_ERROR("head matrix is too large for MPI_Allreduce");
+        MPI_Allreduce(MPI_IN_PLACE, mat.ptr(), static_cast<int>(mat.size()), MPI_CXX_DOUBLE_COMPLEX,
+                      MPI_SUM, comm);
+    }
+}
+
+void allreduce_head_check(
+    std::vector<std::array<std::array<std::complex<double>, 3>, 3>> &head_check,
+    const MPI_Comm comm)
+{
+    if (head_check.empty()) return;
+    const auto n_elem = head_check.size() * 9;
+    if (n_elem > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        throw LIBRPA_RUNTIME_ERROR("head self-check buffer is too large for MPI_Allreduce");
+    MPI_Allreduce(MPI_IN_PLACE, head_check.data(), static_cast<int>(n_elem), MPI_CXX_DOUBLE_COMPLEX,
+                  MPI_SUM, comm);
+}
+
+std::array<ComplexMatrix, 3> rotate_headwing_velocity_by_shape(
+    const SymmetryContext &ctx, const InputSymmetryKStarMember &member,
+    const std::array<ComplexMatrix, 3> &v_band_ibz, const int n_bands,
+    const bool use_time_reversal)
+{
+    for (int alpha = 0; alpha < 3; ++alpha)
+    {
+        if (v_band_ibz[alpha].nr != n_bands || v_band_ibz[alpha].nc != n_bands)
+            throw std::runtime_error(
+                "rotate_headwing_velocity: band velocity shape mismatch with eigenvectors");
+    }
+
+    std::array<ComplexMatrix, 3> v_band_rot;
+    for (int alpha = 0; alpha < 3; ++alpha)
+    {
+        v_band_rot[alpha] = v_band_ibz[alpha];
+        if (use_time_reversal)
+        {
+            for (int i = 0; i < n_bands; ++i)
+                for (int j = 0; j < n_bands; ++j)
+                    v_band_rot[alpha](i, j) = std::conj(v_band_ibz[alpha](i, j));
+        }
+    }
+
+    const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
+    const int spatial_isym = use_time_reversal ? member.isym - nsym_space : member.isym;
+    if (spatial_isym < 0 || spatial_isym >= nsym_space)
+        throw std::runtime_error("rotate_headwing_velocity: invalid symmetry index");
+    const auto rot_iter = ctx.rspace_operations.at(spatial_isym).shell_rotations.find(1);
+    if (rot_iter == ctx.rspace_operations.at(spatial_isym).shell_rotations.end())
+        throw std::runtime_error("rotate_headwing_velocity: missing l=1 Cartesian rotation");
+    const ComplexMatrix &rot_cm = rot_iter->second;
+    if (rot_cm.nr != 3 || rot_cm.nc != 3)
+        throw std::runtime_error("rotate_headwing_velocity: invalid l=1 Cartesian rotation");
+    const double trs_sign = use_time_reversal ? -1.0 : 1.0;
+
+    std::array<ComplexMatrix, 3> v_band_bz;
+    for (int alpha = 0; alpha < 3; ++alpha) v_band_bz[alpha].create(n_bands, n_bands);
+    for (int alpha_out = 0; alpha_out < 3; ++alpha_out)
+    {
+        for (int alpha_in = 0; alpha_in < 3; ++alpha_in)
+        {
+            const std::complex<double> coeff = trs_sign * rot_cm(alpha_out, alpha_in);
+            if (std::abs(coeff) < 1.e-15) continue;
+            v_band_bz[alpha_out] += coeff * v_band_rot[alpha_in];
+        }
+    }
+    return v_band_bz;
+}
+
+std::vector<int> build_headwing_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
+{
+    std::vector<int> offsets(atom_nw.size() + 1, 0);
+    int running = 0;
+    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+    {
+        const auto iter = atom_nw.find(static_cast<atom_t>(atom));
+        if (iter == atom_nw.end())
+            throw std::runtime_error("headwing AO rotation atom_nw is not contiguous");
+        offsets[atom] = running;
+        running += static_cast<int>(iter->second);
+    }
+    offsets.back() = running;
+    return offsets;
+}
+
+Vector3_Order<int> headwing_kspace_return_lattice(
+    const SymmetryContext& ctx, const InputSymmetryKAtomRotation& atom_rotation,
+    const std::map<atom_t, std::array<double, 3>>& coord_frac, const int spatial_isym)
+{
+    const auto stored = ctx.kspace_return_lattice.find({atom_rotation.atom_from, spatial_isym});
+    if (stored != ctx.kspace_return_lattice.end()) return stored->second;
+
+    const auto from_iter = coord_frac.find(static_cast<atom_t>(atom_rotation.atom_from));
+    const auto to_iter = coord_frac.find(static_cast<atom_t>(atom_rotation.atom_to));
+    if (from_iter == coord_frac.end() || to_iter == coord_frac.end())
+        throw std::runtime_error("headwing AO rotation missing fractional coordinates");
+    if (spatial_isym < 0 || spatial_isym >= static_cast<int>(ctx.rspace_operations.size()))
+        throw std::runtime_error("headwing AO rotation uses an invalid symmetry index");
+
+    const auto coord_from = restrict_fractional_coordinate(from_iter->second, 1.e-5);
+    const auto coord_to = restrict_fractional_coordinate(to_iter->second, 1.e-5);
+    const auto transformed = apply_space_group_symmetry_operation(
+        ctx.rspace_operations[static_cast<std::size_t>(spatial_isym)], coord_from);
+    const auto return_lattice = transformed - coord_to;
+    if (!nearly_integer_vector(return_lattice, 1.e-5))
+        throw std::runtime_error("headwing AO rotation produced a non-integer return lattice");
+    return round_to_integer_vector(return_lattice);
+}
+
+Vector3_Order<int> headwing_equivalent_kpoint_shift(
+    const Vector3_Order<double>& k_source, const Vector3_Order<double>& k_target)
+{
+    const Vector3_Order<double> k_shift{k_target.x - k_source.x,
+                                        k_target.y - k_source.y,
+                                        k_target.z - k_source.z};
+    if (!nearly_integer_vector(k_shift, 1.e-5))
+        throw std::runtime_error("headwing AO rotation got non-equivalent full-k targets");
+    return round_to_integer_vector(k_shift);
+}
+
+std::complex<double> headwing_reciprocal_gauge_phase(
+    const Vector3_Order<int>& k_shift, const atom_t atom,
+    const std::map<atom_t, std::array<double, 3>>& coord_frac)
+{
+    const auto coord_iter = coord_frac.find(atom);
+    if (coord_iter == coord_frac.end())
+        throw std::runtime_error("headwing AO rotation missing target-gauge coordinate");
+    const auto tau = restrict_fractional_coordinate(coord_iter->second, 1.e-5);
+    const double phase_arg =
+        TWO_PI * (static_cast<double>(k_shift.x) * tau.x
+                  + static_cast<double>(k_shift.y) * tau.y
+                  + static_cast<double>(k_shift.z) * tau.z);
+    return {std::cos(phase_arg), std::sin(phase_arg)};
+}
+
+ComplexMatrix build_input_symmetry_ao_bloch_rotation_matrix_full(
+    const SymmetryContext& ctx, const InputSymmetryKStarMember& member,
+    const std::map<atom_t, size_t>& atom_nw, const Vector3_Order<double>& k_ibz,
+    const std::map<atom_t, std::array<double, 3>>& coord_frac, const bool use_time_reversal,
+    const Vector3_Order<double>* k_bz_target)
+{
+    if (!ctx.has_shell_layout("WFC"))
+        throw std::runtime_error("WFC shell layout is required before building AO Bloch rotation");
+
+    const auto offsets = build_headwing_atom_offsets(atom_nw);
+    const int nao_total = offsets.back();
+
+    std::vector<const InputSymmetryKAtomRotation*> rotations_by_from(atom_nw.size(), nullptr);
+    std::vector<bool> visited_to(atom_nw.size(), false);
+    for (const auto& atom_rotation : member.atom_rotations)
+    {
+        if (atom_rotation.atom_from < 0 || atom_rotation.atom_from >= static_cast<int>(atom_nw.size())
+            || atom_rotation.atom_to < 0 || atom_rotation.atom_to >= static_cast<int>(atom_nw.size()))
+            throw std::runtime_error("headwing AO rotation atom mapping is out of range");
+        rotations_by_from[static_cast<std::size_t>(atom_rotation.atom_from)] = &atom_rotation;
+        visited_to[static_cast<std::size_t>(atom_rotation.atom_to)] = true;
+    }
+    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+    {
+        if (rotations_by_from[atom] == nullptr)
+            throw std::runtime_error("headwing AO rotations do not cover every atom");
+        if (!visited_to[atom])
+            throw std::runtime_error("headwing AO atom mapping is not a full permutation");
+    }
+
+    const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
+    const int spatial_isym = use_time_reversal ? member.isym - nsym_space : member.isym;
+    if (spatial_isym < 0 || spatial_isym >= nsym_space)
+        throw std::runtime_error("headwing AO rotation uses an invalid symmetry index");
+
+    const Vector3_Order<double> delta_k{k_ibz.x - member.k_bz.x,
+                                        k_ibz.y - member.k_bz.y,
+                                        k_ibz.z - member.k_bz.z};
+    std::vector<ComplexMatrix> atom_M_blocks(atom_nw.size());
+    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+    {
+        const auto* atom_rotation = rotations_by_from[atom];
+        atom_M_blocks[atom] = build_input_symmetry_rotation_matrix(
+            ctx, "WFC", atom_rotation->atom_type, atom_rotation->shell_rotations);
+        const auto return_lattice =
+            headwing_kspace_return_lattice(ctx, *atom_rotation, coord_frac, spatial_isym);
+        const double phase_arg =
+            TWO_PI * (delta_k.x * static_cast<double>(return_lattice.x)
+                      + delta_k.y * static_cast<double>(return_lattice.y)
+                      + delta_k.z * static_cast<double>(return_lattice.z));
+        atom_M_blocks[atom] *= std::complex<double>(std::cos(phase_arg), std::sin(phase_arg));
+    }
+
+    const bool apply_target_gauge = (k_bz_target != nullptr);
+    std::vector<std::complex<double>> atom_target_phases(atom_nw.size(), {1.0, 0.0});
+    if (apply_target_gauge)
+    {
+        const auto k_shift = headwing_equivalent_kpoint_shift(member.k_bz, *k_bz_target);
+        for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+            atom_target_phases[atom] =
+                headwing_reciprocal_gauge_phase(k_shift, static_cast<atom_t>(atom), coord_frac);
+    }
+
+    ComplexMatrix M_full(nao_total, nao_total);
+    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+    {
+        const auto off = offsets[atom];
+        const auto n_ao = static_cast<int>(atom_nw.at(static_cast<atom_t>(atom)));
+        ComplexMatrix block = atom_M_blocks[atom];
+        if (apply_target_gauge) block *= atom_target_phases[atom];
+        for (int row = 0; row < n_ao; ++row)
+            for (int col = 0; col < n_ao; ++col)
+                M_full(off + row, off + col) = block(row, col);
+    }
+    return M_full;
+}
+
+}  // namespace
+
 void initialize_velocity_matrix(velocity_matrix_t &velocity, const int n_spins,
                                 const int n_kpoints, const int n_states)
 {
@@ -100,6 +389,49 @@ void initialize_velocity_matrix(velocity_matrix_t &velocity, const int n_spins,
     }
 }
 
+std::vector<int> map_kpoints_by_coordinates(
+    const std::vector<Vector3_Order<double>> &target_kpoints,
+    const std::vector<Vector3_Order<double>> &source_kpoints, const double tolerance)
+{
+    const auto periodic_abs_delta = [](const double lhs, const double rhs) {
+        const double diff = lhs - rhs;
+        return std::abs(diff - std::round(diff));
+    };
+
+    std::vector<int> target_to_source;
+    target_to_source.reserve(target_kpoints.size());
+
+    std::vector<char> used(source_kpoints.size(), 0);
+    for (std::size_t itarget = 0; itarget != target_kpoints.size(); ++itarget)
+    {
+        int matched_source = -1;
+        for (std::size_t isource = 0; isource != source_kpoints.size(); ++isource)
+        {
+            if (used[isource]) continue;
+            const auto &lhs = target_kpoints[itarget];
+            const auto &rhs = source_kpoints[isource];
+            if (periodic_abs_delta(lhs.x, rhs.x) <= tolerance &&
+                periodic_abs_delta(lhs.y, rhs.y) <= tolerance &&
+                periodic_abs_delta(lhs.z, rhs.z) <= tolerance)
+            {
+                matched_source = static_cast<int>(isource);
+                break;
+            }
+        }
+        if (matched_source < 0)
+        {
+            std::ostringstream oss;
+            oss << "Failed to map target k-point " << itarget + 1
+                << " to the source k-point list";
+            throw std::runtime_error(oss.str());
+        }
+        used[matched_source] = 1;
+        target_to_source.emplace_back(matched_source);
+    }
+
+    return target_to_source;
+}
+
 std::vector<double> interpolate_dielec_func(int option, const std::vector<double> &frequencies_in,
                                             const std::vector<double> &df_in,
                                             const std::vector<double> &frequencies_target)
@@ -117,8 +449,7 @@ std::vector<double> interpolate_dielec_func(int option, const std::vector<double
         }
         case 1: /* Use spline interpolation */
         {
-            df_target = librpa_int::interp_cubic_spline(
-                    frequencies_in, df_in, frequencies_target);
+            df_target = librpa_int::interp_cubic_spline(frequencies_in, df_in, frequencies_target);
             break;
         }
         case 2: /* Use dielectric model for fitting */
@@ -128,10 +459,9 @@ std::vector<double> interpolate_dielec_func(int option, const std::vector<double
             // initialize the parameters as 1.0
             std::vector<double> pars(DoubleHavriliakNegami::d_npar, 1);
             pars[0] = pars[4] = df_in[0];
-            df_target = levmarq.fit_eval(pars, frequencies_in, df_in,
-                                         DoubleHavriliakNegami::func_imfreq,
-                                         DoubleHavriliakNegami::grad_imfreq,
-                                         frequencies_target);
+            df_target =
+                levmarq.fit_eval(pars, frequencies_in, df_in, DoubleHavriliakNegami::func_imfreq,
+                                 DoubleHavriliakNegami::grad_imfreq, frequencies_target);
             break;
         }
         default:
@@ -146,25 +476,28 @@ void diele_func::init(double coulomb_eigen_threshold, const librpa_int::atpair_k
     this->n_abf = atomic_basis_abf_.nb_total;
     this->nk = this->kfrac_band.size();
     if (static_cast<int>(velocity_.size()) != n_spin)
-        throw LIBRPA_RUNTIME_ERROR("velocity matrix spin dimension is inconsistent with meanfield");
+        throw LIBRPA_RUNTIME_ERROR(
+            "head/wing velocity spin dimension is inconsistent with meanfield");
     for (int ispin = 0; ispin != n_spin; ++ispin)
     {
         if (static_cast<int>(velocity_[ispin].size()) != nk)
-            throw LIBRPA_RUNTIME_ERROR("velocity matrix k-point dimension is inconsistent with k path");
+            throw LIBRPA_RUNTIME_ERROR(
+                "head/wing velocity k-point dimension is inconsistent with k path");
         for (int ik = 0; ik != nk; ++ik)
         {
             if (velocity_[ispin][ik].size() != 3)
-                throw LIBRPA_RUNTIME_ERROR("velocity matrix must contain three Cartesian components");
+                throw LIBRPA_RUNTIME_ERROR(
+                    "head/wing velocity must contain three Cartesian components");
             for (int alpha = 0; alpha != 3; ++alpha)
             {
                 const auto &vmat = velocity_[ispin][ik][alpha];
                 if (vmat.nr != n_states || vmat.nc != n_states)
-                    throw LIBRPA_RUNTIME_ERROR("velocity matrix size is inconsistent with bands");
+                    throw LIBRPA_RUNTIME_ERROR(
+                        "head/wing velocity matrix size is inconsistent with bands");
             }
         }
     }
     int n_omega = this->omega.size();
-    get_Xv_cpl(coulomb_eigen_threshold, Vq);
 
     this->head.clear();
     this->head.resize(n_omega);
@@ -178,18 +511,14 @@ void diele_func::init_wing(double coulomb_eigen_threshold, const atpair_k_cplx_m
 {
     int n_omega = this->omega.size();
     this->n_abf = atomic_basis_abf_.nb_total;
-    get_Xv_cpl(coulomb_eigen_threshold, Vq);
     this->wing_mu.clear();
     this->wing_mu.resize(n_omega);
     this->wing.clear();
-    this->wing.resize(n_omega);
+    this->n_nonsingular = n_abf;
     this->Lind.resize(3, 3, MAJOR::COL);
-    this->bw.resize(n_nonsingular - 1, 3, MAJOR::COL);
-    this->wb.resize(3, n_nonsingular - 1, MAJOR::COL);
     for (int iomega = 0; iomega != n_omega; iomega++)
     {
         wing_mu[iomega].resize(n_abf, 3, MAJOR::COL);
-        wing[iomega].resize(n_nonsingular - 1, 3, MAJOR::COL);
     }
     get_Leb_points();
     if (use_2d_dielectric)
@@ -214,16 +543,52 @@ void diele_func::cal_head()
 
     profiler.start("cal_head");
 
+    const bool can_sym =
+        use_symmetry && symmetry_context_ != nullptr &&
+        librpa_int::can_restore_input_symmetry_kstar_meanfield(
+            *symmetry_context_, meanfield_df, kfrac_band, atom_nw, coord_frac);
+
+    if (can_sym)
+        cal_head_symmetric();
+    else
+        cal_head_full_bz();
+
+    // Common post-processing: apply dielectric unit and spin prefactor, add the
+    // 1 contribution on the diagonal. Identical for both paths.
+    const double dielectric_unit = cal_factor("head");
+    for (int alpha = 0; alpha != 3; alpha++)
+    {
+        for (int beta = 0; beta != 3; beta++)
+        {
+            for (size_t iomega = 0; iomega != this->omega.size(); iomega++)
+            {
+                this->head.at(iomega)(alpha, beta) *=
+                    dielectric_unit * headwing_spin_prefactor(n_spin, use_soc);
+                if (alpha == beta)
+                {
+                    this->head.at(iomega)(alpha, beta) += std::complex<double>(1.0, 0.0);
+                }
+            }
+        }
+    }
+    global::ofs_myid << "* Success: calculate head term." << std::endl;
+    profiler.stop("cal_head");
+};
+
+void diele_func::cal_head_full_bz()
+{
+    // Historical full-BZ summation. The k-grid must already cover the full BZ.
+    // wg is indexed as wg(ik, ib) so that k-dependent occupations are honored.
     std::complex<double> tmp;
-    int nocc = 0;
-    double dielectric_unit = cal_factor("head");
+    const bool use_kblacs = use_matching_kpoint_blacs(nk, kblacs_ctxt_);
+    const auto kpoints = headwing_local_kpoint_roots(nk, kblacs_ctxt_);
 
     for (int ispin = 0; ispin != n_spin; ispin++)
     {
         auto &wg = this->meanfield_df.get_weight()[ispin];
         auto &eigenvalues = this->meanfield_df.get_eigenvals()[ispin];
         const auto &velocity = this->velocity_[ispin];
-        for (int ik = 0; ik != nk; ik++)
+        for (const int ik : kpoints)
         {
             for (int iocc = 0; iocc != n_states; iocc++)
             {
@@ -233,8 +598,12 @@ void diele_func::cal_head()
                     {
                         double egap =
                             (eigenvalues(ik, iocc) - eigenvalues(ik, iunocc));  // * HA2EV;
+                        // NOTE: wg is matrix(n_kpoints, n_states); index with (ik, ib) not flat
+                        // buffer, otherwise the k-dependence of the occupation is silently
+                        // dropped. For an insulator all rows are equal so this is a numerical
+                        // no-op, but it is required for correctness on metals / IBZ input.
                         const double factor = headwing_transition_weight(
-                            wg.c[iocc], wg.c[iunocc], n_spin, use_soc);
+                            wg(ik, iocc), wg(ik, iunocc), n_spin, use_soc);
                         if (factor > 1.e-8)
                         {
                             for (int alpha = 0; alpha != 3; alpha++)
@@ -257,29 +626,175 @@ void diele_func::cal_head()
             }
         }
     }
-    for (int alpha = 0; alpha != 3; alpha++)
+    if (use_kblacs) allreduce_head_matrices(this->head, comm_h.comm);
+}
+
+void diele_func::cal_head_symmetric()
+{
+    // Symmetry-aware head: sum over the full BZ by looping IBZ k-points and, for
+    // each, every member of the k-star. The BZ velocity for every member is
+    // reconstructed from the IBZ velocity via rotate_headwing_velocity; the
+    // eigenvalues are symmetry-invariant so the IBZ gap is reused directly.
+    if (symmetry_context_ == nullptr)
+        throw std::runtime_error("cal_head_symmetric: symmetry context is not set");
+    const auto& ctx = *symmetry_context_;
+    const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
+
+    // Build the per-member BZ k-point targets so the rotated quantities land on
+    // the same grid keys that the rest of the code expects (mirrors the
+    // get_input_symmetry_restored_gf_cplx_imagtimes_Rs convention).
+    const auto member_targets =
+        librpa_int::build_input_symmetry_kstar_member_kfrac_targets(ctx, pbc_);
+
+    // Total BZ k-count = sum of star sizes. The IBZ mean-field stores wg as
+    // occ/n_ibz, but the head/wing sum is over the full BZ, so each BZ k must
+    // carry wg(bz) = occ/n_bz = wg(ibz) * n_ibz / n_bz.
+    const std::size_t n_kpoints_bz = ctx.count_kstar_members();
+    const double bz_weight_scale = static_cast<double>(nk) / static_cast<double>(n_kpoints_bz);
+    const bool use_kblacs = use_matching_kpoint_blacs(nk, kblacs_ctxt_);
+
+    // Self-verification accumulator: independently accumulate the head using the
+    // same per-BZ-k weight on the rotated velocities, then compare. The two
+    // traversals are identical, so they must agree to machine precision.
+    std::vector<std::array<std::array<std::complex<double>, 3>, 3>> head_check(this->omega.size());
+    for (auto &h : head_check)
+        for (auto &row : h) row.fill({0.0, 0.0});
+
+    for (int ispin = 0; ispin != n_spin; ispin++)
     {
-        for (int beta = 0; beta != 3; beta++)
+        auto &wg = this->meanfield_df.get_weight()[ispin];
+        auto &eigenvalues = this->meanfield_df.get_eigenvals()[ispin];
+        const auto &velocity = this->velocity_[ispin];
+
+        for (int ik_ibz = 0; ik_ibz != nk; ik_ibz++)
         {
-            for (size_t iomega = 0; iomega != this->omega.size(); iomega++)
+            const auto& k_ibz = kfrac_band[ik_ibz];
+            const auto& star = librpa_int::find_input_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
+            if (star.members.empty())
+                throw std::runtime_error("cal_head_symmetric: empty k-star");
+
+            const int ispinor_bra = 0;
+            const ComplexMatrix *C_ibz_ptr = meanfield_df.find_wfc(ispin, ispinor_bra, ik_ibz);
+            const int have_local = (C_ibz_ptr != nullptr) ? 1 : 0;
+            const int owner_rank = find_mpi_owner_rank(have_local != 0, comm_h.comm);
+            if (owner_rank < 0)
+                throw std::runtime_error("cal_head_symmetric: no rank owns the IBZ eigenvectors");
+            if (use_kblacs)
             {
-                this->head.at(iomega)(alpha, beta) *=
-                    dielectric_unit * headwing_spin_prefactor(n_spin, use_soc);
-                if (alpha == beta)
+                if (!kblacs_ctxt_->owns_kpoint(ik_ibz) || kblacs_ctxt_->comm_blacs_h.myid != 0)
+                    continue;
+                if (C_ibz_ptr == nullptr)
+                    throw std::runtime_error(
+                        "cal_head_symmetric: kBLACS root does not own the IBZ eigenvectors");
+            }
+            else if (comm_h.myid != owner_rank)
+            {
+                continue;
+            }
+
+            // IBZ velocity, band basis, per Cartesian component.
+            std::array<ComplexMatrix, 3> v_band_ibz{velocity[ik_ibz][0], velocity[ik_ibz][1],
+                                                    velocity[ik_ibz][2]};
+
+            for (std::size_t imember = 0; imember != star.members.size(); ++imember)
+            {
+                const auto &member = star.members[imember];
+                const bool use_time_reversal = member.isym >= nsym_space;
+                const auto &k_bz =
+                    member_targets.empty() ? member.k_bz : member_targets[ik_ibz][imember];
+
+                // Reconstruct the BZ band-basis velocity for all three Cartesian
+                // components in one call.
+                (void)k_bz;
+                const auto v_band_bz = rotate_headwing_velocity_by_shape(
+                    ctx, member, v_band_ibz, n_states, use_time_reversal);
+
+                // Sum over band pairs. Eigenvalues are symmetry-invariant, so the
+                // IBZ gap Delta_cv applies to every star member unchanged.
+                for (int iocc = 0; iocc != n_states; iocc++)
                 {
-                    this->head.at(iomega)(alpha, beta) += std::complex<double>(1.0, 0.0);
+                    for (int iunocc = 0; iunocc != n_states; iunocc++)
+                    {
+                        if (iocc >= iunocc) continue;
+                        // Each BZ k carries wg(bz) = wg(ibz) * n_ibz / n_bz.
+                        const double factor =
+                            bz_weight_scale * headwing_transition_weight(wg(ik_ibz, iocc),
+                                                                         wg(ik_ibz, iunocc), n_spin,
+                                                                         use_soc);
+                        if (factor <= 1.e-8) continue;
+
+                        const double egap =
+                            (eigenvalues(ik_ibz, iocc) - eigenvalues(ik_ibz, iunocc));
+
+                        for (int alpha = 0; alpha != 3; ++alpha)
+                        {
+                            for (int beta = 0; beta != 3; ++beta)
+                            {
+                                for (size_t iomega = 0; iomega != this->omega.size(); iomega++)
+                                {
+                                    const double omega_ev = this->omega[iomega];
+                                    const std::complex<double> tmp =
+                                        2.0 * factor * v_band_bz[alpha](iunocc, iocc) *
+                                        v_band_bz[beta](iocc, iunocc) /
+                                        (egap * egap + omega_ev * omega_ev) / egap;
+                                    this->head.at(iomega)(alpha, beta) -= tmp;
+                                    // Self-check: same formula, same per-BZ-k weight.
+                                    head_check[iomega][alpha][beta] -= tmp;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
-    global::ofs_myid << "* Success: calculate head term." << std::endl;
-    profiler.start("cal_head");
-};
+
+    allreduce_head_matrices(this->head, comm_h.comm);
+    allreduce_head_check(head_check, comm_h.comm);
+
+    // Self-verification: compare the symmetric-path head (this->head) against the
+    // independent full-BZ-convention accumulation (head_check). The symmetric path
+    // uses wg(ibz) and sums |star| members; the check uses wg(bz)=wg(ibz)/|star|.
+    // Both traverse the identical {BZ k, v(k), Delta, wg(k)} set, so they must
+    // agree to machine precision (the only difference is the order of summation).
+    // NOTE: this->head has NOT yet been scaled by dielectric_unit/spin_prefactor
+    // (that happens in the cal_head dispatcher after this function returns), and
+    // head_check was accumulated with the same unscaled formula, so the raw sums
+    // are directly comparable.
+    double max_abs_diff = 0.0;
+    double max_abs_val = 0.0;
+    for (size_t iw = 0; iw < this->omega.size(); ++iw)
+        for (int a = 0; a < 3; ++a)
+            for (int b = 0; b < 3; ++b)
+            {
+                const auto dv = this->head.at(iw)(a, b) - head_check[iw][a][b];
+                max_abs_diff = std::max(max_abs_diff, std::abs(dv));
+                max_abs_val = std::max(max_abs_val, std::abs(this->head.at(iw)(a, b)));
+            }
+    const double rel_diff = (max_abs_val > 0) ? max_abs_diff / max_abs_val : 0.0;
+    if (global::mpi_comm_global_h.is_root())
+    {
+        std::cout << "[cal_head_symmetric self-check] head_sym vs head_fullbz_convention: "
+                  << "max_abs_diff=" << max_abs_diff << ", max_abs_val=" << max_abs_val
+                  << ", rel_diff=" << rel_diff << std::endl;
+        if (rel_diff > 1e-10 && max_abs_val > 1e-12)
+        {
+            std::cerr << "WARNING: cal_head_symmetric self-check rel_diff=" << rel_diff
+                      << " exceeds 1e-10! Symmetric and full-BZ-convention heads disagree."
+                      << std::endl;
+        }
+        else
+        {
+            std::cout << "[cal_head_symmetric self-check] PASSED: symmetric head == full-BZ head "
+                      << "(rel_diff < 1e-10)." << std::endl;
+        }
+    }
+}
 
 double diele_func::cal_factor(std::string name)
 {
-    using librpa_int::TWO_PI;
     using librpa_int::BOHR2ANG;
+    using librpa_int::TWO_PI;
 
     double dielectric_unit;
     const auto &latvec = pbc_.latvec;
@@ -361,6 +876,20 @@ matrix_m<std::complex<double>> diele_func::get_rpa_chi0v_wing(const int ifreq) c
 void diele_func::cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
                           const atpair_k_cplx_mat_t &Vq)
 {
+    const bool can_sym =
+        use_symmetry && symmetry_context_ != nullptr &&
+        librpa_int::can_restore_input_symmetry_kstar_meanfield(
+            *symmetry_context_, meanfield_df, kfrac_band, atom_nw, coord_frac);
+
+    if (can_sym)
+        cal_wing_symmetric(Cs_data, coulomb_eigen_threshold, Vq);
+    else
+        cal_wing_full_bz(Cs_data, coulomb_eigen_threshold, Vq);
+}
+
+void diele_func::cal_wing_full_bz(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
+                                  const atpair_k_cplx_mat_t &Vq)
+{
     using global::profiler;
 
     profiler.start("cal_wing_mu");
@@ -368,38 +897,75 @@ void diele_func::cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
     int n_lambda = this->n_nonsingular - 1;
     std::vector<std::complex<double>> local_wing_mu;
     local_wing_mu.resize(this->omega.size() * 3 * n_abf, 0.0);
+    const bool use_kblacs = use_matching_kpoint_blacs(nk, kblacs_ctxt_);
+    const BlacsCtxtHandler &wing_blacs_h = use_kblacs ? kblacs_ctxt_->blacs_h : blacs_h;
+    const auto kpoints_local = headwing_local_kpoints(nk, use_kblacs ? kblacs_ctxt_ : nullptr);
 
     // IJR distribution to IJ distribution
-    ArrayDesc desc_nao_nao(blacs_h);
+    ArrayDesc desc_nao_nao(wing_blacs_h);
     desc_nao_nao.init_1b1p(n_basis, n_basis, 0, 0);
-    const auto set_IJ_nao_nao = get_necessary_IJ_from_block_2D(
-        atomic_basis_wfc_, atomic_basis_wfc_, desc_nao_nao);
+    const auto set_IJ_nao_nao =
+        get_necessary_IJ_from_block_2D(atomic_basis_wfc_, atomic_basis_wfc_, desc_nao_nao);
     auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao);
     std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> Cs_IJ;
-    Cs_IJ = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
-        comm_h.comm, Cs_data.data_libri, s0_s1.first, s0_s1.second);
+    Cs_IJ = RI::Communicate_Tensors_Map_Judge::comm_map2_first(comm_h.comm, Cs_data.data_libri,
+                                                               s0_s1.first, s0_s1.second);
     // #pragma omp parallel for schedule(dynamic) collapse(2)
     for (int mu = 0; mu < n_abf; ++mu)
     {
-        for (int ik = 0; ik != nk; ik++)
+        for (const int ik : kpoints_local)
         {
             // mpi_comm_global_h.barrier();
             // profiler.start("transform_Cs2mnk");
-            auto desc_C_mnk = transform_Cs2mnk(ik, mu, Cs_IJ);
+            auto desc_C_mnk =
+                use_kblacs ? transform_Cs2mnk_kblacs(ik, mu, Cs_IJ, wing_blacs_h, kfrac_band[ik])
+                           : transform_Cs2mnk(ik, mu, Cs_IJ);
             // profiler.stop("transform_Cs2mnk");
             auto &desc_nband_nband = desc_C_mnk.first;
             auto &C_mnk = desc_C_mnk.second;
             // profiler.start("compute_wing");
-            for (std::size_t iomega = 0; iomega != this->omega.size(); iomega++)
+            for (int isp = 0; isp != n_spin; isp++)
             {
-                for (int alpha = 0; alpha != 3; alpha++)
+                const bool use_soc_wing = meanfield_df.get_n_spinor() > 1;
+                const auto &eigenvalues = this->meanfield_df.get_eigenvals();
+                const auto &wg = this->meanfield_df.get_weight()[isp];
+                const auto &velocity = this->velocity_[isp][ik];
+                auto *wing_mu_for_mu = local_wing_mu.data() + as_size(mu) * this->omega.size() * 3;
+
+                for (int iocc = 0; iocc != n_states; iocc++)
                 {
-                    for (int isp = 0; isp != n_spin; isp++)
+                    const int loc_m = desc_nband_nband.indx_g2l_r(iocc);
+                    if (loc_m < 0) continue;
+
+                    for (int iunocc = iocc + 1; iunocc != n_states; iunocc++)
                     {
-                        std::complex<double> tmp =
-                            compute_wing(alpha, iomega, mu, ik, isp, desc_nband_nband, C_mnk);
-                        const std::size_t index = as_size(mu) * this->omega.size() * 3 + iomega * 3 + as_size(alpha);
-                        local_wing_mu[index] += tmp;
+                        const int loc_n = desc_nband_nband.indx_g2l_c(iunocc);
+                        if (loc_n < 0) continue;
+
+                        const double egap =
+                            eigenvalues[isp](ik, iunocc) - eigenvalues[isp](ik, iocc);
+                        double factor1 = 0.0;
+                        double factor2 = 0.0;
+                        if (use_soc_wing)
+                        {
+                            factor1 = wg(ik, iocc) * (1.0 - wg(ik, iunocc) * nk);
+                            factor2 = wg(ik, iunocc) * (1.0 - wg(ik, iocc) * nk);
+                        }
+                        else
+                        {
+                            factor1 = wg(ik, iocc) / 2 * n_spin *
+                                      (1.0 - wg(ik, iunocc) / 2 * n_spin * nk);
+                            factor2 = wg(ik, iunocc) / 2 * n_spin *
+                                      (1.0 - wg(ik, iocc) / 2 * n_spin * nk);
+                        }
+                        if (factor1 <= 1.e-8 && factor2 <= 1.e-8) continue;
+
+                        const auto c_mn = C_mnk(loc_m, loc_n);
+                        const std::array<std::complex<double>, 3> velocity_unocc_occ{
+                            velocity[0](iunocc, iocc), velocity[1](iunocc, iocc),
+                            velocity[2](iunocc, iocc)};
+                        accumulate_wing_mu_for_pair(this->omega, velocity_unocc_occ, c_mn, egap,
+                                                    factor1, factor2, wing_mu_for_mu);
                     }
                 }
             }
@@ -418,7 +984,8 @@ void diele_func::cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
         {
             for (std::size_t iomega = 0; iomega != this->omega.size(); iomega++)
             {
-                const std::size_t index = as_size(mu) * this->omega.size() * 3 + iomega * 3 + as_size(alpha);
+                const std::size_t index =
+                    as_size(mu) * this->omega.size() * 3 + iomega * 3 + as_size(alpha);
                 this->wing_mu.at(iomega)(mu, alpha) = local_wing_mu[index];
                 this->wing_mu.at(iomega)(mu, alpha) *=
                     -dielectric_unit * headwing_spin_prefactor(n_spin, use_soc);
@@ -432,6 +999,172 @@ void diele_func::cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
     release_free_mem();
     profiler.stop("cal_wing_mu");
 };
+
+void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
+                                    const atpair_k_cplx_mat_t &Vq)
+{
+    using global::profiler;
+    profiler.start("cal_wing_mu");
+
+    init_wing(coulomb_eigen_threshold, Vq);
+    std::vector<std::complex<double>> local_wing_mu;
+    local_wing_mu.resize(this->omega.size() * 3 * n_abf, 0.0);
+
+    const bool use_kblacs = use_matching_kpoint_blacs(nk, kblacs_ctxt_);
+    const BlacsCtxtHandler &wing_blacs_h = use_kblacs ? kblacs_ctxt_->blacs_h : blacs_h;
+    const auto kpoints_local = headwing_local_kpoints(nk, use_kblacs ? kblacs_ctxt_ : nullptr);
+
+    ArrayDesc desc_nao_nao(wing_blacs_h);
+    desc_nao_nao.init_1b1p(n_basis, n_basis, 0, 0);
+    const auto set_IJ_nao_nao =
+        get_necessary_IJ_from_block_2D(atomic_basis_wfc_, atomic_basis_wfc_, desc_nao_nao);
+    auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao);
+    auto Cs_IJ = RI::Communicate_Tensors_Map_Judge::comm_map2_first(comm_h.comm, Cs_data.data_libri,
+                                                                    s0_s1.first, s0_s1.second);
+
+    if (symmetry_context_ == nullptr)
+        throw std::runtime_error("cal_wing_symmetric: symmetry context is not set");
+    const auto &ctx = *symmetry_context_;
+    const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
+    const auto member_targets =
+        librpa_int::build_input_symmetry_kstar_member_kfrac_targets(ctx, pbc_);
+
+    const int n_kpoints_ibz = nk;
+    const int n_spinor = meanfield_df.get_n_spinor();
+    const int n_kpoints_bz = static_cast<int>(ctx.count_kstar_members());
+    const double bz_weight_scale_wing =
+        static_cast<double>(n_kpoints_ibz) / static_cast<double>(n_kpoints_bz);
+    const bool source_rank = wing_blacs_h.myprow == 0 && wing_blacs_h.mypcol == 0;
+
+    for (const int ik_ibz : kpoints_local)
+    {
+        const auto &k_ibz = kfrac_band[ik_ibz];
+        const auto &star = librpa_int::find_input_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
+        if (star.members.empty()) throw std::runtime_error("cal_wing_symmetric: empty k-star");
+
+        for (std::size_t imember = 0; imember != star.members.size(); ++imember)
+        {
+            const auto &member = star.members[imember];
+            const bool use_time_reversal = member.isym >= nsym_space;
+            const auto &k_bz =
+                member_targets.empty() ? member.k_bz : member_targets[ik_ibz][imember];
+
+            std::vector<std::array<ComplexMatrix, 3>> velocity_bz(n_spin);
+            for (int ispin = 0; ispin != n_spin; ++ispin)
+            {
+                const std::array<ComplexMatrix, 3> v_band_ibz{velocity_[ispin][ik_ibz][0],
+                                                              velocity_[ispin][ik_ibz][1],
+                                                              velocity_[ispin][ik_ibz][2]};
+                velocity_bz[ispin] = rotate_headwing_velocity_by_shape(
+                    ctx, member, v_band_ibz, n_states, use_time_reversal);
+            }
+
+            std::vector<std::vector<ComplexMatrix>> wfc_bz_storage(n_spin);
+            std::vector<std::vector<const ComplexMatrix *>> wfc_bz_ptrs(n_spin);
+            for (int ispin = 0; ispin != n_spin; ++ispin)
+            {
+                wfc_bz_storage[ispin].resize(n_spinor);
+                wfc_bz_ptrs[ispin].assign(n_spinor, nullptr);
+            }
+            if (source_rank)
+            {
+                const auto M_full = build_input_symmetry_ao_bloch_rotation_matrix_full(
+                    ctx, member, atom_nw, k_ibz, coord_frac, use_time_reversal, &k_bz);
+                const ComplexMatrix M_full_conj = conj(M_full);
+                for (int ispin = 0; ispin != n_spin; ++ispin)
+                {
+                    for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+                    {
+                        const auto *C_ibz = meanfield_df.find_wfc(ispin, ispinor, ik_ibz);
+                        if (C_ibz == nullptr) continue;
+                        wfc_bz_storage[ispin][ispinor] = (*C_ibz) * M_full_conj;
+                        wfc_bz_ptrs[ispin][ispinor] = &wfc_bz_storage[ispin][ispinor];
+                    }
+                }
+            }
+
+            for (int mu = 0; mu != n_abf; ++mu)
+            {
+                auto desc_C_mnk =
+                    transform_Cs2mnk_kblacs(ik_ibz, mu, Cs_IJ, wing_blacs_h, k_bz, &wfc_bz_ptrs);
+                auto &desc_nband_nband = desc_C_mnk.first;
+                auto &C_mnk = desc_C_mnk.second;
+                auto *wing_mu_for_mu = local_wing_mu.data() + as_size(mu) * this->omega.size() * 3;
+
+                for (int isp = 0; isp != n_spin; ++isp)
+                {
+                    const bool use_soc_wing = meanfield_df.get_n_spinor() > 1;
+                    const auto &eigenvalues = this->meanfield_df.get_eigenvals();
+                    const auto &wg = this->meanfield_df.get_weight()[isp];
+                    const auto &velocity = velocity_bz[isp];
+
+                    for (int iocc = 0; iocc != n_states; iocc++)
+                    {
+                        const int loc_m = desc_nband_nband.indx_g2l_r(iocc);
+                        if (loc_m < 0) continue;
+
+                        for (int iunocc = iocc + 1; iunocc != n_states; iunocc++)
+                        {
+                            const int loc_n = desc_nband_nband.indx_g2l_c(iunocc);
+                            if (loc_n < 0) continue;
+
+                            const double egap =
+                                eigenvalues[isp](ik_ibz, iunocc) - eigenvalues[isp](ik_ibz, iocc);
+                            const double wg_occ = wg(ik_ibz, iocc) * bz_weight_scale_wing;
+                            const double wg_unocc = wg(ik_ibz, iunocc) * bz_weight_scale_wing;
+                            double factor1 = 0.0;
+                            double factor2 = 0.0;
+                            if (use_soc_wing)
+                            {
+                                factor1 = wg_occ * (1.0 - wg_unocc * n_kpoints_bz);
+                                factor2 = wg_unocc * (1.0 - wg_occ * n_kpoints_bz);
+                            }
+                            else
+                            {
+                                factor1 = wg_occ / 2 * n_spin *
+                                          (1.0 - wg_unocc / 2 * n_spin * n_kpoints_bz);
+                                factor2 = wg_unocc / 2 * n_spin *
+                                          (1.0 - wg_occ / 2 * n_spin * n_kpoints_bz);
+                            }
+                            if (factor1 <= 1.e-8 && factor2 <= 1.e-8) continue;
+
+                            const auto c_mn = C_mnk(loc_m, loc_n);
+                            const std::array<std::complex<double>, 3> velocity_unocc_occ{
+                                velocity[0](iunocc, iocc), velocity[1](iunocc, iocc),
+                                velocity[2](iunocc, iocc)};
+                            accumulate_wing_mu_for_pair(this->omega, velocity_unocc_occ, c_mn, egap,
+                                                        factor1, factor2, wing_mu_for_mu);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    profiler.start("Comm_wing");
+    MPI_Allreduce(MPI_IN_PLACE, local_wing_mu.data(), static_cast<int>(local_wing_mu.size()),
+                  MPI_CXX_DOUBLE_COMPLEX, MPI_SUM, MPI_COMM_WORLD);
+    profiler.stop("Comm_wing");
+    double dielectric_unit = cal_factor("wing");
+
+    for (int alpha = 0; alpha != 3; alpha++)
+    {
+        for (int mu = 0; mu != n_abf; mu++)
+        {
+            for (std::size_t iomega = 0; iomega != this->omega.size(); iomega++)
+            {
+                const std::size_t index =
+                    as_size(mu) * this->omega.size() * 3 + iomega * 3 + as_size(alpha);
+                this->wing_mu.at(iomega)(mu, alpha) = local_wing_mu[index];
+                this->wing_mu.at(iomega)(mu, alpha) *=
+                    -dielectric_unit * headwing_spin_prefactor(n_spin, use_soc);
+            }
+        }
+    }
+    if (comm_h.is_root()) std::cout << "* Success: calculate wing term." << std::endl;
+    release_free_mem();
+    profiler.stop("cal_wing_mu");
+}
 
 std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(
     const int ik, const int mu,
@@ -472,8 +1205,9 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(
     C_nao_nao.zero_out();
     C_Mu_nband.zero_out();
     C_nband_nband.zero_out();
-    collect_block_from_IJ_storage_tensor_transform_triple(
-        C_nao_nao, desc_nao_nao, atomic_basis_wfc_, atomic_basis_wfc_, fourier, Cs_IJ, Mu, mu_local);
+    collect_block_from_IJ_storage_tensor_transform_triple(C_nao_nao, desc_nao_nao,
+                                                          atomic_basis_wfc_, atomic_basis_wfc_,
+                                                          fourier, Cs_IJ, Mu, mu_local);
     // if (ik == 1 && mu == 4)
     // {
     //     for (const auto IJRc : Cs_IJ)
@@ -540,6 +1274,119 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(
     return std::make_pair(desc_nband_nband, C_nband_nband);
 };
 
+std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk_kblacs(
+    const int ik, const int mu,
+    std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ,
+    const BlacsCtxtHandler &wing_blacs_h, const Vector3_Order<double> &kfrac,
+    const std::vector<std::vector<const ComplexMatrix *>> *wfc_override)
+{
+    const int n_soc = meanfield_df.get_n_spinor();
+    const int Mu = atomic_basis_abf_.get_i_atom(mu);
+    const int mu_local = atomic_basis_abf_.get_local_index(mu, Mu);
+    const int n_ao_Mu = atomic_basis_wfc_.get_atom_nb(Mu);
+
+    ArrayDesc desc_nao_nband(wing_blacs_h);
+    desc_nao_nband.init_1b1p(n_basis, n_states, 0, 0);
+    ArrayDesc desc_wfc_src(wing_blacs_h);
+    desc_wfc_src.init(n_basis, n_states, n_basis, n_states, 0, 0);
+    ArrayDesc desc_Mu_nband(wing_blacs_h);
+    desc_Mu_nband.init_1b1p(n_ao_Mu, n_states, 0, 0);
+    ArrayDesc desc_nao_nao(wing_blacs_h);
+    desc_nao_nao.init_1b1p(n_basis, n_basis, 0, 0);
+    ArrayDesc desc_nband_nband(wing_blacs_h);
+    desc_nband_nband.init_1b1p(n_states, n_states, 0, 0);
+
+    auto C_nao_nao = init_local_mat<complex<double>>(desc_nao_nao, MAJOR::COL);
+    auto C_Mu_nband = init_local_mat<complex<double>>(desc_Mu_nband, MAJOR::COL);
+    auto C_nband_nband = init_local_mat<complex<double>>(desc_nband_nband, MAJOR::COL);
+    auto wfc_nao_nband = init_local_mat<complex<double>>(desc_nao_nband, MAJOR::COL);
+    auto wfc_Mu_nband = init_local_mat<complex<double>>(desc_Mu_nband, MAJOR::COL);
+
+    const std::function<complex<double>(const int &, const std::pair<int, std::array<int, 3>> &)>
+        fourier = [kfrac](const int &I, const std::pair<int, std::array<int, 3>> &J_Ra)
+    {
+        const auto &Ra = J_Ra.second;
+        Vector3<double> R_IJ(Ra[0], Ra[1], Ra[2]);
+        const auto ang = (kfrac * R_IJ) * TWO_PI;
+        return complex<double>{std::cos(ang), std::sin(ang)};
+    };
+
+    C_nao_nao.zero_out();
+    C_Mu_nband.zero_out();
+    C_nband_nband.zero_out();
+    collect_block_from_IJ_storage_tensor_transform_triple(C_nao_nao, desc_nao_nao,
+                                                          atomic_basis_wfc_, atomic_basis_wfc_,
+                                                          fourier, Cs_IJ, Mu, mu_local);
+
+    const auto get_wfc = [&](const int ispin, const int ispinor) -> const ComplexMatrix *
+    {
+        if (wfc_override)
+        {
+            return (*wfc_override).at(ispin).at(ispinor);
+        }
+        return meanfield_df.find_wfc(ispin, ispinor, ik);
+    };
+
+    std::vector<complex<double>> dummy_wfc(1, {0.0, 0.0});
+    const bool is_source_rank = desc_wfc_src.is_src();
+    for (int ispin = 0; ispin != n_spin; ispin++)
+    {
+        for (int is1 = 0; is1 != n_soc; is1++)
+        {
+            for (int is2 = 0; is2 != n_soc; is2++)
+            {
+                const ComplexMatrix *wfc_isp1_k = get_wfc(ispin, is1);
+                const ComplexMatrix *wfc_isp2_k = get_wfc(ispin, is2);
+
+                const int bad_source_local =
+                    is_source_rank && (wfc_isp1_k == nullptr || wfc_isp2_k == nullptr ||
+                                       wfc_isp1_k->nr != n_states || wfc_isp1_k->nc != n_basis ||
+                                       wfc_isp2_k->nr != n_states || wfc_isp2_k->nc != n_basis);
+                int bad_source = 0;
+                MPI_Allreduce(&bad_source_local, &bad_source, 1, MPI_INT, MPI_MAX,
+                              wing_blacs_h.comm());
+                if (bad_source)
+                    throw LIBRPA_RUNTIME_ERROR(
+                        "transform_Cs2mnk_kblacs: missing or inconsistent source eigenvector");
+
+                const complex<double> *wfc2_src =
+                    wfc_isp2_k == nullptr ? dummy_wfc.data() : wfc_isp2_k->c;
+                wfc_nao_nband.zero_out();
+                ScalapackConnector::pgemr2d_f(n_basis, n_states, wfc2_src, 1, 1, desc_wfc_src.desc,
+                                              wfc_nao_nband.ptr(), 1, 1, desc_nao_nband.desc,
+                                              wing_blacs_h.ictxt);
+
+                C_Mu_nband.zero_out();
+                ScalapackConnector::pgemm_f(
+                    'N', 'N', n_ao_Mu, n_states, n_basis, 1.0, C_nao_nao.ptr(),
+                    1 + atomic_basis_wfc_.get_part_range()[Mu], 1, desc_nao_nao.desc,
+                    wfc_nao_nband.ptr(), 1, 1, desc_nao_nband.desc, 0.0, C_Mu_nband.ptr(), 1, 1,
+                    desc_Mu_nband.desc);
+
+                const complex<double> *wfc1_src =
+                    wfc_isp1_k == nullptr ? dummy_wfc.data() : wfc_isp1_k->c;
+                wfc_Mu_nband.zero_out();
+                ScalapackConnector::pgemr2d_f(n_ao_Mu, n_states, wfc1_src,
+                                              1 + atomic_basis_wfc_.get_part_range()[Mu], 1,
+                                              desc_wfc_src.desc, wfc_Mu_nband.ptr(), 1, 1,
+                                              desc_Mu_nband.desc, wing_blacs_h.ictxt);
+
+                auto wfc_Mu_nband_conj = conj(wfc_Mu_nband);
+                ScalapackConnector::pgemm_f('T', 'N', n_states, n_states, n_ao_Mu, 1.0,
+                                            wfc_Mu_nband_conj.ptr(), 1, 1, desc_Mu_nband.desc,
+                                            C_Mu_nband.ptr(), 1, 1, desc_Mu_nband.desc, 1.0,
+                                            C_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
+                ScalapackConnector::pgemm_f('C', 'N', n_states, n_states, n_ao_Mu, 1.0,
+                                            C_Mu_nband.ptr(), 1, 1, desc_Mu_nband.desc,
+                                            wfc_Mu_nband.ptr(), 1, 1, desc_Mu_nband.desc, 1.0,
+                                            C_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
+            }
+        }
+    }
+
+    return std::make_pair(desc_nband_nband, C_nband_nband);
+}
+
 std::complex<double> diele_func::compute_wing(const int alpha, const int iomega, const int mu,
                                               const int ik, const int ispin,
                                               const ArrayDesc &desc_nband_nband,
@@ -566,13 +1413,16 @@ std::complex<double> diele_func::compute_wing(const int alpha, const int iomega,
                 double factor2;
                 if (use_soc)
                 {
-                    factor1 = wg.c[iocc] * (1.0 - wg.c[iunocc] * nk);
-                    factor2 = wg.c[iunocc] * (1.0 - wg.c[iocc] * nk);
+                    // NOTE: wg is matrix(n_kpoints, n_states); use wg(ik, ib) so the
+                    // k-dependence of the occupation is honored. The factor `* nk` recovers
+                    // the occupation count (wg was divided by n_kpoints at read time).
+                    factor1 = wg(ik, iocc) * (1.0 - wg(ik, iunocc) * nk);
+                    factor2 = wg(ik, iunocc) * (1.0 - wg(ik, iocc) * nk);
                 }
                 else
                 {
-                    factor1 = wg.c[iocc] / 2 * n_spin * (1.0 - wg.c[iunocc] / 2 * n_spin * nk);
-                    factor2 = wg.c[iunocc] / 2 * n_spin * (1.0 - wg.c[iocc] / 2 * n_spin * nk);
+                    factor1 = wg(ik, iocc) / 2 * n_spin * (1.0 - wg(ik, iunocc) / 2 * n_spin * nk);
+                    factor2 = wg(ik, iunocc) / 2 * n_spin * (1.0 - wg(ik, iocc) / 2 * n_spin * nk);
                 }
                 if (factor1 > 1.e-8)
                 {
@@ -618,11 +1468,15 @@ std::complex<double> diele_func::compute_wing(const int alpha, const int iomega,
 };
 
 void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blacs,
-                                   ArrayDesc &desc_nabf_nabf_opt)
+                                   ArrayDesc &desc_nabf_nabf_opt,
+                                   const std::size_t n_nonsingular_in)
 {
     using global::profiler;
 
     profiler.start("cal_wing");
+    this->n_nonsingular = n_nonsingular_in;
+    if (this->n_nonsingular < 2)
+        throw std::logic_error("Head/wing Coulomb subspace has no regular channels");
     int n_lambda = this->n_nonsingular - 1;
     ArrayDesc desc_wing_mu(blacs_h);
     desc_wing_mu.init_square_blk(n_abf, 3, 0, 0);
@@ -634,6 +1488,8 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
     ArrayDesc desc_wing_opt(blacs_h);
     desc_wing_opt.init(n_nonsingular - 1, 3, desc_body.mb(), desc_wing.nb(), 0, 0);
     const int n_omegas = this->omega.size();
+    this->wing.clear();
+    this->wing.resize(n_omegas);
 
     for (int iomega = 0; iomega != n_omegas; iomega++)
     {
@@ -673,7 +1529,7 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
 //     using RI::Tensor;
 //     using RI::Communicate_Tensors_Map_Judge::comm_map2_first;
 //     using librpa_int::global::mpi_comm_global_h;
-// 
+//
 //     this->Coul_vector.clear();
 //     this->Coul_value.clear();
 //     const double CONE = 1.0;
@@ -681,12 +1537,12 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
 //     Vector3_Order<double> q = {0.0, 0.0, 0.0};
 //     size_t n_singular;
 //     vec<double> eigenvalues(n_abf);
-// 
+//
 //     const auto &comm_h = mpi_comm_global_h;
-// 
+//
 //     comm_h.barrier();
 //     BlacsCtxtHandler blacs_h(comm_h.comm);
-// 
+//
 //     ArrayDesc desc_nabf_nabf(blacs_h);
 //     desc_nabf_nabf.init_square_blk(n_abf, n_abf, 0, 0);
 //     const auto set_IJ_nabf_nabf =
@@ -735,19 +1591,20 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
 //         // however, what we want is descending order.
 //         this->Coul_value.push_back(eigenvalues.c[iv] + 0.0);  // throw away the largest one
 //         std::vector<std::complex<double>> newRow;
-// 
+//
 //         for (int jabf = 0; jabf != n_abf; jabf++)
 //         {
 //             newRow.push_back(coul_eigen_block(jabf, iv));
 //         }
 //         this->Coul_vector.push_back(newRow);
 //     }
-// 
+//
 //     if (mpi_comm_global_h.is_root())
 //     {
 //         std::cout << "The largest/smallest eigenvalue of Coulomb matrix(non-singular): "
 //                   << this->Coul_value.front() << ", " << this->Coul_value.back() << std::endl;
-//         std::cout << "The 1st/2nd/3rd/-1th eigenvalue of Coulomb matrix(Full): " << eigenvalues.c[0]
+//         std::cout << "The 1st/2nd/3rd/-1th eigenvalue of Coulomb matrix(Full): " <<
+//         eigenvalues.c[0]
 //                   << ", " << eigenvalues.c[1] << ", " << eigenvalues.c[2] << ", "
 //                   << eigenvalues.c[n_abf - 1] << std::endl;
 //         std::cout << "Dim of eigenvectors: " << coul_eigen_block.nr() << ", "
@@ -772,7 +1629,8 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
 //         std::cout << "* Success: diagonalize Coulomb matrix in the ABFs repre." << std::endl;
 // };
 
-void diele_func::get_Xv_cpl(double coulomb_eigen_threshold, const librpa_int::atpair_k_cplx_mat_t &Vq)
+void diele_func::get_Xv_cpl(double coulomb_eigen_threshold,
+                            const librpa_int::atpair_k_cplx_mat_t &Vq)
 {
     using global::profiler;
 
@@ -803,8 +1661,7 @@ void diele_func::get_Xv_cpl(double coulomb_eigen_threshold, const librpa_int::at
         const auto Mu = Mu_Nu.first;
         const auto Nu = Mu_Nu.second;
         // ofs_myid << "Mu " << Mu << " Nu " << Nu << endl;
-        if (Vq.count(Mu) == 0 || Vq.at(Mu).count(Nu) == 0 ||
-            Vq.at(Mu).at(Nu).count(q) == 0)
+        if (Vq.count(Mu) == 0 || Vq.at(Mu).count(Nu) == 0 || Vq.at(Mu).at(Nu).count(q) == 0)
             continue;
         const auto &Vq0 = Vq.at(Mu).at(Nu).at(q);
         const auto n_mu = atomic_basis_abf_.get_atom_nb(Mu);
@@ -933,7 +1790,7 @@ void diele_func::test_wing()
 };
 
 ArrayDesc diele_func::get_body_inv(matrix_m<std::complex<double>> &chi0_block,
-                                    ArrayDesc &desc_nabf_nabf_opt)
+                                   ArrayDesc &desc_nabf_nabf_opt)
 {
     using global::profiler;
 
@@ -1000,15 +1857,15 @@ void diele_func::construct_L(const int ifreq, ArrayDesc &desc_body)
     auto _3_lam = init_local_mat<complex<double>>(desc_3_lam, MAJOR::COL);
     auto Lind_loc = init_local_mat<complex<double>>(desc_3_3, MAJOR::COL);
     // tmp = head.at(ifreq) - transpose(wing.at(ifreq), true) * body_inv * wing.at(ifreq);
-    ScalapackConnector::pgemm_f('N', 'N', n_lambda, 3, n_lambda, 1.0,
-                                body_inv.ptr(), 1, 1, desc_body.desc, wing.at(ifreq).ptr(), 1, 1,
-                                desc_wing_opt.desc, 0.0, lam_3.ptr(), 1, 1, desc_lam_3.desc);
+    ScalapackConnector::pgemm_f('N', 'N', n_lambda, 3, n_lambda, 1.0, body_inv.ptr(), 1, 1,
+                                desc_body.desc, wing.at(ifreq).ptr(), 1, 1, desc_wing_opt.desc, 0.0,
+                                lam_3.ptr(), 1, 1, desc_lam_3.desc);
     ScalapackConnector::pgemm_f('C', 'N', 3, 3, n_lambda, 1.0, wing.at(ifreq).ptr(), 1, 1,
                                 desc_wing_opt.desc, lam_3.ptr(), 1, 1, desc_lam_3.desc, 0.0,
                                 Lind_loc.ptr(), 1, 1, desc_3_3.desc);
-    ScalapackConnector::pgemm_f('C', 'N', 3, n_lambda, n_lambda, 1.0,
-                                wing.at(ifreq).ptr(), 1, 1, desc_wing_opt.desc, body_inv.ptr(), 1,
-                                1, desc_body.desc, 0.0, _3_lam.ptr(), 1, 1, desc_3_lam.desc);
+    ScalapackConnector::pgemm_f('C', 'N', 3, n_lambda, n_lambda, 1.0, wing.at(ifreq).ptr(), 1, 1,
+                                desc_wing_opt.desc, body_inv.ptr(), 1, 1, desc_body.desc, 0.0,
+                                _3_lam.ptr(), 1, 1, desc_3_lam.desc);
 
     for (int i = 0; i != 3; i++)
     {
@@ -1036,22 +1893,21 @@ void diele_func::construct_L(const int ifreq, ArrayDesc &desc_body)
             auto loc_j = desc_3_3.indx_g2l_c(j);
             if (loc_j >= 0 && loc_i >= 0)
                 this->Lind(i, j) = head.at(ifreq)(i, j) - Lind_loc(loc_i, loc_j);
-            MPI_Allreduce(MPI_IN_PLACE, &Lind(i, j), 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
-                          comm_h.comm);
+            MPI_Allreduce(MPI_IN_PLACE, &Lind(i, j), 1, MPI_DOUBLE_COMPLEX, MPI_SUM, comm_h.comm);
         }
     }
 
     profiler.stop("cal_L");
 };
 
-void diele_func::construct_rpa_trace_log_schur(
-    const int ifreq, ArrayDesc &desc_body, const int wing_row_offset)
+void diele_func::construct_rpa_trace_log_schur(const int ifreq, ArrayDesc &desc_body,
+                                               const int wing_row_offset)
 {
     using global::profiler;
 
     profiler.start("cal_rpa_chi0v_schur");
-    if (ifreq < 0 || static_cast<std::size_t>(ifreq) >= head.size()
-        || static_cast<std::size_t>(ifreq) >= wing.size())
+    if (ifreq < 0 || static_cast<std::size_t>(ifreq) >= head.size() ||
+        static_cast<std::size_t>(ifreq) >= wing.size())
     {
         std::ostringstream oss;
         oss << "RPA chi0*v head/wing data unavailable for ifreq=" << ifreq
@@ -1062,22 +1918,13 @@ void diele_func::construct_rpa_trace_log_schur(
     const auto chi0v_head = get_rpa_chi0v_head(ifreq);
     const auto chi0v_wing = get_rpa_chi0v_wing(ifreq);
     const int n_body = desc_body.m();
-    if (n_body <= 0 || wing_row_offset < 0 || wing_row_offset + n_body > chi0v_wing.nr())
-    {
-        std::ostringstream oss;
-        oss << "RPA chi0*v Schur wing/body mismatch: n_body=" << n_body
-            << ", wing_row_offset=" << wing_row_offset << ", wing_rows=" << chi0v_wing.nr();
-        throw std::logic_error(oss.str());
-    }
 
     this->Lind.resize(3, 3, MAJOR::COL);
     this->bw.resize(n_body, 3, MAJOR::COL);
     this->wb.resize(3, n_body, MAJOR::COL);
 
-    ArrayDesc desc_wing(blacs_h);
-    desc_wing.init_square_blk(chi0v_wing.nr(), 3, 0, 0);
-    ArrayDesc desc_wing_opt(blacs_h);
-    desc_wing_opt.init(chi0v_wing.nr(), 3, desc_body.mb(), desc_wing.nb(), 0, 0);
+    const auto desc_wing_opt =
+        make_rpa_chi0v_wing_desc(desc_body, wing_row_offset, chi0v_wing.nr(), chi0v_wing.nc());
 
     ArrayDesc desc_lam_3(blacs_h);
     desc_lam_3.init_square_blk(n_body, 3, 0, 0);
@@ -1095,10 +1942,9 @@ void diele_func::construct_rpa_trace_log_schur(
     ScalapackConnector::pgemm_f('N', 'N', n_body, 3, n_body, 1.0, body_inv.ptr(), 1, 1,
                                 desc_body.desc, chi0v_wing.ptr(), 1 + wing_row_offset, 1,
                                 desc_wing_opt.desc, 0.0, lam_3.ptr(), 1, 1, desc_lam_3.desc);
-    ScalapackConnector::pgemm_f('C', 'N', 3, 3, n_body, 1.0, chi0v_wing.ptr(),
-                                1 + wing_row_offset, 1, desc_wing_opt.desc, lam_3.ptr(), 1, 1,
-                                desc_lam_3.desc, 0.0, schur_correction.ptr(), 1, 1,
-                                desc_3_3.desc);
+    ScalapackConnector::pgemm_f('C', 'N', 3, 3, n_body, 1.0, chi0v_wing.ptr(), 1 + wing_row_offset,
+                                1, desc_wing_opt.desc, lam_3.ptr(), 1, 1, desc_lam_3.desc, 0.0,
+                                schur_correction.ptr(), 1, 1, desc_3_3.desc);
     ScalapackConnector::pgemm_f('C', 'N', 3, n_body, n_body, 1.0, chi0v_wing.ptr(),
                                 1 + wing_row_offset, 1, desc_wing_opt.desc, body_inv.ptr(), 1, 1,
                                 desc_body.desc, 0.0, _3_lam.ptr(), 1, 1, desc_3_lam.desc);
@@ -1132,8 +1978,7 @@ void diele_func::construct_rpa_trace_log_schur(
             {
                 correction = schur_correction(loc_i, loc_j);
             }
-            MPI_Allreduce(MPI_IN_PLACE, &correction, 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
-                          comm_h.comm);
+            MPI_Allreduce(MPI_IN_PLACE, &correction, 1, MPI_DOUBLE_COMPLEX, MPI_SUM, comm_h.comm);
 
             this->Lind(i, j) = -chi0v_head(i, j) - correction;
             if (i == j) this->Lind(i, j) += 1.0;
@@ -1639,8 +2484,7 @@ void diele_func::assign_chi0(matrix_m<std::complex<double>> &chi0_block,
     comm_h.barrier();
 
     ScalapackConnector::pgemr2d_f(n_abf, n_abf, this->chi0.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                                  chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                                  blacs_h.ictxt);
+                                  chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, blacs_h.ictxt);
 
     profiler.stop("assign_chi0");
 }
@@ -1668,18 +2512,38 @@ double rpa_headwing_reciprocal_cell_volume(const PeriodicBoundaryData &pbc,
     return std::abs(pbc.G.Det());
 }
 
+ArrayDesc make_rpa_chi0v_wing_desc(const ArrayDesc &desc_body, const int wing_row_offset,
+                                   const int wing_rows_loc, const int wing_cols_loc)
+{
+    const int n_body = desc_body.m();
+    const int wing_rows = wing_row_offset + n_body;
+    if (n_body <= 0 || wing_row_offset < 0)
+    {
+        std::ostringstream oss;
+        oss << "RPA chi0*v Schur wing/body mismatch: n_body=" << n_body
+            << ", wing_row_offset=" << wing_row_offset;
+        throw std::logic_error(oss.str());
+    }
+
+    ArrayDesc desc_wing(desc_body.ictxt());
+    desc_wing.init(wing_rows, 3, desc_body.mb(), 1, 0, 0);
+    if (wing_rows_loc != desc_wing.m_loc() || wing_cols_loc != desc_wing.n_loc())
+    {
+        std::ostringstream oss;
+        oss << "RPA chi0*v Schur wing local descriptor mismatch: global_wing_rows=" << wing_rows
+            << ", local_wing=" << wing_rows_loc << "x" << wing_cols_loc
+            << ", expected_local_wing=" << desc_wing.m_loc() << "x" << desc_wing.n_loc();
+        throw std::logic_error(oss.str());
+    }
+    return desc_wing;
+}
+
 std::complex<double> compute_rpa_chi0v_headwing_trace_log_average(
-    const matrix_m<std::complex<double>> &head,
-    const matrix_m<std::complex<double>> &schur_l,
-    const std::complex<double> &trace_body,
-    const std::complex<double> &logdet_body,
-    const std::vector<double> &qx,
-    const std::vector<double> &qy,
-    const std::vector<double> &qz,
-    const std::vector<double> &weights,
-    double *weight_sum_out,
-    std::complex<double> *averaged_body_out,
-    std::complex<double> *averaged_head_out,
+    const matrix_m<std::complex<double>> &head, const matrix_m<std::complex<double>> &schur_l,
+    const std::complex<double> &trace_body, const std::complex<double> &logdet_body,
+    const std::vector<double> &qx, const std::vector<double> &qy, const std::vector<double> &qz,
+    const std::vector<double> &weights, double *weight_sum_out,
+    std::complex<double> *averaged_body_out, std::complex<double> *averaged_head_out,
     std::complex<double> *averaged_schur_log_out)
 {
     if (head.nr() != 3 || head.nc() != 3 || schur_l.nr() != 3 || schur_l.nc() != 3)
@@ -1701,14 +2565,13 @@ std::complex<double> compute_rpa_chi0v_headwing_trace_log_average(
         const double nx = qx[i];
         const double ny = qy[i];
         const double nz = qz[i];
-        const auto directional_head =
-            nx * (nx * head(0, 0) + ny * head(0, 1) + nz * head(0, 2))
-            + ny * (nx * head(1, 0) + ny * head(1, 1) + nz * head(1, 2))
-            + nz * (nx * head(2, 0) + ny * head(2, 1) + nz * head(2, 2));
+        const auto directional_head = nx * (nx * head(0, 0) + ny * head(0, 1) + nz * head(0, 2)) +
+                                      ny * (nx * head(1, 0) + ny * head(1, 1) + nz * head(1, 2)) +
+                                      nz * (nx * head(2, 0) + ny * head(2, 1) + nz * head(2, 2));
         const auto directional_schur =
-            nx * (nx * schur_l(0, 0) + ny * schur_l(0, 1) + nz * schur_l(0, 2))
-            + ny * (nx * schur_l(1, 0) + ny * schur_l(1, 1) + nz * schur_l(1, 2))
-            + nz * (nx * schur_l(2, 0) + ny * schur_l(2, 1) + nz * schur_l(2, 2));
+            nx * (nx * schur_l(0, 0) + ny * schur_l(0, 1) + nz * schur_l(0, 2)) +
+            ny * (nx * schur_l(1, 0) + ny * schur_l(1, 1) + nz * schur_l(1, 2)) +
+            nz * (nx * schur_l(2, 0) + ny * schur_l(2, 1) + nz * schur_l(2, 2));
         averaged_head += weights[i] * directional_head;
         averaged_schur_log += weights[i] * std::log(directional_schur);
     }
@@ -1781,6 +2644,34 @@ void replace_rpa_response_headwing(matrix_m<std::complex<double>> &response_bloc
     }
 }
 
+void replace_rpa_response_head_only(matrix_m<std::complex<double>> &response_block,
+                                    const matrix_m<std::complex<double>> &head,
+                                    const ArrayDesc &desc_response)
+{
+    if (head.nr() != 3 || head.nc() != 3)
+    {
+        throw std::logic_error("RPA head-only replacement expects a 3x3 chi0*v head");
+    }
+    if (desc_response.m() < 1 || desc_response.n() < 1)
+    {
+        throw std::logic_error("RPA head-only replacement expects a non-empty response matrix");
+    }
+
+    std::complex<double> head_average = 0.0;
+    for (int alpha = 0; alpha != 3; ++alpha)
+    {
+        head_average += head(alpha, alpha);
+    }
+    head_average /= 3.0;
+
+    const int ilo_head = desc_response.indx_g2l_r(0);
+    const int jlo_head = desc_response.indx_g2l_c(0);
+    if (ilo_head >= 0 && jlo_head >= 0)
+    {
+        response_block(ilo_head, jlo_head) = head_average;
+    }
+}
+
 void diele_func::rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
                              ArrayDesc &desc_nabf_nabf_opt)
 {
@@ -1793,11 +2684,11 @@ void diele_func::rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const i
 };
 
 std::complex<double> diele_func::compute_rpa_trace_log_average(
-    matrix_m<std::complex<double>> &response_block, const int ifreq,
-    ArrayDesc &desc_response, const RpaHeadwingSettings &settings)
+    matrix_m<std::complex<double>> &response_block, const int ifreq, ArrayDesc &desc_response,
+    const RpaHeadwingSettings &settings)
 {
-    if (ifreq < 0 || static_cast<std::size_t>(ifreq) >= head.size()
-        || static_cast<std::size_t>(ifreq) >= wing.size())
+    if (ifreq < 0 || static_cast<std::size_t>(ifreq) >= head.size() ||
+        static_cast<std::size_t>(ifreq) >= wing.size())
     {
         std::ostringstream oss;
         oss << "RPA chi0*v head/wing data unavailable for trace-log average for ifreq=" << ifreq
@@ -1808,12 +2699,12 @@ std::complex<double> diele_func::compute_rpa_trace_log_average(
     {
         throw std::logic_error("RPA head/wing trace-log average needs at least one body channel");
     }
-    if (static_cast<std::size_t>(desc_response.m()) != n_nonsingular
-        || static_cast<std::size_t>(desc_response.n()) != n_nonsingular)
+    if (static_cast<std::size_t>(desc_response.m()) != n_nonsingular ||
+        static_cast<std::size_t>(desc_response.n()) != n_nonsingular)
     {
         std::ostringstream oss;
-        oss << "RPA head/wing trace-log subspace mismatch: response=" << desc_response.m()
-            << "x" << desc_response.n() << ", headwing n_nonsingular=" << n_nonsingular;
+        oss << "RPA head/wing trace-log subspace mismatch: response=" << desc_response.m() << "x"
+            << desc_response.n() << ", headwing n_nonsingular=" << n_nonsingular;
         throw std::logic_error(oss.str());
     }
 
@@ -1880,11 +2771,9 @@ std::complex<double> diele_func::compute_rpa_trace_log_average(
     std::complex<double> averaged_body = 0.0;
     std::complex<double> averaged_head = 0.0;
     std::complex<double> averaged_schur_log = 0.0;
-    const auto result =
-        compute_rpa_chi0v_headwing_trace_log_average(get_rpa_chi0v_head(ifreq), Lind, trace_body,
-                                                     logdet_body, qx_leb, qy_leb, qz_leb, weights,
-                                                     &weight_sum, &averaged_body,
-                                                     &averaged_head, &averaged_schur_log);
+    const auto result = compute_rpa_chi0v_headwing_trace_log_average(
+        get_rpa_chi0v_head(ifreq), Lind, trace_body, logdet_body, qx_leb, qy_leb, qz_leb, weights,
+        &weight_sum, &averaged_body, &averaged_head, &averaged_schur_log);
 
     if (debug && comm_h.is_root())
     {
@@ -1893,8 +2782,7 @@ std::complex<double> diele_func::compute_rpa_trace_log_average(
             "weight_sum=%.12e averaged_body=(%.12e,%.12e) "
             "averaged_head=(%.12e,%.12e) averaged_schur_log=(%.12e,%.12e) "
             "total=(%.12e,%.12e)\n",
-            ifreq,
-            trace_body.real(), trace_body.imag(), logdet_body.real(), logdet_body.imag(),
+            ifreq, trace_body.real(), trace_body.imag(), logdet_body.real(), logdet_body.imag(),
             weight_sum, averaged_body.real(), averaged_body.imag(), averaged_head.real(),
             averaged_head.imag(), averaged_schur_log.real(), averaged_schur_log.imag(),
             result.real(), result.imag());
@@ -1908,12 +2796,12 @@ std::complex<double> diele_func::compute_rpa_trace_log_average(
 void diele_func::rewrite_rpa_response(matrix_m<std::complex<double>> &eps_minus_identity_block,
                                       const int ifreq, ArrayDesc &desc_nabf_nabf_opt)
 {
-    if (ifreq < 0 || static_cast<std::size_t>(ifreq) >= head.size()
-        || static_cast<std::size_t>(ifreq) >= wing.size())
+    if (ifreq < 0 || static_cast<std::size_t>(ifreq) >= head.size() ||
+        static_cast<std::size_t>(ifreq) >= wing.size())
     {
         std::ostringstream oss;
-        oss << "RPA chi0*v head/wing data unavailable for response replacement for ifreq="
-            << ifreq << " (head_size=" << head.size() << ", wing_size=" << wing.size() << ")";
+        oss << "RPA chi0*v head/wing data unavailable for response replacement for ifreq=" << ifreq
+            << " (head_size=" << head.size() << ", wing_size=" << wing.size() << ")";
         throw std::runtime_error(oss.str());
     }
 
@@ -1921,4 +2809,4 @@ void diele_func::rewrite_rpa_response(matrix_m<std::complex<double>> &eps_minus_
                                   get_rpa_chi0v_wing(ifreq), desc_nabf_nabf_opt);
 }
 
-}
+}  // namespace librpa_int

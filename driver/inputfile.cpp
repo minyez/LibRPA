@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <cstring>
 
 #include "driver.h"
 
@@ -363,6 +364,14 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_int(opts, rpa_headwing_body_start);
     if (opts.rpa_headwing_body_start < 0)
         throw std::runtime_error("rpa_headwing_body_start must be non-negative");
+    parser.parse_string("rpa_headwing_mode", stmp, "qavg", flag);
+    if (flag == 0 || flag == 1)
+    {
+        if (stmp != "qavg" && stmp != "head_only")
+            throw std::runtime_error("rpa_headwing_mode must be qavg or head_only");
+        std::strncpy(opts.rpa_headwing_mode, stmp.c_str(), LIBRPA_MAX_STRLEN);
+        opts.rpa_headwing_mode[LIBRPA_MAX_STRLEN - 1] = '\0';
+    }
     _parse_switch(opts, output_gw_sigc_ks_mat_kf);
     if (flag != 0)  // backward-compatible
     {

@@ -129,6 +129,8 @@ ComplexMatrix compute_Pi_freq_q_row(const AtomicBasis &atbasis_abf, const Vector
 cplxdb compute_pi_det_blacs(ComplexMatrix &loc_piT, const librpa_int::ArrayDesc& arrdesc_pi, int *ipiv, int &info);
 
 cplxdb compute_pi_det_blacs_2d(Matz &loc_piT, const librpa_int::ArrayDesc &arrdesc_pi, int *ipiv, int &info);
+cplxdb compute_rpa_response_trace_logdet_blacs_2d(
+    const Matz &response, const librpa_int::ArrayDesc &response_desc);
 double compute_pi_det_blacs_2d_gamma_only(Matd &loc_piT, const librpa_int::ArrayDesc &arrdesc_pi, int *ipiv, int &info);
 
 // void test_libcomm_for_system(const atpair_k_cplx_mat_t &coulmat);

@@ -141,6 +141,7 @@ blocks:
       - api.option_dielect_func
       - api.use_2d_dielectric
       - api.rpa_headwing_body_start
+      - api.rpa_headwing_mode
       - api.read_sigc_mat_rf
       - api.sqrt_coulomb_threshold
       - api.n_bands_sigc

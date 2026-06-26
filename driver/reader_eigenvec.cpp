@@ -390,3 +390,83 @@ int read_eigenvector(const std::string &dir_path, librpa_int::MeanField &mf, boo
     }
     return files_read == 0 ? -1 : 0;
 }
+
+int read_eigenvector(const std::string &dir_path, librpa_int::MeanField &mf, bool use_spinor_wfc,
+                     const std::vector<int> &source_to_target_ik,
+                     const std::vector<int> *source_iks_selected)
+{
+    const int n_target_kpoints = mf.get_n_kpoints();
+    const int n_source_kpoints = static_cast<int>(source_to_target_ik.size());
+    if (n_source_kpoints <= 0)
+    {
+        return 1;
+    }
+    for (const int ik_target : source_to_target_ik)
+    {
+        if (ik_target < -1 || ik_target >= n_target_kpoints)
+        {
+            return 1;
+        }
+    }
+
+    const WfcShape shape{mf.get_n_spins(), mf.get_n_spinor(),  mf.get_n_states(),
+                         mf.get_n_aos(),   n_source_kpoints,   use_spinor_wfc};
+
+    std::vector<char> target_hits(static_cast<std::size_t>(n_target_kpoints), 0);
+    const auto source_selected = [&](const int ik_source)
+    {
+        if (ik_source < 0 || ik_source >= n_source_kpoints) return false;
+        if (source_to_target_ik[ik_source] < 0) return false;
+        return selected_ik(source_iks_selected, ik_source);
+    };
+    const auto target_from_source = [&](const int ik_source)
+    {
+        return source_to_target_ik.at(static_cast<std::size_t>(ik_source));
+    };
+
+    int files_read = 0;
+    bool printed_reader_version = false;
+    for (const auto &file_path : eigenvector_files(dir_path))
+    {
+        const int version = check_KS_file_version(file_path);
+        if (!printed_reader_version)
+        {
+            librpa_int::global::lib_printf_root("KS eigenvector reader: %s\n",
+                                                version == 1 ? "binary v1" : "legacy text");
+            printed_reader_version = true;
+        }
+
+        const auto store_text =
+            [&](const int ik_source, const std::vector<double> &re,
+                const std::vector<double> &im)
+        {
+            const int ik_target = target_from_source(ik_source);
+            set_meanfield_wfc(mf, shape, ik_target, re, im);
+            target_hits.at(static_cast<std::size_t>(ik_target)) = 1;
+        };
+        const auto store_packed =
+            [&](const int ik_source, const std::vector<std::complex<double>> &block_data)
+        {
+            const int ik_target = target_from_source(ik_source);
+            set_meanfield_wfc_packed(mf, shape, ik_target, block_data);
+            target_hits.at(static_cast<std::size_t>(ik_target)) = 1;
+        };
+
+        const auto ret =
+            version == 1
+                ? read_binary_v1_file(file_path, shape, source_selected, store_packed)
+                : read_legacy_text_file(file_path, shape, source_selected, store_text);
+        if (ret != 0) return ret;
+        ++files_read;
+    }
+
+    if (files_read == 0) return -1;
+    if (source_iks_selected == nullptr)
+    {
+        for (const auto hit : target_hits)
+        {
+            if (!hit) return 1;
+        }
+    }
+    return 0;
+}

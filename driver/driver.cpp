@@ -191,6 +191,7 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             {"restart_from_dir", opts.restart_from_dir[0] ? opts.restart_from_dir : "<output_dir>"},
             {"tfgrids_type", get_tfgrid_string(opts.tfgrids_type)},
             {"parallel_routing", get_routing_string(opts.parallel_routing)},
+            {"rpa_headwing_mode", opts.rpa_headwing_mode},
         };
 
     const std::vector<std::pair<std::string, bool>> bool_params

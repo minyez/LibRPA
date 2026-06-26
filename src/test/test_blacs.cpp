@@ -72,6 +72,29 @@ void test_arraydesc()
     blacs_ctxt_h.exit();
 }
 
+void test_arraydesc_square_blk_cap()
+{
+    using namespace librpa_int;
+    blacs_ctxt_h.set_square_grid();
+
+    ArrayDesc small(blacs_ctxt_h);
+    small.init_square_blk_capped(10, 10, 2048, 0, 0);
+    assert(small.mb() == 5);
+    assert(small.nb() == 5);
+
+    ArrayDesc uncapped(blacs_ctxt_h);
+    uncapped.init_square_blk_capped(10000, 10000, 0, 0, 0);
+    assert(uncapped.mb() == 5000);
+    assert(uncapped.nb() == 5000);
+
+    ArrayDesc capped(blacs_ctxt_h);
+    capped.init_square_blk_capped(10000, 10000, 2048, 0, 0);
+    assert(capped.mb() == 2048);
+    assert(capped.nb() == 2048);
+
+    blacs_ctxt_h.exit();
+}
+
 void test_multi_blacs_h_to_same_comm()
 {
     using namespace librpa_int;
@@ -98,6 +121,7 @@ int main (int argc, char *argv[])
 
     test_proc_indices();
     test_arraydesc();
+    test_arraydesc_square_blk_cap();
     test_multi_blacs_h_to_same_comm();
 
     finalize_global_mpi();

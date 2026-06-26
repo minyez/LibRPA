@@ -7,7 +7,6 @@
 #include "reader_coulomb.h"
 #include "reader_structure.h"
 
-#include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -15,8 +14,8 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cerrno>
 #include <cctype>
+#include <cerrno>
 #include <cmath>
 #include <complex>
 #include <cstdint>
@@ -30,8 +29,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <librpa.hpp>
@@ -44,10 +43,15 @@
 #include "../src/io/fs.h"
 #include "../src/io/global_io.h"
 #include "../src/io/stl_io_helper.h"
+#include "../src/math/matrix.h"
+#include "../src/mpi/global_mpi.h"
+#include "../src/utils/constants.h"
 #include "../src/utils/error.h"
 #include "../src/utils/profiler.h"
 #include "../src/utils/utils_mem.h"
-
+#include "driver.h"
+#include "reader_coulomb.h"
+#include "reader_lri.h"
 
 using std::ifstream;
 using std::string;
@@ -63,9 +67,8 @@ bool nearly_same_kpoint(const librpa_int::Vector3_Order<double> &lhs,
                        const librpa_int::Vector3_Order<double> &rhs,
                        const double tol = kSymmetryKpointMatchTol)
 {
-    return std::abs(lhs.x - rhs.x) <= tol
-           && std::abs(lhs.y - rhs.y) <= tol
-           && std::abs(lhs.z - rhs.z) <= tol;
+    return std::abs(lhs.x - rhs.x) <= tol && std::abs(lhs.y - rhs.y) <= tol &&
+           std::abs(lhs.z - rhs.z) <= tol;
 }
 
 std::string lowercase_token(std::string token)
@@ -79,6 +82,15 @@ bool is_stru_symop_convention(const std::string &token)
 {
     const auto convention = lowercase_token(token);
     return convention == "row" || convention == "col";
+}
+
+librpa_int::Vector3_Order<double> convert_fractional_kpoint_to_klist_units(
+    const librpa_int::Vector3_Order<double> &kfrac, const librpa_int::PeriodicBoundaryData &pbc)
+{
+    const auto &G = pbc.G;
+    return {kfrac.x * G.e11 + kfrac.y * G.e21 + kfrac.z * G.e31,
+            kfrac.x * G.e12 + kfrac.y * G.e22 + kfrac.z * G.e32,
+            kfrac.x * G.e13 + kfrac.y * G.e23 + kfrac.z * G.e33};
 }
 
 bool legacy_stru_tail_ends_at(const std::vector<std::string> &tokens, const std::size_t pos)
@@ -184,7 +196,7 @@ bool try_legacy_stru_kpoint_layout(const std::vector<std::string> &tokens,
     return true;
 }
 
-} // namespace
+}  // namespace
 
 struct QpStateRange
 {
@@ -240,8 +252,8 @@ static void normalize_qp_state_range_from_kgrid_mf(const librpa_int::MeanField &
     else if (params.i_state_low > n_states_mf)
     {
         std::stringstream ss;
-        ss << "i_state_low = " << params.i_state_low
-           << " exceeds the maximum number of states (" << n_states_mf << ")";
+        ss << "i_state_low = " << params.i_state_low << " exceeds the maximum number of states ("
+           << n_states_mf << ")";
         throw std::runtime_error(ss.str());
     }
 
@@ -258,24 +270,23 @@ static void normalize_qp_state_range_from_kgrid_mf(const librpa_int::MeanField &
     {
         std::stringstream ss;
         ss << "Empty QP state range: i_state_low = " << params.i_state_low
-           << ", i_state_high = " << params.i_state_high
-           << ". The high state index is exclusive.";
+           << ", i_state_high = " << params.i_state_high << ". The high state index is exclusive.";
         throw std::runtime_error(ss.str());
     }
 }
 
 void read_scf_occ_eigenvalues(const string &file_path)
 {
-    using std::to_string;
-    using driver::n_spins;
-    using driver::n_kpoints;
-    using driver::n_states;
-    using driver::n_basis_wfc;
-    using driver::n_basis_ao;
-    using driver::n_spinor;
     using driver::iks_eigvec_this;
+    using driver::n_basis_ao;
+    using driver::n_basis_wfc;
+    using driver::n_kpoints;
+    using driver::n_spinor;
+    using driver::n_spins;
+    using driver::n_states;
     using librpa_int::global::myid_global;
     using librpa_int::global::size_global;
+    using std::to_string;
 
     // cout << "Begin to read aims-band_out" << endl;
     librpa_int::require_readable_file(file_path);
@@ -317,20 +328,18 @@ void read_scf_occ_eigenvalues(const string &file_path)
     if (driver::get_bool(driver::opts.use_kpara_scf_eigvec))
     {
         // reusing the internal distribution
-        if (kbctxt.comm_blacs_h.myid == 0)
-            iks_eigvec_this = kbctxt.kpoints_local();
+        if (kbctxt.comm_blacs_h.myid == 0) iks_eigvec_this = kbctxt.kpoints_local();
     }
     else
     {
-        for (int ik = 0; ik < driver::n_kpoints; ik++)
-            iks_eigvec_this.emplace_back(ik);
+        for (int ik = 0; ik < driver::n_kpoints; ik++) iks_eigvec_this.emplace_back(ik);
     }
 
     driver::n_ibz_kpoints = n_kpoints;
 
     // Load the file data
-    auto eskb = new double [n_spins * n_kpoints * n_states];
-    auto wskb = new double [n_spins * n_kpoints * n_states];
+    auto eskb = new double[n_spins * n_kpoints * n_states];
+    auto wskb = new double[n_spins * n_kpoints * n_states];
 
     const int n_kb = n_kpoints * n_states;
 
@@ -361,9 +370,9 @@ void read_scf_occ_eigenvalues(const string &file_path)
                                            to_string(iline) + ", file: " + file_path);
                 }
                 iline++;
-                wskb[is * n_kb + k_index * n_states + i] = stod(ws); // different with abacus!
+                wskb[is * n_kb + k_index * n_states + i] = stod(ws);  // different with abacus!
                 eskb[is * n_kb + k_index * n_states + i] = stod(es);
-                //cout<<" i_band: "<<i<<"    eskb: "<<eskb[is](k_index, i)<<endl;
+                // cout<<" i_band: "<<i<<"    eskb: "<<eskb[is](k_index, i)<<endl;
             }
         }
     }
@@ -444,6 +453,123 @@ void read_scf_occ_eigenvalues(const string &file_path, MeanField &mf, bool use_s
     }
 }
 
+void read_scf_occ_eigenvalues(const string &file_path, MeanField &mf, bool use_spinor_wfc,
+                              const std::vector<int> &source_ik_for_target,
+                              const int source_n_kpoints_expected)
+{
+    ifstream infile;
+    infile.open(file_path);
+    if (!infile.good())
+    {
+        throw std::logic_error("Failed to open " + file_path);
+    }
+
+    string ks, ss, a, ws, es, d;
+    int n_kpoints_source, n_spins, n_states, n_basis_wfc;
+    double efermi;
+    infile >> n_kpoints_source;
+    infile >> n_spins;
+    infile >> n_states;
+    infile >> n_basis_wfc;
+    infile >> efermi;
+    if (!infile.good())
+    {
+        throw std::logic_error("Failed to read band_out header from " + file_path);
+    }
+    if (n_kpoints_source != source_n_kpoints_expected)
+    {
+        throw std::logic_error("band_out k-point count is inconsistent with k_path_info");
+    }
+
+    int n_spinor = 1;
+    int n_basis_ao = n_basis_wfc;
+    if (use_spinor_wfc)
+    {
+        assert(n_spins == 1);
+        assert(n_basis_wfc % 2 == 0 && "Error: nbasis is not even when SOC!");
+        n_spinor = 2;
+        n_basis_ao = n_basis_wfc / 2;
+    }
+
+    const int n_kpoints_target = static_cast<int>(source_ik_for_target.size());
+    mf = MeanField();
+    mf.set(n_spins, n_kpoints_target, n_states, n_basis_ao, n_spinor);
+    mf.get_efermi() = efermi;
+
+    std::vector<int> source_to_target(n_kpoints_source, -1);
+    for (int ik_target = 0; ik_target != n_kpoints_target; ++ik_target)
+    {
+        const int ik_source = source_ik_for_target[ik_target];
+        if (ik_source < 0 || ik_source >= n_kpoints_source)
+        {
+            throw std::logic_error("Invalid PyATB source k-point index selected for band_out");
+        }
+        if (source_to_target[ik_source] >= 0)
+        {
+            throw std::logic_error("Duplicate PyATB source k-point selected for band_out");
+        }
+        source_to_target[ik_source] = ik_target;
+    }
+
+    auto &eskb = mf.get_eigenvals();
+    auto &wskb = mf.get_weight();
+    std::vector<int> target_hits(librpa_int::as_size(n_kpoints_target) *
+                                     librpa_int::as_size(n_spins),
+                                 0);
+
+    int iline = 6;
+    for (int ik_read = 0; ik_read != n_kpoints_source; ++ik_read)
+    {
+        for (int is = 0; is != n_spins; ++is)
+        {
+            infile >> ks >> ss;
+            if (!infile.good())
+            {
+                throw std::logic_error("Error in reading k- and spin- index: line " +
+                                       std::to_string(iline) + ", file: " + file_path);
+            }
+            iline++;
+            const int k_index_source = stoi(ks) - 1;
+            const int s_index = stoi(ss) - 1;
+            if (s_index != is)
+            {
+                throw std::logic_error("band_out spin index is not in the expected order");
+            }
+            if (k_index_source < 0 || k_index_source >= n_kpoints_source)
+            {
+                throw std::logic_error("band_out k-point index is out of range");
+            }
+            const int k_index_target = source_to_target[k_index_source];
+            for (int ib = 0; ib != n_states; ++ib)
+            {
+                infile >> a >> ws >> es >> d;
+                if (!infile.good())
+                {
+                    throw std::logic_error("Error in reading band energy and occupation: line " +
+                                           std::to_string(iline) + ", file: " + file_path);
+                }
+                iline++;
+                if (k_index_target < 0) continue;
+                target_hits[librpa_int::as_size(is) * librpa_int::as_size(n_kpoints_target) +
+                            librpa_int::as_size(k_index_target)] = 1;
+                wskb[is](k_index_target, ib) = stod(ws) / n_kpoints_target;
+                eskb[is](k_index_target, ib) = stod(es);
+            }
+        }
+    }
+    for (int is = 0; is != n_spins; ++is)
+    {
+        for (int ik = 0; ik != n_kpoints_target; ++ik)
+        {
+            if (target_hits[librpa_int::as_size(is) * librpa_int::as_size(n_kpoints_target) +
+                            librpa_int::as_size(ik)] == 0)
+            {
+                throw std::logic_error("band_out is missing a selected head/wing k-point");
+            }
+        }
+    }
+}
+
 int read_vxc(const string &file_path, std::vector<matrix> &vxc)
 {
     if (!librpa_int::file_exists(file_path)) return 1;
@@ -490,12 +616,12 @@ int read_vxc(const string &file_path, std::vector<matrix> &vxc)
 
 void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
 {
+    using driver::local_atpair;
     using driver::n_atoms;
     using driver::n_kpoints;
-    using driver::local_atpair;
-    using librpa_int::generate_atom_pair_from_nat;
     using librpa_int::decide_auto_routing;
     using librpa_int::dispatch_upper_triangular_tasks;
+    using librpa_int::generate_atom_pair_from_nat;
     using namespace librpa_int::global;
 
     mpi_comm_global_h.barrier();
@@ -518,33 +644,29 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
 
     // HACK: local_atpair should be set in the same mechanism as inside the dataset object,
     //       which is implemented in initialize_ds_atpairs_local in dataset_helper.cpp.
-    //       It consists of distributed atom pairs of only upper half, since repsonse function matrix is Hermitian.
-    if(routing == LIBRPA_ROUTING_ATOMPAIR)
+    //       It consists of distributed atom pairs of only upper half, since repsonse function
+    //       matrix is Hermitian.
+    if (routing == LIBRPA_ROUTING_ATOMPAIR)
     {
         lib_printf_root("Triangular dispatching of atom pairs\n");
         auto tri_local_atpair = librpa_int::dispatch_upper_triangular_tasks(
-            n_atoms, blacs_h.myid, blacs_h.nprows, blacs_h.npcols,
-            blacs_h.myprow, blacs_h.mypcol);
-        for (const auto &p: tri_local_atpair)
-            local_atpair.push_back(p);
+            n_atoms, blacs_h.myid, blacs_h.nprows, blacs_h.npcols, blacs_h.myprow, blacs_h.mypcol);
+        for (const auto &p : tri_local_atpair) local_atpair.push_back(p);
         profiler.start("driver_read_Cs");
         read_Cs(dir_path, driver::driver_params.cs_threshold, local_atpair,
-                driver::driver_params.prefix_lri_coeff,
-                driver::driver_params.version_lri_reader);
+                driver::driver_params.prefix_lri_coeff, driver::driver_params.version_lri_reader);
         profiler.stop("driver_read_Cs");
 
-        if (use_shrink_abfs)
-            read_ri_shrink(dir_path);
+        if (use_shrink_abfs) read_ri_shrink(dir_path);
 
         mpi_comm_global_h.barrier();
         profiler.start("driver_read_Vq");
-        read_Vq_row(dir_path, driver::driver_params.prefix_coul_full,
-                    driver::opts.vq_threshold, local_atpair, false,
-                    driver::driver_params.version_coul_reader,
+        read_Vq_row(dir_path, driver::driver_params.prefix_coul_full, driver::opts.vq_threshold,
+                    local_atpair, false, driver::driver_params.version_coul_reader,
                     use_shrink_abfs);
         profiler.stop("driver_read_Vq");
     }
-    else if(routing == LIBRPA_ROUTING_LIBRI)
+    else if (routing == LIBRPA_ROUTING_LIBRI)
     {
         lib_printf_root("Evenly distributed Cs and V for LibRI\n");
         profiler.start("driver_read_Cs");
@@ -553,21 +675,17 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
                                   driver::driver_params.prefix_lri_coeff,
                                   driver::driver_params.version_lri_reader);
         profiler.stop("driver_read_Cs");
-        if (use_shrink_abfs)
-            read_ri_shrink(dir_path);
+        if (use_shrink_abfs) read_ri_shrink(dir_path);
         // Vq distributed using the same strategy
         // There should be no duplicate for V
 
         mpi_comm_global_h.barrier();
         profiler.start("driver_read_Vq");
         auto trangular_loc_atpair = librpa_int::dispatch_upper_triangular_tasks(
-            n_atoms, blacs_h.myid, blacs_h.nprows, blacs_h.npcols,
-            blacs_h.myprow, blacs_h.mypcol);
-        for(auto &iap:trangular_loc_atpair)
-            local_atpair.push_back(iap);
-        read_Vq_row(dir_path, driver::driver_params.prefix_coul_full,
-                    driver::opts.vq_threshold, local_atpair, false,
-                    driver::driver_params.version_coul_reader,
+            n_atoms, blacs_h.myid, blacs_h.nprows, blacs_h.npcols, blacs_h.myprow, blacs_h.mypcol);
+        for (auto &iap : trangular_loc_atpair) local_atpair.push_back(iap);
+        read_Vq_row(dir_path, driver::driver_params.prefix_coul_full, driver::opts.vq_threshold,
+                    local_atpair, false, driver::driver_params.version_coul_reader,
                     use_shrink_abfs);
         profiler.stop("driver_read_Vq");
     }
@@ -577,41 +695,37 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
         local_atpair = generate_atom_pair_from_nat(n_atoms, false);
         profiler.start("driver_read_Cs");
         read_Cs(dir_path, driver::driver_params.cs_threshold, local_atpair,
-                driver::driver_params.prefix_lri_coeff,
-                driver::driver_params.version_lri_reader);
+                driver::driver_params.prefix_lri_coeff, driver::driver_params.version_lri_reader);
         profiler.stop("driver_read_Cs");
 
-        if (use_shrink_abfs)
-            read_ri_shrink(dir_path);
+        if (use_shrink_abfs) read_ri_shrink(dir_path);
 
         mpi_comm_global_h.barrier();
         profiler.start("driver_read_Vq");
         read_Vq_full(dir_path, driver::driver_params.prefix_coul_full, false,
-                     driver::driver_params.version_coul_reader,
-                     use_shrink_abfs);
+                     driver::driver_params.version_coul_reader, use_shrink_abfs);
         profiler.stop("driver_read_Vq");
     }
 
     mpi_comm_global_h.barrier();
     lib_printf_coll("| Process %5d: coulomb_mat read. Wall/CPU time [min]: %12.4f %12.4f\n",
-                    mpi_comm_global_h.myid,
-                    profiler.get_wall_time_last("driver_read_Vq") / 60.0,
+                    mpi_comm_global_h.myid, profiler.get_wall_time_last("driver_read_Vq") / 60.0,
                     profiler.get_cpu_time_last("driver_read_Vq") / 60.0);
     mpi_comm_global_h.barrier();
-    lib_printf_coll("| Process %5d: Cs with %14zu non-zero keys from local atpair size %7zu. "
-                    "Data memory: %10.2f MB. Wall/CPU time [min]: %12.4f %12.4f\n",
-                    mpi_comm_global_h.myid, Cs_data.n_keys(), local_atpair.size(),
-                    Cs_data.n_data_bytes() * 8.0e-6,
-                    profiler.get_wall_time_last("driver_read_Cs") / 60.0,
-                    profiler.get_cpu_time_last("driver_read_Cs") / 60.0);
+    lib_printf_coll(
+        "| Process %5d: Cs with %14zu non-zero keys from local atpair size %7zu. "
+        "Data memory: %10.2f MB. Wall/CPU time [min]: %12.4f %12.4f\n",
+        mpi_comm_global_h.myid, Cs_data.n_keys(), local_atpair.size(),
+        Cs_data.n_data_bytes() * 8.0e-6, profiler.get_wall_time_last("driver_read_Cs") / 60.0,
+        profiler.get_cpu_time_last("driver_read_Cs") / 60.0);
     mpi_comm_global_h.barrier();
 }
 
 void read_velocity(const string &file_path, const MeanField &mf, velocity_matrix_t &velocity)
 {
-    using librpa_int::global::mpi_comm_global_h;
     using librpa_int::ANG2BOHR;
     using librpa_int::HA2EV;
+    using librpa_int::global::mpi_comm_global_h;
 
     librpa_int::require_readable_file(file_path);
     ifstream infile;
@@ -628,9 +742,9 @@ void read_velocity(const string &file_path, const MeanField &mf, velocity_matrix
         n_bands != mf.get_n_states())
     {
         std::stringstream ss;
-        ss << "velocity_matrix dimensions are inconsistent with meanfield: velocity=("
-           << n_spins << "," << n_kpoints << "," << n_bands << "), meanfield=("
-           << mf.get_n_spins() << "," << mf.get_n_kpoints() << "," << mf.get_n_states() << ")";
+        ss << "velocity_matrix dimensions are inconsistent with meanfield: velocity=(" << n_spins
+           << "," << n_kpoints << "," << n_bands << "), meanfield=(" << mf.get_n_spins() << ","
+           << mf.get_n_kpoints() << "," << mf.get_n_states() << ")";
         throw std::logic_error(ss.str());
     }
 
@@ -654,7 +768,8 @@ void read_velocity(const string &file_path, const MeanField &mf, velocity_matrix
                     {
                         infile >> single_re >> single_im;
                         velocity.at(is).at(ik).at(ia)(i, j) =
-                            ANG2BOHR * std::complex<double>(stod(single_re), stod(single_im)) / HA2EV;
+                            ANG2BOHR * std::complex<double>(stod(single_re), stod(single_im)) /
+                            HA2EV;
                     }
                 }
             }
@@ -664,14 +779,109 @@ void read_velocity(const string &file_path, const MeanField &mf, velocity_matrix
         std::cout << "* Success: read velocity from pyatb_librpa_df(ABACUS)." << std::endl;
 }
 
-void read_velocity_aims(const MeanField &mf, const string &file_path,
-                        velocity_matrix_t &velocity)
+void read_velocity(const string &file_path, const MeanField &mf, velocity_matrix_t &velocity,
+                   const std::vector<int> &source_to_target_ik,
+                   const int source_n_kpoints_expected)
 {
-    using std::complex;
-    using std::vector;
-    using std::cerr;
-    using std::endl;
+    using librpa_int::ANG2BOHR;
+    using librpa_int::HA2EV;
     using librpa_int::global::mpi_comm_global_h;
+
+    ifstream infile;
+    infile.open(file_path);
+    string alpha, kk, ss, single_re, single_im;
+    int n_kpoints_source, n_spins, n_bands, n_aos;
+    infile >> n_kpoints_source;
+    infile >> n_spins;
+    infile >> n_bands;
+    infile >> n_aos;
+    if (!infile.good())
+        throw std::logic_error("Failed to read velocity dimensions from " + file_path);
+    if (n_kpoints_source != source_n_kpoints_expected ||
+        n_kpoints_source != static_cast<int>(source_to_target_ik.size()))
+    {
+        throw std::logic_error("velocity_matrix k-point count is inconsistent with k_path_info");
+    }
+    if (n_spins != mf.get_n_spins() || n_bands != mf.get_n_states())
+    {
+        std::stringstream ss;
+        ss << "velocity_matrix dimensions are inconsistent with meanfield: velocity=(" << n_spins
+           << "," << n_kpoints_source << "," << n_bands << "), meanfield=(" << mf.get_n_spins()
+           << "," << mf.get_n_kpoints() << "," << mf.get_n_states() << ")";
+        throw std::logic_error(ss.str());
+    }
+
+    initialize_velocity_matrix(velocity, n_spins, mf.get_n_kpoints(), n_bands);
+    std::vector<int> target_hits(librpa_int::as_size(mf.get_n_kpoints()) *
+                                     librpa_int::as_size(n_spins) * 3,
+                                 0);
+    for (int is = 0; is != n_spins; is++)
+    {
+        for (int ik_read = 0; ik_read != n_kpoints_source; ik_read++)
+        {
+            for (int ia = 0; ia != 3; ia++)
+            {
+                infile >> alpha >> kk >> ss;
+                if (!infile.good())
+                    throw std::logic_error("Failed to read velocity_matrix block header");
+                const int k_index_source = stoi(kk) - 1;
+                const int a_index = stoi(alpha) - 1;
+                const int s_index = stoi(ss) - 1;
+                if (k_index_source < 0 || k_index_source >= n_kpoints_source)
+                    throw std::logic_error("velocity_matrix k-point index is out of range");
+                if (a_index != ia || s_index != is)
+                    throw std::logic_error("velocity_matrix block order is inconsistent");
+                const int k_index_target = source_to_target_ik[k_index_source];
+                for (int i = 0; i != n_bands; i++)
+                {
+                    for (int j = 0; j != n_bands; j++)
+                    {
+                        infile >> single_re >> single_im;
+                        if (!infile.good())
+                            throw std::logic_error("Failed to read velocity_matrix element");
+                        if (k_index_target < 0) continue;
+                        target_hits[(librpa_int::as_size(is) *
+                                         librpa_int::as_size(mf.get_n_kpoints()) +
+                                     librpa_int::as_size(k_index_target)) *
+                                        3 +
+                                    librpa_int::as_size(ia)] = 1;
+                        velocity.at(is).at(k_index_target).at(ia)(i, j) =
+                            ANG2BOHR * std::complex<double>(stod(single_re), stod(single_im)) /
+                            HA2EV;
+                    }
+                }
+            }
+        }
+    }
+    for (int is = 0; is != n_spins; ++is)
+    {
+        for (int ik = 0; ik != mf.get_n_kpoints(); ++ik)
+        {
+            for (int ia = 0; ia != 3; ++ia)
+            {
+                if (target_hits[(librpa_int::as_size(is) *
+                                     librpa_int::as_size(mf.get_n_kpoints()) +
+                                 librpa_int::as_size(ik)) *
+                                    3 +
+                                librpa_int::as_size(ia)] == 0)
+                {
+                    throw std::logic_error(
+                        "velocity_matrix is missing a selected head/wing k-point");
+                }
+            }
+        }
+    }
+    if (mpi_comm_global_h.is_root())
+        std::cout << "* Success: read velocity from pyatb_librpa_df(ABACUS)." << std::endl;
+}
+
+void read_velocity_aims(const MeanField &mf, const string &file_path, velocity_matrix_t &velocity)
+{
+    using librpa_int::global::mpi_comm_global_h;
+    using std::cerr;
+    using std::complex;
+    using std::endl;
+    using std::vector;
 
     int nk = mf.get_n_kpoints();
     int n_spins = mf.get_n_spins();
@@ -731,8 +941,9 @@ void read_velocity_aims(const MeanField &mf, const string &file_path,
         std::cout << "* Success: read moment from mommat_ks_kpt_*.dat (FHI-aims)." << std::endl;
 }
 
-static std::vector<Vector3_Order<double>> read_headwing_k_path_info(
-    const string &file_path, int &n_basis, int &n_states, int &n_spin)
+static std::vector<Vector3_Order<double>> read_headwing_k_path_info(const string &file_path,
+                                                                    int &n_basis, int &n_states,
+                                                                    int &n_spin)
 {
     librpa_int::require_readable_file(file_path);
     ifstream infile;
@@ -773,6 +984,11 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     auto &mf = pds->mf;
     auto &velocity_matrix = pds->velocity_matrix;
     velocity_matrix.clear();
+    const int scf_nk = mf.get_n_kpoints();
+    if (static_cast<int>(pds->pbc.kfrac_list.size()) != scf_nk)
+    {
+        throw std::runtime_error("SCF k-point list is inconsistent with meanfield");
+    }
     struct MfRestore
     {
         MeanField &mf;
@@ -798,7 +1014,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     const string pyatb_dir = path_as_directory(dir_path) + "pyatb_librpa_df/";
     const string pyatb_velocity = pyatb_dir + "velocity_matrix";
 
-    std::vector<Vector3_Order<double>> kfrac_headwing;
+    const auto &active_kfrac_list = pds->pbc.kfrac_list;
     int n_basis = 0;
     int n_states = 0;
     int n_spin = 0;
@@ -809,42 +1025,69 @@ void read_headwing_input(const string &dir_path, bool need_wing)
 
     if (path_exists(pyatb_velocity.c_str()))
     {
-        // Temporarily load the PyATB mean-field data into Dataset::mf for the
-        // head/wing construction, then restore the SCF mean field before the
-        // downstream GW path continues. The velocity/momentum matrix remains
-        // separate from the mean-field data.
+        // PyATB may write a full-BZ k grid even when LibRPA runs with symmetry
+        // and the active mean-field grid is IBZ.  Treat k_path_info as the
+        // source-coordinate table, then read only the active LibRPA k-list.
         if (mpi_comm_global_h.is_root())
         {
             std::cout << "Reading head/wing input from " << pyatb_dir << std::endl;
         }
-        restore_mf.capture();
-        read_scf_occ_eigenvalues(pyatb_dir + "band_out", mf, use_spinor_wfc);
-        const int ret_eigenvec =
-            read_eigenvector(pyatb_dir, mf, use_spinor_wfc, nullptr);
-        if (ret_eigenvec != 0)
-        {
-            throw std::runtime_error("Failed to read pyatb head/wing eigenvectors from " + pyatb_dir);
-        }
-        read_velocity(pyatb_velocity, mf, velocity_matrix);
-        kfrac_headwing = read_headwing_k_path_info(pyatb_dir + "k_path_info",
-                                                   n_basis, n_states, n_spin);
+        std::vector<Vector3_Order<double>> kfrac_pyatb =
+            read_headwing_k_path_info(pyatb_dir + "k_path_info", n_basis, n_states, n_spin);
         if (use_spinor_wfc)
         {
             if (n_basis % 2 != 0)
                 throw std::runtime_error("Head/wing spinor basis size is not even");
             n_basis /= 2;
         }
+        const auto target_to_source_ik =
+            map_kpoints_by_coordinates(active_kfrac_list, kfrac_pyatb,
+                                       kInputSymmetryKpointMatchTol);
+        std::vector<int> source_to_target_ik(kfrac_pyatb.size(), -1);
+        for (int ik_target = 0; ik_target != static_cast<int>(target_to_source_ik.size());
+             ++ik_target)
+        {
+            source_to_target_ik.at(target_to_source_ik[ik_target]) = ik_target;
+        }
+
+        restore_mf.capture();
+        read_scf_occ_eigenvalues(pyatb_dir + "band_out", mf, use_spinor_wfc,
+                                  target_to_source_ik, static_cast<int>(kfrac_pyatb.size()));
+        std::vector<int> iks_headwing_eigvec_this;
+        if (pds->scfk_blacs_ctxt.is_initialized())
+        {
+            if (pds->scfk_blacs_ctxt.n_kpoints() != mf.get_n_kpoints())
+                throw std::runtime_error(
+                    "SCF k-point parallel context is inconsistent with head/wing meanfield");
+            if (pds->scfk_blacs_ctxt.comm_blacs_h.myid == 0)
+            {
+                for (const int ik_target : pds->scfk_blacs_ctxt.kpoints_local())
+                    iks_headwing_eigvec_this.emplace_back(target_to_source_ik.at(ik_target));
+            }
+        }
+        const std::vector<int> *source_iks_headwing_eigvec_selected =
+            pds->scfk_blacs_ctxt.is_initialized() ? &iks_headwing_eigvec_this : nullptr;
+        const int ret_eigenvec =
+            read_eigenvector(pyatb_dir, mf, use_spinor_wfc, source_to_target_ik,
+                             source_iks_headwing_eigvec_selected);
+        if (ret_eigenvec != 0)
+        {
+            throw std::runtime_error("Failed to read pyatb head/wing eigenvectors from " +
+                                     pyatb_dir);
+        }
+        read_velocity(pyatb_velocity, mf, velocity_matrix, source_to_target_ik,
+                      static_cast<int>(kfrac_pyatb.size()));
         if (n_basis != mf.get_n_aos() || n_states != mf.get_n_states() ||
             n_spin != mf.get_n_spins())
         {
-            throw std::runtime_error("Head/wing k_path_info dimensions are inconsistent with band_out");
+            throw std::runtime_error(
+                "Head/wing k_path_info dimensions are inconsistent with band_out");
         }
     }
     else
     {
         // ABACUS/FHI-aims package outputs use the SCF k grid for head/wing.
-        // Only the velocity/momentum matrix needs an extra reader here.
-        kfrac_headwing = pds->pbc.kfrac_list;
+        // Only the velocity/momentum matrix is head/wing-specific here.
         n_basis = mf.get_n_aos();
         n_states = mf.get_n_states();
         n_spin = mf.get_n_spins();
@@ -865,36 +1108,58 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         }
     }
 
-    if (static_cast<int>(kfrac_headwing.size()) != mf.get_n_kpoints())
-    {
-        throw std::runtime_error("Head/wing k-point count is inconsistent with meanfield");
-    }
-    if (static_cast<int>(pds->pbc.kfrac_list.size()) != mf.get_n_kpoints())
-    {
-        throw std::runtime_error("SCF k-point list is inconsistent with meanfield");
-    }
-    for (int ik = 0; ik != mf.get_n_kpoints(); ++ik)
-    {
-        if (!nearly_same_kpoint(kfrac_headwing[ik], pds->pbc.kfrac_list[ik]))
-        {
-            std::ostringstream oss;
-            oss << "Head/wing k-point " << ik
-                << " is inconsistent with the SCF meanfield k grid";
-            throw std::runtime_error(oss.str());
-        }
-    }
-
     const auto &headwing_basis_aux =
         driver::get_bool(driver::opts.use_shrink_abfs) ? pds->basis_aux_shrink : pds->basis_aux;
     if (!headwing_basis_aux.initialized())
         throw std::runtime_error("Head/wing auxiliary basis is not initialized");
     pds->p_headwing = std::make_unique<diele_func>(
-        mf, velocity_matrix, pds->pbc.kfrac_list, pds->basis_wfc,
-        headwing_basis_aux, freqs,
-        n_basis, n_states, n_spin, headwing_basis_aux.nb_total, pds->pbc, pds->comm_h, pds->blacs_h);
+        mf, velocity_matrix, pds->pbc.kfrac_list, pds->basis_wfc, headwing_basis_aux, freqs,
+        n_basis, n_states, n_spin, headwing_basis_aux.nb_total, pds->pbc, pds->comm_h,
+        pds->blacs_h, &pds->scfk_blacs_ctxt);
     pds->p_headwing->use_2d_dielectric = driver::get_bool(driver::opts.use_2d_dielectric);
     pds->p_headwing->use_soc = mf.get_n_spinor() > 1;
     pds->p_headwing->debug = librpa_int::global::should_output(LIBRPA_VERBOSE_DEBUG);
+    // Symmetry-aware head/wing uses the same active k-list as the main LibRPA
+    // path: full BZ without symmetry, IBZ with input k-star sidecars.
+    if (pds->symmetry_context.available && !pds->symmetry_context.kstars.empty())
+    {
+        pds->p_headwing->set_symmetry_context(pds->symmetry_context);
+        pds->p_headwing->use_symmetry = true;
+        for (atom_t atom = 0; atom != static_cast<atom_t>(pds->basis_wfc.n_atoms); ++atom)
+            pds->p_headwing->atom_nw[atom] = pds->basis_wfc.get_atom_nb(atom);
+        pds->p_headwing->coord_frac = pds->symmetry_context.input_coord_frac;
+    }
+    if (restore_mf.active)
+    {
+        const int n_spinor = mf.get_n_spinor();
+        auto &hw_mf = pds->p_headwing->get_meanfield_df();
+        for (int ispin = 0; ispin != n_spin; ++ispin)
+        {
+            for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+            {
+                std::vector<int> missing_k;
+                for (int ik = 0; ik != mf.get_n_kpoints(); ++ik)
+                {
+                    const auto *C = hw_mf.find_wfc(ispin, ispinor, ik);
+                    const int have_local = (C != nullptr && C->nr > 0) ? 1 : 0;
+                    int have_any = 0;
+                    MPI_Allreduce(&have_local, &have_any, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+                    if (have_any == 0) missing_k.push_back(ik);
+                }
+                if (!missing_k.empty())
+                {
+                    std::ostringstream oss;
+                    oss << "PyATB head/wing input is missing eigenvectors for "
+                        << missing_k.size() << " k-points in spin " << ispin << " spinor "
+                        << ispinor << ". Check k_path_info and KS_eigenvector_* coverage.";
+                    throw std::runtime_error(oss.str());
+                }
+            }
+        }
+        if (mpi_comm_global_h.is_root())
+            std::cout << "Using PyATB head/wing input on the active LibRPA k-list with "
+                      << mf.get_n_kpoints() << " k-points" << std::endl;
+    }
     pds->p_headwing->init(driver::opts.sqrt_coulomb_threshold, pds->vq);
     pds->p_headwing->cal_head();
     pds->epsmacs_imagfreq = pds->p_headwing->get_head_vec();
@@ -931,13 +1196,11 @@ void read_dielec_func(const string &file_path, std::vector<double> &omegas,
     ifs.close();
 }
 
-
-
 void erase_Cs_from_local_atp(atpair_R_mat_t &Cs, std::vector<atpair_t> &local_atpair)
 {
     using namespace std;
     using namespace librpa_int;
-    //erase no need Cs
+    // erase no need Cs
 
     set<size_t> loc_atp_index;
     for (auto &lap : local_atpair)
@@ -946,9 +1209,8 @@ void erase_Cs_from_local_atp(atpair_R_mat_t &Cs, std::vector<atpair_t> &local_at
         loc_atp_index.insert(lap.second);
     }
     std::vector<atom_t> Cs_first;
-    for (const auto &Ip: Cs)
-        Cs_first.push_back(Ip.first);
-    for (const auto &I: Cs_first)
+    for (const auto &Ip : Cs) Cs_first.push_back(Ip.first);
+    for (const auto &I : Cs_first)
     {
         if (!loc_atp_index.count(I)) Cs.erase(I);
     }
@@ -958,7 +1220,8 @@ void erase_Cs_from_local_atp(atpair_R_mat_t &Cs, std::vector<atpair_t> &local_at
     //         Cs.erase(Ip.first);
     //     }
     release_free_mem();
-    global::lib_printf("| process %d, size of Cs after erase: %lu\n", librpa_int::global::mpi_comm_global_h.myid, Cs.size());
+    global::lib_printf("| process %d, size of Cs after erase: %lu\n",
+                       librpa_int::global::mpi_comm_global_h.myid, Cs.size());
 }
 
 void read_stru(const std::string &file_path)
@@ -975,8 +1238,7 @@ void read_bz_sampling(const std::string &file_path)
     require_readable_file(file_path);
     ifstream infile;
     infile.open(file_path);
-    if (!infile.good())
-        throw LIBRPA_RUNTIME_ERROR("Fail to open BZ sampling file " + file_path);
+    if (!infile.good()) throw LIBRPA_RUNTIME_ERROR("Fail to open BZ sampling file " + file_path);
 
     int nk[3];
     for (int i = 0; i < 3; i++)
@@ -1269,12 +1531,12 @@ void read_basis_wfc_aux(const std::string &input_dir,
 
 void read_band_kpath_info(const string &file_path)
 {
-    using driver::n_spins;
-    using driver::n_basis_wfc;
-    using driver::n_basis_ao;
-    using driver::n_states;
-    using driver::n_kpoints_band;
     using driver::kfrac_band;
+    using driver::n_basis_ao;
+    using driver::n_basis_wfc;
+    using driver::n_kpoints_band;
+    using driver::n_spins;
+    using driver::n_states;
 
     int n_basis_band, n_states_band, n_spin_band;
 
@@ -1291,29 +1553,26 @@ void read_band_kpath_info(const string &file_path)
     // Read dimensions in the first row
     infile >> x;
     n_basis_band = stoi(x);
-    if (n_basis_band != n_basis_wfc)
-        throw LIBRPA_RUNTIME_ERROR("band & SCF #basis inconsistent");
+    if (n_basis_band != n_basis_wfc) throw LIBRPA_RUNTIME_ERROR("band & SCF #basis inconsistent");
     infile >> x;
     n_states_band = stoi(x);
-    if (n_states_band != n_states)
-        throw LIBRPA_RUNTIME_ERROR("band & SCF #state inconsistent");
+    if (n_states_band != n_states) throw LIBRPA_RUNTIME_ERROR("band & SCF #state inconsistent");
     infile >> x;
     n_spin_band = stoi(x);
-    if (n_spin_band != n_spins)
-        throw LIBRPA_RUNTIME_ERROR("band & SCF #spin inconsistent");
+    if (n_spin_band != n_spins) throw LIBRPA_RUNTIME_ERROR("band & SCF #spin inconsistent");
     infile >> x;
     n_kpoints_band = stoi(x);
 
     kfrac_band.clear();
-    std::vector<double> vector_kfrac_band(n_kpoints_band * 3); // For API parsing
+    std::vector<double> vector_kfrac_band(n_kpoints_band * 3);  // For API parsing
     for (int i = 0; i < n_kpoints_band; i++)
     {
         infile >> x >> y >> z;
         Vector3_Order<double> kfrac{stod(x), stod(y), stod(z)};
         kfrac_band.emplace_back(kfrac);
-        vector_kfrac_band[3*i] = kfrac.x;
-        vector_kfrac_band[3*i+1] = kfrac.y;
-        vector_kfrac_band[3*i+2] = kfrac.z;
+        vector_kfrac_band[3 * i] = kfrac.x;
+        vector_kfrac_band[3 * i + 1] = kfrac.y;
+        vector_kfrac_band[3 * i + 2] = kfrac.z;
     }
 
     infile.close();
@@ -1325,16 +1584,17 @@ void read_band_meanfield_data(const string &dir_path)
 {
     using namespace librpa_int;
     using namespace librpa_int::global;
-    using std::endl;
-    using driver::n_spins;
-    using driver::n_kpoints_band;
-    using driver::n_states;
-    using driver::n_basis_wfc;
-    using driver::n_basis_ao;
     using driver::iks_band_eigvec_this;
+    using driver::n_basis_ao;
+    using driver::n_basis_wfc;
+    using driver::n_kpoints_band;
+    using driver::n_spins;
+    using driver::n_states;
+    using std::endl;
 
     if (driver::n_kpoints_band == 0)
-        throw LIBRPA_RUNTIME_ERROR("Number of band k-points not set, run read_band_kpath_info first");
+        throw LIBRPA_RUNTIME_ERROR(
+            "Number of band k-points not set, run read_band_kpath_info first");
 
     iks_band_eigvec_this.clear();
 
@@ -1347,8 +1607,7 @@ void read_band_meanfield_data(const string &dir_path)
     }
     else
     {
-        for (int ik = 0; ik < driver::n_kpoints_band; ik++)
-            iks_band_eigvec_this.emplace_back(ik);
+        for (int ik = 0; ik < driver::n_kpoints_band; ik++) iks_band_eigvec_this.emplace_back(ik);
     }
 
     std::vector<double> eskb(n_spins * n_kpoints_band * n_states);
@@ -1416,8 +1675,10 @@ void read_band_meanfield_data(const string &dir_path)
         // }
 
         // TODO: decide which basis to use
-        size_t total_complex_comp = static_cast<size_t>(n_states) * static_cast<size_t>(n_basis_ao);  // for one component
-        size_t total_complex_spin = static_cast<size_t>(n_states) * static_cast<size_t>(n_basis_wfc);
+        size_t total_complex_comp =
+            static_cast<size_t>(n_states) * static_cast<size_t>(n_basis_ao);  // for one component
+        size_t total_complex_spin =
+            static_cast<size_t>(n_states) * static_cast<size_t>(n_basis_wfc);
         size_t total_complex = total_complex_spin * n_spins;
         size_t bytes_doubles = total_complex * 2 * sizeof(double);
 
@@ -1430,7 +1691,7 @@ void read_band_meanfield_data(const string &dir_path)
 
         const bool use_spinor_wfc = driver::driver_params.use_spinor_wfc;
         int n_soc = use_spinor_wfc ? 2 : 1;
-        assert (n_soc * n_spins <= 2);
+        assert(n_soc * n_spins <= 2);
         for (int i_spin = 0; i_spin < n_spins; ++i_spin)
         {
             std::vector<std::complex<double>> vecs_sp(total_complex_spin);
@@ -1592,7 +1853,7 @@ static int handle_sinvS_file(const std::string &file_path,
     if (binary)
     {
         infile.open(file_path, std::ios::in | std::ios::binary);
-        infile.read((char *) &n_irk_points, sizeof(int));
+        infile.read((char *)&n_irk_points, sizeof(int));
         infile.read((char *)&n_irk_points_local, sizeof(int));
     }
     else
@@ -1709,7 +1970,7 @@ static bool sinvS_file_has_v1_marker(const std::string &file_path)
 }
 
 static std::streamoff checked_streamoff_from_i64(const std::int64_t value,
-                                                const std::string &context)
+                                                 const std::string &context)
 {
     if (value < 0 ||
         static_cast<unsigned long long>(value) >
@@ -1720,16 +1981,14 @@ static std::streamoff checked_streamoff_from_i64(const std::int64_t value,
     return static_cast<std::streamoff>(value);
 }
 
-static std::size_t checked_sinvS_payload_bytes(const std::int32_t nrow,
-                                               const std::int32_t ncol,
+static std::size_t checked_sinvS_payload_bytes(const std::int32_t nrow, const std::int32_t ncol,
                                                const std::string &file_path)
 {
     if (nrow <= 0 || ncol <= 0)
     {
         throw LIBRPA_RUNTIME_ERROR(file_path + ": invalid shrink_sinvS v1 block dimensions");
     }
-    const auto max_count =
-        std::numeric_limits<std::size_t>::max() / sizeof(std::complex<double>);
+    const auto max_count = std::numeric_limits<std::size_t>::max() / sizeof(std::complex<double>);
     const auto nrow_size = static_cast<std::size_t>(nrow);
     const auto ncol_size = static_cast<std::size_t>(ncol);
     if (nrow_size > max_count / ncol_size)
@@ -1785,7 +2044,7 @@ static int handle_sinvS_v1_file(const std::string &file_path,
     infile.seekg(2 * static_cast<std::streamoff>(sizeof(std::int32_t)), std::ios::beg);
 
     std::vector<Record> records(static_cast<std::size_t>(nrecords_i32));
-    for (auto &record: records)
+    for (auto &record : records)
     {
         infile.read(reinterpret_cast<char *>(&record.iq), sizeof(record.iq));
         infile.read(reinterpret_cast<char *>(&record.nrow_total), sizeof(record.nrow_total));
@@ -1802,16 +2061,16 @@ static int handle_sinvS_v1_file(const std::string &file_path,
         }
     }
 
-    for (const auto &record: records)
+    for (const auto &record : records)
     {
         const int iq = record.iq - 1;
         if (iq < 0 || iq >= nk_ibz)
         {
             return 5;
         }
-        if (record.begin_row < 1 || record.begin_col < 1 ||
-            record.end_row < record.begin_row || record.end_col < record.begin_col ||
-            record.end_row > record.nrow_total || record.end_col > record.ncol_total)
+        if (record.begin_row < 1 || record.begin_col < 1 || record.end_row < record.begin_row ||
+            record.end_col < record.begin_col || record.end_row > record.nrow_total ||
+            record.end_col > record.ncol_total)
         {
             return 6;
         }
@@ -1824,8 +2083,8 @@ static int handle_sinvS_v1_file(const std::string &file_path,
             return 7;
         }
 
-        std::vector<std::complex<double>> tmp(
-            static_cast<std::size_t>(nrow_block) * static_cast<std::size_t>(ncol_block));
+        std::vector<std::complex<double>> tmp(static_cast<std::size_t>(nrow_block) *
+                                              static_cast<std::size_t>(ncol_block));
         infile.seekg(offset, std::ios::beg);
         infile.read(reinterpret_cast<char *>(tmp.data()), static_cast<std::streamsize>(bytes));
         if (!infile.good())
@@ -1892,8 +2151,8 @@ void read_ri_shrink(const string &dir_path)
     }
     // TODO: get rid of pds call here
     pds->desc_abf_shrink.reset_handler(pds->blacs_h);
-    pds->desc_abf_shrink.init_1b1p(pds->basis_aux_shrink.nb_total,
-                                   pds->basis_aux_shrink.nb_total, 0, 0);
+    pds->desc_abf_shrink.init_1b1p(pds->basis_aux_shrink.nb_total, pds->basis_aux_shrink.nb_total,
+                                   0, 0);
 
     profiler.start("read_Cs_shrink");
     read_Cs_evenly_distribute(driver_params.input_dir, driver_params.cs_threshold,
@@ -1912,7 +2171,8 @@ void read_ri_shrink(const string &dir_path)
         if (static_cast<size_t>(first_sinvS.nr) != pds->basis_aux_shrink.nb_total ||
             static_cast<size_t>(first_sinvS.nc) != pds->basis_aux.nb_total)
         {
-            throw std::runtime_error("shrink_sinvS dimensions are inconsistent with auxiliary bases");
+            throw std::runtime_error(
+                "shrink_sinvS dimensions are inconsistent with auxiliary bases");
         }
     }
 
@@ -1932,22 +2192,22 @@ void read_ri_shrink(const string &dir_path)
 size_t read_shrink_sinvS(const string &dir_path, const string &vq_fprefix,
                          std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
 {
+    using librpa_int::global::lib_printf;
+    using librpa_int::global::myid_global;
+    using librpa_int::global::profiler;
     using std::cout;
     using std::endl;
-    using librpa_int::global::profiler;
-    using librpa_int::global::myid_global;
-    using librpa_int::global::lib_printf;
 
     size_t vq_discard = 0;
     auto files = librpa_int::discover_files_with_prefix(dir_path, vq_fprefix);
     if (files.empty())
     {
         throw LIBRPA_RUNTIME_ERROR("No shrink_sinvS files found with prefix " + vq_fprefix +
-                                  " under: " + dir_path);
+                                   " under: " + dir_path);
     }
 
     profiler.start("handle_sinvS_file");
-    for (const auto &file_path: files)
+    for (const auto &file_path : files)
     {
         int retcode = 0;
         if (sinvS_file_has_v1_marker(file_path))
@@ -1973,7 +2233,7 @@ size_t read_shrink_sinvS(const string &dir_path, const string &vq_fprefix,
             lib_printf(LIBRPA_VERBOSE_CRITICAL, "Error encountered when reading %s, return code %d",
                        file_path.c_str(), retcode);
             throw LIBRPA_RUNTIME_ERROR("Failed to read shrink_sinvS file " + file_path +
-                                      ", return code " + std::to_string(retcode));
+                                       ", return code " + std::to_string(retcode));
         }
     }
     profiler.stop("handle_sinvS_file");

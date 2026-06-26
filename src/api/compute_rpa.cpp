@@ -13,6 +13,8 @@
 #include "dataset_helper.h"
 #include "instance_manager.h"
 
+#include <string>
+
 void librpa_get_imaginary_frequency_grids(LibrpaHandler *h, const LibrpaOptions *p_opts,
                                           double *omegas, double *weights)
 {
@@ -86,7 +88,14 @@ double librpa_get_rpa_correlation_energy(LibrpaHandler *h, const LibrpaOptions *
     // Redistribute 2D Coulomb matrices to atom-pair blocks if they are parsed
     pds->redistribute_coulomb_blacs2ap();
 
-    initialize_ds_headwing(*pds, opts, opts.option_dielect_func == 3);
+    const std::string rpa_headwing_mode(opts.rpa_headwing_mode);
+    if (rpa_headwing_mode != "qavg" && rpa_headwing_mode != "head_only")
+    {
+        throw LIBRPA_RUNTIME_ERROR("rpa_headwing_mode must be qavg or head_only");
+    }
+    const bool need_rpa_wing =
+        opts.option_dielect_func == 3 && rpa_headwing_mode != "head_only";
+    initialize_ds_headwing(*pds, opts, need_rpa_wing);
 
     // Initialize response function object
     initialize_ds_chi0(*pds, opts);
@@ -153,6 +162,7 @@ double librpa_get_rpa_correlation_energy(LibrpaHandler *h, const LibrpaOptions *
             headwing_settings.option_dielect_func = opts.option_dielect_func;
             headwing_settings.use_2d_dielectric = opts.use_2d_dielectric == LIBRPA_SWITCH_ON;
             headwing_settings.rpa_headwing_body_start = opts.rpa_headwing_body_start;
+            headwing_settings.rpa_headwing_mode = rpa_headwing_mode;
             headwing_settings.sqrt_coulomb_threshold = opts.sqrt_coulomb_threshold;
             corr = compute_RPA_correlation_blacs_2d(chi0, pds->vq, pds->atpairs_local,
                                                     pds->blacs_h, headwing_settings,

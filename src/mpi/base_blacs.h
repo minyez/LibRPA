@@ -164,6 +164,9 @@ public:
                   const int &irsrc, const int &icsrc);
     int init_square_blk(const int &m, const int &n,
                         const int &irsrc, const int &icsrc);
+    //! Initialize square blocks as in init_square_blk, optionally capped by maxblk when maxblk > 0
+    int init_square_blk_capped(const int &m, const int &n, const int &maxblk,
+                               const int &irsrc, const int &icsrc);
     inline int indx_g2l_r(int gindx) const noexcept { return (gindx < m_ && gindx > -1)? g2l_r_[gindx]: -1; };
     inline int indx_g2l_c(int gindx) const noexcept { return (gindx < n_ && gindx > -1)? g2l_c_[gindx]: -1; };
     inline int indx_l2g_r(int lindx) const noexcept { return (lindx < m_local_ && lindx > -1)? l2g_r_[lindx]: -1; };

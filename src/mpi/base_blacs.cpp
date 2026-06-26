@@ -519,6 +519,19 @@ int ArrayDesc::init_square_blk(const int &m, const int &n,
     return set_desc_indices_(m, n, minblk, minblk, irsrc, icsrc);
 }
 
+int ArrayDesc::init_square_blk_capped(const int &m, const int &n, const int &maxblk,
+                                      const int &irsrc, const int &icsrc)
+{
+    int mb = 1, nb = 1, minblk = 1;
+    mb = std::ceil(double(m)/nprows_);
+    nb = std::ceil(double(n)/npcols_);
+    minblk = std::min(mb, nb);
+    if (maxblk > 0)
+        minblk = std::min(minblk, maxblk);
+    minblk = std::max(minblk, 1);
+    return set_desc_indices_(m, n, minblk, minblk, irsrc, icsrc);
+}
+
 std::string ArrayDesc::info() const
 {
     std::string info;

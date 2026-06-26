@@ -167,21 +167,24 @@ void initialize_ds_atpairs_local(Dataset &ds, LibrpaParallelRouting routing)
     const int n_atoms_basis_wfc = ds.basis_wfc.n_atoms;
     const int n_atoms_basis_aux = ds.basis_aux.n_atoms;
     const int n_atoms_struc = ds.atoms.size();
-    const int n_atoms = n_atoms_struc > 0? n_atoms_struc : std::max(n_atoms_basis_aux, n_atoms_basis_wfc);
+    const int n_atoms =
+        n_atoms_struc > 0 ? n_atoms_struc : std::max(n_atoms_basis_aux, n_atoms_basis_wfc);
     if (n_atoms == 0)
-        throw LIBRPA_RUNTIME_ERROR("Number of atoms can not be extracted, please set structure or basis first");
+        throw LIBRPA_RUNTIME_ERROR(
+            "Number of atoms can not be extracted, please set structure or basis first");
 
     if (routing == LIBRPA_ROUTING_AUTO)
     {
-        throw LIBRPA_RUNTIME_ERROR("internal error: routing should be decided before initialize_ds_atpairs_local, not AUTO");
+        throw LIBRPA_RUNTIME_ERROR(
+            "internal error: routing should be decided before initialize_ds_atpairs_local, not "
+            "AUTO");
     }
-    else if(routing == LIBRPA_ROUTING_ATOMPAIR || routing == LIBRPA_ROUTING_LIBRI)
+    else if (routing == LIBRPA_ROUTING_ATOMPAIR || routing == LIBRPA_ROUTING_LIBRI)
     {
         auto tri_local_atpair = librpa_int::dispatch_upper_triangular_tasks(
-            n_atoms, ds.blacs_h.myid, ds.blacs_h.nprows, ds.blacs_h.npcols,
-            ds.blacs_h.myprow, ds.blacs_h.mypcol);
-        for (const auto &p: tri_local_atpair)
-            ds.atpairs_local.emplace_back(p);
+            n_atoms, ds.blacs_h.myid, ds.blacs_h.nprows, ds.blacs_h.npcols, ds.blacs_h.myprow,
+            ds.blacs_h.mypcol);
+        for (const auto &p : tri_local_atpair) ds.atpairs_local.emplace_back(p);
     }
     else
     {
@@ -312,7 +315,8 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
         throw LIBRPA_RUNTIME_ERROR("analytic head/wing meanfield is not initialized");
 
     if (static_cast<int>(ds.pbc.kfrac_list.size()) != mf.get_n_kpoints())
-        throw LIBRPA_RUNTIME_ERROR("analytic head/wing k-point list is inconsistent with meanfield");
+        throw LIBRPA_RUNTIME_ERROR(
+            "analytic head/wing k-point list is inconsistent with meanfield");
 
     const auto &headwing_basis_aux =
         opts.use_shrink_abfs == LIBRPA_SWITCH_ON ? ds.basis_aux_shrink : ds.basis_aux;
@@ -323,10 +327,19 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
     ds.p_headwing = std::make_unique<diele_func>(
         mf, ds.velocity_matrix, ds.pbc.kfrac_list, ds.basis_wfc,
         headwing_basis_aux, freqs, mf.get_n_aos(), mf.get_n_states(),
-        mf.get_n_spins(), headwing_basis_aux.nb_total, ds.pbc, ds.comm_h, ds.blacs_h);
+        mf.get_n_spins(), headwing_basis_aux.nb_total, ds.pbc, ds.comm_h, ds.blacs_h,
+        &ds.scfk_blacs_ctxt);
     ds.p_headwing->use_2d_dielectric = opts.use_2d_dielectric == LIBRPA_SWITCH_ON;
     ds.p_headwing->use_soc = mf.get_n_spinor() > 1;
     ds.p_headwing->debug = global::should_output(LIBRPA_VERBOSE_DEBUG);
+    if (ds.symmetry_context.available && !ds.symmetry_context.kstars.empty())
+    {
+        ds.p_headwing->set_symmetry_context(ds.symmetry_context);
+        ds.p_headwing->use_symmetry = true;
+        for (int atom = 0; atom != static_cast<int>(ds.basis_wfc.n_atoms); ++atom)
+            ds.p_headwing->atom_nw[atom] = ds.basis_wfc.get_atom_nb(atom);
+        ds.p_headwing->coord_frac = ds.symmetry_context.input_coord_frac;
+    }
     ds.p_headwing->init(opts.sqrt_coulomb_threshold, ds.vq);
     ds.p_headwing->cal_head();
     ds.epsmacs_imagfreq = ds.p_headwing->get_head_vec();
@@ -345,4 +358,4 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
     global::profiler.stop("initialize_ds_headwing");
 }
 
-}
+}  // namespace librpa_int

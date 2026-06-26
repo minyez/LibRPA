@@ -1,5 +1,4 @@
 #include "epsilon.h"
-#define OPEN_TEST_FOR_LU_DECOMPOSITION
 #include <math.h>
 #include <omp.h>
 
@@ -1265,8 +1264,10 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
                 coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
                 n_singular, coul_eigenvalues.c, 0.5,
                 headwing_settings.sqrt_coulomb_threshold);
-            df_headwing->wing_mu_to_lambda(sqrtveig_blacs, desc_nabf_nabf_opt);
             n_nonsingular_headwing = n_abf - as_int(n_singular);
+            if (headwing_settings.rpa_headwing_mode == "qavg")
+                df_headwing->wing_mu_to_lambda(sqrtveig_blacs, desc_nabf_nabf,
+                                               n_nonsingular_headwing);
             desc_headwing_response.init_square_blk(n_nonsingular_headwing, n_nonsingular_headwing, 0, 0);
             headwing_response_block =
                 init_local_mat<std::complex<double>>(desc_headwing_response, MAJOR::COL);
@@ -1353,18 +1354,49 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
             }
 
             double pi_begin = omp_get_wtime();
+            const bool average_gamma_headwing =
+                replace_gamma_headwing && headwing_settings.option_dielect_func == 3 &&
+                headwing_settings.rpa_headwing_mode == "qavg";
+            const bool head_only_gamma =
+                replace_gamma_headwing && headwing_settings.rpa_headwing_mode == "head_only";
+            complex<double> rpa_for_omega_q = 0.0;
+            bool rpa_for_omega_q_done = false;
+            double headwing_proj_left_time = 0.0;
+            double headwing_proj_right_time = 0.0;
+            double headwing_trace_log_time = 0.0;
             if (replace_gamma_headwing)
             {
                 headwing_response_block.zero_out();
+                const double proj_left_begin = omp_get_wtime();
                 ScalapackConnector::pgemm_f(
                     'N', 'N', n_abf, n_nonsingular_headwing, n_abf, C_ONE, chi0_block.ptr(), 1, 1,
                     desc_nabf_nabf_opt.desc, sqrtveig_blacs.ptr(), 1, 1, desc_nabf_nabf_opt.desc, C_ZERO,
                     coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+                const double proj_left_end = omp_get_wtime();
                 ScalapackConnector::pgemm_f(
-                    'C', 'N', n_nonsingular_headwing, n_nonsingular_headwing, n_abf, -C_ONE,
+                    'C', 'N', n_nonsingular_headwing, n_nonsingular_headwing, n_abf, C_ONE,
                     sqrtveig_blacs.ptr(), 1, 1,
                     desc_nabf_nabf_opt.desc, coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
                     C_ZERO, headwing_response_block.ptr(), 1, 1, desc_headwing_response.desc);
+                const double proj_right_end = omp_get_wtime();
+                headwing_proj_left_time = proj_left_end - proj_left_begin;
+                headwing_proj_right_time = proj_right_end - proj_left_end;
+                if (head_only_gamma)
+                {
+                    replace_rpa_response_head_only(headwing_response_block,
+                                                   df_headwing->get_rpa_chi0v_head(ifreq),
+                                                   desc_headwing_response);
+                    const double trace_log_begin = omp_get_wtime();
+                    rpa_for_omega_q = compute_rpa_response_trace_logdet_blacs_2d(
+                        headwing_response_block, desc_headwing_response);
+                    headwing_trace_log_time = omp_get_wtime() - trace_log_begin;
+                    rpa_for_omega_q_done = true;
+                }
+                else if (!average_gamma_headwing)
+                {
+                    throw std::logic_error("Unsupported RPA headwing mode: "
+                                           + headwing_settings.rpa_headwing_mode);
+                }
             }
             else
             {
@@ -1377,19 +1409,16 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
             // sprintf(fnp, "pi_ifreq_%d_iq_%d.mtx", ifreq, iq);
             double pi_end = omp_get_wtime();
 
-            complex<double> rpa_for_omega_q = 0.0;
-            if (replace_gamma_headwing)
+            if (rpa_for_omega_q_done)
             {
-                for (int i = 0; i != n_nonsingular_headwing; i++)
-                {
-                    const int ilo = desc_headwing_response.indx_g2l_r(i);
-                    if (ilo < 0) continue;
-                    const int jlo = desc_headwing_response.indx_g2l_c(i);
-                    if (jlo < 0) continue;
-                    headwing_response_block(ilo, jlo) += C_ONE;
-                }
+                // Already evaluated in the reduced Coulomb-eigenvector subspace.
+            }
+            else if (average_gamma_headwing)
+            {
+                const double trace_log_begin = omp_get_wtime();
                 rpa_for_omega_q = df_headwing->compute_rpa_trace_log_average(
                     headwing_response_block, ifreq, desc_headwing_response, headwing_settings);
+                headwing_trace_log_time = omp_get_wtime() - trace_log_begin;
             }
             else
             {
@@ -1431,6 +1460,12 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
             if(comm_h.myid==0)
             {
                 lib_printf("| TIME of DET-freq-q:  %f,  q: ( %f, %f, %f)  TOT: %f  CHI_arr: %f  CHI_comm: %f, CHI_2d: %f, Pi: %f, Det: %f\n",freq, q.x,q.y,q.z,pi_freq_end-pi_freq_begin, chi_arr_time,chi_comm_time,chi_2d_time,pi_end-pi_begin,det_end-pi_end);
+                if (replace_gamma_headwing)
+                {
+                    lib_printf("| TIME of HW-proj-freq-q: %f, q: ( %f, %f, %f)  left_chi0U: %f  right_Uchi0U: %f  trace_log_or_avg: %f\n",
+                               freq, q.x, q.y, q.z, headwing_proj_left_time,
+                               headwing_proj_right_time, headwing_trace_log_time);
+                }
                 //cout << " ifreq:" << freq << "      rpa_for_omega_k: " << rpa_for_omega_q << "      lnt_det: " << ln_det << "    trace_pi " << trace_pi << endl;
                 cRPA_q[q] += rpa_for_omega_q * freq_weight * map_q_weight.at(q) / TWO_PI;//!check
                 tot_RPA_energy += rpa_for_omega_q * freq_weight * map_q_weight.at(q) / TWO_PI;
@@ -1589,6 +1624,36 @@ complex<double> compute_pi_det_blacs_2d(Matz &loc_piT, const ArrayDesc &arrdesc_
     //MPI_Allreduce(&det_loc,&det_glo,1,MPI_DOUBLE_COMPLEX,MPI_PROD,comm_h.comm);
     //ln_det_all=std::log(det_glo);
     return ln_det_all;
+}
+
+cplxdb compute_rpa_response_trace_logdet_blacs_2d(
+    const Matz &response, const ArrayDesc &response_desc)
+{
+    cplxdb trace_loc(0.0, 0.0);
+    cplxdb trace(0.0, 0.0);
+    for (int i = 0; i != response_desc.m(); ++i)
+    {
+        const int ilo = response_desc.indx_g2l_r(i);
+        const int jlo = response_desc.indx_g2l_c(i);
+        if (ilo >= 0 && jlo >= 0) trace_loc += response(ilo, jlo);
+    }
+    MPI_Allreduce(&trace_loc, &trace, 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
+                  response_desc.comm());
+
+    auto identity_minus_response = response.copy();
+    identity_minus_response *= -1.0;
+    for (int i = 0; i != response_desc.m(); ++i)
+    {
+        const int ilo = response_desc.indx_g2l_r(i);
+        const int jlo = response_desc.indx_g2l_c(i);
+        if (ilo >= 0 && jlo >= 0) identity_minus_response(ilo, jlo) += C_ONE;
+    }
+
+    int info = 0;
+    std::vector<int> ipiv(std::max(1, response_desc.m_loc() * 10));
+    const cplxdb ln_det = compute_pi_det_blacs_2d(
+        identity_minus_response, response_desc, ipiv.data(), info);
+    return trace + ln_det;
 }
 
 complex<double> compute_pi_det_blacs(ComplexMatrix &loc_piT, const ArrayDesc &arrdesc_pi, int *ipiv, int &info)
@@ -2965,7 +3030,8 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             {
                 if (df_headwing == nullptr)
                     throw LIBRPA_RUNTIME_ERROR("Head/wing dielectric function is not initialized");
-                df_headwing->wing_mu_to_lambda(sqrtveig_blacs, desc_nabf_nabf_opt);
+                df_headwing->wing_mu_to_lambda(sqrtveig_blacs, desc_nabf_nabf_opt,
+                                               n_abf - n_singular);
             }
         }
         else

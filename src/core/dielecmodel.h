@@ -1,15 +1,22 @@
 #pragma once
+#include <array>
+#include <complex>
 #include <functional>
+#include <string>
 #include <vector>
-#include "atomic_basis.h"
+
 #include "../math/matrix3.h"
 #include "../math/matrix_m.h"
 #include "../mpi/base_blacs.h"
+#include "../mpi/kpoint_blacs_parallel_context.h"
+#include "atomic_basis.h"
+#include "symmetry_context.h"
 #include "meanfield.h"
 #include "pbc.h"
 #include "ri.h"
 
-namespace librpa_int {
+namespace librpa_int
+{
 
 //! double-dispersion Havriliak-Negami model
 struct DoubleHavriliakNegami
@@ -31,6 +38,7 @@ struct RpaHeadwingSettings
     bool use_2d_dielectric = false;
     bool use_soc = false;
     int rpa_headwing_body_start = 0;
+    std::string rpa_headwing_mode = "qavg";
     double sqrt_coulomb_threshold = 0.0;
 };
 
@@ -40,9 +48,19 @@ using velocity_matrix_t = std::vector<std::vector<std::vector<ComplexMatrix>>>;
 void initialize_velocity_matrix(velocity_matrix_t &velocity, int n_spins, int n_kpoints,
                                 int n_states);
 
+std::vector<int> map_kpoints_by_coordinates(
+    const std::vector<Vector3_Order<double>> &target_kpoints,
+    const std::vector<Vector3_Order<double>> &source_kpoints, double tolerance = 1.0e-5);
+
 double headwing_transition_weight(double occupied_weight, double unoccupied_weight, int n_spin,
                                   bool spin_orbit_coupled);
 double headwing_spin_prefactor(int n_spin, bool spin_orbit_coupled);
+void accumulate_wing_mu_for_pair(const std::vector<double> &omega,
+                                 const std::array<std::complex<double>, 3> &velocity_unocc_occ,
+                                 const std::complex<double> &c_mn, double egap, double factor1,
+                                 double factor2, std::complex<double> *wing_mu_for_mu);
+std::vector<int> headwing_local_kpoints(int n_kpoints,
+                                        const KPointBlacsParallelContext *kblacs_ctxt);
 
 // All calculation in unit: Bohr and Ha.
 class diele_func
@@ -91,6 +109,8 @@ private:
     const velocity_matrix_t &velocity_;
     const MpiCommHandler &comm_h;
     const BlacsCtxtHandler &blacs_h;
+    const SymmetryContext *symmetry_context_;
+    const KPointBlacsParallelContext *kblacs_ctxt_;
     size_t n_nonsingular;
     // Lebedev-Laikov angular grid; qw has absorbed 4Pi.
     std::vector<double> qx_leb, qy_leb, qz_leb, qw_leb;
@@ -104,6 +124,19 @@ public:
     bool use_soc = false;
     bool debug = false;
 
+    // Symmetry-aware head/wing switches. When use_symmetry is true and the
+    // input symmetry context can restore the BZ from the IBZ k-grid, cal_head
+    // and cal_wing sum over k-star members instead of the bare IBZ grid.
+    bool use_symmetry = false;
+    std::map<atom_t, size_t> atom_nw;
+    std::map<atom_t, std::array<double, 3>> coord_frac;
+    void set_symmetry_context(const SymmetryContext &ctx) { symmetry_context_ = &ctx; }
+
+    // Public access to the head/wing mean-field copy for driver-side validation
+    // of producer eigenvector coverage. The driver must not expand or broadcast
+    // eigenvectors here; k-parallel consumers use their kBLACS owner groups.
+    MeanField &get_meanfield_df() { return meanfield_df; }
+
 public:
     diele_func(const MeanField &mf, const velocity_matrix_t &velocity,
                const std::vector<Vector3_Order<double>> &kfrac,
@@ -111,7 +144,9 @@ public:
                const AtomicBasis &atomic_basis_abf,
                const std::vector<double> &frequencies_target, const int nbasis, const int nstates,
                const int nspin, const int nabf, const PeriodicBoundaryData &pbc,
-               const MpiCommHandler &comm_h_in, const BlacsCtxtHandler &blacs_h_in)
+               const MpiCommHandler &comm_h_in,
+               const BlacsCtxtHandler &blacs_h_in,
+               const KPointBlacsParallelContext *kblacs_ctxt_in = nullptr)
         : meanfield_df(mf),
           omega(frequencies_target),
           kfrac_band(kfrac),
@@ -119,24 +154,63 @@ public:
           n_states(nstates),
           n_spin(nspin),
           n_abf(nabf),
+          nk(0),
           pbc_(pbc),
           atomic_basis_wfc_(atomic_basis_wfc),
           atomic_basis_abf_(atomic_basis_abf),
           velocity_(velocity),
           comm_h(comm_h_in),
-          blacs_h(blacs_h_in)
-    {};
-    ~diele_func() {};
+          blacs_h(blacs_h_in),
+          symmetry_context_(nullptr),
+          kblacs_ctxt_(nullptr),
+          n_nonsingular(0)
+    {
+        if (kblacs_ctxt_in && kblacs_ctxt_in->is_initialized())
+        {
+            if (kblacs_ctxt_in->n_kpoints() != static_cast<int>(kfrac.size()))
+            {
+                throw std::runtime_error(
+                    "head/wing k-point list is inconsistent with the SCF k-point parallel "
+                    "context");
+            }
+            kblacs_ctxt_ = kblacs_ctxt_in;
+        }
+    };
+    ~diele_func(){};
     void init(double coulomb_eigen_threshold, const atpair_k_cplx_mat_t &Vq);
     void init_wing(double coulomb_eigen_threshold, const atpair_k_cplx_mat_t &Vq);
 
     void cal_head();
+
+private:
+    // Full-BZ head summation (the historical path, now also used as the fallback
+    // when symmetry restoration is unavailable). Expects wg indexed as wg(ik, ib).
+    void cal_head_full_bz();
+    // Symmetry-aware head: IBZ outer loop + k-star member inner loop. Uses
+    // rotate_headwing_velocity to reconstruct the BZ velocity for every member.
+    void cal_head_symmetric();
+
+public:
     double cal_factor(std::string name);
     void test_head();
     std::vector<double> get_head_vec();
-    bool has_wing() const { return !wing.empty(); }
+    bool has_wing() const { return !wing.empty() || !wing_mu.empty(); }
 
-    void cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold, const atpair_k_cplx_mat_t &Vq);  // atpair_k_cplx_mat_t &Vq, Cs_LRI &Cs_data
+    void cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
+                  const atpair_k_cplx_mat_t &Vq);  // atpair_k_cplx_mat_t &Vq, Cs_LRI &Cs_data
+
+private:
+    // Symmetry-aware wing: each kBLACS owner group loops over its local IBZ
+    // k-points, rotates the current k-star member on demand, and contributes to
+    // wing_mu. The IBZ mean-field is not expanded or broadcast globally.
+    void cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
+                            const atpair_k_cplx_mat_t &Vq);
+    // The historical full-BZ wing summation, also used as the fallback when
+    // symmetry restoration is unavailable.
+    void cal_wing_full_bz(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
+                          const atpair_k_cplx_mat_t &Vq);
+
+public:
     // tranform Cs_ij(R) to Cs_ij(k)
     // void FT_R2k(const librpa_int::Cs_LRI &Cs_data);
     // void Cs_ij2mn();
@@ -147,10 +221,10 @@ public:
                                       const int ispin, const ArrayDesc &desc_nband_nband,
                                       const matrix_m<complex<double>> &C_nband_nband);
     // std::complex<double> compute_Cs_ij2mn(int mu, int m, int n, int ik);
-    // std::complex<double> compute_Cijk(const librpa_int::Cs_LRI &Cs_data, int mu, int I, int i, int J, int j, int ik);
-    // transform wing from ABF to Coulomb representation
+    // std::complex<double> compute_Cijk(const librpa_int::Cs_LRI &Cs_data, int mu, int I, int i,
+    // int J, int j, int ik); transform wing from ABF to Coulomb representation
     void wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blacs,
-                           ArrayDesc &desc_nabf_nabf_opt);
+                           ArrayDesc &desc_nabf_nabf_opt, std::size_t n_nonsingular_in);
     // tranform Cs_ij(R) to Cs_ij(k)
     // diagonalize real Vq_cut(q=0)
     // void get_Xv_real(double vq_threshold, const librpa_int::atpair_k_cplx_mat_t &Vq);
@@ -159,6 +233,11 @@ public:
     std::pair<ArrayDesc, matrix_m<complex<double>>> transform_Cs2mnk(
         const int ik, const int mu,
         std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ);
+    std::pair<ArrayDesc, matrix_m<complex<double>>> transform_Cs2mnk_kblacs(
+        int ik, int mu,
+        std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ,
+        const BlacsCtxtHandler &wing_blacs_h, const Vector3_Order<double> &kfrac,
+        const std::vector<std::vector<const ComplexMatrix *>> *wfc_override = nullptr);
     // void FT_R2k();
     // std::complex<double> compute_Cijk(Cs_LRI &Cs_in, int mu, int I, int i, int J, int j, int
     // ik); void Cs_ij2mn(); std::complex<double> compute_Cs_ij2mn(int mu, int m, int n, int
@@ -174,7 +253,7 @@ public:
     matrix_m<std::complex<double>> get_rpa_chi0v_wing(const int ifreq) const;
 
     ArrayDesc get_body_inv(matrix_m<std::complex<double>> &chi0_block,
-                            ArrayDesc &desc_nabf_nabf_opt);
+                           ArrayDesc &desc_nabf_nabf_opt);
     void construct_L(const int ifreq, ArrayDesc &desc_body);
     void construct_rpa_trace_log_schur(const int ifreq, ArrayDesc &desc_body,
                                        int wing_row_offset = 0);
@@ -199,8 +278,8 @@ public:
     void rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
                      ArrayDesc &desc_nabf_nabf_opt);
     std::complex<double> compute_rpa_trace_log_average(
-        matrix_m<std::complex<double>> &response_block, const int ifreq,
-        ArrayDesc &desc_response, const RpaHeadwingSettings &settings);
+        matrix_m<std::complex<double>> &response_block, const int ifreq, ArrayDesc &desc_response,
+        const RpaHeadwingSettings &settings);
     void rewrite_rpa_response(matrix_m<std::complex<double>> &eps_minus_identity_block,
                               const int ifreq, ArrayDesc &desc_nabf_nabf_opt);
     void assign_chi0(matrix_m<std::complex<double>> &chi0_block, ArrayDesc &desc_nabf_nabf_opt);
@@ -208,19 +287,16 @@ public:
 
 int rpa_headwing_regular_body_start_channel(const RpaHeadwingSettings &settings);
 
-double rpa_headwing_reciprocal_cell_volume(const PeriodicBoundaryData &pbc,
-                                           bool use_2d_dielectric);
+double rpa_headwing_reciprocal_cell_volume(const PeriodicBoundaryData &pbc, bool use_2d_dielectric);
+
+ArrayDesc make_rpa_chi0v_wing_desc(const ArrayDesc &desc_body, const int wing_row_offset,
+                                   const int wing_rows_loc, const int wing_cols_loc);
 
 std::complex<double> compute_rpa_chi0v_headwing_trace_log_average(
-    const matrix_m<std::complex<double>> &head,
-    const matrix_m<std::complex<double>> &schur_l,
-    const std::complex<double> &trace_body,
-    const std::complex<double> &logdet_body,
-    const std::vector<double> &qx,
-    const std::vector<double> &qy,
-    const std::vector<double> &qz,
-    const std::vector<double> &weights,
-    double *weight_sum_out = nullptr,
+    const matrix_m<std::complex<double>> &head, const matrix_m<std::complex<double>> &schur_l,
+    const std::complex<double> &trace_body, const std::complex<double> &logdet_body,
+    const std::vector<double> &qx, const std::vector<double> &qy, const std::vector<double> &qz,
+    const std::vector<double> &weights, double *weight_sum_out = nullptr,
     std::complex<double> *averaged_body_out = nullptr,
     std::complex<double> *averaged_head_out = nullptr,
     std::complex<double> *averaged_schur_log_out = nullptr);
@@ -229,5 +305,8 @@ void replace_rpa_response_headwing(matrix_m<std::complex<double>> &response_bloc
                                    const matrix_m<std::complex<double>> &head,
                                    const matrix_m<std::complex<double>> &wing,
                                    const ArrayDesc &desc_response);
+void replace_rpa_response_head_only(matrix_m<std::complex<double>> &response_block,
+                                    const matrix_m<std::complex<double>> &head,
+                                    const ArrayDesc &desc_response);
 
-}
+}  // namespace librpa_int

@@ -31,9 +31,12 @@ void driver::task_rpa()
     const bool compute_headwing =
         driver::get_bool(driver::opts.replace_w_head) &&
         (driver::opts.option_dielect_func == 3 || driver::opts.option_dielect_func == 4);
+    const bool head_only_mode =
+        compute_headwing && std::string(driver::opts.rpa_headwing_mode) == "head_only";
     if (compute_headwing)
     {
-        read_headwing_input(driver_params.input_dir, driver::opts.option_dielect_func == 3);
+        read_headwing_input(driver_params.input_dir,
+                            driver::opts.option_dielect_func == 3 && !head_only_mode);
     }
 
     corr = h.get_rpa_correlation_energy(driver::opts, corr_irk);

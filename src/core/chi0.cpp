@@ -54,6 +54,8 @@ using std::vector;
 namespace
 {
 
+constexpr int SHRINK_SCALAPACK_BLOCK_CAP = 2048;
+
 std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
 {
     std::map<atom_t, size_t> atom_nw;
@@ -1561,9 +1563,9 @@ static void shrink_abfs_chi0(
     ArrayDesc desc_nabf_nabf_ll(blacs_ctxt_h);
     ArrayDesc desc_nabf_nabf_sl(blacs_ctxt_h);
     ArrayDesc desc_nabf_nabf_ss(blacs_ctxt_h);
-    desc_nabf_nabf_ll.init_square_blk(all_mu, all_mu, 0, 0);
-    desc_nabf_nabf_sl.init_square_blk(all_mu_s, all_mu, 0, 0);
-    desc_nabf_nabf_ss.init_square_blk(all_mu_s, all_mu_s, 0, 0);
+    desc_nabf_nabf_ll.init_square_blk_capped(all_mu, all_mu, SHRINK_SCALAPACK_BLOCK_CAP, 0, 0);
+    desc_nabf_nabf_sl.init_square_blk_capped(all_mu_s, all_mu, SHRINK_SCALAPACK_BLOCK_CAP, 0, 0);
+    desc_nabf_nabf_ss.init_square_blk_capped(all_mu_s, all_mu_s, SHRINK_SCALAPACK_BLOCK_CAP, 0, 0);
     const auto set_IJ_nabf_nabf =
         get_necessary_IJ_from_block_2D_sy('U', abf_large, desc_nabf_nabf_ll);
     const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nabf_nabf);
@@ -3129,9 +3131,9 @@ void Chi0::unfold_abfs_Wc_q(
     ArrayDesc desc_nabf_nabf_ll(blacs_ctxt_h);
     ArrayDesc desc_nabf_nabf_ss(blacs_ctxt_h);
     ArrayDesc desc_nabf_nabf_sl(blacs_ctxt_h);
-    desc_nabf_nabf_ll.init_square_blk(all_mu, all_mu, 0, 0);
-    desc_nabf_nabf_ss.init_square_blk(all_mu_s, all_mu_s, 0, 0);
-    desc_nabf_nabf_sl.init_square_blk(all_mu_s, all_mu, 0, 0);
+    desc_nabf_nabf_ll.init_square_blk_capped(all_mu, all_mu, SHRINK_SCALAPACK_BLOCK_CAP, 0, 0);
+    desc_nabf_nabf_ss.init_square_blk_capped(all_mu_s, all_mu_s, SHRINK_SCALAPACK_BLOCK_CAP, 0, 0);
+    desc_nabf_nabf_sl.init_square_blk_capped(all_mu_s, all_mu, SHRINK_SCALAPACK_BLOCK_CAP, 0, 0);
     const auto set_IJ_nabf_nabf = get_necessary_IJ_from_block_2D_sy(
         'U', this->atbasis_abf, desc_nabf_nabf_ss);
     const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nabf_nabf);

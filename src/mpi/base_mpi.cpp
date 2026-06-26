@@ -1,10 +1,10 @@
 #include "base_mpi.h"
 
-#include <cassert>
-#include <set>
-#include <map>
 #include <algorithm>
+#include <cassert>
 #include <cmath>
+#include <map>
+#include <set>
 
 #include "../utils/error.h"
 
@@ -14,12 +14,22 @@ namespace librpa_int
 const char *mpi_procname_uninit = "unknown";
 
 MpiCommHandler::MpiCommHandler()
-    : initialized_(false), comm_set_(false), comm(MPI_COMM_NULL), myid(0), nprocs(0), procname(mpi_procname_uninit)
+    : initialized_(false),
+      comm_set_(false),
+      comm(MPI_COMM_NULL),
+      myid(0),
+      nprocs(0),
+      procname(mpi_procname_uninit)
 {
 }
 
 MpiCommHandler::MpiCommHandler(MPI_Comm comm_in, bool init_on_construct)
-        : initialized_(false), comm_set_(true), comm(comm_in), myid(0), nprocs(0), procname(mpi_procname_uninit)
+    : initialized_(false),
+      comm_set_(true),
+      comm(comm_in),
+      myid(0),
+      nprocs(0),
+      procname(mpi_procname_uninit)
 {
     if (init_on_construct) this->init();
 }
@@ -133,7 +143,8 @@ std::string MpiCommHandler::str() const
 
 // ParallelRouting parallel_routing = ParallelRouting::ATOM_PAIR;
 
-// void set_parallel_routing(const std::string &option, const int &atpais_num, const int &Rt_num, ParallelRouting &routing)
+// void set_parallel_routing(const std::string &option, const int &atpais_num, const int &Rt_num,
+// ParallelRouting &routing)
 // {
 //     if (option == "auto")
 //         routing = atpais_num < Rt_num ? ParallelRouting::R_TAU : ParallelRouting::ATOM_PAIR;
@@ -167,6 +178,15 @@ int get_mpi_size(const MPI_Comm &comm)
     return nprocs;
 }
 
+int find_mpi_owner_rank(bool owns_object, const MPI_Comm &comm)
+{
+    const int rank = get_mpi_rank(comm);
+    const int size = get_mpi_size(comm);
+    int owner = owns_object ? rank : size;
+    MPI_Allreduce(MPI_IN_PLACE, &owner, 1, MPI_INT, MPI_MIN, comm);
+    return owner == size ? -1 : owner;
+}
+
 std::vector<int> dispatcher(int ist, int ied, unsigned myid, unsigned size, bool sequential)
 {
     std::vector<int> ilist;
@@ -196,7 +216,7 @@ std::vector<std::pair<int, int>> dispatcher(int i1st, int i1ed, int i2st, int i2
 {
     std::vector<std::pair<int, int>> ilist;
     assert(size > 0);
-    if ( (i1st >= i1ed) || (i2st >= i2ed) ) return ilist;
+    if ((i1st >= i1ed) || (i2st >= i2ed)) return ilist;
     unsigned dist1 = i1ed - i1st;
     unsigned dist2 = i2ed - i2st;
     auto n = dist1 * dist2 / size;
@@ -212,7 +232,7 @@ std::vector<std::pair<int, int>> dispatcher(int i1st, int i1ed, int i2st, int i2
         else
             // even mode: ist, ist+size, ist+2*size, ...
             id = size * i + myid;
-        if ( favor_1st )
+        if (favor_1st)
         {
             // id1 goes faster
             id1 = id % dist1;
@@ -224,7 +244,7 @@ std::vector<std::pair<int, int>> dispatcher(int i1st, int i1ed, int i2st, int i2
             id2 = id % dist2;
             id1 = id / dist2;
         }
-        ilist.push_back({i1st+id1, i2st+id2});
+        ilist.push_back({i1st + id1, i2st + id2});
     }
     return ilist;
 }
@@ -235,7 +255,7 @@ std::vector<unsigned> dispatcher_balanced_counts(unsigned dist, const std::vecto
         throw LIBRPA_RUNTIME_ERROR("balanced dispatcher requires at least one weight");
 
     long double inv_weight_sum = 0.0L;
-    for (const auto &weight: weights)
+    for (const auto &weight : weights)
     {
         if (weight <= 0)
             throw LIBRPA_RUNTIME_ERROR("balanced dispatcher requires positive weights");
@@ -250,9 +270,8 @@ std::vector<unsigned> dispatcher_balanced_counts(unsigned dist, const std::vecto
     unsigned assigned = 0;
     for (unsigned iproc = 0; iproc != weights.size(); iproc++)
     {
-        const long double target =
-            static_cast<long double>(dist) /
-            (static_cast<long double>(weights[iproc]) * inv_weight_sum);
+        const long double target = static_cast<long double>(dist) /
+                                   (static_cast<long double>(weights[iproc]) * inv_weight_sum);
         const auto count = static_cast<unsigned>(std::floor(target));
         counts[iproc] = count;
         assigned += count;
@@ -266,8 +285,7 @@ std::vector<unsigned> dispatcher_balanced_counts(unsigned dist, const std::vecto
                   return a.first > b.first;
               });
 
-    for (unsigned i = 0; i != dist - assigned; i++)
-        counts[remainders[i].second]++;
+    for (unsigned i = 0; i != dist - assigned; i++) counts[remainders[i].second]++;
 
     return counts;
 }
@@ -286,12 +304,10 @@ std::vector<int> dispatcher_balanced(int ist, int ied, const std::vector<int> &w
     if (sequential)
     {
         unsigned start = 0;
-        for (unsigned iproc = 0; iproc != myid; iproc++)
-            start += counts[iproc];
+        for (unsigned iproc = 0; iproc != myid; iproc++) start += counts[iproc];
 
         ilist.reserve(counts[myid]);
-        for (unsigned i = 0; i != counts[myid]; i++)
-            ilist.push_back(ist + start + i);
+        for (unsigned i = 0; i != counts[myid]; i++) ilist.push_back(ist + start + i);
     }
     else
     {
@@ -314,19 +330,23 @@ std::vector<int> dispatcher_balanced(int ist, int ied, const std::vector<int> &w
     return ilist;
 }
 
-std::vector<int> dispatcher_balanced(int ist, int ied, int weight_myid,
-                                     bool sequential, const MPI_Comm comm)
+std::vector<int> dispatcher_balanced(int ist, int ied, int weight_myid, bool sequential,
+                                     const MPI_Comm comm)
 {
     const auto myid = static_cast<unsigned>(get_mpi_rank(comm));
     const auto size = static_cast<unsigned>(get_mpi_size(comm));
 
     std::vector<int> weights(size);
-    MPI_Allgather(&weight_myid, 1, mpi_datatype<int>::value,
-                  weights.data(), 1, mpi_datatype<int>::value, comm);
+    MPI_Allgather(&weight_myid, 1, mpi_datatype<int>::value, weights.data(), 1,
+                  mpi_datatype<int>::value, comm);
     return dispatcher_balanced(ist, ied, weights, myid, sequential);
 }
 
-std::vector<std::pair<int,int>> dispatch_upper_triangular_tasks(const int &natoms, const int &myid, const int &nprows, const int &npcols, const int &myprow, const int &mypcol)
+std::vector<std::pair<int, int>> dispatch_upper_triangular_tasks(const int &natoms, const int &myid,
+                                                                 const int &nprows,
+                                                                 const int &npcols,
+                                                                 const int &myprow,
+                                                                 const int &mypcol)
 {
     // int myid = blacs_ctxt_world_h.myid;
     // int nprows = blacs_ctxt_world_h.nprows;
@@ -337,14 +357,14 @@ std::vector<std::pair<int,int>> dispatch_upper_triangular_tasks(const int &natom
     int rev_myprow = nprows - 1 - myprow;
     int rev_mypcol = npcols - 1 - mypcol;
 
-    bool flag_former=true;
-    if(myprow>rev_myprow)
+    bool flag_former = true;
+    if (myprow > rev_myprow)
     {
-        flag_former=false;
+        flag_former = false;
     }
-    else if(myprow == rev_myprow && mypcol> rev_mypcol)
+    else if (myprow == rev_myprow && mypcol > rev_mypcol)
     {
-        flag_former=false;
+        flag_former = false;
     }
 
     auto list_row = dispatcher(0, natoms, myprow, nprows, true);
@@ -355,37 +375,40 @@ std::vector<std::pair<int,int>> dispatch_upper_triangular_tasks(const int &natom
     auto loc_task = pick_upper_triangular_tasks(list_row, list_col);
     auto rev_loc_task = pick_upper_triangular_tasks(list_rev_row, list_rev_col);
 
-    std::vector<std::pair<int,int>> combine_task, final_loc_task;
-    if(myprow == rev_myprow && mypcol==rev_mypcol)
+    std::vector<std::pair<int, int>> combine_task, final_loc_task;
+    if (myprow == rev_myprow && mypcol == rev_mypcol)
     {
         return loc_task;
     }
-    else if(flag_former)
+    else if (flag_former)
     {
-        combine_task.insert(combine_task.end(),loc_task.begin(),loc_task.end());
-        combine_task.insert(combine_task.end(),rev_loc_task.begin(),rev_loc_task.end());
+        combine_task.insert(combine_task.end(), loc_task.begin(), loc_task.end());
+        combine_task.insert(combine_task.end(), rev_loc_task.begin(), rev_loc_task.end());
         int n_half_task = combine_task.size() / 2;
-        final_loc_task.insert(final_loc_task.end(),combine_task.begin(),combine_task.begin()+n_half_task);
+        final_loc_task.insert(final_loc_task.end(), combine_task.begin(),
+                              combine_task.begin() + n_half_task);
     }
     else
     {
-        combine_task.insert(combine_task.end(),rev_loc_task.begin(),rev_loc_task.end());
-        combine_task.insert(combine_task.end(),loc_task.begin(),loc_task.end());
+        combine_task.insert(combine_task.end(), rev_loc_task.begin(), rev_loc_task.end());
+        combine_task.insert(combine_task.end(), loc_task.begin(), loc_task.end());
         int n_half_task = combine_task.size() / 2;
-        final_loc_task.insert(final_loc_task.end(),combine_task.begin()+n_half_task,combine_task.end());
+        final_loc_task.insert(final_loc_task.end(), combine_task.begin() + n_half_task,
+                              combine_task.end());
     }
     // for(auto &iap:final_loc_task)
-    //     librpa_int::global::lib_printf(" loc_task  myid: %d, myprow ,mypcol: %d, %d  task-pair ( %d, %d ) \n",myid, myprow,mypcol, iap.first, iap.second);
+    //     librpa_int::global::lib_printf(" loc_task  myid: %d, myprow ,mypcol: %d, %d  task-pair (
+    //     %d, %d ) \n",myid, myprow,mypcol, iap.first, iap.second);
     return final_loc_task;
 }
 
-std::vector<std::pair<int,int>> pick_upper_triangular_tasks(std::vector<int> list_row, std::vector<int> list_col)
+std::vector<std::pair<int, int>> pick_upper_triangular_tasks(std::vector<int> list_row,
+                                                             std::vector<int> list_col)
 {
-    std::vector<std::pair<int,int>> loc_task;
-    for(auto &lr:list_row)
-        for(auto &lc:list_col)
-            if(lr<=lc)
-                loc_task.push_back(std::pair<int,int>(lr,lc));
+    std::vector<std::pair<int, int>> loc_task;
+    for (auto &lr : list_row)
+        for (auto &lc : list_col)
+            if (lr <= lc) loc_task.push_back(std::pair<int, int>(lr, lc));
     return loc_task;
 }
 
@@ -397,40 +420,41 @@ std::vector<std::pair<int, int>> find_duplicate_ordered_pair(
     MPI_Comm_rank(comm, &myid);
     MPI_Comm_size(comm, &nprocs);
     const size_t npairs_total = n * n;
-    const size_t maxbytes = 1000 * 1000 * 1000; // 1 GB
+    const size_t maxbytes = 1000 * 1000 * 1000;  // 1 GB
     // Communicate atom pair information per batch, reduce memory usage
     const size_t npairs_batch = std::min(maxbytes / size_t(nprocs), npairs_total);
-    const size_t nbatch = npairs_total % npairs_batch ?
-                          npairs_total / npairs_batch + 1 :
-                          npairs_total / npairs_batch;
+    const size_t nbatch =
+        npairs_total % npairs_batch ? npairs_total / npairs_batch + 1 : npairs_total / npairs_batch;
     size_t npairs_local = ordered_pairs.size();
     std::vector<size_t> npairs(nprocs, 0);
     MPI_Allgather(&npairs_local, 1, MPI_UNSIGNED_LONG, npairs.data(), 1, MPI_UNSIGNED_LONG, comm);
     // flatten the pair index, using ordered set
     // NOTE: assuming no duplicates in ordered_pairs
     std::set<size_t> ordered_pairs_flatten;
-    for (const auto& op: ordered_pairs)
+    for (const auto &op : ordered_pairs)
     {
         ordered_pairs_flatten.insert(op.first * n + op.second);
     }
     for (size_t ib = 0; ib != nbatch; ib++)
     {
         const size_t pair_start_batch = ib * npairs_batch;
-        const size_t npairs_batch_current = ib == nbatch - 1?
-            npairs_total - npairs_batch * ib : npairs_batch;
+        const size_t npairs_batch_current =
+            ib == nbatch - 1 ? npairs_total - npairs_batch * ib : npairs_batch;
         std::vector<unsigned char> have_pair_all(npairs_batch_current * nprocs, 0);
         {
             std::vector<unsigned char> have_pair_this(npairs_batch_current * nprocs, 0);
             for (size_t i = 0; i < npairs_batch_current; i++)
             {
                 size_t id_pair = pair_start_batch + i;
-                if (std::find(ordered_pairs_flatten.cbegin(), ordered_pairs_flatten.cend(), id_pair) != ordered_pairs_flatten.cend())
+                if (std::find(ordered_pairs_flatten.cbegin(), ordered_pairs_flatten.cend(),
+                              id_pair) != ordered_pairs_flatten.cend())
                 {
                     int ind = nprocs * i + myid;
                     have_pair_this[ind] = 49;
                 }
             }
-            MPI_Allreduce(have_pair_this.data(), have_pair_all.data(), npairs_batch * nprocs, MPI_UNSIGNED_CHAR, MPI_SUM, comm);
+            MPI_Allreduce(have_pair_this.data(), have_pair_all.data(), npairs_batch * nprocs,
+                          MPI_UNSIGNED_CHAR, MPI_SUM, comm);
         }
         std::map<size_t, std::vector<int>> has_copies;
         for (size_t iap = 0; iap < npairs_batch_current; iap++)
@@ -444,12 +468,12 @@ std::vector<std::pair<int, int>> find_duplicate_ordered_pair(
             }
         }
         // now check the duplicates
-        for (const auto &i_v: has_copies)
+        for (const auto &i_v : has_copies)
         {
             size_t id_pair = pair_start_batch + i_v.first;
-            // keep the one with least elements at this stage, remove the other copies (short-sighted)
-            // Assuming that there is at least one copy
-            // if (i_v.second.size() == 0) cout << "Warning! " << i_v.first << " has no copy across\n";
+            // keep the one with least elements at this stage, remove the other copies
+            // (short-sighted) Assuming that there is at least one copy if (i_v.second.size() == 0)
+            // cout << "Warning! " << i_v.first << " has no copy across\n";
             if (i_v.second.size() == 1) continue;
             std::vector<size_t> sizes(i_v.second.size());
             for (size_t i = 0; i < sizes.size(); i++)
@@ -458,11 +482,12 @@ std::vector<std::pair<int, int>> find_duplicate_ordered_pair(
             }
             auto iter_id = std::min_element(sizes.cbegin(), sizes.cend());
             int id_keep = i_v.second[std::distance(sizes.cbegin(), iter_id)];
-            if (myid != id_keep && std::find(i_v.second.cbegin(), i_v.second.cend(), myid) != i_v.second.cend())
+            if (myid != id_keep &&
+                std::find(i_v.second.cbegin(), i_v.second.cend(), myid) != i_v.second.cend())
             {
                 pairs_duplicate.push_back({id_pair / n, id_pair % n});
             }
-            for (const auto &id: i_v.second)
+            for (const auto &id : i_v.second)
             {
                 if (id != id_keep) npairs[id] -= 1;
             }

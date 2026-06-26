@@ -431,6 +431,10 @@ typedef struct
     //! Experimental
     LibrpaSwitch read_sigc_mat_rf;
 
+    //! RPA Gamma correction mode: "qavg" keeps the current head/wing q-average,
+    //! "head_only" replaces only the analytic head before the ordinary trace-log.
+    char rpa_headwing_mode[LIBRPA_MAX_STRLEN];
+
     //! Threshold of eigenvalues to perform square root of Coulomb matrices.
     //! @par Default
     //! 0.0

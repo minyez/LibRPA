@@ -234,6 +234,8 @@ module librpa_f03
       integer :: rpa_headwing_body_start
       !> Experimental: read NAO correlation self-energy matrix in real-space/frequency form.
       logical :: read_sigc_mat_rf
+      !> RPA Gamma correction mode: "qavg" or "head_only".
+      character(len=LIBRPA_MAX_STRLEN) :: rpa_headwing_mode
       !> Threshold for eigenvalues when taking the square root of Coulomb matrices.
       real(dp) :: sqrt_coulomb_threshold
       !> LibRI threshold of LRI triple coefficients for response function.

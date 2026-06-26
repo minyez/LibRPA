@@ -1,9 +1,8 @@
-#include "../mpi/base_mpi.h"
-
-#include "testutils.h"
-
-#include <stdexcept>
 #include <cassert>
+#include <stdexcept>
+
+#include "../mpi/base_mpi.h"
+#include "testutils.h"
 
 using namespace librpa_int;
 
@@ -27,8 +26,7 @@ void test_dispatcher_1d()
     /* for (auto &id: ilist) */
     /*     printf("myid = %d, id = %u\n", myid, id); */
     assert(ilist.size() == 3);
-    for ( int i = 0; i != n; i++ )
-        assert( ilist[i] == myid * 3 + i);
+    for (int i = 0; i != n; i++) assert(ilist[i] == myid * 3 + i);
 
     // balanced non-sequential case
     //   proc 0: 0, 4, 8
@@ -37,9 +35,8 @@ void test_dispatcher_1d()
     //   proc 3: 3, 7, 11
     ilist = dispatcher(0, 12, myid, size, false);
     n = ilist.size();
-    assert (n == 3);
-    for ( int i = 0; i != n; i++ )
-        assert( ilist[i] == myid + i * 4);
+    assert(n == 3);
+    for (int i = 0; i != n; i++) assert(ilist[i] == myid + i * 4);
 
     // inbalanced non-sequential dispatching
     //   proc 0: 0, 4
@@ -100,7 +97,7 @@ void test_dispatcher_2d()
     auto i2list = dispatcher(0, 2, 1, 5, myid, size, true, true);
     n = i2list.size();
     assert(n == 2);
-    for ( int i = 0; i != 2; i++)
+    for (int i = 0; i != 2; i++)
     {
         assert(i2list[i].first == i);
         assert(i2list[i].second == myid + 1);
@@ -114,7 +111,7 @@ void test_dispatcher_2d()
     i2list = dispatcher(0, 2, 1, 5, myid, size, true, false);
     n = i2list.size();
     assert(n == 2);
-    for ( int i = 0; i != 2; i++)
+    for (int i = 0; i != 2; i++)
     {
         assert(i2list[i].first == myid / 2);
         assert(i2list[i].second == (myid % 2) * 2 + i + 1);
@@ -128,7 +125,7 @@ void test_dispatcher_2d()
     i2list = dispatcher(0, 2, 1, 5, myid, size, false, true);
     n = i2list.size();
     assert(n == 2);
-    for ( int i = 0; i != 2; i++)
+    for (int i = 0; i != 2; i++)
     {
         assert(i2list[i].first == myid % 2);
         assert(i2list[i].second == 1 + (myid / 2) + i * 2);
@@ -141,7 +138,7 @@ void test_dispatcher_2d()
     i2list = dispatcher(0, 4, 1, 3, myid, size, false, false);
     n = i2list.size();
     assert(n == 2);
-    for ( int i = 0; i != 2; i++)
+    for (int i = 0; i != 2; i++)
     {
         assert(i2list[i].first == myid / 2 + i * 2);
         assert(i2list[i].second == myid % 2 + 1);
@@ -154,7 +151,7 @@ void test_dispatcher_2d()
     //   proc 1: (2, 1), (0, 2)
     //   proc 2: (1, 2)
     //   proc 3: (2, 2)
-    if ( (myid == 0) || (myid == 1) )
+    if ((myid == 0) || (myid == 1))
     {
         assert(n == 2);
         assert(i2list[0].first == myid * 2);
@@ -176,11 +173,11 @@ void test_dispatcher_2d()
     //   proc 1: (0, 4), (1, 2)
     //   proc 2: (1, 3)
     //   proc 3: (1, 4)
-    if ( (myid == 0) || (myid == 1) )
+    if ((myid == 0) || (myid == 1))
     {
         assert(n == 2);
         assert(i2list[0].first == 0);
-        assert(i2list[0].second == (myid+1)*2);
+        assert(i2list[0].second == (myid + 1) * 2);
         assert(i2list[1].first == myid);
         assert(i2list[1].second == 3 - myid);
     }
@@ -198,22 +195,21 @@ void test_dispatcher_2d()
     //   proc 1: ( 0, 1), (1, 2)
     //   proc 2: ( 1, 1)
     //   proc 3: (-1, 2)
-    if ( (myid == 0) || (myid == 1) )
+    if ((myid == 0) || (myid == 1))
     {
-        printf("myid %d: item 0: (%d %d) item 1 (%d %d)\n",
-               myid, i2list[0].first, i2list[0].second, i2list[1].first, i2list[1].second);
+        printf("myid %d: item 0: (%d %d) item 1 (%d %d)\n", myid, i2list[0].first, i2list[0].second,
+               i2list[1].first, i2list[1].second);
         assert(n == 2);
-        assert(i2list[0].first == myid -1);
+        assert(i2list[0].first == myid - 1);
         assert(i2list[0].second == 1);
         assert(i2list[1].first == myid);
         assert(i2list[1].second == 2);
     }
     else
     {
-        printf("myid %d: item 0: (%d %d)\n",
-               myid, i2list[0].first, i2list[0].second);
+        printf("myid %d: item 0: (%d %d)\n", myid, i2list[0].first, i2list[0].second);
         assert(n == 1);
-        assert(i2list[0].first == 5 - 2*myid);
+        assert(i2list[0].first == 5 - 2 * myid);
         assert(i2list[0].second == myid - 1);
     }
 
@@ -224,20 +220,19 @@ void test_dispatcher_2d()
     //   proc 1: (0, -1), (2, -1)
     //   proc 2: (1, -2)
     //   proc 3: (1, -1)
-    if ( (myid == 0) || (myid == 1) )
+    if ((myid == 0) || (myid == 1))
     {
-        printf("myid %d: item 0: (%d %d) item 1 (%d %d)\n",
-               myid, i2list[0].first, i2list[0].second, i2list[1].first, i2list[1].second);
+        printf("myid %d: item 0: (%d %d) item 1 (%d %d)\n", myid, i2list[0].first, i2list[0].second,
+               i2list[1].first, i2list[1].second);
         assert(n == 2);
         assert(i2list[0].first == 0);
-        assert(i2list[0].second == myid-2);
+        assert(i2list[0].second == myid - 2);
         assert(i2list[1].first == 2);
-        assert(i2list[1].second == myid-2);
+        assert(i2list[1].second == myid - 2);
     }
     else
     {
-        printf("myid %d: item 0: (%d %d)\n",
-               myid, i2list[0].first, i2list[0].second);
+        printf("myid %d: item 0: (%d %d)\n", myid, i2list[0].first, i2list[0].second);
         assert(n == 1);
         assert(i2list[0].first == 1);
         assert(i2list[0].second == myid - 4);
@@ -255,15 +250,10 @@ void test_dispatcher_1d_balanced()
     auto ilist = dispatcher_balanced(0, 12, weights[myid], true, MPI_COMM_WORLD);
     int n = ilist.size();
     assert(n == counts_ref[myid]);
-    for (int i = 0; i != n; i++)
-        assert(ilist[i] == starts_ref[myid] + i);
+    for (int i = 0; i != n; i++) assert(ilist[i] == starts_ref[myid] + i);
 
-    const std::vector<std::vector<int>> ilist_cyclic_ref({
-        {0, 4, 7, 9, 10, 11},
-        {1, 5, 8},
-        {2, 6},
-        {3}
-    });
+    const std::vector<std::vector<int>> ilist_cyclic_ref(
+        {{0, 4, 7, 9, 10, 11}, {1, 5, 8}, {2, 6}, {3}});
     ilist = dispatcher_balanced(0, 12, weights[myid], false, MPI_COMM_WORLD);
     assert(equal_vector(ilist, ilist_cyclic_ref[myid]));
 
@@ -308,15 +298,28 @@ void test_handler_bcast()
     assert(v == root);
 }
 
-int main (int argc, char *argv[])
+void test_find_mpi_owner_rank()
+{
+    const int myid = get_mpi_rank(MPI_COMM_WORLD);
+
+    int owner = find_mpi_owner_rank(myid == 2, MPI_COMM_WORLD);
+    assert(owner == 2);
+
+    owner = find_mpi_owner_rank(myid == 1 || myid == 3, MPI_COMM_WORLD);
+    assert(owner == 1);
+
+    owner = find_mpi_owner_rank(false, MPI_COMM_WORLD);
+    assert(owner == -1);
+}
+
+int main(int argc, char *argv[])
 {
     int provided;
     MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
 
     size_global = get_mpi_size(MPI_COMM_WORLD);
 
-    if ( size_global != 4 )
-        throw std::runtime_error("test imposes 4 MPI processes");
+    if (size_global != 4) throw std::runtime_error("test imposes 4 MPI processes");
 
     myid_global = get_mpi_rank(MPI_COMM_WORLD);
 
@@ -325,6 +328,7 @@ int main (int argc, char *argv[])
     test_dispatcher_1d_balanced();
     test_handler_allreduce();
     test_handler_bcast();
+    test_find_mpi_owner_rank();
 
     MPI_Finalize();
 

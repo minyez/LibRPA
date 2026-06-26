@@ -209,6 +209,7 @@ module librpa_f03
       integer(c_int) :: use_2d_dielectric
       integer(c_int) :: rpa_headwing_body_start
       integer(c_int) :: read_sigc_mat_rf
+      character(kind=c_char, len=1) :: rpa_headwing_mode(LIBRPA_MAX_STRLEN)
       real(c_double) :: sqrt_coulomb_threshold
       real(c_double) :: libri_chi0_threshold_C
       real(c_double) :: libri_chi0_threshold_G
@@ -347,6 +348,8 @@ module librpa_f03
       integer :: rpa_headwing_body_start
       !> Experimental: read NAO correlation self-energy matrix in real-space/frequency form.
       logical :: read_sigc_mat_rf
+      !> RPA Gamma correction mode: "qavg" or "head_only".
+      character(len=LIBRPA_MAX_STRLEN) :: rpa_headwing_mode
       !> Threshold for eigenvalues when taking the square root of Coulomb matrices.
       real(dp) :: sqrt_coulomb_threshold
       !> LibRI threshold of LRI triple coefficients for response function.
@@ -1152,6 +1155,7 @@ contains
       call sync_opt(opts%use_2d_dielectric,       opts%opts_c%use_2d_dielectric,       direction)
       call sync_opt(opts%rpa_headwing_body_start, opts%opts_c%rpa_headwing_body_start, direction)
       call sync_opt(opts%read_sigc_mat_rf,        opts%opts_c%read_sigc_mat_rf,        direction)
+      call sync_opt(opts%rpa_headwing_mode,       opts%opts_c%rpa_headwing_mode,       direction)
       call sync_opt(opts%use_scalapack_gw_wc,     opts%opts_c%use_scalapack_gw_wc,     direction)
       call sync_opt(opts%use_cholesky_gw_wc,      opts%opts_c%use_cholesky_gw_wc,      direction)
       call sync_opt(opts%use_gpu_replace_scalapack, opts%opts_c%use_gpu_replace_scalapack, direction)
