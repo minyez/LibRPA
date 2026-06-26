@@ -520,6 +520,9 @@ def parse_cpp_initialized_fields(path: Path) -> Dict[str, List[int]]:
     initialized: Dict[str, List[int]] = {}
     assign_re = re.compile(r"\bopts\s*->\s*([A-Za-z_][A-Za-z0-9_]*)\s*=")
     setter_re = re.compile(r"\blibrpa_set_([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*opts\s*,")
+    string_copy_re = re.compile(
+        r"\b(?:std::)?strncpy\s*\(\s*opts\s*->\s*([A-Za-z_][A-Za-z0-9_]*)\s*,"
+    )
 
     for line_no, line in body:
         for match in assign_re.finditer(line):
@@ -527,6 +530,8 @@ def parse_cpp_initialized_fields(path: Path) -> Dict[str, List[int]]:
         setter_match = setter_re.search(line)
         if setter_match:
             initialized.setdefault(setter_match.group(1), []).append(line_no)
+        for match in string_copy_re.finditer(line):
+            initialized.setdefault(match.group(1), []).append(line_no)
 
     return initialized
 
