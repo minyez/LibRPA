@@ -3,7 +3,10 @@
 namespace librpa_int
 {
 
-DevOptions::DevOptions() : use_chi0_q_uhap_split(false) {}
+DevOptions::DevOptions() :
+    use_chi0_q_uhap_split(false),
+    use_delayed_ft_shrink(false)
+{}
 
 namespace global
 {

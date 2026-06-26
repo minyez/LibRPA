@@ -11,6 +11,7 @@ namespace librpa_int {
 struct DevOptions
 {
     bool use_chi0_q_uhap_split;
+    bool use_delayed_ft_shrink;
 
     DevOptions();
 };

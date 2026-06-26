@@ -245,6 +245,7 @@ void parse_inputfile_to_params(const std::string &fn)
     // Development options, see src/utils/dev_options.h
     // Only for prototyping, testing and debugging in C++
     _parse_bool(dev_opts, use_chi0_q_uhap_split);
+    _parse_bool(dev_opts, use_delayed_ft_shrink);
 
     // general runtime parameters
     parser.parse_string("output_dir", stmp, flag);

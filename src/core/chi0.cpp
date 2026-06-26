@@ -1711,6 +1711,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     throw LIBRPA_RUNTIME_ERROR("compilation");
 #else
     const bool use_shrink_chi = sinvS.size() > 0;
+    const bool use_delayed_ft_shrink = use_shrink_chi && global::dev_opts.use_delayed_ft_shrink;
     global::profiler.start("LibRI_routing", "Loop over LibRI");
     const auto &qlist = this->pbc.klist_coul;
     const std::vector<Vector3_Order<double>> qlist_all(qlist.begin(), qlist.end());
@@ -1785,9 +1786,13 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     const double chi0_q_work_mem_gb = estimate_chi0_q_mem_gb(qlist_chi0, atpairs_chi0);
     global::ofs_myid << "Estimated chi0_q work memory [GB]: "
                      << chi0_q_work_mem_gb << std::endl;
-    global::ofs_myid << "chi0 delayed CT/FT enabled: " << !use_shrink_chi
+    global::ofs_myid << "chi0 delayed CT/FT enabled: "
+                     << (!use_shrink_chi || use_delayed_ft_shrink)
                      << " (nq = " << qlist_all.size()
                      << ", nfreq = " << freq_nodes.size() << ")\n";
+    if (use_shrink_chi)
+        global::ofs_myid << "chi0 delayed FT shrink enabled: "
+                         << use_delayed_ft_shrink << "\n";
     if (use_q_uhap_split)
     {
         global::ofs_myid << "Estimated chi0_q final-layout memory [GB]: "
@@ -1796,7 +1801,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                          << std::endl;
     }
 
-    if (use_shrink_chi)
+    if (use_shrink_chi && !use_delayed_ft_shrink)
     {
         // Prepare relevant ComplexMatrix objects for the FT work layout.
         create_chi0_q_blocks(chi0_q_work, freq_nodes, qlist_chi0, atpairs_chi0, atbasis_abf);
@@ -2115,7 +2120,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
             std::clock_t cpu_clock_done_chi0s = clock();
 
             // parse back to chi0
-            if (use_shrink_chi)
+            if (use_shrink_chi && !use_delayed_ft_shrink)
             {
                 map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>>
                     chi0_tau_q;
@@ -2171,14 +2176,29 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         } // ispin
     } // itau
 
-    if (!use_shrink_chi)
+    if (!use_shrink_chi || use_delayed_ft_shrink)
     {
         profiler.start("chi0_libri_routing_delayed_ft_Rq", "Delayed Fourier transform");
         for (auto it_freq_R = chi0_freq_R.begin(); it_freq_R != chi0_freq_R.end(); )
         {
             const double freq = it_freq_R->first;
             const std::vector<double> freq_one{freq};
-            if (use_q_uhap_split)
+            if (use_delayed_ft_shrink)
+            {
+                map<double, map<Vector3_Order<double>,
+                                atom_mapping<ComplexMatrix>::pair_t_old>> chi0_q_large;
+                create_chi0_q_blocks(
+                    chi0_q_large, freq_one, qlist_chi0, atpairs_chi0, abf_Cs);
+                chi_libri_ft_Rq_from_freq_R<Tdata>(
+                    freq, abf_Cs, pbc.latvec, it_freq_R->second, qlist_chi0,
+                    atpairs_chi0, chi0_q_large);
+                profiler.start("shrink_chi0_abfs", "Do shrink transformation");
+                shrink_abfs_chi0(
+                    chi0_q_large[freq], sinvS, qlist_chi0, abf_Cs, atbasis_abf, blacs_ctxt_h);
+                profiler.stop("shrink_chi0_abfs");
+                chi0_q[freq] = std::move(chi0_q_large[freq]);
+            }
+            else if (use_q_uhap_split)
             {
                 create_chi0_q_blocks(
                     chi0_q_work, freq_one, qlist_chi0, atpairs_chi0, atbasis_abf);
