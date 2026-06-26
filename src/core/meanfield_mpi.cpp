@@ -12,6 +12,7 @@
 #include "../math/scalapack_connector.h"
 #include "../utils/constants.h"
 #include "../utils/profiler.h"
+#include "librpa_enums.h"
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
 #include "../gpu/device_connector.h"
 #include <ddla/ddla.h>
@@ -110,7 +111,7 @@ static void pgemm_wfc_scaled_wfc_h(const int n_aos, const int n_cols,
                                    Matz &out, const ArrayDesc &desc_out,
                                    const BlacsCtxtHandler &blacs_h)
 {
-    global::profiler.start(__FUNCTION__);
+    global::profiler.start(__FUNCTION__, LIBRPA_VERBOSE_DEBUG);
     const cplxdb *wfc_bra_gemm_ptr = wfc_bra_ptr;
     const cplxdb *scaled_wfc_ket_gemm_ptr = scaled_wfc_ket_ptr;
     const int *desc_wfc_gemm = desc_wfc.desc;
@@ -177,7 +178,7 @@ static void pgemm_wfc_scaled_wfc_h(const int n_aos, const int n_cols,
         return;
 #endif
     }
-    global::profiler.start("pgemm");
+    global::profiler.start("pgemm", LIBRPA_VERBOSE_DEBUG);
     ScalapackConnector::pgemm_f('N', 'C', n_aos, n_aos, n_cols, C_ONE,
                                 wfc_bra_gemm_ptr, 1, 1, desc_wfc_gemm,
                                 scaled_wfc_ket_gemm_ptr, 1, 1, desc_wfc_gemm,
