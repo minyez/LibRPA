@@ -8,7 +8,6 @@
 
 #include "../core/dielecmodel.h"
 #include "../core/epsilon.h"
-#include "../core/params.h"
 #include "../io/global_io.h"
 #include "../math/utils_matrix_m_mpi.h"
 #include "../mpi/base_blacs.h"
@@ -29,7 +28,6 @@ using librpa_int::KPointBlacsProcessShape;
 using librpa_int::MAJOR;
 using librpa_int::matrix_m;
 using librpa_int::MeanField;
-using librpa_int::Params;
 using librpa_int::PeriodicBoundaryData;
 using librpa_int::Vector3_Order;
 
