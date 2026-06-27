@@ -268,6 +268,39 @@ void populate_input_symmetry_kstar_member_rotations(SymmetryContext &ctx,
     }
 }
 
+void store_generated_input_symmetry_kstars(SymmetryContext &ctx,
+                                           const std::vector<KPointStar> &generated_stars,
+                                           const std::vector<Vector3_Order<double>> &kpoints_ibz)
+{
+    if (kpoints_ibz.size() != generated_stars.size())
+    {
+        throw std::runtime_error("Generated k-star representative count does not match k-star count");
+    }
+
+    ctx.kstars.clear();
+    ctx.kstar_member_fold_G.clear();
+    ctx.kstars.reserve(generated_stars.size());
+
+    for (std::size_t istar = 0; istar != generated_stars.size(); ++istar)
+    {
+        const auto &generated_star = generated_stars[istar];
+        InputSymmetryKStar star;
+        star.star_index = static_cast<int>(istar);
+        star.k_ibz = kpoints_ibz[istar];
+        star.members.reserve(generated_star.members.size());
+        for (std::size_t imember = 0; imember != generated_star.members.size(); ++imember)
+        {
+            InputSymmetryKStarMember member;
+            member.isym = generated_star.sym_mappings.at(imember).isym;
+            member.k_bz = generated_star.members[imember].kpoint;
+            ctx.kstar_member_fold_G[{star.star_index, static_cast<int>(imember)}] =
+                generated_star.sym_mappings.at(imember).fold_G;
+            star.members.push_back(std::move(member));
+        }
+        ctx.kstars.push_back(std::move(star));
+    }
+}
+
 void generate_input_symmetry_kstars_from_pbc(SymmetryContext &ctx,
                                              const PeriodicBoundaryData &pbc)
 {
@@ -282,7 +315,14 @@ void generate_input_symmetry_kstars_from_pbc(SymmetryContext &ctx,
     {
         if (scf_kpoints_cover_full_grid)
         {
-            build_input_symmetry_pbc_index_kstars(ctx, pbc.kfrac_list);
+            std::vector<Vector3_Order<double>> generated_representatives;
+            generated_representatives.reserve(generated_stars.size());
+            for (const auto &star : generated_stars)
+            {
+                generated_representatives.push_back(
+                    star.members.at(static_cast<std::size_t>(star.representative_k_index)).kpoint);
+            }
+            store_generated_input_symmetry_kstars(ctx, generated_stars, generated_representatives);
             return;
         }
         if (coul_kpoints.size() == full_kpoints.size())
@@ -293,9 +333,11 @@ void generate_input_symmetry_kstars_from_pbc(SymmetryContext &ctx,
         throw std::runtime_error("Generated input-symmetry k-star count does not match Coulomb k-points");
     }
 
-    ctx.kstars.clear();
-    ctx.kstar_member_fold_G.clear();
+    std::vector<Vector3_Order<double>> ordered_representatives;
+    ordered_representatives.reserve(coul_kpoints.size());
     std::vector<bool> used(generated_stars.size(), false);
+    std::vector<KPointStar> ordered_stars;
+    ordered_stars.reserve(coul_kpoints.size());
     for (std::size_t ik_ibz = 0; ik_ibz != coul_kpoints.size(); ++ik_ibz)
     {
         int matched_star_index = -1;
@@ -325,22 +367,10 @@ void generate_input_symmetry_kstars_from_pbc(SymmetryContext &ctx,
         }
 
         used[static_cast<std::size_t>(matched_star_index)] = true;
-        const auto &generated_star = generated_stars[static_cast<std::size_t>(matched_star_index)];
-        InputSymmetryKStar star;
-        star.star_index = static_cast<int>(ik_ibz);
-        star.k_ibz = coul_kpoints[ik_ibz];
-        star.members.reserve(generated_star.members.size());
-        for (std::size_t imember = 0; imember != generated_star.members.size(); ++imember)
-        {
-            InputSymmetryKStarMember member;
-            member.isym = generated_star.sym_mappings.at(imember).isym;
-            member.k_bz = generated_star.members[imember].kpoint;
-            ctx.kstar_member_fold_G[{star.star_index, static_cast<int>(imember)}] =
-                generated_star.sym_mappings.at(imember).fold_G;
-            star.members.push_back(std::move(member));
-        }
-        ctx.kstars.push_back(std::move(star));
+        ordered_stars.push_back(generated_stars[static_cast<std::size_t>(matched_star_index)]);
+        ordered_representatives.push_back(coul_kpoints[ik_ibz]);
     }
+    store_generated_input_symmetry_kstars(ctx, ordered_stars, ordered_representatives);
 }
 
 void sync_input_symmetry_structure_from_dataset(Dataset &ds)

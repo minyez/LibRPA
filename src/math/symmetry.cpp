@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <set>
 #include <stdexcept>
+#include <tuple>
 
 namespace librpa_int
 {
@@ -106,6 +108,64 @@ int choose_kpoint_star_representative(
         throw std::runtime_error("k-star does not contain its representative k-point");
     }
     return static_cast<int>(std::distance(star.members.begin(), representative_member));
+}
+
+bool preserves_lattice_metric(const Matrix3& rotation,
+                              const Matrix3& lattice_vectors,
+                              const double tol = 1e-8)
+{
+    const Matrix3 metric = lattice_vectors * lattice_vectors.Transpose();
+    const Matrix3 rotated_metric = rotation * metric * rotation.Transpose();
+    return is_same_matrix(rotated_metric, metric, tol);
+}
+
+Vector3_Order<int> rotate_rspace_vector(
+    const Vector3_Order<int>& R,
+    const SpaceGroupAtomMapping<int>& op_info,
+    const SpaceGroupSymOp& op,
+    const int atom_from_i,
+    const int atom_from_j,
+    const double tol)
+{
+    const auto to_double = [](const Vector3_Order<int>& vec) {
+        return Vector3_Order<double>(static_cast<double>(vec.x),
+                                     static_cast<double>(vec.y),
+                                     static_cast<double>(vec.z));
+    };
+    const Vector3_Order<double> R_double{static_cast<double>(R.x),
+                                         static_cast<double>(R.y),
+                                         static_cast<double>(R.z)};
+    const Vector3_Order<double> rotated_cell = multiply_row_vector(R_double, op.rotation);
+    const Vector3_Order<double> common_shift = to_double(op_info.return_lattice[atom_from_i]);
+    const Vector3_Order<double> mapped_j_cell =
+        to_double(op_info.return_lattice[atom_from_j]) + rotated_cell - common_shift;
+    if (!nearly_integer_vector(mapped_j_cell, tol))
+    {
+        throw std::runtime_error("Real-space symmetry generated a non-integer lattice vector");
+    }
+    return round_to_integer_vector(mapped_j_cell);
+}
+
+using RSpaceKey = std::tuple<int, int, Vector3_Order<int>>;
+
+bool rspace_representative_less(const RSpaceKey& lhs,
+                                const RSpaceKey& rhs)
+{
+    if (std::get<0>(lhs) != std::get<0>(rhs))
+    {
+        return std::get<0>(lhs) < std::get<0>(rhs);
+    }
+    if (std::get<1>(lhs) != std::get<1>(rhs))
+    {
+        return std::get<1>(lhs) < std::get<1>(rhs);
+    }
+    const auto lhs_norm = std::get<2>(lhs).norm_l1();
+    const auto rhs_norm = std::get<2>(rhs).norm_l1();
+    if (lhs_norm != rhs_norm)
+    {
+        return lhs_norm < rhs_norm;
+    }
+    return std::get<2>(lhs) < std::get<2>(rhs);
 }
 
 } // namespace
@@ -267,6 +327,94 @@ std::vector<int> collect_inequivalent_atoms(
         atoms.push_back(mapping.inequivalent_atom);
     }
     return atoms;
+}
+
+SpaceGroupRSpaceSector build_space_group_rspace_irreducible_sector(
+    const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations,
+    const std::map<int, Vector3_Order<double>>& coord_frac,
+    const std::map<int, int>& atom_to_type,
+    const std::vector<Vector3_Order<int>>& Rlist,
+    const Matrix3* lattice_vectors,
+    const double atom_map_tol,
+    const double coord_tol)
+{
+    if (fractional_operations.empty())
+    {
+        throw std::runtime_error("Real-space symmetry operations are unavailable");
+    }
+    if (atom_to_type.empty())
+    {
+        throw std::runtime_error("Atom-to-type mapping is unavailable for real-space symmetry");
+    }
+
+    std::vector<SpaceGroupAtomMapping<int>> op_infos;
+    op_infos.reserve(fractional_operations.size());
+    for (const auto& op : fractional_operations)
+    {
+        op_infos.push_back(get_space_group_atom_mapping(op, coord_frac, atom_to_type, atom_map_tol));
+    }
+
+    std::vector<bool> use_operation(fractional_operations.size(), true);
+    if (lattice_vectors != nullptr)
+    {
+        for (std::size_t isym = 0; isym < fractional_operations.size(); ++isym)
+        {
+            use_operation[isym] =
+                preserves_lattice_metric(fractional_operations[isym].rotation, *lattice_vectors);
+        }
+    }
+
+    const std::set<Vector3_Order<int>> Rset(Rlist.begin(), Rlist.end());
+    std::set<RSpaceKey> uncovered;
+    for (int atom_i = 0; atom_i < static_cast<int>(atom_to_type.size()); ++atom_i)
+    {
+        for (int atom_j = 0; atom_j < static_cast<int>(atom_to_type.size()); ++atom_j)
+        {
+            for (const auto& R : Rlist)
+            {
+                uncovered.insert({atom_i, atom_j, R});
+            }
+        }
+    }
+
+    SpaceGroupRSpaceSector irreducible_sector;
+    while (!uncovered.empty())
+    {
+        const auto seed = *uncovered.begin();
+        const int seed_i = std::get<0>(seed);
+        const int seed_j = std::get<1>(seed);
+        const Vector3_Order<int> seed_R = std::get<2>(seed);
+
+        std::set<RSpaceKey> orbit{seed};
+        for (std::size_t isym = 0; isym < fractional_operations.size(); ++isym)
+        {
+            if (!use_operation[isym])
+            {
+                continue;
+            }
+            const auto& op_info = op_infos[isym];
+            const auto full_I = op_info.atom_map[seed_i];
+            const auto full_J = op_info.atom_map[seed_j];
+            const auto full_R = rotate_rspace_vector(
+                seed_R, op_info, fractional_operations[isym], seed_i, seed_j, coord_tol);
+            if (Rset.count(full_R) != 0)
+            {
+                orbit.insert({full_I, full_J, full_R});
+            }
+        }
+
+        const auto representative =
+            *std::min_element(orbit.begin(), orbit.end(), rspace_representative_less);
+        irreducible_sector[{std::get<0>(representative), std::get<1>(representative)}].insert(
+            std::get<2>(representative));
+
+        for (const auto& member : orbit)
+        {
+            uncovered.erase(member);
+        }
+    }
+
+    return irreducible_sector;
 }
 
 std::vector<KPointStar> build_kpoint_stars(

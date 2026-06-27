@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 #include <map>
+#include <set>
 
 #include "matrix3.h"
 #include "vector3_order.h"
@@ -153,6 +154,9 @@ struct KPointStar
     std::vector<KPointSymMapping> sym_mappings;
 };
 
+using SpaceGroupRSpaceSector =
+    std::map<std::pair<int, int>, std::set<Vector3_Order<int>>>;
+
 inline Matrix3 multiply_space_group_rotation_matrices(const Matrix3& lhs, const Matrix3& rhs)
 {
     return lhs * rhs;
@@ -232,6 +236,39 @@ std::vector<AtomSymMapping> build_atom_to_inequivalent_symmetry_mapping(
 std::vector<int> collect_inequivalent_atoms(
     const std::vector<AtomSymMapping>& mappings);
 
+SpaceGroupRSpaceSector build_space_group_rspace_irreducible_sector(
+    const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations,
+    const std::map<int, Vector3_Order<double>>& coord_frac,
+    const std::map<int, int>& atom_to_type,
+    const std::vector<Vector3_Order<int>>& Rlist,
+    const Matrix3* lattice_vectors = nullptr,
+    double atom_map_tol = 5e-5,
+    double coord_tol = 1e-5);
+
+template <typename OperationType>
+SpaceGroupRSpaceSector build_space_group_rspace_irreducible_sector(
+    const SpaceGroupSymOps<OperationType>& fractional_operations,
+    const std::map<int, Vector3_Order<double>>& coord_frac,
+    const std::map<int, int>& atom_to_type,
+    const std::vector<Vector3_Order<int>>& Rlist,
+    const Matrix3* lattice_vectors = nullptr,
+    const double atom_map_tol = 5e-5,
+    const double coord_tol = 1e-5)
+{
+    SpaceGroupSymOps<SpaceGroupSymOp> base_operations;
+    base_operations.reserve(fractional_operations.size());
+    for (const auto& operation : fractional_operations)
+    {
+        SpaceGroupSymOp base_operation;
+        base_operation.rotation = operation.rotation;
+        base_operation.translation = operation.translation;
+        base_operation.use_row_convention = operation.use_row_convention;
+        base_operations.push_back(base_operation);
+    }
+    return build_space_group_rspace_irreducible_sector(
+        base_operations, coord_frac, atom_to_type, Rlist, lattice_vectors, atom_map_tol, coord_tol);
+}
+
 std::vector<KPointStar> build_kpoint_stars(
     const std::vector<Vector3_Order<double>>& full_kpoints_frac,
     const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations,
@@ -300,7 +337,8 @@ SpaceGroupAtomMapping<AtomIndex> get_space_group_atom_mapping(
     info.return_lattice.resize(coord_frac.size(), {0, 0, 0});
 
     {
-        for (AtomIndex atom_from = 0; atom_from < coord_frac.size(); ++atom_from)
+        const auto atom_count = static_cast<AtomIndex>(coord_frac.size());
+        for (AtomIndex atom_from = 0; atom_from < atom_count; ++atom_from)
         {
             const auto& coord_from = coord_frac.at(atom_from);
             const Vector3_Order<double> coord_from_vec =
@@ -313,7 +351,7 @@ SpaceGroupAtomMapping<AtomIndex> get_space_group_atom_mapping(
             AtomIndex matched_atom;
             bool matched = false;
             Vector3_Order<int> matched_return{0, 0, 0};
-            for (AtomIndex atom_to = 0; atom_to < coord_frac.size(); ++atom_to)
+            for (AtomIndex atom_to = 0; atom_to < atom_count; ++atom_to)
             {
                 if (atom_to_type.at(atom_from) != atom_to_type.at(atom_to))
                 {

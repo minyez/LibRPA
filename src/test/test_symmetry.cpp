@@ -1,10 +1,186 @@
 #include "../math/symmetry.h"
 
 #include "testutils.h"
+#include <array>
 #include <cassert>
+#include <cmath>
 #include <iostream>
+#include <map>
+#include <vector>
 
 using namespace librpa_int;
+
+static Matrix3 lih_primitive_lattice()
+{
+    return Matrix3(0.0, 0.5, 0.5,
+                   0.5, 0.0, 0.5,
+                   0.5, 0.5, 0.0);
+}
+
+static void add_lih_basis_preserving_fractional_symmetry_operations(
+    SpaceGroupSymOps<SpaceGroupSymOp>& operations,
+    const Matrix3& lattice)
+{
+    const std::array<std::array<int, 3>, 6> permutations{{
+        {{0, 1, 2}},
+        {{0, 2, 1}},
+        {{1, 0, 2}},
+        {{1, 2, 0}},
+        {{2, 0, 1}},
+        {{2, 1, 0}},
+    }};
+    const std::array<int, 2> signs{{-1, 1}};
+
+    for (const auto& permutation : permutations)
+    {
+        for (const int sx : signs)
+        {
+            for (const int sy : signs)
+            {
+                for (const int sz : signs)
+                {
+                    const std::array<int, 3> sign{{sx, sy, sz}};
+                    std::array<int, 9> rotation{};
+                    for (int col = 0; col != 3; ++col)
+                    {
+                        rotation[3 * permutation[col] + col] = sign[col];
+                    }
+
+                    const Matrix3 col_cartesian_rotation(
+                        rotation[0], rotation[1], rotation[2],
+                        rotation[3], rotation[4], rotation[5],
+                        rotation[6], rotation[7], rotation[8]);
+
+                    SpaceGroupSymOp op;
+                    op.rotation =
+                        lattice * col_cartesian_rotation.Transpose() * lattice.Inverse();
+                    op.translation = {0.0, 0.0, 0.0};
+                    op.use_row_convention = true;
+                    const Vector3_Order<double> h_position{-0.25, -0.25, -0.25};
+                    if (!nearly_integer_vector(
+                            multiply_row_vector(h_position, op.rotation) - h_position, 1e-8))
+                    {
+                        continue;
+                    }
+                    operations.push_back(op);
+                }
+            }
+        }
+    }
+    assert(operations.size() == 24);
+}
+
+static SpaceGroupSymOps<SpaceGroupSymOp> lih_basis_preserving_fractional_symmetry_operations()
+{
+    SpaceGroupSymOps<SpaceGroupSymOp> operations;
+    add_lih_basis_preserving_fractional_symmetry_operations(operations, lih_primitive_lattice());
+    return operations;
+}
+
+static SpaceGroupSymOps<SpaceGroupSymOp> add_time_reversal(
+    const SpaceGroupSymOps<SpaceGroupSymOp>& operations)
+{
+    SpaceGroupSymOps<SpaceGroupSymOp> operations_with_trs;
+    operations_with_trs.reserve(operations.size() * 2);
+    for (const auto& operation : operations)
+    {
+        operations_with_trs.push_back(operation);
+    }
+    for (const auto& operation : operations)
+    {
+        SpaceGroupSymOp trs_operation = operation;
+        trs_operation.rotation = operation.rotation * -1.0;
+        operations_with_trs.push_back(trs_operation);
+    }
+    return operations_with_trs;
+}
+
+static double centered_mesh_coordinate(const int i, const int n)
+{
+    double value = static_cast<double>(i) / static_cast<double>(n);
+    if (value > 0.5)
+    {
+        value -= 1.0;
+    }
+    return value;
+}
+
+static std::vector<Vector3_Order<double>> make_centered_k_grid(const int n)
+{
+    std::vector<Vector3_Order<double>> kpoints;
+    kpoints.reserve(static_cast<std::size_t>(n * n * n));
+    for (int ix = 0; ix != n; ++ix)
+    {
+        for (int iy = 0; iy != n; ++iy)
+        {
+            for (int iz = 0; iz != n; ++iz)
+            {
+                kpoints.push_back({centered_mesh_coordinate(ix, n),
+                                   centered_mesh_coordinate(iy, n),
+                                   centered_mesh_coordinate(iz, n)});
+            }
+        }
+    }
+    return kpoints;
+}
+
+static std::vector<Vector3_Order<int>> make_centered_R_grid(const int n)
+{
+    std::vector<Vector3_Order<int>> Rlist;
+    Rlist.reserve(static_cast<std::size_t>(n * n * n));
+    for (int ix = -n / 2; ix <= (n - 1) / 2; ++ix)
+    {
+        for (int iy = -n / 2; iy <= (n - 1) / 2; ++iy)
+        {
+            for (int iz = -n / 2; iz <= (n - 1) / 2; ++iz)
+            {
+                Rlist.push_back({ix, iy, iz});
+            }
+        }
+    }
+    return Rlist;
+}
+
+static bool same_fractional_kpoint(const Vector3_Order<double>& lhs,
+                                   const Vector3_Order<double>& rhs)
+{
+    return nearly_integer_vector(lhs - rhs, 1e-8);
+}
+
+static void assert_kpoint_representatives_match(
+    const std::vector<KPointStar>& stars,
+    const std::vector<Vector3_Order<double>>& expected_representatives)
+{
+    assert(stars.size() == expected_representatives.size());
+    std::vector<bool> matched(stars.size(), false);
+    for (const auto& expected : expected_representatives)
+    {
+        bool found = false;
+        for (std::size_t istar = 0; istar != stars.size(); ++istar)
+        {
+            const auto& star = stars[istar];
+            const auto& representative =
+                star.members[static_cast<std::size_t>(star.representative_k_index)].kpoint;
+            if (!matched[istar] && same_fractional_kpoint(representative, expected))
+            {
+                matched[istar] = true;
+                found = true;
+                break;
+            }
+        }
+        assert(found);
+    }
+}
+
+static std::size_t count_rspace_sector_entries(const SpaceGroupRSpaceSector& sector)
+{
+    std::size_t count = 0;
+    for (const auto& pair_Rs : sector)
+    {
+        count += pair_Rs.second.size();
+    }
+    return count;
+}
 
 static void test_rotation()
 {
@@ -246,6 +422,118 @@ static void test_kpoint_stars_from_full_grid()
     assert(hinted_stars[1].sym_mappings[1].fold_G == Vector3_Order<int>(0, 0, 0));
 }
 
+static void test_lih_rocksalt_kstars_match_abacus()
+{
+    const auto operations =
+        add_time_reversal(lih_basis_preserving_fractional_symmetry_operations());
+
+    {
+        const std::vector<Vector3_Order<double>> expected_representatives{
+            {0.0, 0.0, 0.0},
+            {0.25, 0.25, 0.25},
+            {0.5, 0.5, 0.5},
+            {0.25, 0.25, 0.0},
+            {0.5, 0.5, 0.25},
+            {0.5, 0.25, 0.25},
+            {0.5, 0.5, 0.0},
+            {-0.25, 0.5, 0.25},
+        };
+        const auto stars =
+            build_kpoint_stars(make_centered_k_grid(4), operations, expected_representatives);
+        assert_kpoint_representatives_match(stars, expected_representatives);
+        std::size_t member_count = 0;
+        for (const auto& star : stars)
+        {
+            member_count += star.members.size();
+        }
+        assert(member_count == 64);
+    }
+
+    {
+        const std::vector<Vector3_Order<double>> expected_representatives{
+            {0.0, 0.0, 0.0},
+            {0.2, 0.2, 0.2},
+            {0.4, 0.4, 0.4},
+            {0.2, 0.2, 0.0},
+            {0.4, 0.4, 0.2},
+            {-0.4, 0.4, 0.4},
+            {0.2, 0.4, 0.2},
+            {0.4, 0.4, 0.0},
+            {-0.2, 0.4, 0.4},
+            {-0.4, 0.4, 0.2},
+        };
+        const auto stars =
+            build_kpoint_stars(make_centered_k_grid(5), operations, expected_representatives);
+        assert_kpoint_representatives_match(stars, expected_representatives);
+        std::size_t member_count = 0;
+        for (const auto& star : stars)
+        {
+            member_count += star.members.size();
+        }
+        assert(member_count == 125);
+    }
+
+    {
+        const std::vector<Vector3_Order<double>> expected_representatives{
+            {0.0, 0.0, 0.0},
+            {1.0 / 6.0, 1.0 / 6.0, 1.0 / 6.0},
+            {1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0},
+            {0.5, 0.5, 0.5},
+            {1.0 / 6.0, 1.0 / 6.0, 0.0},
+            {1.0 / 3.0, 1.0 / 6.0, 1.0 / 3.0},
+            {0.5, 0.5, 1.0 / 3.0},
+            {0.5, 1.0 / 3.0, 1.0 / 3.0},
+            {1.0 / 3.0, 1.0 / 6.0, 1.0 / 6.0},
+            {1.0 / 3.0, 1.0 / 3.0, 0.0},
+            {0.5, 0.5, 1.0 / 6.0},
+            {-1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0},
+            {0.5, 0.5, 0.0},
+            {0.5, 1.0 / 3.0, 1.0 / 6.0},
+            {-1.0 / 3.0, 0.5, 1.0 / 3.0},
+            {-1.0 / 6.0, 0.5, 1.0 / 3.0},
+        };
+        const auto stars =
+            build_kpoint_stars(make_centered_k_grid(6), operations, expected_representatives);
+        assert_kpoint_representatives_match(stars, expected_representatives);
+        std::size_t member_count = 0;
+        for (const auto& star : stars)
+        {
+            member_count += star.members.size();
+        }
+        assert(member_count == 216);
+    }
+}
+
+static void assert_lih_rspace_sector_matches_abacus(
+    const int n,
+    const std::array<std::size_t, 4>& expected_pair_counts,
+    const std::size_t expected_total_count)
+{
+    const auto operations = lih_basis_preserving_fractional_symmetry_operations();
+    const std::map<int, Vector3_Order<double>> coord_frac{
+        {0, {0.0, 0.0, 0.0}},
+        {1, {-0.25, -0.25, -0.25}},
+    };
+    const std::map<int, int> atom_to_type{{0, 0}, {1, 1}};
+    const auto lattice = lih_primitive_lattice();
+
+    const auto sector = build_space_group_rspace_irreducible_sector(
+        operations, coord_frac, atom_to_type, make_centered_R_grid(n), &lattice);
+
+    assert(sector.at({0, 0}).size() == expected_pair_counts[0]);
+    assert(sector.at({0, 1}).size() == expected_pair_counts[1]);
+    assert(sector.at({1, 0}).size() == expected_pair_counts[2]);
+    assert(sector.at({1, 1}).size() == expected_pair_counts[3]);
+    assert(count_rspace_sector_entries(sector) == expected_total_count);
+}
+
+static void test_lih_rocksalt_rspace_irreducible_sectors_match_abacus()
+{
+    assert_lih_rspace_sector_matches_abacus(4, {{15, 13, 19, 15}}, 62);
+    assert_lih_rspace_sector_matches_abacus(5, {{22, 26, 26, 22}}, 96);
+    assert_lih_rspace_sector_matches_abacus(6, {{37, 34, 46, 37}}, 154);
+}
+
 static void test_get_space_group_atom_mapping_mgo()
 {
     // MgO FCC
@@ -301,6 +589,8 @@ int main()
     test_symmetry_mapping_keeps_operations_fractional();
     test_kpoint_rotation_and_target_fold();
     test_kpoint_stars_from_full_grid();
+    test_lih_rocksalt_kstars_match_abacus();
+    test_lih_rocksalt_rspace_irreducible_sectors_match_abacus();
     test_get_space_group_atom_mapping_mgo();
     return 0;
 }
