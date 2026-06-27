@@ -1443,6 +1443,100 @@ std::vector<SymmetryFullKpointMemberEntry> build_symmetry_full_kpoint_member_lis
     return members;
 }
 
+symmetry_kstar_representative_indices_t build_symmetry_full_grid_kstar_representative_indices(
+    const SymmetryContext& ctx,
+    const std::vector<Vector3_Order<double>>& kfrac_list)
+{
+    if (!ctx.available || ctx.kstars.empty())
+    {
+        return {};
+    }
+    if (ctx.kstars.size() >= kfrac_list.size()
+        || ctx.count_kstar_members() != kfrac_list.size())
+    {
+        return {};
+    }
+
+    symmetry_kstar_representative_indices_t representative_indices;
+    representative_indices.reserve(ctx.kstars.size());
+    std::vector<bool> used_kpoints(kfrac_list.size(), false);
+    for (const auto& star : ctx.kstars)
+    {
+        FoldedKPoint folded;
+        try
+        {
+            folded = fold_fractional_kpoint_to_targets(
+                star.k_ibz, kfrac_list, kSymmetryCoordTol);
+        }
+        catch (const std::runtime_error&)
+        {
+            return {};
+        }
+        if (folded.target_k_index < 0
+            || folded.target_k_index >= static_cast<int>(kfrac_list.size()))
+        {
+            return {};
+        }
+        const auto ik_mf = static_cast<std::size_t>(folded.target_k_index);
+        if (used_kpoints[ik_mf])
+        {
+            return {};
+        }
+        used_kpoints[ik_mf] = true;
+        representative_indices.push_back(folded.target_k_index);
+    }
+    return representative_indices;
+}
+
+symmetry_kstar_member_kfrac_targets_t build_symmetry_full_grid_kstar_member_kfrac_targets(
+    const SymmetryContext& ctx,
+    const std::vector<Vector3_Order<double>>& kfrac_list)
+{
+    if (!ctx.available || ctx.kstars.empty())
+    {
+        return {};
+    }
+    if (ctx.kstars.size() >= kfrac_list.size()
+        || ctx.count_kstar_members() != kfrac_list.size())
+    {
+        return {};
+    }
+
+    symmetry_kstar_member_kfrac_targets_t targets(ctx.kstars.size());
+    std::vector<bool> used_kpoints(kfrac_list.size(), false);
+    for (std::size_t istar = 0; istar != ctx.kstars.size(); ++istar)
+    {
+        const auto& star = ctx.kstars[istar];
+        targets[istar].reserve(star.members.size());
+        for (const auto& member : star.members)
+        {
+            FoldedKPoint folded;
+            try
+            {
+                folded = fold_fractional_kpoint_to_targets(
+                    member.k_bz, kfrac_list, kSymmetryCoordTol);
+            }
+            catch (const std::runtime_error&)
+            {
+                return {};
+            }
+            if (folded.target_k_index < 0
+                || folded.target_k_index >= static_cast<int>(kfrac_list.size()))
+            {
+                return {};
+            }
+            const auto ik_mf = static_cast<std::size_t>(folded.target_k_index);
+            if (used_kpoints[ik_mf])
+            {
+                return {};
+            }
+            used_kpoints[ik_mf] = true;
+            targets[istar].push_back(folded.kpoint);
+        }
+    }
+    return targets;
+}
+
 Vector3_Order<int> build_symmetry_kspace_return_lattice(
     const SymmetryContext& ctx,
     const SymmetryKAtomRotation& atom_rotation,

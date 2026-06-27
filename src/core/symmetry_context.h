@@ -110,6 +110,9 @@ struct SymmetryRSpaceRestoreMember
 using symmetry_rspace_sector_stars_t =
     std::map<atpair_t, std::map<Vector3_Order<int>, std::vector<SymmetryRSpaceRestoreMember>>>;
 using symmetry_atom_block_matrix_map_t = std::map<atom_t, std::map<atom_t, ComplexMatrix>>;
+using symmetry_kstar_member_kfrac_targets_t =
+    std::vector<std::vector<Vector3_Order<double>>>;
+using symmetry_kstar_representative_indices_t = std::vector<int>;
 
 /*!
  * @brief In-memory representation of the system symmetry.
@@ -239,6 +242,14 @@ std::vector<SymmetryKStarGridMappingEntry> build_symmetry_kstar_grid_mapping(
     const std::map<Vector3_Order<double>, std::vector<Vector3_Order<double>>>& irk_to_full_kpoints);
 
 std::vector<SymmetryFullKpointMemberEntry> build_symmetry_full_kpoint_member_list(
+    const SymmetryContext& ctx,
+    const std::vector<Vector3_Order<double>>& kfrac_list);
+
+symmetry_kstar_representative_indices_t build_symmetry_full_grid_kstar_representative_indices(
+    const SymmetryContext& ctx,
+    const std::vector<Vector3_Order<double>>& kfrac_list);
+
+symmetry_kstar_member_kfrac_targets_t build_symmetry_full_grid_kstar_member_kfrac_targets(
     const SymmetryContext& ctx,
     const std::vector<Vector3_Order<double>>& kfrac_list);
 

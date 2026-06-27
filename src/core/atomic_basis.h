@@ -147,8 +147,8 @@ private:
     bool initialized_;
 public:
     std::string label;
-    std::vector<std::size_t> nbs_;
 private:
+    std::vector<std::size_t> nbs_;
     std::vector<std::size_t> part_range_;
     std::vector<int> glo2iat_;
     std::vector<std::size_t> glo2loc_;

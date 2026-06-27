@@ -17,7 +17,16 @@ namespace librpa_int {
 namespace
 {
 
-void validate_symmetry_kstar_meanfield_restore(
+struct SymmetryKStarMeanFieldRestoreEntry
+{
+    const SymmetryKStar* star = nullptr;
+    int ik_mf = -1;
+    Vector3_Order<double> k_source{0.0, 0.0, 0.0};
+    double star_factor = 1.0;
+    double kpoint_weight = 0.0;
+};
+
+void validate_symmetry_kstar_restore_metadata(
     const SymmetryContext& ctx,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
@@ -31,10 +40,6 @@ void validate_symmetry_kstar_meanfield_restore(
     if (mf.get_n_kpoints() != static_cast<int>(kfrac_list.size()))
     {
         throw std::runtime_error("k-star restore got inconsistent mean-field k-point counts");
-    }
-    if (ctx.kstars.size() != kfrac_list.size())
-    {
-        throw std::runtime_error("k-star restore got inconsistent IBZ k-star counts");
     }
     if (ctx.count_kstar_members() == 0)
     {
@@ -68,30 +73,73 @@ void validate_symmetry_kstar_meanfield_restore(
             throw std::runtime_error("ABACUS k-star restore atom_nw does not cover every sidecar atom");
         }
     }
+}
+
+void validate_symmetry_kstar_meanfield_restore(
+    const SymmetryContext& ctx,
+    const MeanField& mf,
+    const std::vector<Vector3_Order<double>>& kfrac_list,
+    const std::map<atom_t, size_t>& atom_nw,
+    const std::map<atom_t, std::array<double, 3>>& coord_frac)
+{
+    validate_symmetry_kstar_restore_metadata(ctx, mf, kfrac_list, atom_nw, coord_frac);
+    if (ctx.kstars.size() != kfrac_list.size())
+    {
+        throw std::runtime_error("k-star restore got inconsistent IBZ k-star counts");
+    }
     for (const auto& kfrac : kfrac_list)
     {
         (void)librpa_int::find_symmetry_kstar_for_ibz_kpoint(ctx, kfrac);
     }
 }
 
-void validate_symmetry_kstar_member_kfrac_targets(
+void validate_symmetry_full_grid_kstar_meanfield_restore(
     const SymmetryContext& ctx,
+    const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
+    const std::map<atom_t, size_t>& atom_nw,
+    const std::map<atom_t, std::array<double, 3>>& coord_frac,
+    const symmetry_kstar_representative_indices_t& representative_k_indices)
+{
+    validate_symmetry_kstar_restore_metadata(ctx, mf, kfrac_list, atom_nw, coord_frac);
+    if (ctx.kstars.size() >= kfrac_list.size())
+    {
+        throw std::runtime_error("full-grid k-star restore does not reduce the mean-field k grid");
+    }
+    if (ctx.count_kstar_members() != kfrac_list.size())
+    {
+        throw std::runtime_error("full-grid k-star restore does not cover the loaded k grid");
+    }
+    if (representative_k_indices.size() != ctx.kstars.size())
+    {
+        throw std::runtime_error("full-grid k-star restore got inconsistent representative indices");
+    }
+    for (const auto ik_mf : representative_k_indices)
+    {
+        if (ik_mf < 0 || ik_mf >= mf.get_n_kpoints())
+        {
+            throw std::runtime_error("full-grid k-star restore representative index is out of range");
+        }
+    }
+}
+
+void validate_symmetry_kstar_member_kfrac_targets(
+    const std::vector<SymmetryKStarMeanFieldRestoreEntry>& restore_entries,
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets)
 {
     if (member_kfrac_targets == nullptr || member_kfrac_targets->empty())
     {
         return;
     }
-    if (member_kfrac_targets->size() != kfrac_list.size())
+    if (member_kfrac_targets->size() != restore_entries.size())
     {
         throw std::runtime_error(
             "ABACUS k-star restore target k-point list has inconsistent IBZ size");
     }
-    for (std::size_t ik_ibz = 0; ik_ibz != kfrac_list.size(); ++ik_ibz)
+    for (std::size_t ientry = 0; ientry != restore_entries.size(); ++ientry)
     {
-        const auto& star = librpa_int::find_symmetry_kstar_for_ibz_kpoint(ctx, kfrac_list[ik_ibz]);
-        if ((*member_kfrac_targets)[ik_ibz].size() != star.members.size())
+        const auto* star = restore_entries[ientry].star;
+        if (star == nullptr || (*member_kfrac_targets)[ientry].size() != star->members.size())
         {
             throw std::runtime_error(
                 "ABACUS k-star restore target k-point list has inconsistent star-member size");
@@ -121,6 +169,57 @@ double symmetry_kstar_geometric_weight(const SymmetryContext& ctx,
         throw std::runtime_error("ABACUS k-star restore found zero full-k members");
     }
     return static_cast<double>(star.members.size()) / full_count;
+}
+
+std::vector<SymmetryKStarMeanFieldRestoreEntry> build_symmetry_kstar_restore_entries(
+    const SymmetryContext& ctx,
+    const MeanField& mf,
+    const std::vector<Vector3_Order<double>>& kfrac_list,
+    const std::map<atom_t, size_t>& atom_nw,
+    const std::map<atom_t, std::array<double, 3>>& coord_frac,
+    const symmetry_kstar_representative_indices_t* representative_k_indices)
+{
+    std::vector<SymmetryKStarMeanFieldRestoreEntry> entries;
+    const bool restore_from_full_grid =
+        representative_k_indices != nullptr && !representative_k_indices->empty();
+
+    if (restore_from_full_grid)
+    {
+        validate_symmetry_full_grid_kstar_meanfield_restore(
+            ctx, mf, kfrac_list, atom_nw, coord_frac, *representative_k_indices);
+        const double kpoint_weight = 1.0 / static_cast<double>(ctx.count_kstar_members());
+        entries.reserve(ctx.kstars.size());
+        for (std::size_t istar = 0; istar != ctx.kstars.size(); ++istar)
+        {
+            const auto& star = ctx.kstars[istar];
+            if (star.members.empty())
+            {
+                throw std::runtime_error("ABACUS k-star member list is empty");
+            }
+            const int ik_mf = (*representative_k_indices)[istar];
+            entries.push_back({&star, ik_mf, kfrac_list[static_cast<std::size_t>(ik_mf)],
+                               1.0, kpoint_weight});
+        }
+        return entries;
+    }
+
+    validate_symmetry_kstar_meanfield_restore(ctx, mf, kfrac_list, atom_nw, coord_frac);
+    entries.reserve(kfrac_list.size());
+    for (int ik_ibz = 0; ik_ibz != mf.get_n_kpoints(); ++ik_ibz)
+    {
+        const auto& k_ibz = kfrac_list[static_cast<std::size_t>(ik_ibz)];
+        const auto& star = librpa_int::find_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
+        if (star.members.empty())
+        {
+            throw std::runtime_error("ABACUS k-star member list is empty");
+        }
+        entries.push_back({&star,
+                           ik_ibz,
+                           k_ibz,
+                           1.0 / static_cast<double>(star.members.size()),
+                           symmetry_kstar_geometric_weight(ctx, star)});
+    }
+    return entries;
 }
 
 ComplexMatrix build_gf_cplx_imagtime_with_prefactor(
@@ -219,7 +318,6 @@ symmetry_kstar_member_kfrac_targets_t build_symmetry_kstar_member_kfrac_targets(
         }
     }
 
-    validate_symmetry_kstar_member_kfrac_targets(ctx, pbc.kfrac_list, &targets);
     return targets;
 }
 
@@ -233,36 +331,33 @@ ComplexMatrix get_symmetry_restored_dmat_cplx_R(
     const Vector3_Order<int>& R,
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac,
-    const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets)
+    const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets,
+    const symmetry_kstar_representative_indices_t* representative_k_indices)
 {
-    validate_symmetry_kstar_meanfield_restore(ctx, mf, kfrac_list, atom_nw, coord_frac);
-    validate_symmetry_kstar_member_kfrac_targets(ctx, kfrac_list, member_kfrac_targets);
+    const auto restore_entries = build_symmetry_kstar_restore_entries(
+        ctx, mf, kfrac_list, atom_nw, coord_frac, representative_k_indices);
+    validate_symmetry_kstar_member_kfrac_targets(restore_entries, member_kfrac_targets);
     const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
     ComplexMatrix dmat_cplx(mf.get_n_aos(), mf.get_n_aos());
 
-    for (int ik_ibz = 0; ik_ibz != mf.get_n_kpoints(); ++ik_ibz)
+    for (std::size_t ientry = 0; ientry != restore_entries.size(); ++ientry)
     {
-        const auto& k_ibz = kfrac_list[static_cast<std::size_t>(ik_ibz)];
-        const auto& star = librpa_int::find_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
-        if (star.members.empty())
-        {
-            throw std::runtime_error("ABACUS k-star member list is empty");
-        }
-        const double star_factor = 1.0 / static_cast<double>(star.members.size());
-        const auto dmat_ibz = mf.get_dmat_cplx(ispin, ispinor_bra, ispinor_ket, ik_ibz);
+        const auto& entry = restore_entries[ientry];
+        const auto& star = *entry.star;
+        const auto dmat_ibz = mf.get_dmat_cplx(ispin, ispinor_bra, ispinor_ket, entry.ik_mf);
 
         for (std::size_t imember = 0; imember != star.members.size(); ++imember)
         {
             const auto& member = star.members[imember];
             const auto& k_bz_target = get_symmetry_kstar_member_kfrac_target(
-                member, member_kfrac_targets, static_cast<std::size_t>(ik_ibz), imember);
+                member, member_kfrac_targets, ientry, imember);
             const bool use_time_reversal = member.isym >= nsym_space;
             const auto dmat_member = librpa_int::rotate_symmetry_kspace_matrix(
-                ctx, "WFC", member, dmat_ibz, atom_nw, k_ibz, coord_frac, use_time_reversal,
+                ctx, "WFC", member, dmat_ibz, atom_nw, entry.k_source, coord_frac, use_time_reversal,
                 &k_bz_target);
             const double angle = -(k_bz_target * R) * TWO_PI;
             const auto kphase = std::complex<double>(std::cos(angle), std::sin(angle));
-            dmat_cplx += (star_factor * kphase) * dmat_member;
+            dmat_cplx += (entry.star_factor * kphase) * dmat_member;
         }
     }
 
@@ -282,10 +377,12 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const int nbands_G,
-    const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets)
+    const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets,
+    const symmetry_kstar_representative_indices_t* representative_k_indices)
 {
-    validate_symmetry_kstar_meanfield_restore(ctx, mf, kfrac_list, atom_nw, coord_frac);
-    validate_symmetry_kstar_member_kfrac_targets(ctx, kfrac_list, member_kfrac_targets);
+    const auto restore_entries = build_symmetry_kstar_restore_entries(
+        ctx, mf, kfrac_list, atom_nw, coord_frac, representative_k_indices);
+    validate_symmetry_kstar_member_kfrac_targets(restore_entries, member_kfrac_targets);
 
     std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> gf_tau_R;
     for (const auto tau : imagtimes)
@@ -304,36 +401,30 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     for (const auto tau : imagtimes)
     {
         const double tau_sign = tau > 0.0 ? 1.0 : -1.0;
-        for (int ik_ibz = 0; ik_ibz != mf.get_n_kpoints(); ++ik_ibz)
+        for (std::size_t ientry = 0; ientry != restore_entries.size(); ++ientry)
         {
-            const auto& k_ibz = kfrac_list[static_cast<std::size_t>(ik_ibz)];
-            const auto& star = librpa_int::find_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
-            if (star.members.empty())
-            {
-                throw std::runtime_error("ABACUS k-star member list is empty");
-            }
+            const auto& entry = restore_entries[ientry];
+            const auto& star = *entry.star;
 
-            const double kpoint_weight = symmetry_kstar_geometric_weight(ctx, star);
             std::vector<double> prefactors(static_cast<std::size_t>(n_bands), 0.0);
             for (int ib = 0; ib != n_bands; ++ib)
             {
-                const double occ_weight = mf.get_weight()[ispin](ik_ibz, ib) * scale_spin;
+                const double occ_weight = mf.get_weight()[ispin](entry.ik_mf, ib) * scale_spin;
                 prefactors[static_cast<std::size_t>(ib)] =
-                    tau > 0.0 ? std::max(0.0, kpoint_weight - occ_weight) : occ_weight;
+                    tau > 0.0 ? std::max(0.0, entry.kpoint_weight - occ_weight) : occ_weight;
             }
 
             const auto gf_ibz = build_gf_cplx_imagtime_with_prefactor(
-                mf, ispin, ispinor_bra, ispinor_ket, ik_ibz, tau, prefactors, nbands_G);
-            const double star_factor = 1.0 / static_cast<double>(star.members.size());
+                mf, ispin, ispinor_bra, ispinor_ket, entry.ik_mf, tau, prefactors, nbands_G);
 
             for (std::size_t imember = 0; imember != star.members.size(); ++imember)
             {
                 const auto& member = star.members[imember];
                 const auto& k_bz_target = get_symmetry_kstar_member_kfrac_target(
-                    member, member_kfrac_targets, static_cast<std::size_t>(ik_ibz), imember);
+                    member, member_kfrac_targets, ientry, imember);
                 const bool use_time_reversal = member.isym >= nsym_space;
                 const auto gf_member = librpa_int::rotate_symmetry_kspace_matrix(
-                    ctx, "WFC", member, gf_ibz, atom_nw, k_ibz, coord_frac, use_time_reversal,
+                    ctx, "WFC", member, gf_ibz, atom_nw, entry.k_source, coord_frac, use_time_reversal,
                     &k_bz_target);
                 for (const auto& R : Rs)
                 {
@@ -343,7 +434,7 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
                     {
                         gf_tau_R[tau][R].create(mf.get_n_aos(), mf.get_n_aos());
                     }
-                    gf_tau_R[tau][R] += (star_factor * tau_sign * kphase) * gf_member;
+                    gf_tau_R[tau][R] += (entry.star_factor * tau_sign * kphase) * gf_member;
                 }
             }
         }

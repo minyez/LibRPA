@@ -289,22 +289,54 @@ static void build_dmat_libri_kserial(
         map_R_IJs[R].push_back(IJR.first);
     }
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const bool can_try_symmetry_kstar_restore =
+        use_symmetry_context && symmetry_context.has_shell_layout("WFC");
+    const auto full_grid_kstar_representatives =
+        can_try_symmetry_kstar_restore
+            ? build_symmetry_full_grid_kstar_representative_indices(
+                  symmetry_context, kfrac_list)
+            : symmetry_kstar_representative_indices_t{};
+    bool restore_symmetry_kstars_from_full_grid =
+        !full_grid_kstar_representatives.empty();
     const bool restore_symmetry_kstars =
-        use_symmetry_context
+        can_try_symmetry_kstar_restore
+        && !restore_symmetry_kstars_from_full_grid
         && can_restore_symmetry_kstar_meanfield(
             symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
-    const auto member_kfrac_targets = restore_symmetry_kstars
+    auto member_kfrac_targets = restore_symmetry_kstars_from_full_grid
+        ? build_symmetry_full_grid_kstar_member_kfrac_targets(symmetry_context, kfrac_list)
+        : restore_symmetry_kstars
         ? build_symmetry_kstar_member_kfrac_targets(symmetry_context, pbc)
         : symmetry_kstar_member_kfrac_targets_t{};
+    // Full-grid wavefunctions can carry a gauge that is not reproduced exactly from k-star
+    // metadata. Keep the representative route only when a cheap sample matches direct full-k.
+    if (restore_symmetry_kstars_from_full_grid && !map_R_IJs.empty())
+    {
+        constexpr double restore_check_tol = 1e-6;
+        const auto& R_check = map_R_IJs.begin()->first;
+        const auto restored_check = get_symmetry_restored_dmat_cplx_R(
+            symmetry_context, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, R_check,
+            atom_nw, symmetry_context.input_coord_frac, &member_kfrac_targets,
+            &full_grid_kstar_representatives);
+        const auto direct_check =
+            mf.get_dmat_cplx_R(ispin, ispinor_bra, ispinor_ket, kfrac_list, R_check);
+        const auto diff = restored_check - direct_check;
+        if (diff.get_max_abs() > restore_check_tol)
+        {
+            restore_symmetry_kstars_from_full_grid = false;
+            member_kfrac_targets.clear();
+        }
+    }
     for (const auto &R_IJs: map_R_IJs)
     {
         const auto &R = R_IJs.first;
         const auto &IJs = R_IJs.second;
         std::array<int,3> Ra{R.x,R.y,R.z};
-        const auto dmat_cplx = restore_symmetry_kstars
+        const auto dmat_cplx = (restore_symmetry_kstars || restore_symmetry_kstars_from_full_grid)
             ? get_symmetry_restored_dmat_cplx_R(
                   symmetry_context, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, R, atom_nw,
-                  symmetry_context.input_coord_frac, &member_kfrac_targets)
+                  symmetry_context.input_coord_frac, &member_kfrac_targets,
+                  restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr)
             : mf.get_dmat_cplx_R(ispin, ispinor_bra, ispinor_ket, kfrac_list, R);
         // global::ofs_myid << R << std::endl;
         // print_complex_matrix("dmat_cplx[R]", dmat_cplx, global::ofs_myid, true);

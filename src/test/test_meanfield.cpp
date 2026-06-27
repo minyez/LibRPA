@@ -229,6 +229,103 @@ void test_symmetry_context_kstar_restore_skips_full_grid()
         ctx, mf, kfrac_list, {{0, 1}}, {{0, {0.0, 0.0, 0.0}}}));
 }
 
+void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k()
+{
+    using namespace librpa_int;
+
+    SymmetryContext ctx;
+    ctx.available = true;
+    ctx.add_basis_layouts("WFC", {{"X", {0}}});
+    ctx.atom_to_type[0] = 0;
+    ctx.input_coord_frac[0] = {0.0, 0.0, 0.0};
+
+    SymmetryOperation identity_operation;
+    identity_operation.rotation.Identity();
+    identity_operation.translation = {0.0, 0.0, 0.0};
+    identity_operation.shell_rotations[0] = ComplexMatrix(1, 1);
+    identity_operation.shell_rotations[0](0, 0) = {1.0, 0.0};
+    ctx.rspace_operations.push_back(identity_operation);
+
+    SymmetryKAtomRotation atom_rotation;
+    atom_rotation.atom_from = 0;
+    atom_rotation.atom_to = 0;
+    atom_rotation.atom_type = 0;
+    atom_rotation.lmax = 0;
+    atom_rotation.shell_rotations[0] = ComplexMatrix(1, 1);
+    atom_rotation.shell_rotations[0](0, 0) = {1.0, 0.0};
+
+    SymmetryKStar star;
+    star.star_index = 0;
+    star.k_ibz = {0.0, 0.0, 0.0};
+    star.members.resize(2);
+    star.members[0].isym = 0;
+    star.members[0].k_bz = {0.0, 0.0, 0.0};
+    star.members[0].atom_rotations.push_back(atom_rotation);
+    star.members[1].isym = 0;
+    star.members[1].k_bz = {0.5, 0.0, 0.0};
+    star.members[1].atom_rotations.push_back(atom_rotation);
+    ctx.kstars.push_back(star);
+
+    MeanField mf(1, 2, 2, 1);
+    mf.get_efermi() = 0.0;
+    for (int ik = 0; ik != 2; ++ik)
+    {
+        mf.get_eigenvals()[0](ik, 0) = -1.0;
+        mf.get_eigenvals()[0](ik, 1) = 1.0;
+        mf.get_weight()[0](ik, 0) = 1.0;
+        mf.get_weight()[0](ik, 1) = 0.0;
+        mf.get_eigenvectors()[0][0][ik].create(2, 1);
+        mf.get_eigenvectors()[0][0][ik](0, 0) = {1.0, 0.0};
+        mf.get_eigenvectors()[0][0][ik](1, 0) = {1.0, 0.0};
+    }
+
+    const std::vector<Vector3_Order<double>> kfrac_list{
+        {0.0, 0.0, 0.0},
+        {0.5, 0.0, 0.0},
+    };
+    const std::vector<Vector3_Order<int>> Rs{
+        {0, 0, 0},
+        {1, 0, 0},
+    };
+    const std::map<atom_t, size_t> atom_nw{{0, 1}};
+    const std::map<atom_t, std::array<double, 3>> coord_frac{{0, {0.0, 0.0, 0.0}}};
+    const auto representative_indices =
+        build_symmetry_full_grid_kstar_representative_indices(
+            ctx, kfrac_list);
+    if (representative_indices.size() != 1 || representative_indices[0] != 0)
+        throw std::runtime_error("full-grid k-star representative lookup failed");
+    const auto member_kfrac_targets =
+        build_symmetry_full_grid_kstar_member_kfrac_targets(ctx, kfrac_list);
+
+    for (const auto &R : Rs)
+    {
+        const auto direct = mf.get_dmat_cplx_R(0, 0, 0, kfrac_list, R);
+        const auto restored = get_symmetry_restored_dmat_cplx_R(
+            ctx, mf, 0, 0, 0, kfrac_list, R, atom_nw, coord_frac,
+            &member_kfrac_targets, &representative_indices);
+        if (!fequal(direct(0, 0), restored(0, 0), {1e-12, 0.0}))
+            throw std::runtime_error("full-grid k-star density matrix route differs from direct full-k");
+    }
+
+    const std::vector<double> taus{-1e-12, 1e-12};
+    const auto direct_gf = mf.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_list, taus, Rs);
+    const auto restored_gf = get_symmetry_restored_gf_cplx_imagtimes_Rs(
+        ctx, mf, 0, 0, 0, kfrac_list, taus, Rs, atom_nw, coord_frac, -1,
+        &member_kfrac_targets, &representative_indices);
+    for (const auto tau : taus)
+    {
+        for (const auto &R : Rs)
+        {
+            if (!fequal(direct_gf.at(tau).at(R)(0, 0),
+                        restored_gf.at(tau).at(R)(0, 0), {1e-12, 0.0}))
+            {
+                throw std::runtime_error(
+                    "full-grid k-star Green's-function route differs from direct full-k");
+            }
+        }
+    }
+}
+
 void test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge()
 {
     using namespace librpa_int;
@@ -305,6 +402,7 @@ int main(int argc, char *argv[])
     test_dmat_cplx_Rs_matches_single_R_accumulation();
     test_symmetry_context_kstar_restored_dmat_uses_full_star_phases();
     test_symmetry_context_kstar_restore_skips_full_grid();
+    test_symmetry_context_full_grid_kstar_route_matches_direct_full_k();
     test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge();
     return 0;
 }

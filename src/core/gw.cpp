@@ -910,17 +910,52 @@ static void build_gf_libri_kserial(
     }
     const std::vector<Vector3_Order<int>> Rs_vec{Rs_local.cbegin(), Rs_local.cend()};
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const bool can_try_symmetry_kstar_restore =
+        use_symmetry_context && symmetry_context.has_shell_layout("WFC");
+    const auto full_grid_kstar_representatives =
+        can_try_symmetry_kstar_restore
+            ? build_symmetry_full_grid_kstar_representative_indices(
+                  symmetry_context, kfrac_list)
+            : symmetry_kstar_representative_indices_t{};
+    bool restore_symmetry_kstars_from_full_grid =
+        !full_grid_kstar_representatives.empty();
     const bool restore_symmetry_kstars =
-        use_symmetry_context
+        can_try_symmetry_kstar_restore
+        && !restore_symmetry_kstars_from_full_grid
         && can_restore_symmetry_kstar_meanfield(
             symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
-    const auto member_kfrac_targets = restore_symmetry_kstars
+    auto member_kfrac_targets = restore_symmetry_kstars_from_full_grid
+        ? build_symmetry_full_grid_kstar_member_kfrac_targets(symmetry_context, kfrac_list)
+        : restore_symmetry_kstars
         ? build_symmetry_kstar_member_kfrac_targets(symmetry_context, pbc)
         : symmetry_kstar_member_kfrac_targets_t{};
-    auto gf = restore_symmetry_kstars
+    // Full-grid wavefunctions can carry a gauge that is not reproduced exactly from k-star
+    // metadata. Keep the representative route only when a cheap sample matches direct full-k.
+    if (restore_symmetry_kstars_from_full_grid && !taus.empty() && !Rs_vec.empty())
+    {
+        constexpr double restore_check_tol = 1e-6;
+        const std::vector<double> tau_check{taus.front()};
+        const std::vector<Vector3_Order<int>> R_check{Rs_vec.front()};
+        const auto restored_check = get_symmetry_restored_gf_cplx_imagtimes_Rs(
+            symmetry_context, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, tau_check,
+            R_check, atom_nw, symmetry_context.input_coord_frac, -1, &member_kfrac_targets,
+            &full_grid_kstar_representatives).at(tau_check.front()).at(R_check.front());
+        const auto direct_check =
+            mf.get_gf_cplx_imagtimes_Rs(
+                  ispin, ispinor_bra, ispinor_ket, kfrac_list, tau_check, R_check)
+                .at(tau_check.front()).at(R_check.front());
+        const auto diff = restored_check - direct_check;
+        if (diff.get_max_abs() > restore_check_tol)
+        {
+            restore_symmetry_kstars_from_full_grid = false;
+            member_kfrac_targets.clear();
+        }
+    }
+    auto gf = (restore_symmetry_kstars || restore_symmetry_kstars_from_full_grid)
         ? get_symmetry_restored_gf_cplx_imagtimes_Rs(
               symmetry_context, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec, atom_nw,
-              symmetry_context.input_coord_frac, -1, &member_kfrac_targets)
+              symmetry_context.input_coord_frac, -1, &member_kfrac_targets,
+              restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr)
         : mf.get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec);
     // global::ofs_myid << "gf " << gf << std::endl;
     tau_gf_libri.clear();

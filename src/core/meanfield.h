@@ -18,9 +18,6 @@
 
 namespace librpa_int {
 
-using symmetry_kstar_member_kfrac_targets_t =
-    std::vector<std::vector<Vector3_Order<double>>>;
-
 //! Object of the meanfield input
 /*!
   @note Energies are saved in Hartree unit.
@@ -164,7 +161,8 @@ ComplexMatrix get_symmetry_restored_dmat_cplx_R(
     const Vector3_Order<int>& R,
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac,
-    const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr);
+    const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr,
+    const symmetry_kstar_representative_indices_t* representative_k_indices = nullptr);
 
 std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>>
 get_symmetry_restored_gf_cplx_imagtimes_Rs(
@@ -177,7 +175,8 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac,
     int nbands_G = -1,
-    const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr);
+    const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr,
+    const symmetry_kstar_representative_indices_t* representative_k_indices = nullptr);
 
 }
 
