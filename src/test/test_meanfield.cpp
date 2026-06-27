@@ -208,6 +208,27 @@ void test_symmetry_context_kstar_restored_dmat_uses_full_star_phases()
         throw std::runtime_error("ABACUS k-star restored density matrix did not use full-star phases");
 }
 
+void test_symmetry_context_kstar_restore_skips_full_grid()
+{
+    using namespace librpa_int;
+
+    SymmetryContext ctx;
+    ctx.available = true;
+    ctx.add_basis_layouts("WFC", {{"X", {0}}});
+    SymmetryKStar star;
+    star.members.resize(2);
+    ctx.kstars.push_back(star);
+
+    MeanField mf(1, 2, 1, 1);
+    const std::vector<Vector3_Order<double>> kfrac_list{
+        {0.0, 0.0, 0.0},
+        {0.5, 0.0, 0.0},
+    };
+
+    assert(!can_restore_symmetry_kstar_meanfield(
+        ctx, mf, kfrac_list, {{0, 1}}, {{0, {0.0, 0.0, 0.0}}}));
+}
+
 void test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge()
 {
     using namespace librpa_int;
@@ -283,6 +304,7 @@ int main(int argc, char *argv[])
     test_find_highest_occupied_state();
     test_dmat_cplx_Rs_matches_single_R_accumulation();
     test_symmetry_context_kstar_restored_dmat_uses_full_star_phases();
+    test_symmetry_context_kstar_restore_skips_full_grid();
     test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge();
     return 0;
 }

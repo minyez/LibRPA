@@ -176,8 +176,20 @@ bool can_restore_symmetry_kstar_meanfield(
     {
         return false;
     }
+    if (mf.get_n_kpoints() != static_cast<int>(kfrac_list.size()))
+    {
+        return false;
+    }
+    if (ctx.kstars.size() != kfrac_list.size())
+    {
+        return false;
+    }
+    if (ctx.count_kstar_members() <= kfrac_list.size())
+    {
+        return false;
+    }
     validate_symmetry_kstar_meanfield_restore(ctx, mf, kfrac_list, atom_nw, coord_frac);
-    return ctx.count_kstar_members() > kfrac_list.size();
+    return true;
 }
 
 symmetry_kstar_member_kfrac_targets_t build_symmetry_kstar_member_kfrac_targets(

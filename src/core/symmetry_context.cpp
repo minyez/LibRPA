@@ -1421,6 +1421,10 @@ std::vector<SymmetryFullKpointMemberEntry> build_symmetry_full_kpoint_member_lis
     {
         return members;
     }
+    if (ctx.kstars.size() != kfrac_list.size())
+    {
+        return members;
+    }
 
     members.reserve(ctx.count_kstar_members());
     for (int ik_ibz = 0; ik_ibz != static_cast<int>(kfrac_list.size()); ++ik_ibz)

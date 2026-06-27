@@ -210,6 +210,26 @@ void test_context_adds_labeled_atomic_basis_layout()
     assert(ctx.get_shell_layout("WFC", 1).n_ao == 3);
 }
 
+void test_full_kpoint_members_skip_full_grid()
+{
+    SymmetryContext ctx;
+    ctx.available = true;
+
+    SymmetryKStar star;
+    star.k_ibz = {0.0, 0.0, 0.0};
+    star.members.resize(2);
+    star.members[0].k_bz = {0.0, 0.0, 0.0};
+    star.members[1].k_bz = {0.5, 0.0, 0.0};
+    ctx.kstars.push_back(star);
+
+    const std::vector<Vector3_Order<double>> full_kpoints{
+        {0.0, 0.0, 0.0},
+        {0.5, 0.0, 0.0},
+    };
+
+    assert(build_symmetry_full_kpoint_member_list(ctx, full_kpoints).empty());
+}
+
 void add_irreducible_sector_entry(symmetry_irreducible_sector_t& sector,
                                   const atom_t atom_i,
                                   const atom_t atom_j,
@@ -502,6 +522,7 @@ int main()
     test_species_basis_layout_keeps_shell_order();
     test_shell_layout_key_matches_basis_dimensions();
     test_context_adds_labeled_atomic_basis_layout();
+    test_full_kpoint_members_skip_full_grid();
     test_mgo_k333_irreducible_sector_matches_single();
     test_mgo_k333_irreducible_sector_matches_both();
     test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry();
