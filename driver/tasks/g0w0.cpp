@@ -7,7 +7,7 @@
 #include <librpa_enums.h>
 
 #include "../../src/api/instance_manager.h"
-#include "../../src/core/input_symmetry.h"
+#include "../../src/core/symmetry_context.h"
 #include "../../src/io/fs.h"
 #include "../../src/io/global_io.h"
 #include "../../src/io/stl_io_helper.h"
@@ -161,18 +161,18 @@ void driver::task_g0w0()
     const auto &kfrac_list = pds->pbc.kfrac_list;
     const auto &mf = pds->mf;
     const auto &symmetry_context = pds->symmetry_context;
-    std::vector<librpa_int::InputSymmetryFullKpointMemberEntry> full_k_members;
+    std::vector<librpa_int::SymmetryFullKpointMemberEntry> full_k_members;
     if (driver::get_bool(driver::opts.use_symmetry_gw)
         && symmetry_context.available && !symmetry_context.kstars.empty())
     {
-        full_k_members = librpa_int::build_input_symmetry_full_kpoint_member_list(
+        full_k_members = librpa_int::build_symmetry_full_kpoint_member_list(
             symmetry_context, kfrac_list);
     }
-    const bool output_full_kgrid_from_input_symmetry = full_k_members.size() > kfrac_list.size();
-    const int n_kpoints_output = output_full_kgrid_from_input_symmetry
+    const bool output_full_kgrid_from_symmetry = full_k_members.size() > kfrac_list.size();
+    const int n_kpoints_output = output_full_kgrid_from_symmetry
         ? as_int(full_k_members.size())
         : n_kpoints;
-    const double occupation_output_scale = output_full_kgrid_from_input_symmetry
+    const double occupation_output_scale = output_full_kgrid_from_symmetry
         ? static_cast<double>(full_k_members.size())
         : static_cast<double>(mf.get_n_kpoints());
 
@@ -203,10 +203,10 @@ void driver::task_g0w0()
             {
                 for (int i_kpoint = 0; i_kpoint < n_kpoints_output; i_kpoint++)
                 {
-                    const int i_kpoint_ibz = output_full_kgrid_from_input_symmetry
+                    const int i_kpoint_ibz = output_full_kgrid_from_symmetry
                         ? full_k_members[as_size(i_kpoint)].ik_ibz
                         : i_kpoint;
-                    const auto &k = output_full_kgrid_from_input_symmetry
+                    const auto &k = output_full_kgrid_from_symmetry
                         ? full_k_members[as_size(i_kpoint)].k_bz
                         : kfrac_list[i_kpoint_ibz];
                     lib_printf("spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n",
@@ -236,7 +236,7 @@ void driver::task_g0w0()
             {
                 std::vector<librpa_int::Vector3_Order<double>> kfrac_energy_qp;
                 std::vector<int> output_to_input_kpoint;
-                if (output_full_kgrid_from_input_symmetry)
+                if (output_full_kgrid_from_symmetry)
                 {
                     kfrac_energy_qp.reserve(full_k_members.size());
                     output_to_input_kpoint.reserve(full_k_members.size());
@@ -247,7 +247,7 @@ void driver::task_g0w0()
                     }
                 }
                 write_energy_qp(
-                    mf, output_full_kgrid_from_input_symmetry ? kfrac_energy_qp : kfrac_list,
+                    mf, output_full_kgrid_from_symmetry ? kfrac_energy_qp : kfrac_list,
                     output_to_input_kpoint, vxc, vexx_all, sigc_all, n_kpoints, i_state_low,
                     n_states_calc, occupation_output_scale);
             }

@@ -128,7 +128,7 @@ void librpa_set_ao_basis_aux_shrink(LibrpaHandler* h, int natoms,
 /**
  * @brief Set basis convention metadata used by symmetry-based reductions.
  *
- * This metadata is optional for calculations that do not use input symmetry.
+ * This metadata is optional for calculations that do not use symmetry.
  *
  * @param[in] h       Handler.
  * @param[in] bloch_phase Bloch-sum phase sign; must be either +1 or -1.

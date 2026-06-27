@@ -17,411 +17,7 @@
 namespace librpa_int
 {
 
-namespace
-{
-
-std::vector<SpeciesBasisLayout> type_layouts_from_map(
-    const std::map<int, SpeciesBasisLayout> &layouts)
-{
-    int max_type = -1;
-    for (const auto &entry : layouts)
-    {
-        if (entry.first < 0)
-        {
-            throw LIBRPA_RUNTIME_ERROR("Atomic basis shell layout uses a negative atom type");
-        }
-        max_type = std::max(max_type, entry.first);
-    }
-    std::vector<SpeciesBasisLayout> by_type(static_cast<std::size_t>(max_type + 1));
-    for (const auto &entry : layouts)
-    {
-        by_type[static_cast<std::size_t>(entry.first)] = entry.second;
-    }
-    return by_type;
-}
-
-std::array<double, 3> coord_frac_array(const coord_t &coord)
-{
-    return {coord.x, coord.y, coord.z};
-}
-
-Vector3_Order<double> coord_frac_vector(const std::map<atom_t, std::array<double, 3>> &coords,
-                                        const atom_t atom)
-{
-    const auto iter = coords.find(atom);
-    if (iter == coords.end())
-    {
-        throw std::runtime_error("Input symmetry is missing a fractional atom coordinate");
-    }
-    return {iter->second[0], iter->second[1], iter->second[2]};
-}
-
-SpaceGroupSymOps<SpaceGroupSymOp> build_kstar_operations_with_time_reversal(
-    const SpaceGroupSymOps<InputSymmetryOperation> &operations)
-{
-    SpaceGroupSymOps<SpaceGroupSymOp> kstar_operations;
-    kstar_operations.reserve(2 * operations.size());
-    for (const auto &op : operations)
-    {
-        SpaceGroupSymOp base_op;
-        base_op.rotation = op.rotation;
-        base_op.translation = op.translation;
-        base_op.use_row_convention = op.use_row_convention;
-        kstar_operations.push_back(base_op);
-    }
-    for (const auto &op : operations)
-    {
-        SpaceGroupSymOp tr_op;
-        tr_op.rotation = op.rotation * -1.0;
-        tr_op.translation = op.translation;
-        tr_op.use_row_convention = op.use_row_convention;
-        kstar_operations.push_back(tr_op);
-    }
-    return kstar_operations;
-}
-
-bool same_fractional_kpoint(const Vector3_Order<double> &lhs,
-                            const Vector3_Order<double> &rhs,
-                            const double tol)
-{
-    return nearly_integer_vector(lhs - rhs, tol);
-}
-
-bool is_identity_rotation(const Matrix3 &rotation, const double tol)
-{
-    return std::abs(rotation.e11 - 1.0) < tol
-           && std::abs(rotation.e22 - 1.0) < tol
-           && std::abs(rotation.e33 - 1.0) < tol
-           && std::abs(rotation.e12) < tol
-           && std::abs(rotation.e13) < tol
-           && std::abs(rotation.e21) < tol
-           && std::abs(rotation.e23) < tol
-           && std::abs(rotation.e31) < tol
-           && std::abs(rotation.e32) < tol;
-}
-
-int find_identity_input_symmetry_operation(
-    const SpaceGroupSymOps<InputSymmetryOperation> &operations)
-{
-    for (std::size_t isym = 0; isym != operations.size(); ++isym)
-    {
-        const auto &op = operations.at(isym);
-        if (is_identity_rotation(op.rotation, 1e-8)
-            && nearly_integer_vector(op.translation, 1e-8))
-        {
-            return static_cast<int>(isym);
-        }
-    }
-    throw std::runtime_error("Input symmetry operations do not contain the identity operation");
-}
-
-void build_input_symmetry_pbc_index_kstars(
-    SymmetryContext &ctx,
-    const std::vector<Vector3_Order<double>> &kpoints)
-{
-    const int identity_isym = find_identity_input_symmetry_operation(ctx.rspace_operations);
-
-    ctx.kstars.clear();
-    ctx.kstar_member_fold_G.clear();
-    ctx.kstars.reserve(kpoints.size());
-    for (std::size_t ik = 0; ik != kpoints.size(); ++ik)
-    {
-        InputSymmetryKStarMember member;
-        member.isym = identity_isym;
-        member.k_bz = kpoints[ik];
-
-        InputSymmetryKStar star;
-        star.star_index = static_cast<int>(ik);
-        star.k_ibz = kpoints[ik];
-        star.members.push_back(std::move(member));
-
-        ctx.kstar_member_fold_G[{star.star_index, 0}] = {0, 0, 0};
-        ctx.kstars.push_back(std::move(star));
-    }
-}
-
-std::vector<Vector3_Order<double>> build_uniform_kmesh_frac(const Vector3_Order<int> &period)
-{
-    std::vector<Vector3_Order<double>> kpoints;
-    kpoints.reserve(static_cast<std::size_t>(period.x * period.y * period.z));
-    for (int i = 0; i != period.x; ++i)
-        for (int j = 0; j != period.y; ++j)
-            for (int k = 0; k != period.z; ++k)
-                kpoints.push_back({static_cast<double>(i) / period.x,
-                                   static_cast<double>(j) / period.y,
-                                   static_cast<double>(k) / period.z});
-    return kpoints;
-}
-
-std::vector<Vector3_Order<double>> full_kpoints_frac_from_pbc(const PeriodicBoundaryData &pbc)
-{
-    if (static_cast<int>(pbc.kfrac_list_full.size()) == pbc.get_n_cells_bvk())
-    {
-        return pbc.kfrac_list_full;
-    }
-    if (static_cast<int>(pbc.klist.size()) < pbc.get_n_cells_bvk())
-    {
-        return build_uniform_kmesh_frac(pbc.period);
-    }
-    return pbc.kfrac_list_full.empty() ? pbc.kfrac_list : pbc.kfrac_list_full;
-}
-
-std::vector<Vector3_Order<double>> coul_kpoints_frac_from_pbc(const PeriodicBoundaryData &pbc)
-{
-    if (pbc.klist_coul.empty())
-    {
-        return pbc.kfrac_list;
-    }
-
-    std::vector<Vector3_Order<double>> kpoints;
-    kpoints.reserve(pbc.klist_coul.size());
-    for (const auto &k : pbc.klist_coul)
-    {
-        auto kfrac = pbc.latvec * k;
-        kpoints.emplace_back(restrict_fractional_coordinate(Vector3_Order<double>{kfrac}));
-    }
-    return kpoints;
-}
-
-atom_t find_input_symmetry_atom_target(const SymmetryContext &ctx,
-                                       const atom_t atom_from,
-                                       const int spatial_isym,
-                                       Vector3_Order<int> &return_lattice)
-{
-    const auto &op = ctx.rspace_operations.at(static_cast<std::size_t>(spatial_isym));
-    const auto atom_type = ctx.atom_to_type.at(atom_from);
-    const auto coord_from =
-        restrict_fractional_coordinate(coord_frac_vector(ctx.input_coord_frac, atom_from));
-    const auto transformed = apply_space_group_symmetry_operation(op, coord_from);
-
-    atom_t matched_atom = static_cast<atom_t>(-1);
-    for (const auto &[atom_to, type_to] : ctx.atom_to_type)
-    {
-        if (type_to != atom_type)
-        {
-            continue;
-        }
-        const auto coord_to =
-            restrict_fractional_coordinate(coord_frac_vector(ctx.input_coord_frac, atom_to));
-        const auto diff = transformed - coord_to;
-        if (!nearly_integer_vector(diff, 1e-5))
-        {
-            continue;
-        }
-        if (matched_atom != static_cast<atom_t>(-1))
-        {
-            throw std::runtime_error("Input symmetry atom mapping is ambiguous");
-        }
-        matched_atom = atom_to;
-        return_lattice = round_to_integer_vector(diff);
-    }
-    if (matched_atom == static_cast<atom_t>(-1))
-    {
-        throw std::runtime_error("Input symmetry failed to map an atom under a k-star operation");
-    }
-    return matched_atom;
-}
-
-void populate_input_symmetry_kstar_member_rotations(SymmetryContext &ctx,
-                                                    const InputSymmetryKStar &star,
-                                                    InputSymmetryKStarMember &member,
-                                                    const int lmax)
-{
-    const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
-    const int spatial_isym = member.isym >= nsym_space ? member.isym - nsym_space : member.isym;
-    if (spatial_isym < 0 || spatial_isym >= nsym_space)
-    {
-        throw std::runtime_error("Generated input-symmetry k-star member has an invalid symmetry index");
-    }
-    const auto &operation = ctx.rspace_operations.at(static_cast<std::size_t>(spatial_isym));
-
-    member.atom_rotations.clear();
-    member.atom_rotations.reserve(ctx.atom_to_type.size());
-    for (const auto &[atom_from, atom_type] : ctx.atom_to_type)
-    {
-        Vector3_Order<int> return_lattice{0, 0, 0};
-        const atom_t atom_to =
-            find_input_symmetry_atom_target(ctx, atom_from, spatial_isym, return_lattice);
-        const auto inserted = ctx.kspace_return_lattice.emplace(
-            std::make_pair(static_cast<int>(atom_from), spatial_isym), return_lattice);
-        if (!inserted.second && inserted.first->second != return_lattice)
-        {
-            throw std::runtime_error("Input symmetry generated inconsistent atom return lattices");
-        }
-
-        InputSymmetryKAtomRotation atom_rotation;
-        atom_rotation.atom_from = static_cast<int>(atom_from);
-        atom_rotation.atom_to = static_cast<int>(atom_to);
-        atom_rotation.atom_type = atom_type;
-        atom_rotation.lmax = lmax;
-        atom_rotation.shell_rotations =
-            build_input_symmetry_kspace_shell_rotations(operation,
-                                                        ctx.lattice_vectors,
-                                                        lmax,
-                                                        ctx.basis_convention,
-                                                        star.k_ibz,
-                                                        member.k_bz,
-                                                        coord_frac_vector(ctx.input_coord_frac, atom_from),
-                                                        coord_frac_vector(ctx.input_coord_frac, atom_to),
-                                                        return_lattice);
-        member.atom_rotations.push_back(std::move(atom_rotation));
-    }
-}
-
-void store_generated_input_symmetry_kstars(SymmetryContext &ctx,
-                                           const std::vector<KPointStar> &generated_stars,
-                                           const std::vector<Vector3_Order<double>> &kpoints_ibz)
-{
-    if (kpoints_ibz.size() != generated_stars.size())
-    {
-        throw std::runtime_error("Generated k-star representative count does not match k-star count");
-    }
-
-    ctx.kstars.clear();
-    ctx.kstar_member_fold_G.clear();
-    ctx.kstars.reserve(generated_stars.size());
-
-    for (std::size_t istar = 0; istar != generated_stars.size(); ++istar)
-    {
-        const auto &generated_star = generated_stars[istar];
-        InputSymmetryKStar star;
-        star.star_index = static_cast<int>(istar);
-        star.k_ibz = kpoints_ibz[istar];
-        star.members.reserve(generated_star.members.size());
-        for (std::size_t imember = 0; imember != generated_star.members.size(); ++imember)
-        {
-            InputSymmetryKStarMember member;
-            member.isym = generated_star.sym_mappings.at(imember).isym;
-            member.k_bz = generated_star.members[imember].kpoint;
-            ctx.kstar_member_fold_G[{star.star_index, static_cast<int>(imember)}] =
-                generated_star.sym_mappings.at(imember).fold_G;
-            star.members.push_back(std::move(member));
-        }
-        ctx.kstars.push_back(std::move(star));
-    }
-}
-
-void generate_input_symmetry_kstars_from_pbc(SymmetryContext &ctx,
-                                             const PeriodicBoundaryData &pbc)
-{
-    const auto full_kpoints = full_kpoints_frac_from_pbc(pbc);
-    const auto coul_kpoints = coul_kpoints_frac_from_pbc(pbc);
-    const bool scf_kpoints_cover_full_grid =
-        static_cast<int>(pbc.kfrac_list.size()) == pbc.get_n_cells_bvk();
-    const auto generated_stars = build_kpoint_stars(
-        full_kpoints, build_kstar_operations_with_time_reversal(ctx.rspace_operations),
-        coul_kpoints, 1e-5);
-    if (generated_stars.size() != coul_kpoints.size())
-    {
-        if (scf_kpoints_cover_full_grid)
-        {
-            std::vector<Vector3_Order<double>> generated_representatives;
-            generated_representatives.reserve(generated_stars.size());
-            for (const auto &star : generated_stars)
-            {
-                generated_representatives.push_back(
-                    star.members.at(static_cast<std::size_t>(star.representative_k_index)).kpoint);
-            }
-            store_generated_input_symmetry_kstars(ctx, generated_stars, generated_representatives);
-            return;
-        }
-        if (coul_kpoints.size() == full_kpoints.size())
-        {
-            build_input_symmetry_pbc_index_kstars(ctx, coul_kpoints);
-            return;
-        }
-        throw std::runtime_error("Generated input-symmetry k-star count does not match Coulomb k-points");
-    }
-
-    std::vector<Vector3_Order<double>> ordered_representatives;
-    ordered_representatives.reserve(coul_kpoints.size());
-    std::vector<bool> used(generated_stars.size(), false);
-    std::vector<KPointStar> ordered_stars;
-    ordered_stars.reserve(coul_kpoints.size());
-    for (std::size_t ik_ibz = 0; ik_ibz != coul_kpoints.size(); ++ik_ibz)
-    {
-        int matched_star_index = -1;
-        for (std::size_t istar = 0; istar != generated_stars.size(); ++istar)
-        {
-            if (used[istar])
-            {
-                continue;
-            }
-            const auto &star = generated_stars[istar];
-            const auto &representative =
-                star.members.at(static_cast<std::size_t>(star.representative_k_index)).kpoint;
-            if (same_fractional_kpoint(representative, coul_kpoints[ik_ibz], 1e-5))
-            {
-                matched_star_index = static_cast<int>(istar);
-                break;
-            }
-        }
-        if (matched_star_index < 0)
-        {
-            if (scf_kpoints_cover_full_grid)
-            {
-                build_input_symmetry_pbc_index_kstars(ctx, pbc.kfrac_list);
-                return;
-            }
-            throw std::runtime_error("Failed to order generated input-symmetry k-stars by IBZ k-points");
-        }
-
-        used[static_cast<std::size_t>(matched_star_index)] = true;
-        ordered_stars.push_back(generated_stars[static_cast<std::size_t>(matched_star_index)]);
-        ordered_representatives.push_back(coul_kpoints[ik_ibz]);
-    }
-    store_generated_input_symmetry_kstars(ctx, ordered_stars, ordered_representatives);
-}
-
-void sync_input_symmetry_structure_from_dataset(Dataset &ds)
-{
-    auto &ctx = ds.symmetry_context;
-    if (!ds.atoms.types.empty())
-    {
-        ctx.atom_to_type = ds.atoms.types;
-    }
-    if (!ds.atoms.coords_frac.empty())
-    {
-        ctx.input_coord_frac.clear();
-        for (const auto &[atom, coord] : ds.atoms.coords_frac)
-        {
-            ctx.input_coord_frac[atom] = coord_frac_array(coord);
-        }
-    }
-}
-
-void sync_input_symmetry_shell_layouts_from_cached_layouts(Dataset &ds)
-{
-    auto &ctx = ds.symmetry_context;
-    sync_input_symmetry_structure_from_dataset(ds);
-    if (ctx.atom_to_type.empty())
-    {
-        return;
-    }
-
-    if (type_layouts_have_shells(ds.basis_wfc_layouts))
-    {
-        ctx.map_key_layouts["WFC"] = type_layouts_from_map(ds.basis_wfc_layouts);
-        ctx.ao_lmax = ds.basis_wfc.get_max_l();
-    }
-
-    int abf_lmax = -1;
-    if (type_layouts_have_shells(ds.basis_aux_layouts))
-    {
-        ctx.map_key_layouts["AUX"] = type_layouts_from_map(ds.basis_aux_layouts);
-        abf_lmax = std::max(abf_lmax, ds.basis_aux.get_max_l());
-    }
-    if (type_layouts_have_shells(ds.basis_aux_shrink_layouts))
-    {
-        ctx.map_key_layouts["AUXSHRINK"] = type_layouts_from_map(ds.basis_aux_shrink_layouts);
-        abf_lmax = std::max(abf_lmax, ds.basis_aux_shrink.get_max_l());
-    }
-    ctx.abf_lmax = abf_lmax;
-}
-
-} // namespace
-
-void initialize_input_symmetry_context(Dataset &ds, const bool build_shell_rotations)
+void initialize_symmetry_context(Dataset &ds, const bool build_shell_rotations)
 {
 
     // If symmetry operations have not been set, make it an identity group
@@ -435,20 +31,16 @@ void initialize_input_symmetry_context(Dataset &ds, const bool build_shell_rotat
     {
         return;
     }
-    sync_input_symmetry_structure_from_dataset(ds);
+    ctx.set_structure(ds.atoms.types, ds.atoms.coords_frac);
 
-    if (ctx.irreducible_sector.empty()
-        && !ctx.atom_to_type.empty()
-        && !ctx.input_coord_frac.empty()
-        && !ds.pbc.Rlist.empty())
+    if (ctx.irreducible_sector.empty())
     {
-        ctx.irreducible_sector =
-            build_input_symmetry_rspace_irreducible_sector(ctx, ctx.input_coord_frac, ds.pbc.Rlist);
+        ctx.generate_irreducible_sector(ds.pbc.Rlist);
     }
 
     if (ctx.kstars.empty())
     {
-        generate_input_symmetry_kstars_from_pbc(ctx, ds.pbc);
+        ctx.generate_kstars(ds.pbc);
     }
 
     ctx.finalize(&(global::ofs_myid));
@@ -458,60 +50,27 @@ void initialize_input_symmetry_context(Dataset &ds, const bool build_shell_rotat
         return;
     }
 
-    sync_input_symmetry_shell_layouts_from_cached_layouts(ds);
+    ctx.set_basis_layouts({&ds.basis_wfc, &ds.basis_aux, &ds.basis_aux_shrink},
+                          ds.atoms.types);
 
-    const int lmax = std::max(ctx.ao_lmax, ctx.abf_lmax);
+    const int lmax = ctx.max_l();
     if (lmax < 0)
     {
         return;
-    }
-    if (!ctx.lattice_available)
-    {
-        throw LIBRPA_RUNTIME_ERROR("Cannot generate input symmetry shell rotations without lattice vectors");
     }
 
     auto basis_convention =
         is_basis_convention_set(ctx.basis_convention) ? ctx.basis_convention : ds.basis_convention;
     if (!is_basis_convention_set(basis_convention))
     {
-        throw LIBRPA_RUNTIME_ERROR("Cannot initialize input symmetry context without basis convention");
+        throw LIBRPA_RUNTIME_ERROR("Cannot initialize symmetry context without basis convention");
     }
-    ctx.basis_convention = basis_convention;
     ds.basis_convention = basis_convention;
-
-    for (auto &op : ctx.rspace_operations)
-    {
-        const auto cartesian_rotation =
-            fractional_rotation_to_cartesian(op, ctx.lattice_vectors).Inverse();
-        for (int l = 0; l <= lmax; ++l)
-        {
-            op.shell_rotations[l] =
-                real_spherical_harmonic_rotation_matrix(
-                    cartesian_rotation,
-                    l,
-                    basis_convention.order,
-                    basis_convention.coeff_m_negative,
-                    basis_convention.coeff_m_positive);
-        }
-    }
-
-    if (ctx.atom_to_type.empty() || ctx.input_coord_frac.empty())
-    {
-        return;
-    }
-    for (auto &star : ctx.kstars)
-    {
-        for (auto &member : star.members)
-        {
-            if (member.atom_rotations.empty())
-            {
-                populate_input_symmetry_kstar_member_rotations(ctx, star, member, lmax);
-            }
-        }
-    }
+    ctx.generate_shell_rotations(basis_convention);
+    ctx.generate_kstar_member_rotations(lmax);
 }
 
-void require_input_symmetry_shell_layouts(const Dataset &ds, const char *calculation)
+void require_symmetry_shell_layouts(const Dataset &ds, const char *calculation)
 {
     const auto &ctx = ds.symmetry_context;
     if (!ctx.available || ctx.rspace_operations.empty())
@@ -624,10 +183,10 @@ void initialize_ds_exx(Dataset &ds, const LibrpaOptions &opts)
 {
     global::profiler.start("initialize_ds_exx");
     const bool use_symmetry = opts.use_symmetry_exx == LIBRPA_SWITCH_ON;
-    initialize_input_symmetry_context(ds, use_symmetry);
+    initialize_symmetry_context(ds, use_symmetry);
     if (use_symmetry)
     {
-        require_input_symmetry_shell_layouts(ds, "EXX");
+        require_symmetry_shell_layouts(ds, "EXX");
     }
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     ds.p_exx = std::make_unique<librpa_int::Exx>(ds.mf, ds.basis_wfc, ds.pbc, ds.symmetry_context,
@@ -644,10 +203,10 @@ void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts)
 {
     global::profiler.start("initialize_ds_chi0");
     const bool use_symmetry = opts.use_symmetry_rpa == LIBRPA_SWITCH_ON;
-    initialize_input_symmetry_context(ds, use_symmetry);
+    initialize_symmetry_context(ds, use_symmetry);
     if (use_symmetry)
     {
-        require_input_symmetry_shell_layouts(ds, "RPA/chi0");
+        require_symmetry_shell_layouts(ds, "RPA/chi0");
     }
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     if (opts.use_shrink_abfs == LIBRPA_SWITCH_ON && opts.use_shrink_chi == LIBRPA_SWITCH_ON)
@@ -675,10 +234,10 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts)
 {
     global::profiler.start("initialize_ds_g0w0");
     const bool use_symmetry = opts.use_symmetry_gw == LIBRPA_SWITCH_ON;
-    initialize_input_symmetry_context(ds, use_symmetry);
+    initialize_symmetry_context(ds, use_symmetry);
     if (use_symmetry)
     {
-        require_input_symmetry_shell_layouts(ds, "GW");
+        require_symmetry_shell_layouts(ds, "GW");
     }
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     // global::ofs_myid << "is_eigvec_k_distributed " << is_eigvec_k_distributed << std::endl;

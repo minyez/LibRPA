@@ -146,6 +146,7 @@ class AtomicBasis
 private:
     bool initialized_;
 public:
+    std::string label;
     std::vector<std::size_t> nbs_;
 private:
     std::vector<std::size_t> part_range_;

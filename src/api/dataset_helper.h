@@ -27,6 +27,6 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts);
 // Initialize analytic dielectric head/wing component from Dataset::velocity_matrix.
 void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, bool need_wing);
 
-void initialize_input_symmetry_context(Dataset &ds, bool build_shell_rotations);
+void initialize_symmetry_context(Dataset &ds, bool build_shell_rotations);
 
 }

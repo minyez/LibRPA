@@ -8,7 +8,7 @@
 #include "../mpi/kpoint_blacs_parallel_context.h"
 #include "atom.h"
 #include "atomic_basis.h"
-#include "input_symmetry.h"
+#include "symmetry_context.h"
 #include "meanfield.h"
 #include "geometry.h"
 #include "pbc.h"

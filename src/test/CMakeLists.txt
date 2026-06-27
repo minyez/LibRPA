@@ -44,7 +44,7 @@ foreach(target
     test_complexmatrix
     test_fitting
     test_io
-    test_input_symmetry
+    test_symmetry_context
     test_arbitrary_float
     test_geometry
     test_lebedev_laikov

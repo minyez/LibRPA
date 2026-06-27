@@ -55,13 +55,13 @@ using std::string;
 namespace
 {
 
-constexpr double kInputSymmetryKpointMatchTol = 1e-5;
+constexpr double kSymmetryKpointMatchTol = 1e-5;
 constexpr double kBzSamplingWeightSumTol = 1e-6;
 constexpr std::int32_t READER_SHRINK_SINVS_V1_MARKER = -30241621;
 
 bool nearly_same_kpoint(const librpa_int::Vector3_Order<double> &lhs,
                        const librpa_int::Vector3_Order<double> &rhs,
-                       const double tol = kInputSymmetryKpointMatchTol)
+                       const double tol = kSymmetryKpointMatchTol)
 {
     return std::abs(lhs.x - rhs.x) <= tol
            && std::abs(lhs.y - rhs.y) <= tol

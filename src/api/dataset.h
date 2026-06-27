@@ -11,7 +11,7 @@
 #include "../core/exx.h"
 #include "../core/geometry.h"
 #include "../core/gw.h"
-#include "../core/input_symmetry.h"
+#include "../core/symmetry_context.h"
 #include "../core/meanfield.h"
 #include "../core/pbc.h"
 #include "../core/ri.h"
@@ -71,10 +71,6 @@ public:
     AtomicBasis basis_aux;
     //! Handling object for shrinked auxiliary basis functions for RI
     AtomicBasis basis_aux_shrink;
-    //! Species shell layouts
-    std::map<int, SpeciesBasisLayout> basis_wfc_layouts;
-    std::map<int, SpeciesBasisLayout> basis_aux_layouts;
-    std::map<int, SpeciesBasisLayout> basis_aux_shrink_layouts;
     //! Basis ordering and real-spherical-harmonic convention.
     BasisConvention basis_convention;
     SpaceGroupSymOps<SpaceGroupSymOp> spg_symops;

@@ -37,9 +37,6 @@ Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
       basis_wfc(),
       basis_aux(),
       basis_aux_shrink(),
-      basis_wfc_layouts(),
-      basis_aux_layouts(),
-      basis_aux_shrink_layouts(),
       basis_convention(),
       spg_symops(),
       symmetry_context(),
@@ -66,6 +63,9 @@ Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
       p_chi0(nullptr),
       p_g0w0(nullptr)
 {
+    basis_wfc.label = "WFC";
+    basis_aux.label = "AUX";
+    basis_aux_shrink.label = "AUXSHRINK";
     blacs_h.init();
     // TODO more flexible process grid initialization
     blacs_h.set_square_grid();

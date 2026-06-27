@@ -10,7 +10,7 @@
 #include "atomic_basis.h"
 #include "chi0.h"
 #include "dielecmodel.h"
-#include "input_symmetry.h"
+#include "symmetry_context.h"
 #include "pbc.h"
 #include "ri.h"
 

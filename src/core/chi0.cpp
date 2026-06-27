@@ -32,7 +32,7 @@
 #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
 #include "../utils/utils_mem.h"
-#include "input_symmetry.h"
+#include "symmetry_context.h"
 #include "atomic_basis.h"
 #include "meanfield_mpi.h"
 #include "pbc.h"
@@ -872,18 +872,18 @@ static void build_gf_Rt_libri_serial(
 
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
     if (use_symmetry_context
-        && can_restore_input_symmetry_kstar_meanfield(
+        && can_restore_symmetry_kstar_meanfield(
             symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac))
     {
         const auto member_kfrac_targets =
-            build_input_symmetry_kstar_member_kfrac_targets(symmetry_context, pbc);
+            build_symmetry_kstar_member_kfrac_targets(symmetry_context, pbc);
         std::vector<Vector3_Order<int>> Rs_this;
         Rs_this.reserve(map_R_IJs.size());
         for (const auto &R_IJs : map_R_IJs)
         {
             Rs_this.push_back(R_IJs.first);
         }
-        const auto gf_cplx_R = get_input_symmetry_restored_gf_cplx_imagtimes_Rs(
+        const auto gf_cplx_R = get_symmetry_restored_gf_cplx_imagtimes_Rs(
             symmetry_context, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, Rs_this, atom_nw,
             symmetry_context.input_coord_frac, nbands_G, &member_kfrac_targets).at(tau);
 

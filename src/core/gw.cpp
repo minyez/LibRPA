@@ -34,7 +34,7 @@
 using namespace ddla;
 #endif
 #include "../utils/utils_mem.h"
-#include "input_symmetry.h"
+#include "symmetry_context.h"
 #include "atom.h"
 #include "atomic_basis.h"
 #include "chi0.h"
@@ -258,7 +258,7 @@ std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
     return atom_nw;
 }
 
-bool use_input_symmetry_ibz_root_projection(
+bool use_symmetry_ibz_root_projection(
     const SymmetryContext& ctx,
     const PeriodicBoundaryData& pbc,
     const int n_target_kpoints,
@@ -271,8 +271,8 @@ bool use_input_symmetry_ibz_root_projection(
 }
 
 std::map<std::pair<int, int>, std::set<std::array<int, 3>>>
-convert_input_symmetry_irreducible_sector_to_libri_gw(
-    const librpa_int::input_symmetry_irreducible_sector_t& irreducible_sector,
+convert_symmetry_irreducible_sector_to_libri_gw(
+    const librpa_int::symmetry_irreducible_sector_t& irreducible_sector,
     const std::array<int, 3>& period)
 {
     auto canonicalize_r = [&period](const std::array<int, 3>& r) {
@@ -389,10 +389,10 @@ RI::Tensor<Tdata> convert_complex_matrix_to_libri_tensor_gw(
 
 template <typename Tdata>
 std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>>
-restore_input_symmetry_ao_rspace_tensor_map_gw(
+restore_symmetry_ao_rspace_tensor_map_gw(
     const std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>>& tensors_ir,
     const librpa_int::SymmetryContext& symmetry_ctx,
-    const librpa_int::input_symmetry_rspace_sector_stars_t& sector_stars,
+    const librpa_int::symmetry_rspace_sector_stars_t& sector_stars,
     const AtomicBasis& atbasis_wfc)
 {
     std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> tensors_full;
@@ -421,7 +421,7 @@ restore_input_symmetry_ao_rspace_tensor_map_gw(
                 convert_libri_tensor_to_complex_matrix(jr_entry.second, nao_I, nao_J);
             for (const auto& restore_member : pair_iter->second.at(ir_R))
             {
-                const ComplexMatrix sigma_full = librpa_int::rotate_input_symmetry_rspace_matrix(
+                const ComplexMatrix sigma_full = librpa_int::rotate_symmetry_rspace_matrix(
                     symmetry_ctx, "WFC", restore_member.isym, ir_I, ir_J, sigma_ir);
                 auto& target = tensors_full[restore_member.full_atom_pair.first][{
                     static_cast<int>(restore_member.full_atom_pair.second),
@@ -910,15 +910,15 @@ static void build_gf_libri_kserial(
     }
     const std::vector<Vector3_Order<int>> Rs_vec{Rs_local.cbegin(), Rs_local.cend()};
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
-    const bool restore_input_symmetry_kstars =
+    const bool restore_symmetry_kstars =
         use_symmetry_context
-        && can_restore_input_symmetry_kstar_meanfield(
+        && can_restore_symmetry_kstar_meanfield(
             symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
-    const auto member_kfrac_targets = restore_input_symmetry_kstars
-        ? build_input_symmetry_kstar_member_kfrac_targets(symmetry_context, pbc)
-        : input_symmetry_kstar_member_kfrac_targets_t{};
-    auto gf = restore_input_symmetry_kstars
-        ? get_input_symmetry_restored_gf_cplx_imagtimes_Rs(
+    const auto member_kfrac_targets = restore_symmetry_kstars
+        ? build_symmetry_kstar_member_kfrac_targets(symmetry_context, pbc)
+        : symmetry_kstar_member_kfrac_targets_t{};
+    auto gf = restore_symmetry_kstars
+        ? get_symmetry_restored_gf_cplx_imagtimes_Rs(
               symmetry_context, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec, atom_nw,
               symmetry_context.input_coord_frac, -1, &member_kfrac_targets)
         : mf.get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec);
@@ -1342,7 +1342,7 @@ void G0W0::build_spacetime(
     const auto& symmetry_ctx = this->symmetry_context;
     const auto n_full_rspace_blocks =
         static_cast<std::size_t>(natom) * static_cast<std::size_t>(natom) * pbc.Rlist.size();
-    const bool input_symmetry_reduces_rspace =
+    const bool symmetry_reduces_rspace =
         symmetry_ctx.count_irreducible_blocks() < n_full_rspace_blocks;
     const bool use_input_sigc_symmetry =
         this->use_symmetry_context
@@ -1352,19 +1352,19 @@ void G0W0::build_spacetime(
         && !symmetry_ctx.rspace_operations.empty()
         && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(natom)
         && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(natom)
-        && input_symmetry_reduces_rspace;
+        && symmetry_reduces_rspace;
     const auto libri_sigc_irreducible_sector =
         use_input_sigc_symmetry
-            ? convert_input_symmetry_irreducible_sector_to_libri_gw(
+            ? convert_symmetry_irreducible_sector_to_libri_gw(
                   symmetry_ctx.irreducible_sector, this->pbc.period_array)
             : std::map<std::pair<int, int>, std::set<std::array<int, 3>>>{};
     const bool restore_input_sigc_output = use_input_sigc_symmetry;
-    librpa_int::input_symmetry_rspace_sector_stars_t input_symmetry_sector_stars;
+    librpa_int::symmetry_rspace_sector_stars_t symmetry_sector_stars;
     if (use_input_sigc_symmetry)
     {
-        librpa_int::build_input_symmetry_rspace_sector_stars(
+        librpa_int::build_symmetry_rspace_sector_stars(
             symmetry_ctx, symmetry_ctx.input_coord_frac, this->pbc.period, pbc.Rlist,
-            input_symmetry_sector_stars, nullptr);
+            symmetry_sector_stars, nullptr);
         gw_libri.set_symmetry(false, {});
         gw_libri_cplx.set_symmetry(false, {});
         if (use_complex_tensor)
@@ -1539,9 +1539,9 @@ void G0W0::build_spacetime(
                             if (restore_input_sigc_output)
                             {
                                 gw_libri_cplx.Sigmas =
-                                    restore_input_symmetry_ao_rspace_tensor_map_gw(
+                                    restore_symmetry_ao_rspace_tensor_map_gw(
                                         gw_libri_cplx.Sigmas, symmetry_ctx,
-                                        input_symmetry_sector_stars, this->atbasis_wfc);
+                                        symmetry_sector_stars, this->atbasis_wfc);
                             }
                             release_free_mem();
                             global::profiler.stop("g0w0_build_spacetime_5");
@@ -1618,9 +1618,9 @@ void G0W0::build_spacetime(
 	                            if (restore_input_sigc_output)
 	                            {
 	                                gw_libri.Sigmas =
-	                                    restore_input_symmetry_ao_rspace_tensor_map_gw(
+	                                    restore_symmetry_ao_rspace_tensor_map_gw(
 	                                        gw_libri.Sigmas, symmetry_ctx,
-	                                        input_symmetry_sector_stars, this->atbasis_wfc);
+	                                        symmetry_sector_stars, this->atbasis_wfc);
 	                            }
 	                            global::profiler.stop("g0w0_build_spacetime_5");
                             global::profiler.start("g0w0_build_spacetime_5_clean");
@@ -1972,7 +1972,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     const int n_target_kpoints = static_cast<int>(kfrac_target.size());
     const bool use_root_dense_projection =
         this->use_symmetry_context
-        && use_input_symmetry_ibz_root_projection(this->symmetry_context,
+        && use_symmetry_ibz_root_projection(this->symmetry_context,
                                                this->pbc,
                                                n_target_kpoints,
                                                this->mf.get_n_kpoints());

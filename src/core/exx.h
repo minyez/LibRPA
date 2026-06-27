@@ -6,7 +6,7 @@
 #include "../mpi/base_blacs.h"
 #include "../mpi/kpoint_blacs_parallel_context.h"
 #include "atomic_basis.h"
-#include "input_symmetry.h"
+#include "symmetry_context.h"
 #include "meanfield.h"
 #include "pbc.h"
 #include "geometry.h"

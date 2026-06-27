@@ -14,7 +14,7 @@
 #include <vector>
 
 // Internal headers
-#include "../core/input_symmetry.h"
+#include "../core/symmetry_context.h"
 #include "../io/global_io.h"
 #include "../io/stl_io_helper.h"
 #include "../math/matrix.h"
@@ -363,9 +363,7 @@ void librpa_set_wfc_spinor_packed(LibrpaHandler* h, int ik, int nstates_local, i
 }
 
 static void set_ao_basis(librpa_int::AtomicBasis& ab, const int natoms, const size_t* nbs,
-                         const int* nshells, const int* l_shells,
-                         const std::map<librpa_int::atom_t, int>& types,
-                         std::map<int, librpa_int::SpeciesBasisLayout>& layouts)
+                         const int* nshells, const int* l_shells)
 {
     std::vector<size_t> v_nbs(natoms);
     for (int i = 0; i < natoms; i++) v_nbs[i] = librpa_int::as_size(nbs[i]);
@@ -375,7 +373,6 @@ static void set_ao_basis(librpa_int::AtomicBasis& ab, const int natoms, const si
     {
         ab.set_l_shells(parse_l_shells(natoms, nshells, l_shells));
     }
-    condense_species_basis_layouts(ab, types, layouts);
 }
 
 void librpa_set_ao_basis_wfc(LibrpaHandler* h,
@@ -391,7 +388,7 @@ void librpa_set_ao_basis_wfc(LibrpaHandler* h,
     profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
-    set_ao_basis(pds->basis_wfc, natoms, nbs_wfc, nshells, l_shells, pds->atoms.types, pds->basis_wfc_layouts);
+    set_ao_basis(pds->basis_wfc, natoms, nbs_wfc, nshells, l_shells);
     pds->desc_wfc.reset_handler(pds->blacs_h);
     const auto n = pds->basis_wfc.nb_total;
     pds->desc_wfc.init_1b1p(n, n, 0, 0);
@@ -421,7 +418,7 @@ void librpa_set_ao_basis_aux(LibrpaHandler* h,
     profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
-    set_ao_basis(pds->basis_aux, natoms, nbs_aux, nshells, l_shells, pds->atoms.types, pds->basis_aux_layouts);
+    set_ao_basis(pds->basis_aux, natoms, nbs_aux, nshells, l_shells);
 
     // After auxiliary basis is set, we can initialize the global (continous) array descriptor for N_abf size basis.
     pds->desc_abf.reset_handler(pds->blacs_h);
@@ -452,7 +449,7 @@ void librpa_set_ao_basis_aux_shrink(LibrpaHandler* h,
     profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
-    set_ao_basis(pds->basis_aux_shrink, natoms, nbs_aux_shrink, nshells, l_shells, pds->atoms.types, pds->basis_aux_shrink_layouts);
+    set_ao_basis(pds->basis_aux_shrink, natoms, nbs_aux_shrink, nshells, l_shells);
 
     pds->desc_abf_shrink.reset_handler(pds->blacs_h);
     const auto n = pds->basis_aux_shrink.nb_total;
@@ -604,7 +601,7 @@ void librpa_set_symmetry_operations(LibrpaHandler* h, const int n_symops, const 
     }
 
     auto operations =
-        librpa_int::make_input_symmetry_operations(n_symops, row_conv > 0, rotmats, trans);
+        librpa_int::make_symmetry_operations(n_symops, row_conv > 0, rotmats, trans);
     auto& old_operations = pds->symmetry_context.rspace_operations;
     std::vector<std::map<int, librpa_int::ComplexMatrix>> shell_rotations;
     if (old_operations.size() == operations.size())
@@ -725,13 +722,6 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
         }
         pds->comm_h.barrier();
     }
-
-    if (pds->basis_wfc.initialized())
-        condense_species_basis_layouts(pds->basis_wfc, pds->atoms.types, pds->basis_wfc_layouts);
-    if (pds->basis_aux.initialized())
-        condense_species_basis_layouts(pds->basis_aux, pds->atoms.types, pds->basis_aux_layouts);
-    if (pds->basis_aux_shrink.initialized())
-        condense_species_basis_layouts(pds->basis_aux_shrink, pds->atoms.types, pds->basis_aux_shrink_layouts);
 
     profiler.stop(tname);
 }

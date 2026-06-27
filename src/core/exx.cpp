@@ -20,7 +20,7 @@
 #include "../utils/constants.h"
 #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
-#include "input_symmetry.h"
+#include "symmetry_context.h"
 #include "../utils/utils_mem.h"
 #include "atomic_basis.h"
 #include "meanfield_mpi.h"
@@ -53,7 +53,7 @@ std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
     return atom_nw;
 }
 
-bool use_input_symmetry_ibz_root_projection(
+bool use_symmetry_ibz_root_projection(
     const SymmetryContext& ctx,
     const PeriodicBoundaryData& pbc,
     const int n_target_kpoints,
@@ -66,8 +66,8 @@ bool use_input_symmetry_ibz_root_projection(
 }
 
 std::map<std::pair<int, int>, std::set<std::array<int, 3>>>
-convert_input_symmetry_irreducible_sector_to_libri(
-    const librpa_int::input_symmetry_irreducible_sector_t& irreducible_sector,
+convert_symmetry_irreducible_sector_to_libri(
+    const librpa_int::symmetry_irreducible_sector_t& irreducible_sector,
     const std::array<int, 3>& period)
 {
     auto canonicalize_r = [&period](const std::array<int, 3>& r) {
@@ -98,7 +98,7 @@ convert_input_symmetry_irreducible_sector_to_libri(
     return libri_sector;
 }
 
-bool exx_coulomb_uses_input_symmetry_irreducible_sector_layout(
+bool exx_coulomb_uses_symmetry_irreducible_sector_layout(
     const atpair_R_mat_t& coul_mat,
     const librpa_int::SymmetryContext& symmetry_ctx,
     const std::size_t n_R_blocks)
@@ -126,7 +126,7 @@ bool exx_coulomb_uses_input_symmetry_irreducible_sector_layout(
             for (const auto& r_entry : j_entry.second)
             {
                 const auto& R = r_entry.first;
-                const librpa_int::input_symmetry_R_t r_array{R.x, R.y, R.z};
+                const librpa_int::symmetry_R_t r_array{R.x, R.y, R.z};
                 if (sector_iter->second.count(r_array) == 0)
                 {
                     return false;
@@ -289,20 +289,20 @@ static void build_dmat_libri_kserial(
         map_R_IJs[R].push_back(IJR.first);
     }
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
-    const bool restore_input_symmetry_kstars =
+    const bool restore_symmetry_kstars =
         use_symmetry_context
-        && can_restore_input_symmetry_kstar_meanfield(
+        && can_restore_symmetry_kstar_meanfield(
             symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
-    const auto member_kfrac_targets = restore_input_symmetry_kstars
-        ? build_input_symmetry_kstar_member_kfrac_targets(symmetry_context, pbc)
-        : input_symmetry_kstar_member_kfrac_targets_t{};
+    const auto member_kfrac_targets = restore_symmetry_kstars
+        ? build_symmetry_kstar_member_kfrac_targets(symmetry_context, pbc)
+        : symmetry_kstar_member_kfrac_targets_t{};
     for (const auto &R_IJs: map_R_IJs)
     {
         const auto &R = R_IJs.first;
         const auto &IJs = R_IJs.second;
         std::array<int,3> Ra{R.x,R.y,R.z};
-        const auto dmat_cplx = restore_input_symmetry_kstars
-            ? get_input_symmetry_restored_dmat_cplx_R(
+        const auto dmat_cplx = restore_symmetry_kstars
+            ? get_symmetry_restored_dmat_cplx_R(
                   symmetry_context, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, R, atom_nw,
                   symmetry_context.input_coord_frac, &member_kfrac_targets)
             : mf.get_dmat_cplx_R(ispin, ispinor_bra, ispinor_ket, kfrac_list, R);
@@ -497,7 +497,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     const auto& symmetry_ctx = this->symmetry_context;
     const auto n_full_rspace_blocks =
         static_cast<std::size_t>(n_atoms) * static_cast<std::size_t>(n_atoms) * Rlist.size();
-    const bool input_symmetry_reduces_rspace =
+    const bool symmetry_reduces_rspace =
         symmetry_ctx.count_irreducible_blocks() < n_full_rspace_blocks;
     const bool use_symmetry_exx =
         this->use_symmetry_context
@@ -507,21 +507,21 @@ void Exx::build(const LibrpaParallelRouting routing,
         && !symmetry_ctx.rspace_operations.empty()
         && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(n_atoms)
         && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(n_atoms)
-        && input_symmetry_reduces_rspace;
+        && symmetry_reduces_rspace;
     const auto libri_irreducible_sector =
         use_symmetry_exx
-            ? convert_input_symmetry_irreducible_sector_to_libri(
+            ? convert_symmetry_irreducible_sector_to_libri(
                   symmetry_ctx.irreducible_sector, this->pbc.period_array)
             : std::map<std::pair<int, int>, std::set<std::array<int, 3>>>{};
     const bool use_libri_exx_symmetry_filter = use_symmetry_exx;
-    librpa_int::input_symmetry_rspace_sector_stars_t input_symmetry_sector_stars;
+    librpa_int::symmetry_rspace_sector_stars_t symmetry_sector_stars;
     if (use_symmetry_exx)
     {
         global::lib_printf(
             "Reducing EXX real-space contractions with irreducible sectors\n");
-        librpa_int::build_input_symmetry_rspace_sector_stars(
+        librpa_int::build_symmetry_rspace_sector_stars(
             symmetry_ctx, symmetry_ctx.input_coord_frac, this->pbc.period, Rlist,
-            input_symmetry_sector_stars, nullptr);
+            symmetry_sector_stars, nullptr);
         exx_libri.set_symmetry(false, {});
         exx_libri_cplx.set_symmetry(false, {});
         if (use_complex_exx_r)
@@ -588,11 +588,11 @@ void Exx::build(const LibrpaParallelRouting routing,
     const atpair_R_mat_t* exx_coul_mat_ptr = &coul_mat;
     const bool use_input_exx_coulomb_restore =
         use_symmetry_exx
-        && exx_coulomb_uses_input_symmetry_irreducible_sector_layout(
+        && exx_coulomb_uses_symmetry_irreducible_sector_layout(
             coul_mat, symmetry_ctx, Rlist.size());
     if (use_input_exx_coulomb_restore)
     {
-        const auto abf_layout_key = find_input_symmetry_shell_layout_key(
+        const auto abf_layout_key = find_symmetry_shell_layout_key(
             symmetry_ctx, build_atom_nw_map(atbasis_abf), "AUX");
         global::lib_printf(
             "Restoring the ABACUS EXX auxiliary Coulomb blocks from the irreducible sector to the full real-space sector before LibRI contraction\n");
@@ -604,8 +604,8 @@ void Exx::build(const LibrpaParallelRouting routing,
                 const auto ir_J = J_RV.first;
                 const auto sector_pair =
                     std::make_pair(static_cast<atom_t>(ir_I), static_cast<atom_t>(ir_J));
-                const auto pair_iter = input_symmetry_sector_stars.find(sector_pair);
-                if (pair_iter == input_symmetry_sector_stars.end())
+                const auto pair_iter = symmetry_sector_stars.find(sector_pair);
+                if (pair_iter == symmetry_sector_stars.end())
                 {
                     throw std::runtime_error(
                         "Failed to match an irreducible EXX Coulomb atom pair with the ABACUS restore map");
@@ -623,7 +623,7 @@ void Exx::build(const LibrpaParallelRouting routing,
                     for (const auto& restore_member : star_iter->second)
                     {
                         const ComplexMatrix v_full =
-                            librpa_int::rotate_input_symmetry_rspace_matrix(
+                            librpa_int::rotate_symmetry_rspace_matrix(
                                 symmetry_ctx, abf_layout_key, restore_member.isym,
                                 static_cast<atom_t>(ir_I),
                                 static_cast<atom_t>(ir_J), v_ir);
@@ -645,7 +645,7 @@ void Exx::build(const LibrpaParallelRouting routing,
         exx_coul_mat_ptr = &exx_coul_mat_restored;
     }
     const auto& exx_coul_mat = *exx_coul_mat_ptr;
-    const bool use_replicated_input_symmetry_exx_coulomb =
+    const bool use_replicated_symmetry_exx_coulomb =
         use_input_exx_coulomb_restore && comm_h.nprocs > 1;
 
     std::map<int, std::map<std::pair<int,std::array<int,3>>, RI::Tensor<double>>> V_libri;
@@ -681,7 +681,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     }
     else
     {
-        if (use_replicated_input_symmetry_exx_coulomb)
+        if (use_replicated_symmetry_exx_coulomb)
         {
             for (const auto& IJR : dispatch_vector_prod(
                      get_atom_pair(exx_coul_mat), Rlist, comm_h.myid, comm_h.nprocs, true, true))
@@ -900,8 +900,8 @@ void Exx::build(const LibrpaParallelRouting routing,
 	                                    std::make_pair(static_cast<atom_t>(I),
 	                                                   static_cast<atom_t>(J));
 	                                const auto pair_iter =
-	                                    input_symmetry_sector_stars.find(sector_pair);
-	                                if (pair_iter == input_symmetry_sector_stars.end()
+	                                    symmetry_sector_stars.find(sector_pair);
+	                                if (pair_iter == symmetry_sector_stars.end()
 	                                    || pair_iter->second.count(R) == 0)
 	                                {
 	                                    std::ostringstream oss;
@@ -914,7 +914,7 @@ void Exx::build(const LibrpaParallelRouting routing,
 	                                for (const auto& restore_member : pair_iter->second.at(R))
 	                                {
 	                                    const auto block_full =
-	                                        librpa_int::rotate_input_symmetry_rspace_matrix(
+	                                        librpa_int::rotate_symmetry_rspace_matrix(
 	                                            symmetry_ctx, "WFC", restore_member.isym,
 	                                            static_cast<atom_t>(I),
 	                                            static_cast<atom_t>(J), block_ir);
@@ -1027,7 +1027,7 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
     const int n_target_kpoints = static_cast<int>(kfrac_target.size());
     const bool use_root_dense_projection =
         this->use_symmetry_context
-        && use_input_symmetry_ibz_root_projection(this->symmetry_context,
+        && use_symmetry_ibz_root_projection(this->symmetry_context,
                                                this->pbc,
                                                n_target_kpoints,
                                                this->mf.get_n_kpoints());

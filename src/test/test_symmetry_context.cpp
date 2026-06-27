@@ -1,4 +1,4 @@
-#include "../core/input_symmetry.h"
+#include "../core/symmetry_context.h"
 #include "../core/pbc.h"
 #include "../math/rsh.h"
 
@@ -43,7 +43,7 @@ void test_abf_rotation_fallback_uses_basis_convention()
     SpeciesBasisLayout layout;
     layout.label = "X";
     layout.set({1});
-    ctx.map_key_layouts["AUX"] = {layout};
+    ctx.add_basis_layouts("AUX", {layout});
     ctx.lattice_vectors = Matrix3(1.0, 0.0, 0.0,
                                   0.0, 1.0, 0.0,
                                   0.0, 0.0, 1.0);
@@ -55,7 +55,7 @@ void test_abf_rotation_fallback_uses_basis_convention()
     const Matrix3 direct_rotation = cartesian_rotation.Transpose();
 
     const auto fallback_rotation =
-        build_input_symmetry_rotation_matrix(ctx, "AUX", 0, {}, direct_rotation);
+        build_symmetry_rotation_matrix(ctx, "AUX", 0, {}, direct_rotation);
     const auto expected_rotation =
         real_spherical_harmonic_rotation_matrix(cartesian_rotation,
                                                 1,
@@ -72,7 +72,7 @@ void test_abf_rotation_fallback_uses_basis_convention()
     ctx.lattice_vectors = skew_lattice;
 
     const auto skew_fallback_rotation =
-        build_input_symmetry_rotation_matrix(ctx, "AUX", 0, {}, fractional_rotation);
+        build_symmetry_rotation_matrix(ctx, "AUX", 0, {}, fractional_rotation);
     const auto skew_expected_rotation =
         real_spherical_harmonic_rotation_matrix(cartesian_rotation,
                                                 1,
@@ -100,7 +100,7 @@ void test_kspace_shell_rotations_use_direct_rotation()
     const SpaceGroupSymOp op{fractional_rotation, {0.0, 0.0, 0.0}};
 
     const auto shell_rotations =
-        build_input_symmetry_shell_rotations_from_direct_rotation(
+        build_symmetry_shell_rotations_from_direct_rotation(
             op, skew_lattice, 1, basis_convention);
     assert(shell_rotations.size() == 2);
 
@@ -117,12 +117,12 @@ void test_kspace_shell_rotations_use_direct_rotation()
     const Vector3_Order<double> atom_from{0.0, 0.0, 0.0};
     const Vector3_Order<double> atom_to{0.0, 0.0, 0.0};
     const Vector3_Order<int> return_lattice{1, 0, 0};
-    const auto phase = build_input_symmetry_kspace_phase(
+    const auto phase = build_symmetry_kspace_phase(
         k_source, k_target, atom_from, atom_to, return_lattice, basis_convention);
     assert(fequal(phase, std::complex<double>(0.0, -1.0), std::complex<double>(1e-12, 0.0)));
 
     const auto phased_shell_rotations =
-        build_input_symmetry_kspace_shell_rotations(op,
+        build_symmetry_kspace_shell_rotations(op,
                                                     skew_lattice,
                                                     0,
                                                     basis_convention,
@@ -151,7 +151,7 @@ void test_species_basis_layout_keeps_shell_order()
     assert(layout.shell_indices.at(0).front() == 1);
 
     SymmetryContext ctx;
-    ctx.map_key_layouts["WFC"] = {layout};
+    ctx.add_basis_layouts("WFC", {layout});
 
     ComplexMatrix p_rotation(3, 3);
     p_rotation.zero_out();
@@ -163,7 +163,7 @@ void test_species_basis_layout_keeps_shell_order()
     s_rotation(0, 0) = {7.0, 0.0};
 
     const auto rotation =
-        build_input_symmetry_rotation_matrix(ctx, "WFC", 0, {{1, p_rotation}, {0, s_rotation}});
+        build_symmetry_rotation_matrix(ctx, "WFC", 0, {{1, p_rotation}, {0, s_rotation}});
 
     ComplexMatrix expected(4, 4);
     expected.zero_out();
@@ -187,25 +187,40 @@ void test_shell_layout_key_matches_basis_dimensions()
     shrink_layout.label = "shrink";
     shrink_layout.set({0});
 
-    ctx.map_key_layouts["AUX"] = {full_layout};
-    ctx.map_key_layouts["AUXSHRINK"] = {shrink_layout};
+    ctx.add_basis_layouts("AUX", {full_layout});
+    ctx.add_basis_layouts("AUXSHRINK", {shrink_layout});
 
-    assert(find_input_symmetry_shell_layout_key(ctx, {{0, 4}, {1, 4}}, "AUX") == "AUX");
-    assert(find_input_symmetry_shell_layout_key(ctx, {{0, 1}, {1, 1}}, "AUX")
+    assert(find_symmetry_shell_layout_key(ctx, {{0, 4}, {1, 4}}, "AUX") == "AUX");
+    assert(find_symmetry_shell_layout_key(ctx, {{0, 1}, {1, 1}}, "AUX")
            == "AUXSHRINK");
 }
 
-void add_irreducible_sector_entry(input_symmetry_irreducible_sector_t& sector,
+void test_context_adds_labeled_atomic_basis_layout()
+{
+    AtomicBasis basis(std::vector<std::size_t>{1, 3});
+    basis.label = "WFC";
+    basis.set_l_shells({{0}, {1}});
+
+    SymmetryContext ctx;
+    ctx.add_basis_layouts(basis, {{0, 0}, {1, 1}});
+
+    assert(ctx.has_shell_layout("WFC"));
+    assert(ctx.ao_lmax == 1);
+    assert(ctx.get_shell_layout("WFC", 0).n_ao == 1);
+    assert(ctx.get_shell_layout("WFC", 1).n_ao == 3);
+}
+
+void add_irreducible_sector_entry(symmetry_irreducible_sector_t& sector,
                                   const atom_t atom_i,
                                   const atom_t atom_j,
-                                  const input_symmetry_R_t& R)
+                                  const symmetry_R_t& R)
 {
     sector[{atom_i, atom_j}].insert(R);
 }
 
-InputSymmetryOperation make_row_symmetry_operation(const std::array<int, 9>& rotation)
+SymmetryOperation make_row_symmetry_operation(const std::array<int, 9>& rotation)
 {
-    InputSymmetryOperation op;
+    SymmetryOperation op;
     op.rotation = Matrix3(rotation[0], rotation[1], rotation[2],
                                       rotation[3], rotation[4], rotation[5],
                                       rotation[6], rotation[7], rotation[8]);
@@ -221,7 +236,7 @@ void test_symmetry_context_saves_fractional_row_operations()
                                1.0, 0.0, 0.0,
                                0.0, 0.0, 1.0);
     const Vector3_Order<double> translation{0.25, -0.5, 1.0 / 3.0};
-    InputSymmetryOperation op;
+    SymmetryOperation op;
     op.rotation = col_rotation;
     op.translation = translation;
     op.use_row_convention = false;
@@ -322,7 +337,7 @@ void add_mgo_fractional_symmetry_operations(SymmetryContext& ctx)
                         rotation[3], rotation[4], rotation[5],
                         rotation[6], rotation[7], rotation[8]);
                     const Matrix3 row_cartesian_rotation = col_cartesian_rotation.Transpose();
-                    InputSymmetryOperation op;
+                    SymmetryOperation op;
                     op.rotation = ctx.lattice_available
                                       ? ctx.lattice_vectors * row_cartesian_rotation *
                                             ctx.lattice_vectors.Inverse()
@@ -356,9 +371,9 @@ void test_mgo_k333_irreducible_sector_matches_single()
     const Vector3_Order<int> period{3, 3, 3};
     const auto Rlist = construct_R_grid(period);
     const auto generated_sector =
-        build_input_symmetry_rspace_irreducible_sector(ctx, {}, Rlist);
+        build_symmetry_rspace_irreducible_sector(ctx, {}, Rlist);
 
-    input_symmetry_irreducible_sector_t expected_sector;
+    symmetry_irreducible_sector_t expected_sector;
     add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1, -1});
     add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1,  0});
     add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1,  1});
@@ -368,8 +383,8 @@ void test_mgo_k333_irreducible_sector_matches_single()
 
     ctx.irreducible_sector = generated_sector;
     ctx.available = true;
-    input_symmetry_rspace_sector_stars_t sector_stars;
-    build_input_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
+    symmetry_rspace_sector_stars_t sector_stars;
+    build_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
     std::size_t restored_members = 0;
     for (const auto& pair_stars : sector_stars)
     {
@@ -392,9 +407,9 @@ void test_mgo_k333_irreducible_sector_matches_both()
     const Vector3_Order<int> period{3, 3, 3};
     const auto Rlist = construct_R_grid(period);
     const auto generated_sector =
-        build_input_symmetry_rspace_irreducible_sector(ctx, {}, Rlist);
+        build_symmetry_rspace_irreducible_sector(ctx, {}, Rlist);
 
-    input_symmetry_irreducible_sector_t expected_sector;
+    symmetry_irreducible_sector_t expected_sector;
     add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1, -1});
     add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1,  0});
     add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1,  1});
@@ -423,8 +438,8 @@ void test_mgo_k333_irreducible_sector_matches_both()
 
     ctx.irreducible_sector = generated_sector;
     ctx.available = true;
-    input_symmetry_rspace_sector_stars_t sector_stars;
-    build_input_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
+    symmetry_rspace_sector_stars_t sector_stars;
+    build_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
     std::size_t restored_members = 0;
     for (const auto& pair_stars : sector_stars)
     {
@@ -442,9 +457,9 @@ void test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry()
     const Vector3_Order<int> period{2, 2, 2};
     const auto Rlist = construct_R_grid(period);
     const auto generated_sector =
-        build_input_symmetry_rspace_irreducible_sector(ctx, {}, Rlist);
+        build_symmetry_rspace_irreducible_sector(ctx, {}, Rlist);
 
-    input_symmetry_irreducible_sector_t expected_sector;
+    symmetry_irreducible_sector_t expected_sector;
     add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1, -1});
     add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1,  0});
     add_irreducible_sector_entry(expected_sector, 0, 0, {-1,  0,  0});
@@ -464,8 +479,8 @@ void test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry()
 
     ctx.irreducible_sector = generated_sector;
     ctx.available = true;
-    input_symmetry_rspace_sector_stars_t sector_stars;
-    build_input_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
+    symmetry_rspace_sector_stars_t sector_stars;
+    build_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
     std::size_t restored_members = 0;
     for (const auto& pair_stars : sector_stars)
     {
@@ -486,6 +501,7 @@ int main()
     test_kspace_shell_rotations_use_direct_rotation();
     test_species_basis_layout_keeps_shell_order();
     test_shell_layout_key_matches_basis_dimensions();
+    test_context_adds_labeled_atomic_basis_layout();
     test_mgo_k333_irreducible_sector_matches_single();
     test_mgo_k333_irreducible_sector_matches_both();
     test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry();

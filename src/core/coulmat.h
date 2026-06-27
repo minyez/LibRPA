@@ -4,7 +4,7 @@
  */
 #pragma once
 #include "atomic_basis.h"
-#include "input_symmetry.h"
+#include "symmetry_context.h"
 #include "pbc.h"
 #include "ri.h"
 
