@@ -915,17 +915,15 @@ void diele_func::cal_wing_full_bz(const Cs_LRI &Cs_data, double coulomb_eigen_th
     {
         for (const int ik : kpoints_local)
         {
-            // mpi_comm_global_h.barrier();
-            // profiler.start("transform_Cs2mnk");
-            auto desc_C_mnk =
-                use_kblacs ? transform_Cs2mnk_kblacs(ik, mu, Cs_IJ, wing_blacs_h, kfrac_band[ik])
-                           : transform_Cs2mnk(ik, mu, Cs_IJ);
-            // profiler.stop("transform_Cs2mnk");
-            auto &desc_nband_nband = desc_C_mnk.first;
-            auto &C_mnk = desc_C_mnk.second;
-            // profiler.start("compute_wing");
             for (int isp = 0; isp != n_spin; isp++)
             {
+                auto desc_C_mnk =
+                    use_kblacs
+                        ? transform_Cs2mnk_kblacs(ik, mu, Cs_IJ, wing_blacs_h, kfrac_band[ik],
+                                                  nullptr, isp)
+                        : transform_Cs2mnk(ik, mu, Cs_IJ, isp);
+                auto &desc_nband_nband = desc_C_mnk.first;
+                auto &C_mnk = desc_C_mnk.second;
                 const bool use_soc_wing = meanfield_df.get_n_spinor() > 1;
                 const auto &eigenvalues = this->meanfield_df.get_eigenvals();
                 const auto &wg = this->meanfield_df.get_weight()[isp];
@@ -1085,14 +1083,14 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
 
             for (int mu = 0; mu != n_abf; ++mu)
             {
-                auto desc_C_mnk =
-                    transform_Cs2mnk_kblacs(ik_ibz, mu, Cs_IJ, wing_blacs_h, k_bz, &wfc_bz_ptrs);
-                auto &desc_nband_nband = desc_C_mnk.first;
-                auto &C_mnk = desc_C_mnk.second;
                 auto *wing_mu_for_mu = local_wing_mu.data() + as_size(mu) * this->omega.size() * 3;
 
                 for (int isp = 0; isp != n_spin; ++isp)
                 {
+                    auto desc_C_mnk = transform_Cs2mnk_kblacs(ik_ibz, mu, Cs_IJ, wing_blacs_h,
+                                                              k_bz, &wfc_bz_ptrs, isp);
+                    auto &desc_nband_nband = desc_C_mnk.first;
+                    auto &C_mnk = desc_C_mnk.second;
                     const bool use_soc_wing = meanfield_df.get_n_spinor() > 1;
                     const auto &eigenvalues = this->meanfield_df.get_eigenvals();
                     const auto &wg = this->meanfield_df.get_weight()[isp];
@@ -1168,9 +1166,12 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
 
 std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(
     const int ik, const int mu,
-    std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ)
+    std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ,
+    const int spin_filter)
 {
     using global::profiler;
+    if (spin_filter < -1 || spin_filter >= n_spin)
+        throw std::logic_error("transform_Cs2mnk: invalid spin_filter");
 
     const int n_soc = meanfield_df.get_n_spinor();
     const int Mu = atomic_basis_abf_.get_i_atom(mu);
@@ -1232,7 +1233,9 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(
     //     }
     // }
     //  prepare wave function BLACS
-    for (int ispin = 0; ispin != n_spin; ispin++)
+    const int spin_begin = spin_filter < 0 ? 0 : spin_filter;
+    const int spin_end = spin_filter < 0 ? n_spin : spin_filter + 1;
+    for (int ispin = spin_begin; ispin != spin_end; ispin++)
     {
         for (int is1 = 0; is1 != n_soc; is1++)
         {
@@ -1278,8 +1281,11 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk_kbl
     const int ik, const int mu,
     std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ,
     const BlacsCtxtHandler &wing_blacs_h, const Vector3_Order<double> &kfrac,
-    const std::vector<std::vector<const ComplexMatrix *>> *wfc_override)
+    const std::vector<std::vector<const ComplexMatrix *>> *wfc_override, const int spin_filter)
 {
+    if (spin_filter < -1 || spin_filter >= n_spin)
+        throw std::logic_error("transform_Cs2mnk_kblacs: invalid spin_filter");
+
     const int n_soc = meanfield_df.get_n_spinor();
     const int Mu = atomic_basis_abf_.get_i_atom(mu);
     const int mu_local = atomic_basis_abf_.get_local_index(mu, Mu);
@@ -1329,7 +1335,9 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk_kbl
 
     std::vector<complex<double>> dummy_wfc(1, {0.0, 0.0});
     const bool is_source_rank = desc_wfc_src.is_src();
-    for (int ispin = 0; ispin != n_spin; ispin++)
+    const int spin_begin = spin_filter < 0 ? 0 : spin_filter;
+    const int spin_end = spin_filter < 0 ? n_spin : spin_filter + 1;
+    for (int ispin = spin_begin; ispin != spin_end; ispin++)
     {
         for (int is1 = 0; is1 != n_soc; is1++)
         {

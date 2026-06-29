@@ -503,6 +503,59 @@ void test_kblacs_transform_matches_original_transform(const BlacsCtxtHandler &bl
     }
 }
 
+void test_transform_Cs2mnk_can_keep_spin_channels_separate(const BlacsCtxtHandler &blacs_h)
+{
+    MeanField mf(2, 1, 2, 2, 1);
+    auto &wfc_up = mf.get_eigenvectors()[0][0][0];
+    auto &wfc_dn = mf.get_eigenvectors()[1][0][0];
+    wfc_up.create(2, 2);
+    wfc_dn.create(2, 2);
+    wfc_up(0, 0) = {0.7, 0.2};
+    wfc_up(0, 1) = {-0.3, 0.4};
+    wfc_up(1, 0) = {0.5, -0.1};
+    wfc_up(1, 1) = {0.9, 0.3};
+    wfc_dn(0, 0) = {0.2, -0.6};
+    wfc_dn(0, 1) = {0.8, 0.1};
+    wfc_dn(1, 0) = {-0.4, 0.5};
+    wfc_dn(1, 1) = {0.6, -0.2};
+
+    librpa_int::velocity_matrix_t velocity;
+    librpa_int::initialize_velocity_matrix(velocity, 2, 1, 2);
+    AtomicBasis basis_wfc({2});
+    AtomicBasis basis_abf({1});
+    PeriodicBoundaryData pbc;
+    const std::vector<Vector3_Order<double>> kfrac{{0.0, 0.0, 0.0}};
+    const std::vector<double> omega{0.5};
+
+    diele_func df(mf, velocity, kfrac, basis_wfc, basis_abf, omega, 2, 2, 2, 1, pbc,
+                  librpa_int::global::mpi_comm_global_h, blacs_h);
+
+    auto tensor_data = std::make_shared<std::valarray<double>>(4);
+    (*tensor_data)[0] = 1.0;
+    (*tensor_data)[1] = 0.2;
+    (*tensor_data)[2] = -0.4;
+    (*tensor_data)[3] = 0.8;
+    std::map<int, std::map<librpa_int::libri_types<int, int>::TAC, RI::Tensor<double>>> Cs_IJ;
+    Cs_IJ[0][{0, {0, 0, 0}}] = RI::Tensor<double>({1UL, 2UL, 2UL}, tensor_data);
+
+    const auto all_spin = df.transform_Cs2mnk(0, 0, Cs_IJ);
+    const auto spin_up = df.transform_Cs2mnk(0, 0, Cs_IJ, 0);
+    const auto spin_dn = df.transform_Cs2mnk(0, 0, Cs_IJ, 1);
+
+    bool spin_channels_differ = false;
+    for (int i = 0; i != all_spin.first.m_loc(); ++i)
+    {
+        for (int j = 0; j != all_spin.first.n_loc(); ++j)
+        {
+            assert_complex_close(all_spin.second(i, j), spin_up.second(i, j) + spin_dn.second(i, j),
+                                 1e-12);
+            spin_channels_differ =
+                spin_channels_differ || std::abs(spin_up.second(i, j) - spin_dn.second(i, j)) > 1e-12;
+        }
+    }
+    assert(spin_channels_differ);
+}
+
 void test_head_initialization_does_not_require_coulomb_diagonalization(
     const BlacsCtxtHandler &blacs_h)
 {
@@ -562,6 +615,7 @@ int main(int argc, char *argv[])
         test_headwing_local_kpoints_prefers_kpoint_blacs_context();
         test_accumulate_wing_mu_for_pair_matches_original_formula();
         test_kblacs_transform_matches_original_transform(blacs_h);
+        test_transform_Cs2mnk_can_keep_spin_channels_separate(blacs_h);
         test_head_initialization_does_not_require_coulomb_diagonalization(blacs_h);
     }
 

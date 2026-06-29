@@ -232,12 +232,14 @@ public:
     void get_Xv_cpl(double coulomb_eigen_threshold, const atpair_k_cplx_mat_t &Vq);
     std::pair<ArrayDesc, matrix_m<complex<double>>> transform_Cs2mnk(
         const int ik, const int mu,
-        std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ);
+        std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ,
+        int spin_filter = -1);
     std::pair<ArrayDesc, matrix_m<complex<double>>> transform_Cs2mnk_kblacs(
         int ik, int mu,
         std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> &Cs_IJ,
         const BlacsCtxtHandler &wing_blacs_h, const Vector3_Order<double> &kfrac,
-        const std::vector<std::vector<const ComplexMatrix *>> *wfc_override = nullptr);
+        const std::vector<std::vector<const ComplexMatrix *>> *wfc_override = nullptr,
+        int spin_filter = -1);
     // void FT_R2k();
     // std::complex<double> compute_Cijk(Cs_LRI &Cs_in, int mu, int I, int i, int J, int j, int
     // ik); void Cs_ij2mn(); std::complex<double> compute_Cs_ij2mn(int mu, int m, int n, int
