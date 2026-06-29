@@ -70,7 +70,7 @@ void validate_symmetry_kstar_restore_metadata(
     {
         if (atom_nw.count(type_entry.first) == 0)
         {
-            throw std::runtime_error("ABACUS k-star restore atom_nw does not cover every sidecar atom");
+            throw std::runtime_error("ABACUS k-star restore atom_nw does not cover every atom");
         }
     }
 }

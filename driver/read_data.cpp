@@ -1122,7 +1122,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     pds->p_headwing->use_soc = mf.get_n_spinor() > 1;
     pds->p_headwing->debug = librpa_int::global::should_output(LIBRPA_VERBOSE_DEBUG);
     // Symmetry-aware head/wing uses the same active k-list as the main LibRPA
-    // path: full BZ without symmetry, IBZ with input k-star sidecars.
+    // path: full BZ without symmetry, IBZ with input k-star metadata.
     if (pds->symmetry_context.available && !pds->symmetry_context.kstars.empty())
     {
         pds->p_headwing->set_symmetry_context(pds->symmetry_context);
@@ -1481,13 +1481,12 @@ void read_bz_sampling_from_stru(const std::string &file_path)
                 kvecs[static_cast<std::size_t>(3 * ik)] / TWO_PI,
                 kvecs[static_cast<std::size_t>(3 * ik + 1)] / TWO_PI,
                 kvecs[static_cast<std::size_t>(3 * ik + 2)] / TWO_PI};
-            const auto kfrac_read =
-                restrict_fractional_coordinate(Vector3_Order<double>{pbc.latvec * k_ibz_read});
             const auto &star = ctx.kstars[static_cast<std::size_t>(ik)];
-            if (!nearly_same_kpoint(kfrac_read, star.k_ibz))
+            const auto k_ibz_expected = convert_fractional_kpoint_to_klist_units(star.k_ibz, pbc);
+            if (!nearly_same_kpoint(k_ibz_read, k_ibz_expected))
             {
                 throw LIBRPA_RUNTIME_ERROR(
-                    "Legacy stru_out symmetry-reduced k-point row does not match generated input symmetry k-star");
+                    "Legacy stru_out symmetry-reduced k-point row does not match input symmetry k-star");
             }
 
             auto &members = full_kstars.emplace_back();

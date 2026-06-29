@@ -392,9 +392,12 @@ void PeriodicBoundaryData::set_irreducible_kgrids_kvec(
     const auto append_k = [this](const Vector3_Order<double> &kvec,
                                  std::vector<Vector3_Order<double>> &ks,
                                  std::vector<Vector3_Order<double>> &kfracs) {
-        const auto kfrac = normalize_fractional_kpoint(this->latvec * kvec);
+        ks.emplace_back(kvec);
+        auto kfrac = this->latvec * kvec;
+        if (std::abs(kfrac.x) < 1e-8) kfrac.x = 0.0e0;
+        if (std::abs(kfrac.y) < 1e-8) kfrac.y = 0.0e0;
+        if (std::abs(kfrac.z) < 1e-8) kfrac.z = 0.0e0;
         kfracs.emplace_back(kfrac);
-        ks.emplace_back(kvec_from_fractional(this->G, kfrac));
     };
 
     for (int ik = 0; ik != n_ibz; ++ik)

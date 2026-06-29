@@ -179,7 +179,7 @@ static void test_irreducible_kgrids_from_symmetry_stars()
     };
     const std::vector<std::vector<Vector3_Order<double>>> full_kstars{
         {{0.0, 0.0, 0.0}},
-        {{1.0 / 6.0, 0.0, 0.0}, {2.0 / 6.0, 0.0, 0.0}},
+        {{1.0 / 6.0, 0.0, 0.0}, {-1.0 / 6.0, 0.0, 0.0}},
     };
     pbc.set_irreducible_kgrids_kvec(3, 1, 1, kvecs_ibz, full_kstars);
 
@@ -190,6 +190,7 @@ static void test_irreducible_kgrids_from_symmetry_stars()
     assert(std::abs(pbc.weight_q[1] - 2.0 / 3.0) < 1e-12);
     assert(pbc.map_irk_ks.at(pbc.klist_coul[1]).size() == 2);
     assert(std::abs(pbc.klist_full[1].x - 1.0 / 6.0) < 1e-12);
+    assert(std::abs(pbc.klist_full[2].x + 1.0 / 6.0) < 1e-12);
 }
 
 static void test_atom_pair_bvk_remap()

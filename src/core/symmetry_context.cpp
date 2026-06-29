@@ -907,13 +907,16 @@ void SymmetryContext::generate_shell_rotations(const BasisConvention &basis_conv
             fractional_rotation_to_cartesian(op, lattice_vectors).Inverse();
         for (int l = 0; l <= lmax; ++l)
         {
-            op.shell_rotations[l] =
-                real_spherical_harmonic_rotation_matrix(
-                    cartesian_rotation,
-                    l,
-                    basis_convention.order,
-                    basis_convention.coeff_m_negative,
-                    basis_convention.coeff_m_positive);
+            if (op.shell_rotations.find(l) == op.shell_rotations.end())
+            {
+                op.shell_rotations[l] =
+                    real_spherical_harmonic_rotation_matrix(
+                        cartesian_rotation,
+                        l,
+                        basis_convention.order,
+                        basis_convention.coeff_m_negative,
+                        basis_convention.coeff_m_positive);
+            }
         }
     }
 }
