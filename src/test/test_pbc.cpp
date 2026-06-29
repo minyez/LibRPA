@@ -168,6 +168,30 @@ static void test_incomplete_time_reversal_reduced_scf_kgrids()
     assert(pbc_without_weights.map_q_weight.empty());
 }
 
+static void test_irreducible_kgrids_from_symmetry_stars()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({2, 0, 0, 0, 3, 0, 0, 0, 4});
+
+    const std::vector<double> kvecs_ibz{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI / 6.0, 0.0, 0.0,
+    };
+    const std::vector<std::vector<Vector3_Order<double>>> full_kstars{
+        {{0.0, 0.0, 0.0}},
+        {{1.0 / 6.0, 0.0, 0.0}, {2.0 / 6.0, 0.0, 0.0}},
+    };
+    pbc.set_irreducible_kgrids_kvec(3, 1, 1, kvecs_ibz, full_kstars);
+
+    assert(pbc.klist.size() == 2);
+    assert(pbc.klist_full.size() == 3);
+    assert(std::abs(pbc.kfrac_list[1].x - 1.0 / 3.0) < 1e-12);
+    assert(std::abs(pbc.weight_q[0] - 1.0 / 3.0) < 1e-12);
+    assert(std::abs(pbc.weight_q[1] - 2.0 / 3.0) < 1e-12);
+    assert(pbc.map_irk_ks.at(pbc.klist_coul[1]).size() == 2);
+    assert(std::abs(pbc.klist_full[1].x - 1.0 / 6.0) < 1e-12);
+}
+
 static void test_atom_pair_bvk_remap()
 {
     typedef std::size_t atom_t;
@@ -221,6 +245,7 @@ int main (int argc, char *argv[])
     test_full_scf_kgrids_keep_loaded_order();
     test_reduced_scf_kgrids();
     test_incomplete_time_reversal_reduced_scf_kgrids();
+    test_irreducible_kgrids_from_symmetry_stars();
     test_atom_pair_bvk_remap();
     return 0;
 }

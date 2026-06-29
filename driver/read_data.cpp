@@ -40,6 +40,7 @@
 #include "../src/math/matrix.h"
 #include "../src/utils/constants.h"
 #include "../src/api/instance_manager.h"
+#include "../src/api/dataset_helper.h"
 #include "../src/io/fs.h"
 #include "../src/io/global_io.h"
 #include "../src/io/stl_io_helper.h"
@@ -1438,11 +1439,6 @@ void read_bz_sampling_from_stru(const std::string &file_path)
             "Legacy stru_out k-point count does not match band_out: "
             + std::to_string(n_k_rows) + " != " + std::to_string(driver::n_kpoints));
     }
-    if (n_k_rows < nk_full && !has_full_mapping)
-    {
-        throw LIBRPA_RUNTIME_ERROR(
-            "Legacy stru_out symmetry-reduced k-point list requires the full-to-q mapping");
-    }
 
     std::vector<double> kvecs(static_cast<std::size_t>(3 * n_k_rows));
     for (int i = 0; i != 3 * n_k_rows; ++i)
@@ -1461,6 +1457,55 @@ void read_bz_sampling_from_stru(const std::string &file_path)
         map_q_ks[static_cast<std::size_t>(ik)] = ik;
     }
     std::vector<double> kweights;
+
+    if (n_k_rows < nk_full && !has_full_mapping)
+    {
+        auto pds = librpa_int::api::get_dataset_instance(driver::h);
+        auto &pbc = pds->pbc;
+        pbc.set_kgrids_kvec(nk[0], nk[1], nk[2], kvecs);
+        pbc.set_kq_mapping(map_q_ks);
+        librpa_int::initialize_input_symmetry_context(*pds, false);
+        const auto &ctx = pds->symmetry_context;
+        if (!ctx.available || ctx.kstars.size() != static_cast<std::size_t>(n_k_rows))
+        {
+            throw LIBRPA_RUNTIME_ERROR(
+                "Legacy stru_out symmetry-reduced k-point list requires the full-to-q mapping "
+                "or matching input symmetry k-stars");
+        }
+
+        std::vector<std::vector<Vector3_Order<double>>> full_kstars;
+        full_kstars.reserve(ctx.kstars.size());
+        for (int ik = 0; ik != n_k_rows; ++ik)
+        {
+            Vector3_Order<double> k_ibz_read{
+                kvecs[static_cast<std::size_t>(3 * ik)] / TWO_PI,
+                kvecs[static_cast<std::size_t>(3 * ik + 1)] / TWO_PI,
+                kvecs[static_cast<std::size_t>(3 * ik + 2)] / TWO_PI};
+            const auto kfrac_read =
+                restrict_fractional_coordinate(Vector3_Order<double>{pbc.latvec * k_ibz_read});
+            const auto &star = ctx.kstars[static_cast<std::size_t>(ik)];
+            if (!nearly_same_kpoint(kfrac_read, star.k_ibz))
+            {
+                throw LIBRPA_RUNTIME_ERROR(
+                    "Legacy stru_out symmetry-reduced k-point row does not match generated input symmetry k-star");
+            }
+
+            auto &members = full_kstars.emplace_back();
+            members.reserve(star.members.size());
+            for (const auto &member : star.members)
+            {
+                const auto k_member = convert_fractional_kpoint_to_klist_units(member.k_bz, pbc);
+                if (std::find(members.begin(), members.end(), k_member) == members.end())
+                {
+                    members.emplace_back(k_member);
+                }
+            }
+        }
+
+        pbc.set_irreducible_kgrids_kvec(nk[0], nk[1], nk[2], kvecs, full_kstars);
+        sync_driver_ibz_kpoints_from_mapping(kvecs, map_q_ks, n_k_rows);
+        return;
+    }
 
     if (has_full_mapping)
     {
