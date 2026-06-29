@@ -105,7 +105,9 @@ std::vector<std::string> eigenvector_files(const std::string &dir_path)
 
 template <typename ShouldReadIk, typename StoreIk>
 int read_legacy_text_file(const std::string &file_path, const WfcShape &shape,
-                          ShouldReadIk should_read_ik, StoreIk store_ik)
+                          ShouldReadIk should_read_ik, StoreIk store_ik,
+                          const LegacyTextWfcOrder text_order =
+                              LegacyTextWfcOrder::BasisSpinorBandSpin)
 {
     std::ifstream infile(file_path);
     if (!infile.good()) return 1;
@@ -122,17 +124,38 @@ int read_legacy_text_file(const std::string &file_path, const WfcShape &shape,
         std::fill(re.begin(), re.end(), 0.0);
         std::fill(im.begin(), im.end(), 0.0);
 
-        for (int iw = 0; iw != shape.nao; ++iw)
+        if (text_order == LegacyTextWfcOrder::BasisSpinorBandSpin)
         {
-            for (int isoc = 0; isoc != shape.nsoc; ++isoc)
+            for (int iw = 0; iw != shape.nao; ++iw)
             {
-                for (int ib = 0; ib != shape.nband; ++ib)
+                for (int isoc = 0; isoc != shape.nsoc; ++isoc)
                 {
-                    for (int is = 0; is != shape.nspin; ++is)
+                    for (int ib = 0; ib != shape.nband; ++ib)
+                    {
+                        for (int is = 0; is != shape.nspin; ++is)
+                        {
+                            if (!(infile >> rvalue >> ivalue)) return 1;
+                            if (!keep_ik) continue;
+                            const auto dst = wfc_index(shape, is, isoc, ib, iw);
+                            re[dst] = std::stod(rvalue);
+                            im[dst] = std::stod(ivalue);
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (shape.nsoc != 1) return 1;
+            for (int is = 0; is != shape.nspin; ++is)
+            {
+                for (int iw = 0; iw != shape.nao; ++iw)
+                {
+                    for (int ib = 0; ib != shape.nband; ++ib)
                     {
                         if (!(infile >> rvalue >> ivalue)) return 1;
                         if (!keep_ik) continue;
-                        const auto dst = wfc_index(shape, is, isoc, ib, iw);
+                        const auto dst = wfc_index(shape, is, 0, ib, iw);
                         re[dst] = std::stod(rvalue);
                         im[dst] = std::stod(ivalue);
                     }
@@ -393,7 +416,8 @@ int read_eigenvector(const std::string &dir_path, librpa_int::MeanField &mf, boo
 
 int read_eigenvector(const std::string &dir_path, librpa_int::MeanField &mf, bool use_spinor_wfc,
                      const std::vector<int> &source_to_target_ik,
-                     const std::vector<int> *source_iks_selected)
+                     const std::vector<int> *source_iks_selected,
+                     const LegacyTextWfcOrder text_order)
 {
     const int n_target_kpoints = mf.get_n_kpoints();
     const int n_source_kpoints = static_cast<int>(source_to_target_ik.size());
@@ -455,7 +479,8 @@ int read_eigenvector(const std::string &dir_path, librpa_int::MeanField &mf, boo
         const auto ret =
             version == 1
                 ? read_binary_v1_file(file_path, shape, source_selected, store_packed)
-                : read_legacy_text_file(file_path, shape, source_selected, store_text);
+                : read_legacy_text_file(file_path, shape, source_selected, store_text,
+                                        text_order);
         if (ret != 0) return ret;
         ++files_read;
     }

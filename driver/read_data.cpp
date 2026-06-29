@@ -1069,7 +1069,8 @@ void read_headwing_input(const string &dir_path, bool need_wing)
             pds->scfk_blacs_ctxt.is_initialized() ? &iks_headwing_eigvec_this : nullptr;
         const int ret_eigenvec =
             read_eigenvector(pyatb_dir, mf, use_spinor_wfc, source_to_target_ik,
-                             source_iks_headwing_eigvec_selected);
+                             source_iks_headwing_eigvec_selected,
+                             LegacyTextWfcOrder::SpinBasisBand);
         if (ret_eigenvec != 0)
         {
             throw std::runtime_error("Failed to read pyatb head/wing eigenvectors from " +
