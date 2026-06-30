@@ -159,6 +159,35 @@ class TestValidateFileOverrides(unittest.TestCase):
 
             self.assertEqual(groups["g"][0]["results"], [[True, "ok"]])
 
+    def test_default_librpa_output_ignores_dataset_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "testcases").mkdir()
+            (root / "refs" / "case").mkdir(parents=True)
+            (root / "workspace" / "testcases" / "case" / "librpa").mkdir(parents=True)
+            (root / "workspace" / "testcases" / "case" / "dataset" / "librpa").mkdir(parents=True)
+            (root / "workspace" / "testcases" / "case" / "librpa" / "librpa.out").write_text("same\n")
+            (root / "workspace" / "testcases" / "case" / "dataset" / "librpa" / "librpa.out").write_text("stale\n")
+            (root / "refs" / "case" / "librpa.out").write_text("same\n")
+
+            xml = pathlib.Path(tmp) / "testsuite.xml"
+            xml.write_text(
+                '<testsuite><group name="g"><testcase name="n" directory="case">'
+                '<validate name="v" comparison="dummy" />'
+                '</testcase></group></testsuite>'
+            )
+            groups = XMLParser(xml).groups
+
+            old_import = validate_module._import_comparison
+            validate_module._import_comparison = lambda _: lambda lhs, rhs: (lhs == rhs, "ok")
+            try:
+                driver = TestDriver(root / "testcases", root / "refs",
+                                    root / "workspace", groups)
+                driver.initialize(1, 1, False)
+                self.assertEqual(driver.analyze(), 0)
+            finally:
+                validate_module._import_comparison = old_import
+
 
 class TestRunCopyFiles(unittest.TestCase):
 

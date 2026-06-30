@@ -9,11 +9,11 @@ def _extract_plain(directory: str, file: str,
     """Extract plain text data"""
     raw = {}
     d = pathlib.Path(directory)
-    matches = list(d.rglob(file))
+    matches = list(d.glob(file))
     canonical_prefix = None
     if not matches and file.startswith("librpa/"):
         fallback = pathlib.PurePosixPath(file).name
-        matches = list(d.rglob(fallback))
+        matches = list(d.glob(fallback))
         canonical_prefix = pathlib.Path("librpa")
 
     for f in matches:
