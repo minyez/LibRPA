@@ -146,16 +146,17 @@ int read_legacy_text_file(const std::string &file_path, const WfcShape &shape,
         }
         else
         {
-            if (shape.nsoc != 1) return 1;
             for (int is = 0; is != shape.nspin; ++is)
             {
-                for (int iw = 0; iw != shape.nao; ++iw)
+                for (int iwfc = 0; iwfc != shape.nao * shape.nsoc; ++iwfc)
                 {
+                    const int isoc = iwfc % shape.nsoc;
+                    const int iw = iwfc / shape.nsoc;
                     for (int ib = 0; ib != shape.nband; ++ib)
                     {
                         if (!(infile >> rvalue >> ivalue)) return 1;
                         if (!keep_ik) continue;
-                        const auto dst = wfc_index(shape, is, 0, ib, iw);
+                        const auto dst = wfc_index(shape, is, isoc, ib, iw);
                         re[dst] = std::stod(rvalue);
                         im[dst] = std::stod(ivalue);
                     }
