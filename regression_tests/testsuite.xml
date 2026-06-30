@@ -153,8 +153,6 @@
     </testcase>
 
     <testcase name="BN headwing shrink SOC (abacus input)" directory="g0w0_band_abacus_BN_headwing_shrink_soc_libri">
-      <labels disable="experimental"
-      />
       <build require_libri="true"
       />
       <run ntasks_disable="none"
@@ -166,6 +164,14 @@
                 regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
                 headers="2"
                 rows="76"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="Non-SCF EXX band structure"
+                file="librpa/EXX_band_spin_*.dat"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="QP band structure"
+                file="librpa/GW_band_spin_*.dat"
                 comparison="cmp_table.abs_diff(1e-4)"
       />
       <!-- <validate name="GW bandgap" -->
