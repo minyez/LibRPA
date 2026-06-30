@@ -40,6 +40,17 @@
       />
     </testcase>
 
+    <testcase name="LiH rocksalt, k555 symmetry speed up with non-symmetrized input (aims input)" directory="exx_aims_LiH_RS_sym_libri">
+      <labels disable="experimental"/>
+      <build require_libri="true"/>
+      <validate name="EXX potential on k-grid"
+                regex="Band\s+e_exx.*e_exx"
+                headers="1"
+                rows="6"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+    </testcase>
+
     <testcase name="16-atom C supercell (aims input)" directory="exx_aims_C_sc_libri">
       <build require_libri="true"
       />
