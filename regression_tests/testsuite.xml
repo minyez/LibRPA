@@ -198,6 +198,14 @@
                 rows="36"
                 comparison="cmp_table.abs_diff(1e-4)"
       />
+      <validate name="Non-SCF EXX band structure"
+                file="librpa/EXX_band_spin_*.dat"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="QP band structure"
+                file="librpa/GW_band_spin_*.dat"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
       <!-- <validate name="GW bandgap" -->
       <!--           regex="GW bandgap\(eV\):\s+([-+]?\d*\.\d+)" -->
       <!--           comparison="cmp_float.abs_diff(1e-4)" -->
