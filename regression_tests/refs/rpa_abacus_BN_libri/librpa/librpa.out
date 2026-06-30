@@ -1,0 +1,720 @@
+Initialized LibRPA global environment at [2026-06-30 22:58:24.484]
+Total number of tasks    :     4
+Total number of nodes    :     1
+Maximal number of threads:   1
+MPI tasks information:
+| Proc    0 of Size    4: f15r2n07
+| Proc    1 of Size    4: f15r2n07
+| Proc    2 of Size    4: f15r2n07
+| Proc    3 of Size    4: f15r2n07
+| Global ID of master process of node     0 :     0
+
+LibRPA CMake build info:
+| Build type               : RelWithDebInfo
+| Source code directory    : /public/home/hbchen/app/LibRPA/260531/LibRPA/src
+| Source code Git reference: refs/heads/master_minye
+| Source code Git hash     : 78be1f51ff535c0b624b0d3bab0dc4dbbb16a55e
+| C++ compiler             : /public/software/compiler/devtoolset-9/root/usr/bin/g++
+| C++ compiler flags       : -g -O2 -fopenmp  -fopenmp
+| Fortran compiler         : /public/software/compiler/devtoolset-9/root/usr/bin/gfortran
+| Fortran compiler flags   : -fPIC -g -Wno-argument-mismatch -ffree-line-length-none
+| GreenX commit hash       : c90d131
+| Use LibRI                : ON
+| LibRI include directory  : /public/home/hbchen/app/libri/260214/LibRI-master/include
+| LibComm include directory: /public/home/hbchen/app/libcomm/260516/LibComm-fix_status/include
+
+===== Begin driver parameters  =====
+task = rpa
+constants_choice = internal
+input_dir = ../dataset/
+prefix_lri_coeff = Cs_data
+prefix_lri_coeff_shrink = Cs_shrinked_data
+prefix_shrink_sinvS = shrink_sinvS_
+prefix_coul_full = coulomb_mat
+prefix_coul_cut = coulomb_cut
+prefix_eigvecs_scf = KS_eigenvector
+fn_stru = stru_out
+fn_bz_sampling = bz_sampling_out
+fn_basis = basis_out
+fn_basis_wfc = basis_wfc_out
+fn_basis_aux = basis_aux_out
+fn_basis_aux_shrink = basis_aux_shrink_out
+fn_eigocc_scf = band_out
+fn_dielfunc = dielecfunc_out
+fn_vxc_scf = vxc_out
+fn_band_kpath_info = band_kpath_info
+output_level = info
+use_spinor_wfc = false
+output_energy_qp = false
+output_gw_spec_func = false
+output_hamgnn = false
+use_pyatb = false
+version_coul_reader = -1
+version_lri_reader = -1
+cs_R_threshold = 1e-06
+i_state_low = 0
+i_state_high = 999999
+===== End driver parameters    =====
+
+===== Begin control parameters =====
+output_dir = librpa.d/
+restart_from_dir = <output_dir>
+tfgrids_type = minimax
+parallel_routing = libri
+nfreq = 6
+n_bands_chi0 = -1
+n_bands_sigc = -1
+n_params_anacon = -1
+option_qpe_solver = 0
+option_dielect_func = 0
+option_bvk_remap = 1
+rpa_headwing_body_start = 0
+qpe_solver_n_iter_max = 10000
+libri_chi0_collect_s0_chunk = 0
+istate_ref_hedin_shift = -1
+ifreq_output_wc_start = 0
+ifreq_output_wc_end = -1
+libri_chi0_collect_max_bytes = 0
+gf_R_threshold = 0
+vq_threshold = 0
+minimax_emin = -1
+minimax_emax = -1
+minimax_regulation = 0
+sqrt_coulomb_threshold = 0
+libri_chi0_threshold_C = 0
+libri_chi0_threshold_G = 0
+libri_exx_threshold_C = 0
+libri_exx_threshold_D = 0
+libri_exx_threshold_V = 0
+libri_g0w0_threshold_C = 0
+libri_g0w0_threshold_G = 0
+libri_g0w0_threshold_Wc = 0
+qpe_solver_thres = 1e-06
+qpe_solver_damp_factor = 0.1
+debug = false
+replace_w_head = false
+use_fullcoul_eps = true
+use_fullcoul_exx = false
+use_fullcoul_wc = false
+use_symmetry_exx = false
+use_symmetry_gw = false
+use_symmetry_rpa = false
+output_abacus_gw_gf = false
+use_shrink_abfs = false
+use_shrink_chi = true
+use_scalapack_ecrpa = true
+use_scalapack_gw_wc = true
+use_cholesky_gw_wc = false
+use_gpu_replace_scalapack = false
+use_elpa_sqrt_coulomb = true
+use_kpara_scf_eigvec = false
+read_sigc_mat_rf = false
+output_gw_sigc_ks_kf = false
+output_gw_sigc_ks_mat_kf = false
+output_gw_sigc_mat_kf = false
+output_gw_sigc_mat_rf = false
+output_gw_sigc_mat_rt = false
+output_wc_rf = false
+output_wc_rf_atom_pair = true
+use_qpe_adaptive_damp = false
+use_qpe_legacy_update = false
+override_qpe_solver_nan = false
+use_hedin_shift = false
+===== End control parameters   =====
+
+Mean-field dimensions set:
+| number of spins           : 1
+| number of k-points        : 8
+| number of bands           : 26
+| number of NAOs            : 26
+| number of spin components : 1
+Internal two-level (SCF k-points/matrix block) parallelization for eigenvectors set:
+| processes per k-point      : 1
+| processes per matrix block : 4
+Mean-field eigenvalues and occupation numbers set:
+| Minimal transition energy (Ha):       0.1590135067
+| Maximal transition energy (Ha):       7.6959074195
+| Fermi level               (Ha):       0.5210890000
+Reading structure file: ../dataset/stru_out
+Lattice vectors (Bohr): latt
+         3.41663         3.41663               0
+         3.41663               0         3.41663
+               0         3.41663         3.41663
+Reciprocal lattice vectors (2PI Bohr^-1): G
+        0.146343        0.146343       -0.146343
+        0.146343       -0.146343        0.146343
+       -0.146343        0.146343        0.146343
+Consistency check: latt * G.T
+               1               0               0
+               0               1               0
+               0               0               1
+Atom positions read (Cartesian in Bohr | fractional):
+ia    1:    0.0000000    0.0000000    0.0000000 |    0.0000000    0.0000000    0.0000000
+ia    2:    1.7083034    1.7083034    1.7083034 |    0.2499986    0.2499986    0.2499986
+
+Fallback reading Brillouin zone sampling from structure file: ../dataset/stru_out
+kgrids:   2   2   2
+k-points read (Cartesian in 2Pi Bohr^-1 | fractional):
+ik    1:    0.0000000    0.0000000    0.0000000 |    0.0000000    0.0000000    0.0000000
+ik    2:    0.0731716    0.0731716   -0.0731716 |    0.5000000    0.0000000    0.0000000
+ik    3:    0.0731716   -0.0731716    0.0731716 |    0.0000000    0.5000000    0.0000000
+ik    4:    0.1463432    0.0000000    0.0000000 |    0.5000000    0.5000000    0.0000000
+ik    5:   -0.0731716    0.0731716    0.0731716 |    0.0000000    0.0000000    0.5000000
+ik    6:    0.0000000    0.1463432    0.0000000 |    0.5000000    0.0000000    0.5000000
+ik    7:    0.0000000    0.0000000    0.1463432 |    0.0000000    0.5000000    0.5000000
+ik    8:    0.0731716    0.0731716    0.0731716 |    0.5000000    0.5000000    0.5000000
+Hint: full k-point list is copied from parsed k-points.
+R-points to compute: 8
+    1 -     5 : ( -1,  -1,  -1) ( -1,  -1,   0) ( -1,   0,  -1) ( -1,   0,   0) (  0,  -1,  -1)
+    6 -     8 : (  0,  -1,   0) (  0,   0,  -1) (  0,   0,   0)
+
+SCF k-point to Coulomb q-point mapping:
+  ik:          k_1          k_2          k_3      iq
+   1:    0.0000000    0.0000000    0.0000000
+   2:    0.5000000    0.0000000    0.0000000
+   3:    0.0000000    0.5000000    0.0000000
+   4:    0.5000000    0.5000000    0.0000000
+   5:    0.0000000    0.0000000    0.5000000
+   6:    0.5000000    0.0000000    0.5000000
+   7:    0.0000000    0.5000000    0.5000000
+   8:    0.5000000    0.5000000    0.5000000
+
+Fallback reading basis information from Cs files under: ../dataset/
+Wave-function basis functions set:
+| total number of basis: 26
+Auxiliary basis functions set:
+| total number of basis: 34
+
+KS eigenvector reader: legacy text
+Successfully read eigenvector files
+Loading RI file from directory: ../dataset/
+Evenly distributed Cs and V for LibRI
+LRI coefficient reader (Cs_data): legacy
+Finished Cs filtering
+Finished Cs parsing
+Coulomb reader (coulomb_mat): legacy
+Begin READ_Vq_Row
+Begin READ_Vq_Row
+Begin READ_Vq_Row
+Begin READ_Vq_Row
+ASCII format V files detected
+| Process     0: coulomb_mat read. Wall/CPU time [min]:       0.0001       0.0002
+| Process     1: coulomb_mat read. Wall/CPU time [min]:       0.0001       0.0000
+| Process     2: coulomb_mat read. Wall/CPU time [min]:       0.0001       0.0000
+| Process     3: coulomb_mat read. Wall/CPU time [min]:       0.0001       0.0002
+| Process     0: Cs with              8 non-zero keys from local atpair size       1. Data memory:       0.18 MB. Wall/CPU time [min]:       0.0012       0.0012
+| Process     1: Cs with              8 non-zero keys from local atpair size       0. Data memory:       0.18 MB. Wall/CPU time [min]:       0.0012       0.0008
+| Process     2: Cs with              8 non-zero keys from local atpair size       1. Data memory:       0.18 MB. Wall/CPU time [min]:       0.0012       0.0012
+| Process     3: Cs with              8 non-zero keys from local atpair size       1. Data memory:       0.18 MB. Wall/CPU time [min]:       0.0012       0.0010
+Actual parallel routing used: libri
+Initialization finished, Wall/CPU time [min]:       0.0000       0.0000
+Free memory on node     0 [GB]:  120.053
+Common data parsed, task rpa will begin
+rpa: RPA correlation energy
+Grid type: Minimax time-frequency grids
+Grid size: 6
+Frequency node & weight: 
+ 0      0.0564613753263648      0.1182358054885935
+ 1      0.2042453565294935      0.1931145879019547
+ 2      0.4907102466097558      0.4168339087650921
+ 3      1.1641443267048972      1.0351901900076457
+ 4      2.9587661191764645      2.9232742406133991
+ 5      8.9396466198825877     11.7321658290659965
+Time node & weight: 
+ 0      0.0447043587626410      0.1179935122723900
+ 1      0.2679833555907969      0.3543460626848747
+ 2      0.8441066187784056      0.8683926365578086
+ 3      2.2178015125836388      2.0322904304188647
+ 4      5.3643239093140656      4.5968895594881598
+ 5     12.5646191661277022     10.8766231604320378
+t->f transform: 
+
+ Cosine transform matrix (row: freq, col: time)
+nr = 6, nc = 6
+ 2.37477e-01 7.02584e-01 1.75092e+00 3.98966e+00 8.91574e+00 1.56920e+01
+ 2.31568e-01 7.24877e-01 1.66570e+00 3.78383e+00 3.68418e+00 -1.37688e+01
+ 2.41157e-01 6.80929e-01 1.65587e+00 1.62499e+00 -6.14788e+00 2.47297e+00
+ 2.29021e-01 7.04131e-01 8.42260e-01 -2.52943e+00 9.65242e-01 -3.15595e-01
+ 2.40319e-01 4.50874e-01 -9.39422e-01 3.17818e-01 -1.04385e-01 6.23493e-02
+ 2.01634e-01 -2.55484e-01 6.99404e-02 -2.50247e-02 1.60475e-02 -1.41961e-02
+
+ Sine transform matrix (row: freq, col: time)
+nr = 6, nc = 6
+ -3.40305e-02 1.44669e-01 -2.47883e-01 1.28038e+00 8.11119e-01 2.03692e+01
+ 3.97561e-02 -1.07113e-01 6.62021e-01 9.02057e-01 1.05184e+01 3.77321e+00
+ -3.60994e-02 2.54807e-01 2.80764e-01 4.69906e+00 1.15908e+00 -4.32269e+00
+ 5.83566e-02 3.26218e-02 1.96334e+00 5.96923e-01 -1.71193e+00 1.48393e+00
+ -2.13515e-02 7.32279e-01 3.14234e-01 -6.16824e-01 4.92303e-01 -4.52546e-01
+ 1.55845e-01 1.78040e-01 -1.83793e-01 1.31794e-01 -1.11712e-01 1.10404e-01
+f->t transform: 
+
+ Cosine transform matrix (row: time, col: freq)
+nr = 6, nc = 6
+ 3.78197e-02 6.07712e-02 1.34485e-01 3.23815e-01 9.43425e-01 3.19196e+00
+ 3.73654e-02 6.24076e-02 1.28644e-01 3.23307e-01 5.96431e-01 -1.34750e+00
+ 3.78664e-02 5.94265e-02 1.25282e-01 1.63514e-01 -5.09232e-01 1.58466e-01
+ 3.69791e-02 5.69531e-02 5.38085e-02 -2.07290e-01 7.66609e-02 -2.91978e-02
+ 3.65055e-02 2.47092e-02 -8.90515e-02 3.56397e-02 -1.23941e-02 9.38131e-03
+ 2.71120e-02 -3.88606e-02 1.51349e-02 -5.15529e-03 3.36846e-03 -3.52702e-03
+
+Total count of GFs IJR: 32
+| Number of GFs IJR on Proc    1: 8
+| Number of GFs IJR on Proc    0: 8
+Use LibRI for chi0
+| Number of GFs IJR on Proc    3: 8
+| Number of GFs IJR on Proc    2: 8
+Green's Function sums over all states.
+chi0s for time point 0.044704, spin 0. CPU time: 0.030000 (tensor), 0.000000 (trans). Wall time 0.034725
+Green's Function sums over all states.
+chi0s for time point 0.267983, spin 0. CPU time: 0.040000 (tensor), 0.000000 (trans). Wall time 0.034499
+Green's Function sums over all states.
+chi0s for time point 0.844107, spin 0. CPU time: 0.030000 (tensor), 0.000000 (trans). Wall time 0.034389
+Green's Function sums over all states.
+chi0s for time point 2.217802, spin 0. CPU time: 0.040000 (tensor), 0.000000 (trans). Wall time 0.034385
+Green's Function sums over all states.
+chi0s for time point 5.364324, spin 0. CPU time: 0.030000 (tensor), 0.000000 (trans). Wall time 0.034344
+Green's Function sums over all states.
+Begin to compute_RPA_correlation_blacs_2d  myid: 3
+Begin to compute_RPA_correlation_blacs_2d  myid: 1
+chi0s for time point 12.564619, spin 0. CPU time: 0.040000 (tensor), 0.000000 (trans). Wall time 0.034389
+
+Begin to compute_RPA_correlation_blacs_2d  myid: 0
+Calculating EcRPA with BLACS/ScaLAPACK 2D
+Finish init RPA blacs 2d
+Begin to compute_RPA_correlation_blacs_2d  myid: 2
+Vq Time  myid: 2  arr_time: 0.000132  comm_time: 0.001302   block_time: 0.000016   pair_size: 1
+Vq Time  myid: 0  arr_time: 0.000146  comm_time: 0.001336   block_time: 0.000018   pair_size: 1
+ | Total vq time: 0.001585  lri_coul: 0.000154   comm_vq: 0.001381   block_vq: 0.000050
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.056461, q:( 0.000000, 0.000000, 0.000000 )
+Vq Time  myid: 1  arr_time: 0.000059  comm_time: 0.001299   block_time: 0.000018   pair_size: 1
+Vq Time  myid: 3  arr_time: 0.000140  comm_time: 0.001377   block_time: 0.000017   pair_size: 1
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.056461,  q: ( 0.000000, 0.000000, 0.000000)  TOT: 0.003690  CHI_arr: 0.000056  CHI_comm: 0.001277, CHI_2d: 0.000020, Pi: 0.001056, Det: 0.001276
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.204245, q:( 0.000000, 0.000000, 0.000000 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.204245,  q: ( 0.000000, 0.000000, 0.000000)  TOT: 0.001699  CHI_arr: 0.000037  CHI_comm: 0.001280, CHI_2d: 0.000023, Pi: 0.000083, Det: 0.000272
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.490710, q:( 0.000000, 0.000000, 0.000000 )
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.490710,  q: ( 0.000000, 0.000000, 0.000000)  TOT: 0.001715  CHI_arr: 0.000031  CHI_comm: 0.001307, CHI_2d: 0.000025, Pi: 0.000079, Det: 0.000269
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 1.164144, q:( 0.000000, 0.000000, 0.000000 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  1.164144,  q: ( 0.000000, 0.000000, 0.000000)  TOT: 0.001683  CHI_arr: 0.000029  CHI_comm: 0.001277, CHI_2d: 0.000020, Pi: 0.000085, Det: 0.000268
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 2.958766, q:( 0.000000, 0.000000, 0.000000 )
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  2.958766,  q: ( 0.000000, 0.000000, 0.000000)  TOT: 0.001710  CHI_arr: 0.000032  CHI_comm: 0.001295, CHI_2d: 0.000025, Pi: 0.000079, Det: 0.000274
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 8.939647, q:( 0.000000, 0.000000, 0.000000 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  8.939647,  q: ( 0.000000, 0.000000, 0.000000)  TOT: 0.001672  CHI_arr: 0.000032  CHI_comm: 0.001267, CHI_2d: 0.000024, Pi: 0.000079, Det: 0.000267
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+Vq Time  myid: 0  arr_time: 0.000075  comm_time: 0.001277   block_time: 0.000015   pair_size: 1
+ | Total vq time: 0.001391  lri_coul: 0.000079   comm_vq: 0.001282   block_vq: 0.000030
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.056461, q:( 0.073172, 0.073172, -0.073172 )
+Vq Time  myid: 3  arr_time: 0.000081  comm_time: 0.001237   block_time: 0.000015   pair_size: 1
+Vq Time  myid: 1  arr_time: 0.000053  comm_time: 0.001192   block_time: 0.000015   pair_size: 1
+Vq Time  myid: 2  arr_time: 0.000080  comm_time: 0.001159   block_time: 0.000013   pair_size: 1
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.056461,  q: ( 0.073172, 0.073172, -0.073172)  TOT: 0.001717  CHI_arr: 0.000032  CHI_comm: 0.001255, CHI_2d: 0.000020, Pi: 0.000082, Det: 0.000323
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.204245, q:( 0.073172, 0.073172, -0.073172 )
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.204245,  q: ( 0.073172, 0.073172, -0.073172)  TOT: 0.001729  CHI_arr: 0.000033  CHI_comm: 0.001291, CHI_2d: 0.000020, Pi: 0.000082, Det: 0.000298
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.490710, q:( 0.073172, 0.073172, -0.073172 )
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.490710,  q: ( 0.073172, 0.073172, -0.073172)  TOT: 0.001694  CHI_arr: 0.000028  CHI_comm: 0.001259, CHI_2d: 0.000025, Pi: 0.000077, Det: 0.000301
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 1.164144, q:( 0.073172, 0.073172, -0.073172 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  1.164144,  q: ( 0.073172, 0.073172, -0.073172)  TOT: 0.001653  CHI_arr: 0.000025  CHI_comm: 0.001247, CHI_2d: 0.000020, Pi: 0.000081, Det: 0.000276
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 2.958766, q:( 0.073172, 0.073172, -0.073172 )
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  2.958766,  q: ( 0.073172, 0.073172, -0.073172)  TOT: 0.001675  CHI_arr: 0.000025  CHI_comm: 0.001282, CHI_2d: 0.000020, Pi: 0.000077, Det: 0.000267
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 8.939647, q:( 0.073172, 0.073172, -0.073172 )
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  8.939647,  q: ( 0.073172, 0.073172, -0.073172)  TOT: 0.001652  CHI_arr: 0.000028  CHI_comm: 0.001244, CHI_2d: 0.000025, Pi: 0.000085, Det: 0.000265
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+Vq Time  myid: 2  arr_time: 0.000081  comm_time: 0.001221   block_time: 0.000013   pair_size: 1
+Vq Time  myid: 3  arr_time: 0.000080  comm_time: 0.001132   block_time: 0.000015   pair_size: 1
+Vq Time  myid: 0  arr_time: 0.000073  comm_time: 0.001206   block_time: 0.000015   pair_size: 1
+ | Total vq time: 0.001373  lri_coul: 0.000077   comm_vq: 0.001265   block_vq: 0.000031
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.056461, q:( 0.073172, -0.073172, 0.073172 )
+Vq Time  myid: 1  arr_time: 0.000050  comm_time: 0.001262   block_time: 0.000015   pair_size: 1
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.056461,  q: ( 0.073172, -0.073172, 0.073172)  TOT: 0.001668  CHI_arr: 0.000026  CHI_comm: 0.001241, CHI_2d: 0.000020, Pi: 0.000088, Det: 0.000290
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.204245, q:( 0.073172, -0.073172, 0.073172 )
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.204245,  q: ( 0.073172, -0.073172, 0.073172)  TOT: 0.001670  CHI_arr: 0.000027  CHI_comm: 0.001245, CHI_2d: 0.000020, Pi: 0.000079, Det: 0.000294
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.490710, q:( 0.073172, -0.073172, 0.073172 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.490710,  q: ( 0.073172, -0.073172, 0.073172)  TOT: 0.001665  CHI_arr: 0.000027  CHI_comm: 0.001255, CHI_2d: 0.000020, Pi: 0.000073, Det: 0.000285
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 1.164144, q:( 0.073172, -0.073172, 0.073172 )
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  1.164144,  q: ( 0.073172, -0.073172, 0.073172)  TOT: 0.001668  CHI_arr: 0.000028  CHI_comm: 0.001249, CHI_2d: 0.000031, Pi: 0.000080, Det: 0.000276
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 2.958766, q:( 0.073172, -0.073172, 0.073172 )
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  2.958766,  q: ( 0.073172, -0.073172, 0.073172)  TOT: 0.001672  CHI_arr: 0.000026  CHI_comm: 0.001253, CHI_2d: 0.000020, Pi: 0.000078, Det: 0.000290
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 8.939647, q:( 0.073172, -0.073172, 0.073172 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  8.939647,  q: ( 0.073172, -0.073172, 0.073172)  TOT: 0.001642  CHI_arr: 0.000030  CHI_comm: 0.001242, CHI_2d: 0.000023, Pi: 0.000079, Det: 0.000263
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+Vq Time  myid: 0  arr_time: 0.000072  comm_time: 0.001283   block_time: 0.000015   pair_size: 1
+ | Total vq time: 0.001395  lri_coul: 0.000078   comm_vq: 0.001288   block_vq: 0.000029
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.056461, q:( 0.146343, 0.000000, 0.000000 )
+Vq Time  myid: 3  arr_time: 0.000075  comm_time: 0.001218   block_time: 0.000015   pair_size: 1
+Vq Time  myid: 1  arr_time: 0.000053  comm_time: 0.001173   block_time: 0.000016   pair_size: 1
+Vq Time  myid: 2  arr_time: 0.000086  comm_time: 0.001140   block_time: 0.000013   pair_size: 1
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.056461,  q: ( 0.146343, 0.000000, 0.000000)  TOT: 0.001662  CHI_arr: 0.000025  CHI_comm: 0.001125, CHI_2d: 0.000145, Pi: 0.000073, Det: 0.000289
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.204245, q:( 0.146343, 0.000000, 0.000000 )
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.204245,  q: ( 0.146343, 0.000000, 0.000000)  TOT: 0.001686  CHI_arr: 0.000028  CHI_comm: 0.001267, CHI_2d: 0.000020, Pi: 0.000079, Det: 0.000289
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.490710, q:( 0.146343, 0.000000, 0.000000 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.490710,  q: ( 0.146343, 0.000000, 0.000000)  TOT: 0.001676  CHI_arr: 0.000028  CHI_comm: 0.001252, CHI_2d: 0.000020, Pi: 0.000075, Det: 0.000297
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 1.164144, q:( 0.146343, 0.000000, 0.000000 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  1.164144,  q: ( 0.146343, 0.000000, 0.000000)  TOT: 0.001668  CHI_arr: 0.000028  CHI_comm: 0.001261, CHI_2d: 0.000020, Pi: 0.000078, Det: 0.000277
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 2.958766, q:( 0.146343, 0.000000, 0.000000 )
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  2.958766,  q: ( 0.146343, 0.000000, 0.000000)  TOT: 0.001661  CHI_arr: 0.000026  CHI_comm: 0.001261, CHI_2d: 0.000020, Pi: 0.000076, Det: 0.000272
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 8.939647, q:( 0.146343, 0.000000, 0.000000 )
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  8.939647,  q: ( 0.146343, 0.000000, 0.000000)  TOT: 0.001666  CHI_arr: 0.000028  CHI_comm: 0.001261, CHI_2d: 0.000023, Pi: 0.000078, Det: 0.000272
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+Vq Time  myid: 2  arr_time: 0.000074  comm_time: 0.001181   block_time: 0.000013   pair_size: 1
+Vq Time  myid: 3  arr_time: 0.000076  comm_time: 0.001133   block_time: 0.000015   pair_size: 1
+Vq Time  myid: 0  arr_time: 0.000071  comm_time: 0.001246   block_time: 0.000015   pair_size: 1
+ | Total vq time: 0.001355  lri_coul: 0.000076   comm_vq: 0.001251   block_vq: 0.000029
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.056461, q:( -0.073172, 0.073172, 0.073172 )
+Vq Time  myid: 1  arr_time: 0.000053  comm_time: 0.001224   block_time: 0.000015   pair_size: 1
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.056461,  q: ( -0.073172, 0.073172, 0.073172)  TOT: 0.001691  CHI_arr: 0.000030  CHI_comm: 0.001249, CHI_2d: 0.000019, Pi: 0.000074, Det: 0.000313
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.204245, q:( -0.073172, 0.073172, 0.073172 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.204245,  q: ( -0.073172, 0.073172, 0.073172)  TOT: 0.001689  CHI_arr: 0.000031  CHI_comm: 0.001248, CHI_2d: 0.000024, Pi: 0.000079, Det: 0.000303
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.490710, q:( -0.073172, 0.073172, 0.073172 )
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.490710,  q: ( -0.073172, 0.073172, 0.073172)  TOT: 0.001688  CHI_arr: 0.000036  CHI_comm: 0.001255, CHI_2d: 0.000020, Pi: 0.000073, Det: 0.000300
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 1.164144, q:( -0.073172, 0.073172, 0.073172 )
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  1.164144,  q: ( -0.073172, 0.073172, 0.073172)  TOT: 0.001686  CHI_arr: 0.000030  CHI_comm: 0.001240, CHI_2d: 0.000026, Pi: 0.000100, Det: 0.000286
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 2.958766, q:( -0.073172, 0.073172, 0.073172 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  2.958766,  q: ( -0.073172, 0.073172, 0.073172)  TOT: 0.001653  CHI_arr: 0.000028  CHI_comm: 0.001261, CHI_2d: 0.000020, Pi: 0.000074, Det: 0.000266
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 8.939647, q:( -0.073172, 0.073172, 0.073172 )
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  8.939647,  q: ( -0.073172, 0.073172, 0.073172)  TOT: 0.001652  CHI_arr: 0.000029  CHI_comm: 0.001257, CHI_2d: 0.000020, Pi: 0.000080, Det: 0.000262
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+Vq Time  myid: 2  arr_time: 0.000071  comm_time: 0.001232   block_time: 0.000013   pair_size: 1
+Vq Time  myid: 3  arr_time: 0.000073  comm_time: 0.001173   block_time: 0.000015   pair_size: 1
+Vq Time  myid: 0  arr_time: 0.000083  comm_time: 0.001138   block_time: 0.000016   pair_size: 1
+ | Total vq time: 0.001397  lri_coul: 0.000088   comm_vq: 0.001278   block_vq: 0.000031
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.056461, q:( 0.000000, 0.146343, 0.000000 )
+Vq Time  myid: 1  arr_time: 0.000053  comm_time: 0.001275   block_time: 0.000015   pair_size: 1
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.056461,  q: ( 0.000000, 0.146343, 0.000000)  TOT: 0.001676  CHI_arr: 0.000030  CHI_comm: 0.001165, CHI_2d: 0.000113, Pi: 0.000076, Det: 0.000288
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.204245, q:( 0.000000, 0.146343, 0.000000 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.204245,  q: ( 0.000000, 0.146343, 0.000000)  TOT: 0.001663  CHI_arr: 0.000029  CHI_comm: 0.001248, CHI_2d: 0.000020, Pi: 0.000078, Det: 0.000283
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.490710, q:( 0.000000, 0.146343, 0.000000 )
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.490710,  q: ( 0.000000, 0.146343, 0.000000)  TOT: 0.001670  CHI_arr: 0.000030  CHI_comm: 0.001248, CHI_2d: 0.000020, Pi: 0.000076, Det: 0.000291
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 1.164144, q:( 0.000000, 0.146343, 0.000000 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  1.164144,  q: ( 0.000000, 0.146343, 0.000000)  TOT: 0.001652  CHI_arr: 0.000029  CHI_comm: 0.001244, CHI_2d: 0.000022, Pi: 0.000079, Det: 0.000274
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 2.958766, q:( 0.000000, 0.146343, 0.000000 )
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  2.958766,  q: ( 0.000000, 0.146343, 0.000000)  TOT: 0.001685  CHI_arr: 0.000030  CHI_comm: 0.001237, CHI_2d: 0.000078, Pi: 0.000075, Det: 0.000261
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 8.939647, q:( 0.000000, 0.146343, 0.000000 )
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  8.939647,  q: ( 0.000000, 0.146343, 0.000000)  TOT: 0.001661  CHI_arr: 0.000030  CHI_comm: 0.001245, CHI_2d: 0.000021, Pi: 0.000080, Det: 0.000281
+Vq Time  myid: 0  arr_time: 0.000075  comm_time: 0.001239   block_time: 0.000015   pair_size: 1
+ | Total vq time: 0.001352  lri_coul: 0.000079   comm_vq: 0.001244   block_vq: 0.000029
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.056461, q:( 0.000000, 0.000000, 0.146343 )
+Vq Time  myid: 2  arr_time: 0.000074  comm_time: 0.001166   block_time: 0.000012   pair_size: 1
+Vq Time  myid: 3  arr_time: 0.000085  comm_time: 0.001198   block_time: 0.000015   pair_size: 1
+Vq Time  myid: 1  arr_time: 0.000052  comm_time: 0.001143   block_time: 0.000015   pair_size: 1
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.056461,  q: ( 0.000000, 0.000000, 0.146343)  TOT: 0.001708  CHI_arr: 0.000031  CHI_comm: 0.001123, CHI_2d: 0.000155, Pi: 0.000075, Det: 0.000319
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.204245, q:( 0.000000, 0.000000, 0.146343 )
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.204245,  q: ( 0.000000, 0.000000, 0.146343)  TOT: 0.001656  CHI_arr: 0.000031  CHI_comm: 0.001240, CHI_2d: 0.000020, Pi: 0.000078, Det: 0.000283
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.490710, q:( 0.000000, 0.000000, 0.146343 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.490710,  q: ( 0.000000, 0.000000, 0.146343)  TOT: 0.001677  CHI_arr: 0.000030  CHI_comm: 0.001264, CHI_2d: 0.000020, Pi: 0.000075, Det: 0.000284
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 1.164144, q:( 0.000000, 0.000000, 0.146343 )
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  1.164144,  q: ( 0.000000, 0.000000, 0.146343)  TOT: 0.001655  CHI_arr: 0.000030  CHI_comm: 0.001241, CHI_2d: 0.000020, Pi: 0.000082, Det: 0.000278
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 2.958766, q:( 0.000000, 0.000000, 0.146343 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  2.958766,  q: ( 0.000000, 0.000000, 0.146343)  TOT: 0.001664  CHI_arr: 0.000029  CHI_comm: 0.001187, CHI_2d: 0.000110, Pi: 0.000074, Det: 0.000261
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 8.939647, q:( 0.000000, 0.000000, 0.146343 )
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  8.939647,  q: ( 0.000000, 0.000000, 0.146343)  TOT: 0.001641  CHI_arr: 0.000031  CHI_comm: 0.001248, CHI_2d: 0.000021, Pi: 0.000077, Det: 0.000261
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+Vq Time  myid: 2  arr_time: 0.000077  comm_time: 0.001234   block_time: 0.000012   pair_size: 1
+Vq Time  myid: 3  arr_time: 0.000077  comm_time: 0.001145   block_time: 0.000015   pair_size: 1
+Vq Time  myid: 0  arr_time: 0.000072  comm_time: 0.001261   block_time: 0.000016   pair_size: 1
+ | Total vq time: 0.001372  lri_coul: 0.000077   comm_vq: 0.001266   block_vq: 0.000030
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.056461, q:( 0.073172, 0.073172, 0.073172 )
+Vq Time  myid: 1  arr_time: 0.000053  comm_time: 0.001202   block_time: 0.000015   pair_size: 1
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.056461,  q: ( 0.073172, 0.073172, 0.073172)  TOT: 0.001662  CHI_arr: 0.000039  CHI_comm: 0.001238, CHI_2d: 0.000020, Pi: 0.000078, Det: 0.000282
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.204245, q:( 0.073172, 0.073172, 0.073172 )
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.204245,  q: ( 0.073172, 0.073172, 0.073172)  TOT: 0.001668  CHI_arr: 0.000029  CHI_comm: 0.001242, CHI_2d: 0.000020, Pi: 0.000085, Det: 0.000287
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 0.490710, q:( 0.073172, 0.073172, 0.073172 )
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  0.490710,  q: ( 0.073172, 0.073172, 0.073172)  TOT: 0.001707  CHI_arr: 0.000030  CHI_comm: 0.001273, CHI_2d: 0.000020, Pi: 0.000077, Det: 0.000304
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 1.164144, q:( 0.073172, 0.073172, 0.073172 )
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  1.164144,  q: ( 0.073172, 0.073172, 0.073172)  TOT: 0.001689  CHI_arr: 0.000032  CHI_comm: 0.001272, CHI_2d: 0.000020, Pi: 0.000078, Det: 0.000283
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 2.958766, q:( 0.073172, 0.073172, 0.073172 )
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  2.958766,  q: ( 0.073172, 0.073172, 0.073172)  TOT: 0.001663  CHI_arr: 0.000030  CHI_comm: 0.001270, CHI_2d: 0.000020, Pi: 0.000076, Det: 0.000263
+Begin to clean chi0 !!! 
+chi0_freq_q size: 1,  freq: 8.939647, q:( 0.073172, 0.073172, 0.073172 )
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:3,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:1,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:2,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+success before pzgetrf_ processid:0,range_all: 34, loc_piT.nr(): 17, loc_piT.nc(): 17
+| TIME of DET-freq-q:  8.939647,  q: ( 0.073172, 0.073172, 0.073172)  TOT: 0.001661  CHI_arr: 0.000037  CHI_comm: 0.001255, CHI_2d: 0.000020, Pi: 0.000077, Det: 0.000268
+RPA correlation energy (Hartree)
+| Weighted contribution from each k:
+| (         0,         0,         0): (-0.504453,0)
+| (  0.459751,  0.459751, -0.459751): (-0.409049,4.85375e-16)
+| (  0.459751, -0.459751,  0.459751): (-0.409049,4.85375e-16)
+| (  0.919501,         0,         0): (-0.396626,-1.16552e-17)
+| ( -0.459751,  0.459751,  0.459751): (-0.409049,4.85375e-16)
+| (         0,  0.919501,         0): (-0.396626,-1.16552e-17)
+| (         0,         0,  0.919501): (-0.396626,-1.16552e-17)
+| (  0.459751,  0.459751,  0.459751): (-0.409049,-4.183e-17)
+| Total EcRPA:       -3.330525478
+Finalizing LibRPA global environment at [2026-06-30 22:58:24.942]
+Entry                                             #calls       CPU time (s)       Wall time (s)     
+----------------------------------------------------------------------------------------------------
+Total for driver                                  1            0.4400             0.4564            
+ Driver Read Input Parameters                     1             0.0000             0.0040           
+ Driver Read Task-Common Input Data               1             0.1000             0.1136           
+  DFT SCF eigenvalues/occupations                 1              0.0000             0.0015          
+   api_set_scf_dimension                          1               0.0000             0.0007         
+   api_set_wg_ekb_efermi                          1               0.0000             0.0002         
+  Structure                                       1              0.0000             0.0008          
+   api_set_latvec_and_G                           1               0.0000             0.0002         
+   api_set_atoms                                  1               0.0000             0.0002         
+  BZ sampling                                     1              0.0000             0.0009          
+   api_set_kgrids_kvec                            1               0.0000             0.0002         
+   api_set_kq_mapping                             1               0.0000             0.0002         
+  Basis (wave-function and auxiliary)             1              0.0200             0.0190          
+   api_set_ao_basis_wfc                           1               0.0000             0.0001         
+   api_set_ao_basis_aux                           1               0.0000             0.0000         
+  SCF eigenvectors                                1              0.0000             0.0074          
+   api_set_wfc                                    8               0.0000             0.0003         
+  driver_read_ri                                  1              0.0800             0.0827          
+   driver_read_Cs                                 1               0.0700             0.0727         
+    handle_Cs_file_dry                            1                0.0400             0.0340        
+    handle_Cs_file                                1                0.0300             0.0338        
+     api_set_lri_coeff                            8                 0.0000             0.0001       
+   driver_read_Vq                                 1               0.0100             0.0079         
+    handle_Vq_row_file                            1                0.0100             0.0049        
+    set_aux_coulomb_k_atom_pair_out               1                0.0000             0.0002        
+     api_set_aux_bare_coulomb_k_atom_pair         8                 0.0000             0.0001       
+ api_get_rpa_correlation_energy                   1             0.3300             0.3361           
+  initialize_ds_tfgrids                           1              0.0200             0.0221          
+  initialize_ds_atpairs_local                     1              0.0000             0.0008          
+  redistribute_coulomb_blacs2ap                   1              0.0000             0.0004          
+  initialize_ds_chi0                              1              0.0000             0.0001          
+  Build response function chi0                    1              0.2200             0.2156          
+   Loop over LibRI                                1               0.2200             0.2146         
+    chi0_libri_routing_set_parallel               1                0.0000             0.0009        
+    Set Cs                                        1                0.0000             0.0043        
+    build_gf_Rt_libri_serial                      12               0.0100             0.0094        
+    chi0_set_Gs                                   6                0.0100             0.0178        
+    Call cal_chi0s                                6                0.1600             0.1632        
+    chi0_libri_routing_free_gf                    6                0.0000             0.0009        
+    Collect R blocks                              6                0.0300             0.0082        
+    Cosine transform to R-space                   6                0.0000             0.0010        
+    Delayed Fourier transform                     1                0.0000             0.0011        
+  chi0_release_free                               1              0.0000             0.0003          
+  Compute RPA correlation Energy                  1              0.0900             0.0951          
+   compute_RPA_correlation_blacs_2d               1               0.0900             0.0948         
+libRPA finished successfully

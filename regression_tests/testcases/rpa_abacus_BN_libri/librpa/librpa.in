@@ -1,0 +1,6 @@
+task = rpa
+input_dir = ../dataset
+nfreq = 6
+parallel_routing = libri
+vq_threshold = 0
+sqrt_coulomb_threshold = 0
