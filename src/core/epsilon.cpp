@@ -2553,6 +2553,23 @@ compute_Wc_freq_q(
 
     const auto &comm_h = chi0.comm_h;
     const auto &abf = chi0.atbasis_abf;
+    const auto validate_coulomb_block_shape = [&](const char *stage, const int mu,
+                                                  const int nu,
+                                                  const Vector3_Order<double> &q,
+                                                  const auto &vq,
+                                                  const int n_mu,
+                                                  const int n_nu) {
+        if (vq->nr == n_mu && vq->nc == n_nu) return;
+        std::ostringstream errmsg;
+        errmsg << "Coulomb block dimension mismatch while preparing " << stage
+               << " for Wc at q=(" << q.x << ", " << q.y << ", " << q.z
+               << "), atom pair (" << mu << ", " << nu << "): block shape is "
+               << vq->nr << "x" << vq->nc << " but chi0 auxiliary basis expects "
+               << n_mu << "x" << n_nu
+               << ". Check use_shrink_abfs/use_shrink_chi and Coulomb prefixes; "
+                  "legacy shrink Coulomb files cannot be used with full-chi Wc.";
+        throw LIBRPA_RUNTIME_ERROR(errmsg.str());
+    };
 
     if (comm_h.myid == 0)
     {
@@ -2580,13 +2597,15 @@ compute_Wc_freq_q(
                 auto Nu = Nu_qVq.first;
                 if ( 0 == Nu_qVq.second.count(q) ) continue;
                 int n_nu = abf[Nu];
+                const auto &vq = Nu_qVq.second.at(q);
+                validate_coulomb_block_shape("bare Coulomb", Mu, Nu, q, vq, n_mu, n_nu);
                 for ( int i_mu = 0; i_mu != n_mu; i_mu++ )
                     for ( int i_nu = 0; i_nu != n_nu; i_nu++ )
                     {
                         Vq_all(part_range[Mu] + i_mu, part_range[Nu] + i_nu) =
-                            (*Nu_qVq.second.at(q))(i_mu, i_nu);
+                            (*vq)(i_mu, i_nu);
                         Vq_all(part_range[Nu] + i_nu, part_range[Mu] + i_mu) =
-                            conj((*Nu_qVq.second.at(q))(i_mu, i_nu));
+                            conj((*vq)(i_mu, i_nu));
                     }
             }
         }
@@ -2621,13 +2640,15 @@ compute_Wc_freq_q(
                 auto Nu = Nu_qVq.first;
                 if (0 == Nu_qVq.second.count(q)) continue;
                 int n_nu = abf[Nu];
+                const auto &vq = Nu_qVq.second.at(q);
+                validate_coulomb_block_shape("truncated Coulomb", Mu, Nu, q, vq, n_mu, n_nu);
                 for (int i_mu = 0; i_mu != n_mu; i_mu++)
                     for (int i_nu = 0; i_nu != n_nu; i_nu++)
                     {
                         Vqcut_all(part_range[Mu] + i_mu, part_range[Nu] + i_nu) =
-                            (*Nu_qVq.second.at(q))(i_mu, i_nu);
+                            (*vq)(i_mu, i_nu);
                         Vqcut_all(part_range[Nu] + i_nu, part_range[Mu] + i_mu) =
-                            conj((*Nu_qVq.second.at(q))(i_mu, i_nu));
+                            conj((*vq)(i_mu, i_nu));
                     }
             }
         }
@@ -2854,6 +2875,23 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         && can_symmetrize_symmetry_chi0_ibz_blocks(chi0.symmetry_context, atom_nabf, chi0.pbc);
 
     vec<double> eigenvalues(n_abf);
+    const auto validate_coulomb_block_shape = [&](const char *stage, const int mu,
+                                                  const int nu,
+                                                  const Vector3_Order<double> &q,
+                                                  const auto &vq,
+                                                  const int n_mu,
+                                                  const int n_nu) {
+        if (vq->nr == n_mu && vq->nc == n_nu) return;
+        std::ostringstream errmsg;
+        errmsg << "Coulomb block dimension mismatch while preparing " << stage
+               << " for Wc at q=(" << q.x << ", " << q.y << ", " << q.z
+               << "), atom pair (" << mu << ", " << nu << "): block shape is "
+               << vq->nr << "x" << vq->nc << " but chi0 auxiliary basis expects "
+               << n_mu << "x" << n_nu
+               << ". Check use_shrink_abfs/use_shrink_chi and Coulomb prefixes; "
+                  "legacy shrink Coulomb files cannot be used with full-chi Wc.";
+        throw LIBRPA_RUNTIME_ERROR(errmsg.str());
+    };
     global::profiler.stop("compute_Wc_freq_q_blacs_init");
     librpa_int::global::lib_printf_root("Time for Wc initialization (seconds, Wall/CPU): %f %f\n",
             global::profiler.get_wall_time_last("compute_Wc_freq_q_blacs_init"),
@@ -2895,6 +2933,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     const auto &Vq = coulmat_wc.at(Mu).at(Nu).at(q);
                     const auto n_mu = chi0.atbasis_abf.get_atom_nb(Mu);
                     const auto n_nu = chi0.atbasis_abf.get_atom_nb(Nu);
+                    validate_coulomb_block_shape("truncated Coulomb", Mu, Nu, q, Vq, n_mu, n_nu);
                     std::valarray<complex<double>> Vq_va(Vq->c, Vq->size);
                     auto pvq = std::make_shared<std::valarray<complex<double>>>();
                     *pvq = Vq_va;
@@ -2969,6 +3008,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     const auto &Vq = coulmat_eps.at(Mu).at(Nu).at(q);
                     const auto n_mu = chi0.atbasis_abf.get_atom_nb(Mu);
                     const auto n_nu = chi0.atbasis_abf.get_atom_nb(Nu);
+                    validate_coulomb_block_shape("bare Coulomb", Mu, Nu, q, Vq, n_mu, n_nu);
                     std::valarray<complex<double>> Vq_va(Vq->c, Vq->size);
                     auto pvq = std::make_shared<std::valarray<complex<double>>>();
                     *pvq = Vq_va;

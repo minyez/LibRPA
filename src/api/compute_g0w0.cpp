@@ -633,7 +633,16 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     }
 
     profiler.start("chi0_build", "Build response function chi0");
-    chi0.build(routing, pds->cs_data, pds->atpairs_local, pds->basis_aux, pds->sinvS,
+    const bool use_shrink_abfs = opts.use_shrink_abfs == LIBRPA_SWITCH_ON;
+    const bool shrink_chi_from_full_abfs =
+        use_shrink_abfs && opts.use_shrink_chi == LIBRPA_SWITCH_ON;
+    const auto &cs_data_chi0 =
+        use_shrink_abfs && !shrink_chi_from_full_abfs ? pds->cs_data_shrink : pds->cs_data;
+    const auto &basis_aux_chi0 =
+        use_shrink_abfs && !shrink_chi_from_full_abfs ? pds->basis_aux_shrink : pds->basis_aux;
+    std::map<Vector3_Order<double>, ComplexMatrix> empty_sinvS;
+    auto &sinvS_chi0 = shrink_chi_from_full_abfs ? pds->sinvS : empty_sinvS;
+    chi0.build(routing, cs_data_chi0, pds->atpairs_local, basis_aux_chi0, sinvS_chi0,
                pds->blacs_h);
     profiler.stop("chi0_build");
     pds->comm_h.barrier();
@@ -694,9 +703,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     std::vector<std::complex<double>> epsmac_LF_imagfreq(epsmac_LF_imagfreq_re.cbegin(), epsmac_LF_imagfreq_re.cend());
 
     std::map<double, std::map<Vector3_Order<double>, librpa_int::matrix_m<std::complex<double>>>> Wc_freq_q;
-    const bool use_shrink_chi =
-        opts.use_shrink_abfs == LIBRPA_SWITCH_ON && opts.use_shrink_chi == LIBRPA_SWITCH_ON;
-    const auto &wc_desc_abf = use_shrink_chi ? pds->desc_abf_shrink : pds->desc_abf;
+    const auto &wc_desc_abf = use_shrink_abfs ? pds->desc_abf_shrink : pds->desc_abf;
     const auto &coul_eps = opts.use_fullcoul_eps ? pds->vq : pds->vq_cut;
     auto &coul_wc = opts.use_fullcoul_wc ? pds->vq : pds->vq_cut;
     if (opts.use_scalapack_gw_wc == LIBRPA_SWITCH_ON)
@@ -721,7 +728,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
 
     std::map<double, atom_mapping<std::map<Vector3_Order<double>, Matz>>::pair_t_old>
         Wc_freq_q_atom_pair;
-    if (use_shrink_chi)
+    if (use_shrink_abfs)
     {
         profiler.start("collect_Wc_blacs_to_atom_pairs",
                        "Collect compressed Wc from BLACS to atom pairs");
@@ -755,12 +762,12 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     // HACK: choice of space-time is hard-coded. May need to change when more approaches are implemented
     pds->p_g0w0->build_spacetime(
         routing, pds->basis_aux, pds->cs_data, Wc_freq_q, pds->desc_abf,
-        use_shrink_chi ? &Wc_freq_q_atom_pair : nullptr,
-        use_shrink_chi ? &pds->sinvS : nullptr,
-        use_shrink_chi ? &pds->basis_aux_shrink : nullptr,
-        use_shrink_chi ? &pds->basis_aux : nullptr,
-        use_shrink_chi ? &pds->blacs_h : nullptr,
-        use_shrink_chi ? &pds->desc_wfc_kb_full : nullptr);
+        use_shrink_abfs ? &Wc_freq_q_atom_pair : nullptr,
+        use_shrink_abfs ? &pds->sinvS : nullptr,
+        use_shrink_abfs ? &pds->basis_aux_shrink : nullptr,
+        use_shrink_abfs ? &pds->basis_aux : nullptr,
+        use_shrink_abfs ? &pds->blacs_h : nullptr,
+        use_shrink_abfs ? &pds->desc_wfc_kb_full : nullptr);
     profiler.stop("g0w0_sigc_IJ");
     release_free_mem();
 
