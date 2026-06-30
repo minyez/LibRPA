@@ -1126,9 +1126,13 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
     ArrayDesc desc_nabf_nabf(blacs_h);
     // use a square blocksize instead max block, otherwise heev and inversion will complain about illegal parameter
     desc_nabf_nabf.init_square_blk(n_abf, n_abf, 0, 0);
+    ArrayDesc desc_nabf_nabf_opt(blacs_h);
+    const int nb_opt = std::min(128, desc_nabf_nabf.nb());
+    desc_nabf_nabf_opt.init(n_abf, n_abf, nb_opt, nb_opt, 0, 0);
     const auto set_IJ_nabf_nabf = get_necessary_IJ_from_block_2D_sy('U', chi0.atbasis_abf, desc_nabf_nabf);
     const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nabf_nabf);
-    auto chi0_block = init_local_mat<complex<double>>(desc_nabf_nabf, MAJOR::COL);
+    auto temp_block = init_local_mat<complex<double>>(desc_nabf_nabf, MAJOR::COL);
+    auto chi0_block = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
     auto coul_block = chi0_block.copy();
     auto coul_eigen_block = chi0_block.copy();
     auto coul_chi0_block = chi0_block.copy();
@@ -1223,8 +1227,11 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
 
             if (IJq_coul.size() > 0)
             {
-                collect_block_from_ALL_IJ_Tensor(coul_block, desc_nabf_nabf, chi0.atbasis_abf,
+                collect_block_from_ALL_IJ_Tensor(temp_block, desc_nabf_nabf, chi0.atbasis_abf,
                                                 qa, true, C_ONE, IJq_coul, MAJOR::ROW);
+                ScalapackConnector::pgemr2d_f(n_abf, n_abf, temp_block.ptr(), 1, 1, desc_nabf_nabf.desc,
+                                              coul_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                              blacs_h.ictxt);
             }
             double block_end = omp_get_wtime();
             lib_printf("Vq Time  myid: %d  arr_time: %f  comm_time: %f   block_time: %f   pair_size: %d\n",comm_h.myid,arr_end-vq_begin, comm_end-comm_begin, block_end-block_begin,set_IJ_nabf_nabf.size());
@@ -1255,10 +1262,10 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
             size_t n_singular = 0;
             vec<double> coul_eigenvalues(n_abf);
             sqrtveig_blacs = LaConnector::power_hemat_la_real(
-                coul_block, desc_nabf_nabf, coul_eigen_block, desc_nabf_nabf,
+                coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
                 n_singular, coul_eigenvalues.c, 0.5,
                 headwing_settings.sqrt_coulomb_threshold);
-            df_headwing->wing_mu_to_lambda(sqrtveig_blacs, desc_nabf_nabf);
+            df_headwing->wing_mu_to_lambda(sqrtveig_blacs, desc_nabf_nabf_opt);
             n_nonsingular_headwing = n_abf - as_int(n_singular);
             desc_headwing_response.init_square_blk(n_nonsingular_headwing, n_nonsingular_headwing, 0, 0);
             headwing_response_block =
@@ -1327,8 +1334,11 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
                 double chi_end_comm = omp_get_wtime();
                 if (IJq_chi0.size() > 0)
                 {
-                    collect_block_from_ALL_IJ_Tensor(chi0_block, desc_nabf_nabf, chi0.atbasis_abf,
+                    collect_block_from_ALL_IJ_Tensor(temp_block, desc_nabf_nabf, chi0.atbasis_abf,
                                                     qa, true, C_ONE, IJq_chi0, MAJOR::ROW);
+                    ScalapackConnector::pgemr2d_f(n_abf, n_abf, temp_block.ptr(), 1, 1, desc_nabf_nabf.desc,
+                                                  chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                                  blacs_h.ictxt);
                 }
                 comm_h.barrier();
                 double chi_end_2d = omp_get_wtime();
@@ -1348,20 +1358,20 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
                 headwing_response_block.zero_out();
                 ScalapackConnector::pgemm_f(
                     'N', 'N', n_abf, n_nonsingular_headwing, n_abf, C_ONE, chi0_block.ptr(), 1, 1,
-                    desc_nabf_nabf.desc, sqrtveig_blacs.ptr(), 1, 1, desc_nabf_nabf.desc, C_ZERO,
-                    coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf.desc);
+                    desc_nabf_nabf_opt.desc, sqrtveig_blacs.ptr(), 1, 1, desc_nabf_nabf_opt.desc, C_ZERO,
+                    coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
                 ScalapackConnector::pgemm_f(
                     'C', 'N', n_nonsingular_headwing, n_nonsingular_headwing, n_abf, -C_ONE,
                     sqrtveig_blacs.ptr(), 1, 1,
-                    desc_nabf_nabf.desc, coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf.desc,
+                    desc_nabf_nabf_opt.desc, coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
                     C_ZERO, headwing_response_block.ptr(), 1, 1, desc_headwing_response.desc);
             }
             else
             {
                 ScalapackConnector::pgemm_f('N', 'N', n_abf, n_abf, n_abf, 1.0, coul_block.ptr(), 1, 1,
-                                            desc_nabf_nabf.desc, chi0_block.ptr(), 1, 1,
-                                            desc_nabf_nabf.desc, 0.0, coul_chi0_block.ptr(), 1, 1,
-                                            desc_nabf_nabf.desc);
+                                            desc_nabf_nabf_opt.desc, chi0_block.ptr(), 1, 1,
+                                            desc_nabf_nabf_opt.desc, 0.0, coul_chi0_block.ptr(), 1, 1,
+                                            desc_nabf_nabf_opt.desc);
             }
             // char fnp[100];
             // sprintf(fnp, "pi_ifreq_%d_iq_%d.mtx", ifreq, iq);
@@ -1387,25 +1397,25 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
                 complex<double> trace_pi_loc(0.0, 0.0);
                 for (int i = 0; i != n_abf; i++)
                 {
-                    const int ilo = desc_nabf_nabf.indx_g2l_r(i);
-                    const int jlo = desc_nabf_nabf.indx_g2l_c(i);
+                    const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
+                    const int jlo = desc_nabf_nabf_opt.indx_g2l_c(i);
                     if (ilo >= 0 && jlo >= 0) trace_pi_loc += coul_chi0_block(ilo, jlo);
                 }
 
                 coul_chi0_block *= -1.0;
                 for (int i = 0; i != n_abf; i++)
                 {
-                    const int ilo = desc_nabf_nabf.indx_g2l_r(i);
-                    const int jlo = desc_nabf_nabf.indx_g2l_c(i);
+                    const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
+                    const int jlo = desc_nabf_nabf_opt.indx_g2l_c(i);
                     if (ilo >= 0 && jlo >= 0) coul_chi0_block(ilo, jlo) += C_ONE;
                 }
                 // if( ifreq== 0 && comm_h.is_root() )
                 //     print_whole_matrix("pi-2D-loc", coul_chi0_block);
 
-                int *ipiv = new int[desc_nabf_nabf.m_loc() * 10];
+                int *ipiv = new int[desc_nabf_nabf_opt.m_loc() * 10];
                 int info;
                 complex<double> ln_det =
-                    compute_pi_det_blacs_2d(coul_chi0_block, desc_nabf_nabf, ipiv, info);
+                    compute_pi_det_blacs_2d(coul_chi0_block, desc_nabf_nabf_opt, ipiv, info);
                 MPI_Allreduce(&trace_pi_loc,&trace_pi,1,MPI_DOUBLE_COMPLEX,MPI_SUM,comm_h.comm);
                 delete[] ipiv;
                 rpa_for_omega_q = trace_pi + ln_det;
