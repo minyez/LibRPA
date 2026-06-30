@@ -123,6 +123,7 @@ class TestDriverRunFailure(unittest.TestCase):
             )
             self.assertEqual(driver.analyze(), 1)
             self.assertIn("exit code 3", tc["run_failure"])
+            self.assertEqual(driver.result_counts(), (1, 0, 1))
 
 
 class TestValidateFileOverrides(unittest.TestCase):
@@ -152,6 +153,7 @@ class TestValidateFileOverrides(unittest.TestCase):
                                     root / "workspace", groups)
                 driver.initialize(1, 1, False)
                 self.assertEqual(driver.analyze(), 0)
+                self.assertEqual(driver.result_counts(), (1, 1, 0))
             finally:
                 validate_module._import_comparison = old_import
 

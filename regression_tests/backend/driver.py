@@ -340,6 +340,15 @@ class TestDriver:
             return 1
         return status
 
+    def result_counts(self):
+        tests_run = len(self._testcases_filtered)
+        failed = sum(
+            bool(tc.get("run_failure")) or
+            not all(result[0] for result in tc.get("results", []))
+            for tc in self._testcases_filtered
+        )
+        return tests_run, tests_run - failed, failed
+
     def print(self):
         for g, gtcs in self._groups.items():
             gtcs_active = [tc for tc in gtcs if _disable_message(tc) is None]

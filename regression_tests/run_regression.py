@@ -46,6 +46,9 @@ def _run(args, parser):
         status = driver.analyze()
         driver.print()
         print()
+        tests_run, passed, failed = driver.result_counts()
+        print("{:d} tests run, {:d} PASSED, {:d} FAILED".format(
+            tests_run, passed, failed))
         if status == 0:
             print("All selected tests PASSED :)")
         else:
