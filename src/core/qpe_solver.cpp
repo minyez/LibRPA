@@ -53,6 +53,8 @@ constexpr double qpe_damp_max = 1.0;
 constexpr double qpe_damp_shrink = 0.5;
 constexpr double qpe_damp_grow = 1.25;
 constexpr double qpe_newton_denom_min = 1.0e-12;
+// heuristic escape; use a bracketed root solve if more pathologies show up.
+constexpr int qpe_min_damp_stall_iters_to_reset = 8;
 
 double qpe_damp_upper_bound(const double damp_fac)
 {
@@ -147,6 +149,8 @@ int qpe_solver_pade_self_consistent(
     double damp = damp_max;
     double abs_diff_last = std::numeric_limits<double>::infinity();
     double diff_last = std::numeric_limits<double>::quiet_NaN();
+    int n_min_damp_stall = 0;
+    bool force_damp_max_step = false;
     // NOTE: legacy update is kept only for non-adaptive comparison tests.
     const bool use_residual_mixing_update =
             use_adaptive_damp || !use_legacy_nonadaptive_update;
@@ -154,10 +158,12 @@ int qpe_solver_pade_self_consistent(
     // std::cout << "QPE: " << e_mf << " " << e_fermi << " " << vxc << " " << sigma_x << "\n";
     while (n_iter++ < n_iter_max)
     {
-        double damp_this = damp;
+        double damp_this = force_damp_max_step ? damp_max : damp;
         double abs_diff_this = std::numeric_limits<double>::infinity();
 
-        const int n_backtrack = use_adaptive_damp ? n_qpe_max_backtrack : 0;
+        const int n_backtrack =
+            use_adaptive_damp && !force_damp_max_step ? n_qpe_max_backtrack : 0;
+        force_damp_max_step = false;
         for (int i_backtrack = 0; i_backtrack <= n_backtrack; ++i_backtrack)
         {
             const double e_update_base =
@@ -203,10 +209,26 @@ int qpe_solver_pade_self_consistent(
         if (use_adaptive_damp && sign_changed)
         {
             damp = std::max(damp_min, qpe_damp_shrink * damp);
+            n_min_damp_stall = 0;
         }
         else if (use_adaptive_damp && abs_diff_this < abs_diff_last)
         {
             damp = std::min(damp_max, std::max(damp_min, qpe_damp_grow * damp));
+            n_min_damp_stall = 0;
+        }
+        else if (use_adaptive_damp && damp <= damp_min && std::isfinite(abs_diff_last))
+        {
+            ++n_min_damp_stall;
+            if (n_min_damp_stall >= qpe_min_damp_stall_iters_to_reset)
+            {
+                damp = damp_max;
+                force_damp_max_step = true;
+                n_min_damp_stall = 0;
+            }
+        }
+        else
+        {
+            n_min_damp_stall = 0;
         }
         diff_last = diff;
         abs_diff_last = abs_diff_this;

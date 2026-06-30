@@ -208,6 +208,43 @@ void test_adaptive_damp_residual_mixing_branch_hop_case()
     assert(e_qp > 5.0 && e_qp < 6.5);
 }
 
+void test_adaptive_damp_recovers_from_min_damp_stall()
+{
+    constexpr double ha2ev = 27.211386245988;
+    constexpr double e_mf = 63.40778 / ha2ev;
+    constexpr double e_fermi = -0.1446680000;
+    constexpr double vxc = -15.74190 / ha2ev;
+    constexpr double sigma_x = -46.18735 / ha2ev;
+    constexpr double e_qp_ref = -0.18386 / ha2ev;
+
+    std::vector<cplxdb> xs = {
+        {0.0, 1.23121555764e-02},
+        {0.0, 4.67409978218e-02},
+        {0.0, 1.23673684837e-01},
+        {0.0, 3.39328839931e-01},
+        {0.0, 1.05932755882e+00},
+        {0.0, 4.20234445929e+00},
+    };
+    std::vector<cplxdb> data = {
+        {-9.48990931382e-01,  3.19495393947e-03},
+        {-9.45914515876e-01, -4.50290766015e-02},
+        {-9.40595421040e-01, -6.89006000930e-02},
+        {-8.92995931857e-01, -2.09702298175e-01},
+        {-7.10480738080e-01, -3.59437112159e-01},
+        {-2.78410350069e-01, -4.08374497370e-01},
+    };
+
+    AnalyContPade pade(xs.size(), xs, data);
+    double e_qp = 0.0;
+    cplxdb sigc;
+    const int info = qpe_solver_pade_self_consistent(
+        pade, e_mf, e_fermi, vxc, sigma_x, e_qp, sigc, 1.0e-3, 1.0e-6, 10000, 0.1,
+        true);
+
+    assert(info == 0);
+    assert(std::abs(e_qp - e_qp_ref) < 1.0e-3);
+}
+
 int main(int argc, char *argv[])
 {
     check_single_pole_self_energy(false);
@@ -216,4 +253,5 @@ int main(int argc, char *argv[])
     test_nonadaptive_residual_mixing_keeps_legacy_entry();
     test_perturbative_qp_weight();
     test_adaptive_damp_residual_mixing_branch_hop_case();
+    test_adaptive_damp_recovers_from_min_damp_stall();
 }
