@@ -13,40 +13,50 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace librpa_int
 {
 
 void initialize_symmetry_context(Dataset &ds, const bool build_shell_rotations)
 {
+    auto &spg_symops = ds.spg_symops;
 
-    // If symmetry operations have not been set, make it an identity group
-    if (ds.spg_symops.size() == 0)
+    if (spg_symops.empty())
     {
-        ds.spg_symops.push_back(SpaceGroupSymOp::IDENTITY);
+        spg_symops.push_back(SpaceGroupSymOp::IDENTITY);
     }
 
     auto &ctx = ds.symmetry_context;
-    if (ctx.rspace_operations.empty())
+    ctx.clear();
+    std::vector<SymmetryOperation> operations;
+    operations.reserve(spg_symops.size());
+    for (const auto &op : spg_symops)
     {
-        return;
+        SymmetryOperation operation;
+        operation.rotation = op.rotation;
+        operation.translation = op.translation;
+        operation.use_row_convention = op.use_row_convention;
+        operations.push_back(std::move(operation));
+    }
+    ctx.set_rspace_operations(std::move(operations));
+    if (ds.pbc.is_latt_set())
+    {
+        ctx.set_lattice(ds.pbc.latvec, ds.pbc.G);
     }
     ctx.set_structure(ds.atoms.types, ds.atoms.coords_frac);
+    ctx.generate_irreducible_sector(ds.pbc.Rlist);
+    ctx.generate_kstars(ds.pbc);
 
-    if (ctx.irreducible_sector.empty())
-    {
-        ctx.generate_irreducible_sector(ds.pbc.Rlist);
-    }
-
-    if (ctx.kstars.empty())
-    {
-        ctx.generate_kstars(ds.pbc);
-    }
-
-    ctx.finalize(&(global::ofs_myid));
+    auto mark_available = [&ctx]() {
+        ctx.set_available();
+        ctx.print_summary(global::ofs_myid);
+    };
 
     if (!build_shell_rotations)
     {
+        mark_available();
         return;
     }
 
@@ -56,6 +66,7 @@ void initialize_symmetry_context(Dataset &ds, const bool build_shell_rotations)
     const int lmax = ctx.max_l();
     if (lmax < 0)
     {
+        mark_available();
         return;
     }
 
@@ -68,6 +79,7 @@ void initialize_symmetry_context(Dataset &ds, const bool build_shell_rotations)
     ds.basis_convention = basis_convention;
     ctx.generate_shell_rotations(basis_convention);
     ctx.generate_kstar_member_rotations(lmax);
+    mark_available();
 }
 
 void require_symmetry_shell_layouts(const Dataset &ds, const char *calculation)

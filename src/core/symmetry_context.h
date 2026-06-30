@@ -118,9 +118,8 @@ using symmetry_kstar_representative_indices_t = std::vector<int>;
  * @brief In-memory representation of the system symmetry.
  *
  * Built from the structure and full k-point grid, independent of which k-points
- * are stored in the PBC object. The context is populated incrementally by the
- * input API and dataset initialization; call finalize() after required metadata
- * has been synchronized.
+ * are stored in the PBC object. The context is populated from Dataset metadata
+ * when a compute API initializes its calculation objects.
  */
 struct SymmetryContext
 {
@@ -144,6 +143,8 @@ struct SymmetryContext
     // void build_shell_rotmat_T(int lmax, BasisConvention conv);
 
     void clear();
+    void set_available();
+    void unset_available();
     void add_rspace_operation(SymmetryOperation operation);
     void set_rspace_operations(std::vector<SymmetryOperation> operations);
     void set_lattice(const Matrix3& latvec, const Matrix3& G);
@@ -161,7 +162,6 @@ struct SymmetryContext
     void generate_kstars(const PeriodicBoundaryData &pbc);
     void generate_shell_rotations(const BasisConvention &basis_convention);
     void generate_kstar_member_rotations(int lmax);
-    bool finalize(std::ostream* log = nullptr);
     void print_summary(std::ostream& log) const;
     bool empty() const;
     bool has_shell_layout(const std::string &key) const;

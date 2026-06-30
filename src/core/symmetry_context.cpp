@@ -679,7 +679,7 @@ std::map<int, ComplexMatrix> build_symmetry_kspace_shell_rotations(
 
 void SymmetryContext::clear()
 {
-    available = false;
+    unset_available();
     lattice_available = false;
     ao_lmax = -1;
     abf_lmax = -1;
@@ -697,11 +697,20 @@ void SymmetryContext::clear()
     kstar_member_fold_G.clear();
 }
 
+void SymmetryContext::set_available()
+{
+    available = true;
+}
+
+void SymmetryContext::unset_available()
+{
+    available = false;
+}
+
 void SymmetryContext::add_rspace_operation(SymmetryOperation operation)
 {
     normalize_to_row_fractional(operation);
     rspace_operations.push_back(std::move(operation));
-    available = true;
 }
 
 void SymmetryContext::set_rspace_operations(std::vector<SymmetryOperation> operations)
@@ -712,7 +721,6 @@ void SymmetryContext::set_rspace_operations(std::vector<SymmetryOperation> opera
     {
         add_rspace_operation(std::move(operation));
     }
-    available = !rspace_operations.empty();
 }
 
 void SymmetryContext::set_lattice(const Matrix3& latvec, const Matrix3& G)
@@ -939,22 +947,6 @@ bool SymmetryContext::empty() const
 bool SymmetryContext::has_shell_layout(const std::string &key) const
 {
     return map_key_layouts.find(key) != map_key_layouts.cend();
-}
-
-bool SymmetryContext::finalize(std::ostream* log)
-{
-    if (rspace_operations.empty())
-    {
-        clear();
-        return false;
-    }
-
-    available = true;
-    if (log != nullptr)
-    {
-        print_summary(*log);
-    }
-    return true;
 }
 
 void SymmetryContext::print_summary(std::ostream& log) const

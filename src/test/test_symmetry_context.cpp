@@ -213,7 +213,7 @@ void test_context_adds_labeled_atomic_basis_layout()
 void test_full_kpoint_members_skip_full_grid()
 {
     SymmetryContext ctx;
-    ctx.available = true;
+    ctx.set_available();
 
     SymmetryKStar star;
     star.k_ibz = {0.0, 0.0, 0.0};
@@ -269,6 +269,8 @@ void test_symmetry_context_saves_fractional_row_operations()
     const auto expected = apply_space_group_symmetry_operation(original_op, coord);
 
     ctx.add_rspace_operation(op);
+    assert(!ctx.available);
+    ctx.set_available();
     assert(ctx.available);
     assert(ctx.rspace_operations.size() == 1);
 
@@ -402,7 +404,7 @@ void test_mgo_k333_irreducible_sector_matches_single()
     assert(generated_sector == expected_sector);
 
     ctx.irreducible_sector = generated_sector;
-    ctx.available = true;
+    ctx.set_available();
     symmetry_rspace_sector_stars_t sector_stars;
     build_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
     std::size_t restored_members = 0;
@@ -457,7 +459,7 @@ void test_mgo_k333_irreducible_sector_matches_both()
     assert(generated_sector == expected_sector);
 
     ctx.irreducible_sector = generated_sector;
-    ctx.available = true;
+    ctx.set_available();
     symmetry_rspace_sector_stars_t sector_stars;
     build_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
     std::size_t restored_members = 0;
@@ -498,7 +500,7 @@ void test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry()
     assert(generated_sector == expected_sector);
 
     ctx.irreducible_sector = generated_sector;
-    ctx.available = true;
+    ctx.set_available();
     symmetry_rspace_sector_stars_t sector_stars;
     build_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
     std::size_t restored_members = 0;
