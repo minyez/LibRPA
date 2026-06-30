@@ -1,11 +1,13 @@
 #include <cassert>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <tuple>
 
+#include "../src/io/aux_basis_summary.h"
 #include "../src/io/fs.h"
 #include "../src/io/global_io.h"
 #include "../src/io/stl_io_helper.h"
@@ -70,6 +72,23 @@ int main (int argc, char *argv[])
     };
     assert(throws_with(join_path("librpa.d/fs_discovery", "missing.perm"), "does not exist"));
     assert(throws_with("librpa.d/nested/path", "not a regular file"));
+
+    const auto shrink_summary = format_aux_basis_compression_summary(
+        {397, 397, 210}, {167, 167, 96}, {{0, 0}, {1, 0}, {2, 1}});
+    const std::string expected_shrink_summary =
+        "Auxiliary basis compression summary:\n"
+        "+------+----------------+----------------+\n"
+        "| type | large ABF/atom | small ABF/atom |\n"
+        "+------+----------------+----------------+\n"
+        "|    1 |            397 |            167 |\n"
+        "|    2 |            210 |             96 |\n"
+        "+------+----------------+----------------+\n";
+    if (shrink_summary != expected_shrink_summary)
+    {
+        std::cerr << "Expected shrink summary:\n" << expected_shrink_summary
+                  << "Actual shrink summary:\n" << shrink_summary;
+    }
+    assert(shrink_summary == expected_shrink_summary);
 
     const auto unreadable_path = join_path("librpa.d/fs_discovery", "unreadable.perm");
     if (path_exists(unreadable_path.c_str()))

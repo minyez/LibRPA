@@ -99,6 +99,7 @@ list(APPEND lib_sources
         core/utils_complexmatrix.cpp
 
         io/fs.cpp
+        io/aux_basis_summary.cpp
         io/global_io.cpp
         io/input_elsi.cpp
         io/output_gw.cpp

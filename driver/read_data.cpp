@@ -41,6 +41,7 @@
 #include "../src/utils/constants.h"
 #include "../src/api/instance_manager.h"
 #include "../src/api/dataset_helper.h"
+#include "../src/io/aux_basis_summary.h"
 #include "../src/io/fs.h"
 #include "../src/io/global_io.h"
 #include "../src/io/stl_io_helper.h"
@@ -2223,13 +2224,10 @@ void read_ri_shrink(const string &dir_path)
 
     if (mpi_comm_global_h.is_root())
     {
-        std::cout << "iatom & small Nabfs: " << std::endl;
-        int I = 0;
-        for (auto &mu : pds->basis_aux_shrink.get_atom_nbs())
-        {
-            std::cout << I << "," << mu << std::endl;
-            ++I;
-        }
+        std::cout << librpa_int::format_aux_basis_compression_summary(
+            pds->basis_aux.get_atom_nbs(),
+            pds->basis_aux_shrink.get_atom_nbs(),
+            pds->atoms.types);
     }
     profiler.stop("read_shrink_sinvS_fold");
 }
