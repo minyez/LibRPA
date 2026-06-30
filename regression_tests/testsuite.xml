@@ -182,7 +182,7 @@
       <!-- /> -->
     </testcase>
 
-    <testcase name="MnO2 nspin2 shrink wing (abacus input)" directory="g0w0_band_abacus_MnO2_nspin2_shrink_wing_libri">
+    <testcase name="MnO2 nspin2 shrink wing v1 input (abacus input)" directory="g0w0_band_abacus_MnO2_nspin2_shrink_wing_libri">
       <labels disable="experimental"
       />
       <build require_libri="true"
