@@ -2810,22 +2810,6 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             // LibRI tensor for communication, release once done
             std::map<int, std::map<std::pair<int, std::array<double, 3>>, RI::Tensor<complex<double>>>> couleps_libri;
             global::profiler.start("epsilon_prepare_coulwc_sqrt_1", "Setup libRI object");
-            // for (const auto &Mu_Nu: atpair_local)
-            // {
-            //     const auto Mu = Mu_Nu.first;
-            //     const auto Nu = Mu_Nu.second;
-            //     // ofs_myid << "Mu " << Mu << " Nu " << Nu << endl;
-            //     if (coulmat_wc.count(Mu) == 0 ||
-            //         coulmat_wc.at(Mu).count(Nu) == 0 ||
-            //         coulmat_wc.at(Mu).at(Nu).count(q) == 0) continue;
-            //     const auto &Vq = coulmat_wc.at(Mu).at(Nu).at(q);
-            //     const auto n_mu = chi0.atbasis_abf.get_atom_nb(Mu);
-            //     const auto n_nu = chi0.atbasis_abf.get_atom_nb(Nu);
-            //     std::valarray<complex<double>> Vq_va(Vq->c, Vq->size);
-            //     auto pvq = std::make_shared<std::valarray<complex<double>>>();
-            //     *pvq = Vq_va;
-            //     couleps_libri[Mu][{Nu, qa}] = RI::Tensor<complex<double>>({n_mu, n_nu}, pvq);
-            // }
 
             for (const auto& Mu_coulmat: coulmat_wc)
             {
@@ -3326,18 +3310,18 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                                    1, desc_nabf_nabf_opt, coul_chi0_block_ptr, 1, 1,
                                    desc_nabf_nabf_opt, {0.0, 0.0}, chi0_block_ptr, 1, 1,
                                    desc_nabf_nabf_opt);
-#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-                if (use_gpu_replace_scalapack)
-                {
-                    DEVICE_CHECK(deviceMemcpyAsync(chi0_block.ptr(), chi0_block_ptr,
-                                                   chi0_block.size() * sizeof(complex<double>),
-                                                   deviceMemcpyDeviceToHost,
-                                                   blacs_h.ddla_handle->stream));
-                    DEVICE_CHECK(deviceStreamSynchronize(blacs_h.ddla_handle->stream));
-                }
-#endif
                 global::profiler.stop("epsilon_multiply_coulwc_2");
             }
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
+            if (use_gpu_replace_scalapack)
+            {
+                DEVICE_CHECK(deviceMemcpyAsync(chi0_block.ptr(), chi0_block_ptr,
+                                                chi0_block.size() * sizeof(complex<double>),
+                                                deviceMemcpyDeviceToHost,
+                                                blacs_h.ddla_handle->stream));
+                DEVICE_CHECK(deviceStreamSynchronize(blacs_h.ddla_handle->stream));
+            }
+#endif
             // convert back to initial distribution
             ScalapackConnector::pgemr2d_f(n_abf, n_abf, chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
                                         temp_block.ptr(), 1, 1, desc_nabf_nabf.desc, blacs_h.ictxt);
