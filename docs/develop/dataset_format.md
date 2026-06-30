@@ -511,6 +511,77 @@ for ispin
 
 where `ibasis` is the fastest index.
 
+## `velocity_matrix`
+
+This file stores the PyATB velocity matrix used by the head/wing correction.
+LibRPA auto-detects the legacy text format and the binary v1 format from the
+file header.
+
+### Legacy text format
+
+The legacy text file starts with:
+
+```
+nkpoints
+nspins
+nbands
+naos
+```
+
+It then stores blocks ordered by spin, k-point, and Cartesian component:
+
+```
+ialpha ik ispin
+v(1,1)_real v(1,1)_imag
+...
+v(i,j)_real v(i,j)_imag
+```
+
+All indices in the block header are 1-based.
+
+### Binary v1 format
+
+Values are native-endian. Integers are `int32` unless stated otherwise. The
+leading header stores:
+
+```
+int32 marker          = -12345680
+int32 kind            = 29
+int32 nkpoints_local
+int32 nspins
+int32 nbands
+int32 naos
+int32 nalpha          = 3
+```
+
+Only `kind = 29`, packed `complex<double>`, is currently implemented. Each
+complex number is stored as two consecutive `double` values, real then
+imaginary.
+
+The header is followed by `nkpoints_local` block records:
+
+```
+int32 ik              # 1-based source k-point index
+int64 payload_offset  # absolute byte offset in this file
+```
+
+A parallel producer may split the source k-points across several files named
+`velocity_matrix`, `velocity_matrix_1.dat`, `velocity_matrix_2.dat`, etc. In
+that case each file uses its own `nkpoints_local`, while `ik` still refers to
+the 1-based index in `k_path_info`.
+
+Each payload block contains one source k-point with
+`nspins * 3 * nbands * nbands` complex numbers. The payload order is:
+
+```
+for ispin
+  for ialpha
+    for iband
+      for jband
+```
+
+where `jband` is the fastest index.
+
 (coulomb-mat)=
 ## `coulomb_mat*`
 

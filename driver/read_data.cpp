@@ -723,6 +723,175 @@ void read_ri(const string &dir_path, librpa::ParallelRouting &routing)
     mpi_comm_global_h.barrier();
 }
 
+namespace
+{
+
+constexpr std::int32_t READER_VELOCITY_MATRIX_V1_MARKER = -12345680;
+constexpr std::int32_t VELOCITY_MATRIX_V1_KIND_COMPLEX_DOUBLE = 29;
+
+static_assert(sizeof(std::complex<double>) == 2 * sizeof(double),
+              "velocity_matrix v1 expects std::complex<double> as two doubles");
+
+struct VelocityKpointBlock
+{
+    std::int32_t ik;
+    std::int64_t offset;
+};
+
+template <typename T>
+bool read_binary_value(std::ifstream &infile, T &value)
+{
+    infile.read(reinterpret_cast<char *>(&value), sizeof(value));
+    return infile.good();
+}
+
+int check_velocity_file_version(const std::string &file_path)
+{
+    std::ifstream infile(file_path, std::ios::in | std::ios::binary);
+    if (!infile.good()) return 0;
+    std::int32_t marker = 0;
+    infile.read(reinterpret_cast<char *>(&marker), sizeof(marker));
+    if (!infile.good() || marker > 0) return 0;
+    if (marker == READER_VELOCITY_MATRIX_V1_MARKER) return 1;
+    throw std::runtime_error("Unsupported velocity_matrix file marker: " + std::to_string(marker) +
+                             " in " + file_path);
+}
+
+std::size_t velocity_hit_index(const int is, const int ik, const int ia, const int n_kpoints)
+{
+    return (librpa_int::as_size(is) * librpa_int::as_size(n_kpoints) + librpa_int::as_size(ik)) *
+               3 +
+           librpa_int::as_size(ia);
+}
+
+void check_velocity_target_hits(const std::vector<int> &target_hits, const int n_spins,
+                                const int n_kpoints)
+{
+    for (int is = 0; is != n_spins; ++is)
+    {
+        for (int ik = 0; ik != n_kpoints; ++ik)
+        {
+            for (int ia = 0; ia != 3; ++ia)
+            {
+                if (target_hits[velocity_hit_index(is, ik, ia, n_kpoints)] == 0)
+                {
+                    throw std::logic_error(
+                        "velocity_matrix is missing a selected head/wing k-point");
+                }
+            }
+        }
+    }
+}
+
+void validate_velocity_dimensions(const std::string &file_path, const MeanField &mf,
+                                  const int n_spins, const int n_bands)
+{
+    if (n_spins != mf.get_n_spins() || n_bands != mf.get_n_states())
+    {
+        std::stringstream ss;
+        ss << "velocity_matrix dimensions are inconsistent with meanfield: velocity=(" << n_spins
+           << "," << n_bands << "), meanfield=(" << mf.get_n_spins() << "," << mf.get_n_kpoints()
+           << "," << mf.get_n_states() << "), file=" << file_path;
+        throw std::logic_error(ss.str());
+    }
+}
+
+std::vector<std::string> velocity_binary_v1_files(const string &file_path)
+{
+    std::vector<std::string> files{file_path};
+    const auto extra_files = librpa_int::discover_files_with_prefix(
+        librpa_int::parent_path(file_path), librpa_int::base_name(file_path) + "_");
+    files.insert(files.end(), extra_files.begin(), extra_files.end());
+    return files;
+}
+
+void read_velocity_binary_v1_file(const string &file_path, const MeanField &mf,
+                                  velocity_matrix_t &velocity,
+                                  const std::vector<int> &source_to_target_ik,
+                                  std::vector<int> &target_hits)
+{
+    using librpa_int::ANG2BOHR;
+    using librpa_int::HA2EV;
+
+    std::ifstream infile(file_path, std::ios::in | std::ios::binary);
+    if (!infile.good()) throw std::logic_error("Failed to open velocity_matrix file " + file_path);
+
+    std::int32_t marker = 0;
+    std::int32_t kind_raw = 0;
+    std::int32_t n_kpoints_source = 0;
+    std::int32_t n_spins = 0;
+    std::int32_t n_bands = 0;
+    std::int32_t n_aos = 0;
+    std::int32_t n_alpha = 0;
+    if (!read_binary_value(infile, marker) || !read_binary_value(infile, kind_raw) ||
+        !read_binary_value(infile, n_kpoints_source) || !read_binary_value(infile, n_spins) ||
+        !read_binary_value(infile, n_bands) || !read_binary_value(infile, n_aos) ||
+        !read_binary_value(infile, n_alpha))
+    {
+        throw std::logic_error("Failed to read velocity_matrix v1 header from " + file_path);
+    }
+    if (marker != READER_VELOCITY_MATRIX_V1_MARKER ||
+        kind_raw != VELOCITY_MATRIX_V1_KIND_COMPLEX_DOUBLE || n_kpoints_source < 0 ||
+        n_spins <= 0 || n_bands <= 0 || n_aos <= 0 || n_alpha != 3)
+    {
+        throw std::logic_error("Invalid velocity_matrix v1 header in " + file_path);
+    }
+
+    validate_velocity_dimensions(file_path, mf, n_spins, n_bands);
+
+    std::vector<VelocityKpointBlock> blocks(librpa_int::as_size(n_kpoints_source));
+    for (auto &block : blocks)
+    {
+        if (!read_binary_value(infile, block.ik) || !read_binary_value(infile, block.offset))
+            throw std::logic_error("Failed to read velocity_matrix v1 block table");
+        if (block.offset < 0) throw std::logic_error("Invalid velocity_matrix v1 block offset");
+    }
+
+    const auto n_block = librpa_int::as_size(n_spins) * 3 * librpa_int::as_size(n_bands) *
+                         librpa_int::as_size(n_bands);
+    std::vector<std::complex<double>> block_data(n_block);
+
+    for (const auto &block : blocks)
+    {
+        const int ik_source = block.ik - 1;
+        if (ik_source < 0 || ik_source >= static_cast<int>(source_to_target_ik.size()))
+            throw std::logic_error("velocity_matrix v1 k-point index is out of range");
+        const int ik_target = source_to_target_ik[ik_source];
+        if (ik_target < 0) continue;
+
+        infile.clear();
+        infile.seekg(static_cast<std::streamoff>(block.offset), std::ios::beg);
+        if (!infile.good()) throw std::logic_error("Failed to seek velocity_matrix v1 payload");
+        infile.read(reinterpret_cast<char *>(block_data.data()),
+                    static_cast<std::streamsize>(block_data.size() * sizeof(std::complex<double>)));
+        if (!infile.good()) throw std::logic_error("Failed to read velocity_matrix v1 payload");
+
+        for (int is = 0; is != n_spins; ++is)
+        {
+            for (int ia = 0; ia != 3; ++ia)
+            {
+                target_hits[velocity_hit_index(is, ik_target, ia, mf.get_n_kpoints())] = 1;
+                for (int i = 0; i != n_bands; ++i)
+                {
+                    for (int j = 0; j != n_bands; ++j)
+                    {
+                        const auto index =
+                            (((librpa_int::as_size(is) * 3 + librpa_int::as_size(ia)) *
+                                  librpa_int::as_size(n_bands) +
+                              librpa_int::as_size(i)) *
+                                 librpa_int::as_size(n_bands) +
+                             librpa_int::as_size(j));
+                        velocity.at(is).at(ik_target).at(ia)(i, j) =
+                            ANG2BOHR * block_data[index] / HA2EV;
+                    }
+                }
+            }
+        }
+    }
+}
+
+}  // namespace
+
 void read_velocity(const string &file_path, const MeanField &mf, velocity_matrix_t &velocity)
 {
     using librpa_int::ANG2BOHR;
@@ -730,6 +899,26 @@ void read_velocity(const string &file_path, const MeanField &mf, velocity_matrix
     using librpa_int::global::mpi_comm_global_h;
 
     librpa_int::require_readable_file(file_path);
+    if (check_velocity_file_version(file_path) == 1)
+    {
+        std::vector<int> source_to_target_ik(librpa_int::as_size(mf.get_n_kpoints()));
+        for (int ik = 0; ik != mf.get_n_kpoints(); ++ik) source_to_target_ik[ik] = ik;
+        librpa_int::global::lib_printf_root("velocity_matrix reader: binary v1\n");
+        initialize_velocity_matrix(velocity, mf.get_n_spins(), mf.get_n_kpoints(),
+                                   mf.get_n_states());
+        std::vector<int> target_hits(
+            librpa_int::as_size(mf.get_n_kpoints()) * librpa_int::as_size(mf.get_n_spins()) * 3, 0);
+        for (const auto &velocity_file : velocity_binary_v1_files(file_path))
+        {
+            read_velocity_binary_v1_file(velocity_file, mf, velocity, source_to_target_ik,
+                                         target_hits);
+        }
+        check_velocity_target_hits(target_hits, mf.get_n_spins(), mf.get_n_kpoints());
+        if (mpi_comm_global_h.is_root())
+            std::cout << "* Success: read velocity from pyatb_librpa_df(ABACUS)." << std::endl;
+        return;
+    }
+
     ifstream infile;
     infile.open(file_path);
     string alpha, kk, ss, single_re, single_im;
@@ -788,6 +977,30 @@ void read_velocity(const string &file_path, const MeanField &mf, velocity_matrix
     using librpa_int::ANG2BOHR;
     using librpa_int::HA2EV;
     using librpa_int::global::mpi_comm_global_h;
+
+    librpa_int::require_readable_file(file_path);
+    if (check_velocity_file_version(file_path) == 1)
+    {
+        librpa_int::global::lib_printf_root("velocity_matrix reader: binary v1\n");
+        if (source_n_kpoints_expected != static_cast<int>(source_to_target_ik.size()))
+        {
+            throw std::logic_error("velocity_matrix k-point count is inconsistent with k_path_info");
+        }
+        initialize_velocity_matrix(velocity, mf.get_n_spins(), mf.get_n_kpoints(),
+                                   mf.get_n_states());
+        std::vector<int> target_hits(librpa_int::as_size(mf.get_n_kpoints()) *
+                                         librpa_int::as_size(mf.get_n_spins()) * 3,
+                                     0);
+        for (const auto &velocity_file : velocity_binary_v1_files(file_path))
+        {
+            read_velocity_binary_v1_file(velocity_file, mf, velocity, source_to_target_ik,
+                                         target_hits);
+        }
+        check_velocity_target_hits(target_hits, mf.get_n_spins(), mf.get_n_kpoints());
+        if (mpi_comm_global_h.is_root())
+            std::cout << "* Success: read velocity from pyatb_librpa_df(ABACUS)." << std::endl;
+        return;
+    }
 
     ifstream infile;
     infile.open(file_path);
