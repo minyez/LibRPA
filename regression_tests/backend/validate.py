@@ -28,7 +28,7 @@ def _extract_plain(directory: str, file: str,
                 raw[rela] = "".join(lines[headers:])
             else:
                 raw[rela] = "".join(lines[headers:rows])
-            return raw
+            continue
 
         st, ed, intv = occurences
         matched = []
