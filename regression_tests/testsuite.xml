@@ -40,7 +40,7 @@
       />
     </testcase>
 
-    <testcase name="LiH rocksalt, k555 symmetry speed up with non-symmetrized input (aims input)" directory="exx_aims_LiH_RS_sym_libri">
+    <testcase name="LiH, k555 symmetry speed up with non-symmetrized input (aims input)" directory="exx_aims_LiH_ZB_sym_libri">
       <labels disable="experimental"/>
       <build require_libri="true"/>
       <validate name="EXX potential on k-grid"
