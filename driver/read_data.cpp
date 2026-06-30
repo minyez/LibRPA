@@ -1257,7 +1257,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         }
         const auto target_to_source_ik =
             map_kpoints_by_coordinates(active_kfrac_list, kfrac_pyatb,
-                                       kInputSymmetryKpointMatchTol);
+                                       kSymmetryKpointMatchTol);
         std::vector<int> source_to_target_ik(kfrac_pyatb.size(), -1);
         for (int ik_target = 0; ik_target != static_cast<int>(target_to_source_ik.size());
              ++ik_target)
@@ -1678,7 +1678,7 @@ void read_bz_sampling_from_stru(const std::string &file_path)
         auto &pbc = pds->pbc;
         pbc.set_kgrids_kvec(nk[0], nk[1], nk[2], kvecs);
         pbc.set_kq_mapping(map_q_ks);
-        librpa_int::initialize_input_symmetry_context(*pds, false);
+        librpa_int::initialize_symmetry_context(*pds, false);
         const auto &ctx = pds->symmetry_context;
         if (!ctx.available || ctx.kstars.size() != static_cast<std::size_t>(n_k_rows))
         {

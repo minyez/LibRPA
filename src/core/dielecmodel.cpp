@@ -176,7 +176,7 @@ void allreduce_head_check(
 }
 
 std::array<ComplexMatrix, 3> rotate_headwing_velocity_by_shape(
-    const SymmetryContext &ctx, const InputSymmetryKStarMember &member,
+    const SymmetryContext &ctx, const SymmetryKStarMember &member,
     const std::array<ComplexMatrix, 3> &v_band_ibz, const int n_bands,
     const bool use_time_reversal)
 {
@@ -242,7 +242,7 @@ std::vector<int> build_headwing_atom_offsets(const std::map<atom_t, size_t>& ato
 }
 
 Vector3_Order<int> headwing_kspace_return_lattice(
-    const SymmetryContext& ctx, const InputSymmetryKAtomRotation& atom_rotation,
+    const SymmetryContext& ctx, const SymmetryKAtomRotation& atom_rotation,
     const std::map<atom_t, std::array<double, 3>>& coord_frac, const int spatial_isym)
 {
     const auto stored = ctx.kspace_return_lattice.find({atom_rotation.atom_from, spatial_isym});
@@ -291,8 +291,8 @@ std::complex<double> headwing_reciprocal_gauge_phase(
     return {std::cos(phase_arg), std::sin(phase_arg)};
 }
 
-ComplexMatrix build_input_symmetry_ao_bloch_rotation_matrix_full(
-    const SymmetryContext& ctx, const InputSymmetryKStarMember& member,
+ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
+    const SymmetryContext& ctx, const SymmetryKStarMember& member,
     const std::map<atom_t, size_t>& atom_nw, const Vector3_Order<double>& k_ibz,
     const std::map<atom_t, std::array<double, 3>>& coord_frac, const bool use_time_reversal,
     const Vector3_Order<double>* k_bz_target)
@@ -303,7 +303,7 @@ ComplexMatrix build_input_symmetry_ao_bloch_rotation_matrix_full(
     const auto offsets = build_headwing_atom_offsets(atom_nw);
     const int nao_total = offsets.back();
 
-    std::vector<const InputSymmetryKAtomRotation*> rotations_by_from(atom_nw.size(), nullptr);
+    std::vector<const SymmetryKAtomRotation*> rotations_by_from(atom_nw.size(), nullptr);
     std::vector<bool> visited_to(atom_nw.size(), false);
     for (const auto& atom_rotation : member.atom_rotations)
     {
@@ -333,7 +333,7 @@ ComplexMatrix build_input_symmetry_ao_bloch_rotation_matrix_full(
     for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
     {
         const auto* atom_rotation = rotations_by_from[atom];
-        atom_M_blocks[atom] = build_input_symmetry_rotation_matrix(
+        atom_M_blocks[atom] = build_symmetry_rotation_matrix(
             ctx, "WFC", atom_rotation->atom_type, atom_rotation->shell_rotations);
         const auto return_lattice =
             headwing_kspace_return_lattice(ctx, *atom_rotation, coord_frac, spatial_isym);
@@ -545,7 +545,7 @@ void diele_func::cal_head()
 
     const bool can_sym =
         use_symmetry && symmetry_context_ != nullptr &&
-        librpa_int::can_restore_input_symmetry_kstar_meanfield(
+        librpa_int::can_restore_symmetry_kstar_meanfield(
             *symmetry_context_, meanfield_df, kfrac_band, atom_nw, coord_frac);
 
     if (can_sym)
@@ -642,9 +642,9 @@ void diele_func::cal_head_symmetric()
 
     // Build the per-member BZ k-point targets so the rotated quantities land on
     // the same grid keys that the rest of the code expects (mirrors the
-    // get_input_symmetry_restored_gf_cplx_imagtimes_Rs convention).
+    // get_symmetry_restored_gf_cplx_imagtimes_Rs convention).
     const auto member_targets =
-        librpa_int::build_input_symmetry_kstar_member_kfrac_targets(ctx, pbc_);
+        librpa_int::build_symmetry_kstar_member_kfrac_targets(ctx, pbc_);
 
     // Total BZ k-count = sum of star sizes. The IBZ mean-field stores wg as
     // occ/n_ibz, but the head/wing sum is over the full BZ, so each BZ k must
@@ -669,7 +669,7 @@ void diele_func::cal_head_symmetric()
         for (int ik_ibz = 0; ik_ibz != nk; ik_ibz++)
         {
             const auto& k_ibz = kfrac_band[ik_ibz];
-            const auto& star = librpa_int::find_input_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
+            const auto& star = librpa_int::find_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
             if (star.members.empty())
                 throw std::runtime_error("cal_head_symmetric: empty k-star");
 
@@ -878,7 +878,7 @@ void diele_func::cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
 {
     const bool can_sym =
         use_symmetry && symmetry_context_ != nullptr &&
-        librpa_int::can_restore_input_symmetry_kstar_meanfield(
+        librpa_int::can_restore_symmetry_kstar_meanfield(
             *symmetry_context_, meanfield_df, kfrac_band, atom_nw, coord_frac);
 
     if (can_sym)
@@ -1025,7 +1025,7 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
     const auto &ctx = *symmetry_context_;
     const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
     const auto member_targets =
-        librpa_int::build_input_symmetry_kstar_member_kfrac_targets(ctx, pbc_);
+        librpa_int::build_symmetry_kstar_member_kfrac_targets(ctx, pbc_);
 
     const int n_kpoints_ibz = nk;
     const int n_spinor = meanfield_df.get_n_spinor();
@@ -1037,7 +1037,7 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
     for (const int ik_ibz : kpoints_local)
     {
         const auto &k_ibz = kfrac_band[ik_ibz];
-        const auto &star = librpa_int::find_input_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
+        const auto &star = librpa_int::find_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
         if (star.members.empty()) throw std::runtime_error("cal_wing_symmetric: empty k-star");
 
         for (std::size_t imember = 0; imember != star.members.size(); ++imember)
@@ -1066,7 +1066,7 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
             }
             if (source_rank)
             {
-                const auto M_full = build_input_symmetry_ao_bloch_rotation_matrix_full(
+                const auto M_full = build_symmetry_ao_bloch_rotation_matrix_full(
                     ctx, member, atom_nw, k_ibz, coord_frac, use_time_reversal, &k_bz);
                 const ComplexMatrix M_full_conj = conj(M_full);
                 for (int ispin = 0; ispin != n_spin; ++ispin)
