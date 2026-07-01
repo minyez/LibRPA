@@ -55,7 +55,6 @@
     </testcase>
 
     <testcase name="LiH, k555 symmetry speed up with non-symmetrized input (aims input)" directory="exx_aims_LiH_ZB_sym_libri">
-      <labels disable="experimental"/>
       <build require_libri="true"/>
       <validate name="EXX potential on k-grid"
                 regex="Band\s+e_exx.*e_exx"
