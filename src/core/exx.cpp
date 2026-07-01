@@ -1503,12 +1503,14 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
 
                         // collect to master
                         global::profiler.start("build_real_space_exx_8", "Collect Eexx to root process");
-                        global::ofs_myid << "before pgemr2d_f" << std::endl;
+                        if (global::should_output(LIBRPA_VERBOSE_DEBUG))
+                            global::ofs_myid << "before pgemr2d_f" << std::endl;
                         ScalapackConnector::pgemr2d_f(n_bands, n_bands,
                                                     Hexx_nband_nband.ptr(), 1, 1, desc_nband_nband.desc,
                                                     Hexx_nband_nband_fb.ptr(), 1, 1, desc_nband_nband_fb.desc,
                                                     desc_nband_nband_fb.ictxt());
-                        global::ofs_myid << "after pgemr2d_f" << std::endl;
+                        if (global::should_output(LIBRPA_VERBOSE_DEBUG))
+                            global::ofs_myid << "after pgemr2d_f" << std::endl;
                         if (this->exx_KS.count(isp) == 0 || this->exx_KS.at(isp).count(ik) == 0)
                         {
                             this->exx_KS[isp][ik] = Hexx_nband_nband_fb.copy();
@@ -1524,7 +1526,8 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                             for (int ib = 0; ib != n_bands; ib++)
                                 this->Eexx[isp][ik][ib] += Hexx_nband_nband_fb(ib, ib).real();
                         }
-                        global::ofs_myid << "after Hexx_nband_nband_fb assign" << std::endl;
+                        if (global::should_output(LIBRPA_VERBOSE_DEBUG))
+                            global::ofs_myid << "after Hexx_nband_nband_fb assign" << std::endl;
                         global::profiler.stop("build_real_space_exx_8");
                     }
                 }
