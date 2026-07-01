@@ -504,7 +504,7 @@ static void test_lih_rocksalt_kstars_match_abacus()
     }
 }
 
-static void assert_lih_rspace_sector_matches_abacus(
+static void assert_lih_rspace_sector_uses_input_fractional_representatives(
     const int n,
     const std::array<std::size_t, 4>& expected_pair_counts,
     const std::size_t expected_total_count)
@@ -527,11 +527,11 @@ static void assert_lih_rspace_sector_matches_abacus(
     assert(count_rspace_sector_entries(sector) == expected_total_count);
 }
 
-static void test_lih_rocksalt_rspace_irreducible_sectors_match_abacus()
+static void test_lih_rocksalt_rspace_irreducible_sectors_use_input_fractional_representatives()
 {
-    assert_lih_rspace_sector_matches_abacus(4, {{15, 13, 19, 15}}, 62);
-    assert_lih_rspace_sector_matches_abacus(5, {{22, 26, 26, 22}}, 96);
-    assert_lih_rspace_sector_matches_abacus(6, {{37, 34, 46, 37}}, 154);
+    assert_lih_rspace_sector_uses_input_fractional_representatives(4, {{15, 16, 13, 15}}, 59);
+    assert_lih_rspace_sector_uses_input_fractional_representatives(5, {{22, 22, 22, 22}}, 88);
+    assert_lih_rspace_sector_uses_input_fractional_representatives(6, {{37, 39, 34, 37}}, 147);
 }
 
 static void test_get_space_group_atom_mapping_mgo()
@@ -579,6 +579,20 @@ static void test_get_space_group_atom_mapping_mgo()
     }
 }
 
+static void test_return_lattice_preserves_input_fractional_representative()
+{
+    const std::map<size_t, Vector3_Order<double>> coord_frac{{0, {0.0, 0.0, 0.0}},
+                                                             {1, {-0.25, -0.25, -0.25}}};
+    const std::map<size_t, int> atom_to_type{{0, 0}, {1, 1}};
+    SpaceGroupSymOp op;
+    op.rotation = {0, 0, -1, 1, 0, -1, 0, 1, -1};
+    op.use_row_convention = true;
+
+    const auto map = get_space_group_atom_mapping(op, coord_frac, atom_to_type);
+    assert(map.atom_map[1] == 1);
+    assert(map.return_lattice[1] == Vector3_Order<int>(0, 0, 1));
+}
+
 int main()
 {
     test_rotation();
@@ -590,7 +604,8 @@ int main()
     test_kpoint_rotation_and_target_fold();
     test_kpoint_stars_from_full_grid();
     test_lih_rocksalt_kstars_match_abacus();
-    test_lih_rocksalt_rspace_irreducible_sectors_match_abacus();
+    test_lih_rocksalt_rspace_irreducible_sectors_use_input_fractional_representatives();
     test_get_space_group_atom_mapping_mgo();
+    test_return_lattice_preserves_input_fractional_representative();
     return 0;
 }

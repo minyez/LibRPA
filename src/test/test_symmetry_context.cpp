@@ -138,6 +138,45 @@ void test_kspace_shell_rotations_use_direct_rotation()
                   std::complex<double>(1e-12, 0.0)));
 }
 
+void test_kstar_member_return_lattice_preserves_input_fractional_representative()
+{
+    SymmetryContext ctx;
+    ctx.set_lattice(Matrix3(1.0, 0.0, 0.0,
+                            0.0, 1.0, 0.0,
+                            0.0, 0.0, 1.0),
+                    Matrix3(1.0, 0.0, 0.0,
+                            0.0, 1.0, 0.0,
+                            0.0, 0.0, 1.0));
+    ctx.basis_convention = {-1,
+                            0,
+                            LIBRPA_ANGULAR_ORDER_NATURAL,
+                            LIBRPA_RSH_COEFF_1_M,
+                            LIBRPA_RSH_COEFF_1_M};
+    ctx.atom_to_type[0] = 0;
+    ctx.atom_to_type[1] = 1;
+    ctx.input_coord_frac[0] = {0.0, 0.0, 0.0};
+    ctx.input_coord_frac[1] = {-0.25, -0.25, -0.25};
+
+    SymmetryOperation op;
+    op.rotation = {0, 0, -1,
+                   1, 0, -1,
+                   0, 1, -1};
+    op.translation = {0.0, 0.0, 0.0};
+    op.use_row_convention = true;
+    ctx.rspace_operations.push_back(op);
+
+    SymmetryKStar star;
+    star.star_index = 0;
+    star.k_ibz = {0.0, 0.0, 0.0};
+    star.members.resize(1);
+    star.members[0].isym = 0;
+    star.members[0].k_bz = {0.0, 0.0, 0.0};
+    ctx.kstars.push_back(star);
+
+    ctx.generate_kstar_member_rotations(0);
+    assert(ctx.kspace_return_lattice.at({1, 0}) == Vector3_Order<int>(0, 0, 1));
+}
+
 void test_species_basis_layout_keeps_shell_order()
 {
     SpeciesBasisLayout layout;
@@ -521,6 +560,7 @@ int main()
     test_symmetry_context_saves_fractional_row_operations();
     test_abf_rotation_fallback_uses_basis_convention();
     test_kspace_shell_rotations_use_direct_rotation();
+    test_kstar_member_return_lattice_preserves_input_fractional_representative();
     test_species_basis_layout_keeps_shell_order();
     test_shell_layout_key_matches_basis_dimensions();
     test_context_adds_labeled_atomic_basis_layout();

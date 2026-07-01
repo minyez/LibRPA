@@ -341,10 +341,7 @@ SpaceGroupAtomMapping<AtomIndex> get_space_group_atom_mapping(
         for (AtomIndex atom_from = 0; atom_from < atom_count; ++atom_from)
         {
             const auto& coord_from = coord_frac.at(atom_from);
-            const Vector3_Order<double> coord_from_vec =
-                restrict_fractional_coordinate(coord_from, tol);
-            // Keep the unwrapped rotated position so that the integer return lattice is preserved
-            // exactly as in the ABACUS irreducible-sector construction.
+            const Vector3_Order<double> coord_from_vec(coord_from);
             const Vector3_Order<double> transformed =
                 apply_space_group_symmetry_operation(op, coord_from_vec);
 
@@ -358,8 +355,7 @@ SpaceGroupAtomMapping<AtomIndex> get_space_group_atom_mapping(
                     continue;
                 }
                 const auto& coord_to = coord_frac.at(atom_to);
-                const Vector3_Order<double> coord_to_vec =
-                    restrict_fractional_coordinate(coord_to, tol);
+                const Vector3_Order<double> coord_to_vec(coord_to);
                 const Vector3_Order<double> diff = transformed - coord_to_vec;
                 if (!nearly_integer_vector(diff, tol))
                 {

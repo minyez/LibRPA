@@ -415,8 +415,7 @@ atom_t find_symmetry_atom_target(const SymmetryContext &ctx,
 {
     const auto &op = ctx.rspace_operations.at(static_cast<std::size_t>(spatial_isym));
     const auto atom_type = ctx.atom_to_type.at(atom_from);
-    const auto coord_from =
-        restrict_fractional_coordinate(coord_frac_vector(ctx.input_coord_frac, atom_from));
+    const auto coord_from = coord_frac_vector(ctx.input_coord_frac, atom_from);
     const auto transformed = apply_space_group_symmetry_operation(op, coord_from);
 
     atom_t matched_atom = static_cast<atom_t>(-1);
@@ -426,8 +425,7 @@ atom_t find_symmetry_atom_target(const SymmetryContext &ctx,
         {
             continue;
         }
-        const auto coord_to =
-            restrict_fractional_coordinate(coord_frac_vector(ctx.input_coord_frac, atom_to));
+        const auto coord_to = coord_frac_vector(ctx.input_coord_frac, atom_to);
         const auto diff = transformed - coord_to;
         if (!nearly_integer_vector(diff, 1e-5))
         {
@@ -1558,10 +1556,8 @@ Vector3_Order<int> build_symmetry_kspace_return_lattice(
     }
 
     const auto& op = ctx.rspace_operations[static_cast<std::size_t>(spatial_isym)];
-    const Vector3_Order<double> coord_from =
-        restrict_fractional_coordinate(coord_from_iter->second, kSymmetryCoordTol);
-    const Vector3_Order<double> coord_to =
-        restrict_fractional_coordinate(coord_to_iter->second, kSymmetryCoordTol);
+    const Vector3_Order<double> coord_from{coord_from_iter->second};
+    const Vector3_Order<double> coord_to{coord_to_iter->second};
     const Vector3_Order<double> transformed =
         apply_space_group_symmetry_operation(op, coord_from);
     const Vector3_Order<double> return_lattice = transformed - coord_to;
@@ -1675,8 +1671,7 @@ std::complex<double> build_symmetry_reciprocal_gauge_phase(
         throw std::runtime_error("Missing fractional coordinate for reciprocal-gauge phase");
     }
 
-    const Vector3_Order<double> tau =
-        restrict_fractional_coordinate(coord_iter->second, kSymmetryCoordTol);
+    const Vector3_Order<double> tau{coord_iter->second};
     const double phase_arg =
         TWO_PI * (static_cast<double>(k_shift.x) * tau.x
                   + static_cast<double>(k_shift.y) * tau.y

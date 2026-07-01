@@ -255,8 +255,8 @@ Vector3_Order<int> headwing_kspace_return_lattice(
     if (spatial_isym < 0 || spatial_isym >= static_cast<int>(ctx.rspace_operations.size()))
         throw std::runtime_error("headwing AO rotation uses an invalid symmetry index");
 
-    const auto coord_from = restrict_fractional_coordinate(from_iter->second, 1.e-5);
-    const auto coord_to = restrict_fractional_coordinate(to_iter->second, 1.e-5);
+    const Vector3_Order<double> coord_from{from_iter->second};
+    const Vector3_Order<double> coord_to{to_iter->second};
     const auto transformed = apply_space_group_symmetry_operation(
         ctx.rspace_operations[static_cast<std::size_t>(spatial_isym)], coord_from);
     const auto return_lattice = transformed - coord_to;
@@ -283,7 +283,7 @@ std::complex<double> headwing_reciprocal_gauge_phase(
     const auto coord_iter = coord_frac.find(atom);
     if (coord_iter == coord_frac.end())
         throw std::runtime_error("headwing AO rotation missing target-gauge coordinate");
-    const auto tau = restrict_fractional_coordinate(coord_iter->second, 1.e-5);
+    const Vector3_Order<double> tau{coord_iter->second};
     const double phase_arg =
         TWO_PI * (static_cast<double>(k_shift.x) * tau.x
                   + static_cast<double>(k_shift.y) * tau.y

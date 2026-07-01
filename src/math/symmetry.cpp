@@ -35,8 +35,8 @@ bool find_atom_to_target_mapping(const std::vector<Vector3_Order<double>>& atom_
                                  const double tol,
                                  AtomSymMapping& mapping)
 {
-    const auto atom_position = restrict_fractional_coordinate(atom_positions[atom], tol);
-    const auto target_position = restrict_fractional_coordinate(atom_positions[target], tol);
+    const auto atom_position = atom_positions[atom];
+    const auto target_position = atom_positions[target];
 
     for (std::size_t isym = 0; isym < operations.size(); ++isym)
     {
