@@ -13,7 +13,7 @@ intro: |
   - When using the **API**, assign values to the corresponding attributes before calling compute routines.
     API defaults are set by {librpa}`librpa_init_options`, the C++ {librpa}`librpa::Options` constructor, or `opts%init()` in the Fortran API.
   - When using the **driver**, parameters are read from `librpa.in` in the working directory using `key = value` syntax.
-    Unlike the API, the driver requires [`task`](#runtime-parameter-task) to be explicitly specified.
+    Unlike the API, the driver requires [`task`](#task) to be explicitly specified.
 
   ```{note}
   Rows marked `Experimental` expose development, diagnostic, or less-tested code paths.
@@ -48,8 +48,8 @@ blocks:
   - heading: Input Files
     text: |
       These parameters are used to locate dataset files.
-      Filename parameters are interpreted relative to [`input_dir`](#runtime-parameter-input-dir).
-      Prefix parameters match all files in [`input_dir`](#runtime-parameter-input-dir) whose names begin with the given value.
+      Filename parameters are interpreted relative to [`input_dir`](#input-dir).
+      Prefix parameters match all files in [`input_dir`](#input-dir) whose names begin with the given value.
     fields:
       - driver.input_dir
       - driver.fn_stru
@@ -177,13 +177,13 @@ blocks:
 
       | Alias Name | Preferred Name | Notes |
       |------------|----------------|-------|
-      | `debug` | [`output_level`](#runtime-parameter-output-level) | `debug = true` maps to `output_level = debug` |
-      | `use_soc` | [`use_spinor_wfc`](#runtime-parameter-use-spinor-wfc) | Old spelling for selecting spinor-format driver input |
-      | `tfgrid_type` | [`tfgrids_type`](#runtime-parameter-tfgrids-type) | Old spelling |
-      | `gf_R_threshold` | [`gf_threshold`](#runtime-parameter-gf-threshold) | Old spelling |
-      | `output_gw_sigc_ks_if` | [`output_gw_sigc_ks_kf`](#runtime-parameter-output-gw-sigc-ks-kf) | Old spelling |
-      | `output_gw_sigc_mat` | [`output_gw_sigc_ks_mat_kf`](#runtime-parameter-output-gw-sigc-ks-mat-kf) | Old spelling |
-      | `option_output_Wc_Rf_mat` | [`output_wc_rf`](#runtime-parameter-output-wc-rf), [`ifreq_output_wc_start`](#runtime-parameter-ifreq-output-wc-start), [`ifreq_output_wc_end`](#runtime-parameter-ifreq-output-wc-end) | `0` disables output, `1` maps to `[0,1)`, `2` maps to `[0,all)` |
+      | `debug` | [`output_level`](#output-level) | `debug = true` maps to `output_level = debug` |
+      | `use_soc` | [`use_spinor_wfc`](#use-spinor-wfc) | Old spelling for selecting spinor-format driver input |
+      | `tfgrid_type` | [`tfgrids_type`](#tfgrids-type) | Old spelling |
+      | `gf_R_threshold` | [`gf_threshold`](#gf-threshold) | Old spelling |
+      | `output_gw_sigc_ks_if` | [`output_gw_sigc_ks_kf`](#output-gw-sigc-ks-kf) | Old spelling |
+      | `output_gw_sigc_mat` | [`output_gw_sigc_ks_mat_kf`](#output-gw-sigc-ks-mat-kf) | Old spelling |
+      | `option_output_Wc_Rf_mat` | [`output_wc_rf`](#output-wc-rf), [`ifreq_output_wc_start`](#ifreq-output-wc-start), [`ifreq_output_wc_end`](#ifreq-output-wc-end) | `0` disables output, `1` maps to `[0,1)`, `2` maps to `[0,all)` |
 
       `g0w0_band` is accepted as a deprecated alias of `g0w0`.
 

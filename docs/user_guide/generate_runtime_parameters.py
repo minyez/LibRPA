@@ -216,11 +216,15 @@ def status_text(option: OptionDoc) -> str:
 
 
 def option_anchor(name: str) -> str:
-    return "runtime-parameter-" + re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return "runtime-parameter-" + option_short_anchor(name)
+
+
+def option_short_anchor(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
 def option_link(option: OptionDoc) -> str:
-    return f"[`{option.name}`](#{option_anchor(option.name)})"
+    return f"[`{option.name}`](#{option_short_anchor(option.name)})"
 
 
 def source_label(source: str) -> str:
@@ -270,6 +274,7 @@ def render_table(fields: Sequence[str], sources: Dict[str, Dict[str, OptionDoc]]
 def option_detail_lines(source: str, option: OptionDoc, parameter_names: set[str]) -> List[str]:
     lines = [
         f"({option_anchor(option.name)})=",
+        f"({option_short_anchor(option.name)})=",
         "",
         f":::{{dropdown}} ({source_label(source)}) `{option.name}`",
         "",
