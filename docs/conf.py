@@ -99,6 +99,9 @@ html_static_path = ['_static']
 html_css_files = [
     "custom.css",
 ]
+html_js_files = [
+    "open-dropdown.js",
+]
 
 # Configure MathJax
 mathjax3_config = {
