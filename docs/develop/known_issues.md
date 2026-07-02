@@ -18,6 +18,14 @@ To improve convergence, try a different QPE solver or adjust the solver controls
 If `nan` values occur in larger contiguous regions, the GW calculation should be examined more carefully.
 This may indicate that the calculation has become unreliable, for example because the filtering threshold is too large or because the analytic continuation produces multiple nearby solutions.
 
+### FHI-aims inputs for high-symmetry rotated cells
+
+We have encountered a case where FHI-aims input generated from a high-symmetry but rotated primitive cell led to a discrepancy between LibRPA calculations with symmetry enabled and disabled.
+In that case, the underlying FHI-aims eigenvalue output also differed between the standard and rotated cells.
+
+When investigating EXX or GW symmetry discrepancies with FHI-aims input, be careful with high-symmetry rotated cells and compare against LibRPA results obtained without symmetry.
+A relevant issue can be found in [FHI-aims' issue tracker](https://aims-git.rz-berlin.mpg.de/aims/FHIaims/-/work_items/854) (unpublic).
+
 ## Planned Improvements
 
 - [ ] Adapt RPA force work by Mohammad in the [backup branch](https://github.com/Srlive1201/LibRPA/tree/master-backup-240416)
