@@ -46,7 +46,7 @@ LAPACK=$INSTALL_DIR/openblas-0.3.29/lib
 SCALAPACK=$INSTALL_DIR/scalapack-2.2.2/lib
 CEREAL=$INSTALL_DIR/cereal-master/include
 LIBRI=/public/home/hbchen/app/libri/260214/LibRI-master
-LIBCOMM=/public/home/hbchen/app/libcomm/260516/LibComm-fix_status
+# LIBCOMM=/public/home/hbchen/app/libcomm/260516/LibComm-fix_status
 ELPA_DIR=/public/home/hbchen/app/elpa/260611/elpa-2026.02.001_install_hip_rccl
 
 echo "========================="
@@ -81,7 +81,6 @@ cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
         -DCEREAL_INCLUDE_DIR=$CEREAL \
         -DLIBRPA_USE_LIBRI=ON \
         -DLIBRI_INCLUDE_DIR=$LIBRI/include \
-        -DLIBCOMM_INCLUDE_DIR=$LIBCOMM/include \
         -DBUILD_SHARED_LIBS=ON \
         -DLIBRPA_VERBOSE_OUTPUT=ON\
         -DCMAKE_CXX_FLAGS="-g -O2"\
@@ -93,6 +92,7 @@ cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
 
 
         # -DCMAKE_HIP_FLAGS="-g -O2 -fopenmp -fgpu-rdc -Wno-return-type"
+        # -DLIBCOMM_INCLUDE_DIR=$LIBCOMM/include \
 
 
 
