@@ -19,7 +19,9 @@ html: runtime_parameters doxygen doxysphinx sphinx
 sphinx: runtime_parameters
 	@$(SPHINXBUILD) -M html "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS)
 
-runtime_parameters:
+runtime_parameters: user_guide/runtime_parameters.md
+
+user_guide/runtime_parameters.md: user_guide/runtime_parameters.yml
 	@python3 user_guide/generate_runtime_parameters.py
 
 doxygen:

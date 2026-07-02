@@ -4,10 +4,16 @@
 
 ### `nan` in GW output
 
-`nan` values in the `sigc` output indicate that the quasi-particle equation solver was unable to find a stable solution.
+`nan` values in the `sigc` output indicate that the quasi-particle equation (QPE) solver was unable to find a stable solution.
 This issue is occasionally encountered for unoccupied states far above the Fermi level (typically beyond 20 eV).
 
 When such cases occur only sporadically and not at consecutive k-points, they usually have little effect on the visual appearance of a plotted band structure, and may be ignored for plotting purposes.
+To improve convergence, try a different QPE solver or adjust the solver controls; see runtime options
+{ref}`option_qpe_solver <runtime-parameter-option-qpe-solver>`,
+{ref}`qpe_solver_thres <runtime-parameter-qpe-solver-thres>`,
+{ref}`qpe_solver_n_iter_max <runtime-parameter-qpe-solver-n-iter-max>`,
+{ref}`qpe_solver_damp_factor <runtime-parameter-qpe-solver-damp-factor>`, and
+{ref}`use_qpe_adaptive_damp <runtime-parameter-use-qpe-adaptive-damp>`.
 
 If `nan` values occur in larger contiguous regions, the GW calculation should be examined more carefully.
 This may indicate that the calculation has become unreliable, for example because the filtering threshold is too large or because the analytic continuation produces multiple nearby solutions.
