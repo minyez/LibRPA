@@ -3217,15 +3217,16 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     'C', 'N', n_nonsingular, n_nonsingular, n_abf, {-1.0, 0.0},
                     sqrtveig_blacs_ptr, 1, 1, desc_nabf_nabf_opt, coul_chi0_block_ptr,
                      1, 1, desc_nabf_nabf_opt, {0.0, 0.0}, chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
-#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-                if (use_gpu_replace_scalapack)
-                {
-                    DEVICE_CHECK(deviceMemcpyAsync(chi0_block.ptr(), chi0_block_ptr, chi0_block.size() * sizeof(complex<double>), deviceMemcpyDeviceToHost, blacs_h.ddla_handle->stream));
-                    DEVICE_CHECK(deviceStreamSynchronize(blacs_h.ddla_handle->stream));
-                }
-#endif
+
                 if (option_dielect_func == 3)
                 {
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
+                    if (use_gpu_replace_scalapack)
+                    {
+                        DEVICE_CHECK(deviceMemcpyAsync(chi0_block.ptr(), chi0_block_ptr, chi0_block.size() * sizeof(complex<double>), deviceMemcpyDeviceToHost, blacs_h.ddla_handle->stream));
+                        DEVICE_CHECK(deviceStreamSynchronize(blacs_h.ddla_handle->stream));
+                    }
+#endif
                     const int n_nonsingular_int = as_int(n_nonsingular);
                     for (int i = 0; i != n_nonsingular_int; i++)
                     {
@@ -3242,7 +3243,13 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     if (df_headwing == nullptr)
                         throw LIBRPA_RUNTIME_ERROR("Head/wing dielectric function is not initialized");
                     df_headwing->rewrite_eps(chi0_block, ifreq, desc_nabf_nabf_opt);
-
+                    
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
+                if (use_gpu_replace_scalapack)
+                {
+                    DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr, chi0_block.ptr(), chi0_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+                }
+#endif
                     // if (debug)
                     // {
                     //     const int ilo = desc_nabf_nabf_opt.indx_g2l_r(0);
@@ -3259,11 +3266,11 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     {
                         ofs_myid << get_timestamp() << " Perform the head element overwrite" << endl;
                         const std::complex<double> head_correction = epsmac_LF_imagfreq[ifreq] - 1.0;
-// #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-//                     if(use_gpu_replace_scalapack){
-//                         DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr + ilo + jlo * desc_nabf_nabf_opt.lld(), &head_correction, sizeof(std::complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
-//                     }else
-// #endif
+#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
+                    if(use_gpu_replace_scalapack){
+                        DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr + ilo + jlo * desc_nabf_nabf_opt.lld(), &head_correction, sizeof(std::complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+                    }else
+#endif
                         chi0_block(ilo, jlo) = head_correction;
                     }
                 }
@@ -3273,7 +3280,6 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 if (use_gpu_replace_scalapack)
                 {
                     coul_eigen_block_ptr = coul_block_ptr; // reuse device buffer, sqrtveig no longer needed
-                    DEVICE_CHECK(deviceMemcpyAsync(chi0_block_ptr, chi0_block.ptr(), chi0_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
                     DEVICE_CHECK(deviceMemcpyAsync(coul_eigen_block_ptr, coul_eigen_block.ptr(), coul_eigen_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
                 }
 #endif
