@@ -8,6 +8,7 @@ from collections import Counter
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import re
 import shutil
 import struct
 import sys
@@ -18,6 +19,12 @@ from typing import Iterator, List, Optional, Sequence, Tuple
 CS_V1_MARKER = -10267453
 SYMMETRY_CONVENTIONS = {"row", "col"}
 BASIS_CONVENTIONS = {"aims", "abacus", "fallback"}
+L_SYMBOLS = {symbol: l for l, symbol in enumerate("spdfghiklmno")}
+
+ABACUS_ATOM_TYPE_RE = re.compile(r"^\s*READING ATOM TYPE\s+(\d+)\s*$")
+ABACUS_ATOM_LABEL_RE = re.compile(r"Atom label\s*=\s*(\S+)")
+ABACUS_ZETA_RE = re.compile(r"L\s*=\s*(\d+)\s*,\s*number of zeta\s*=\s*(\d+)")
+ABACUS_TYPE_DONE_RE = re.compile(r"Number of atoms for this type\s*=")
 
 
 class ConversionError(RuntimeError):
@@ -440,7 +447,11 @@ def infer_basis_from_cs(input_dir: Path, prefix: str, n_atoms: int) -> Tuple[Lis
     return [wfc[i] for i in range(n_atoms)], [aux[i] for i in range(n_atoms)]
 
 
-def basis_text(atom_types: Sequence[int], atom_sizes: Sequence[int], convention: str) -> str:
+def shell_basis_size(shells: Sequence[int]) -> int:
+    return sum(2 * l + 1 for l in shells)
+
+
+def type_basis_sizes(atom_types: Sequence[int], atom_sizes: Sequence[int]) -> List[int]:
     ntypes = max(atom_types)
     type_sizes = [0] * ntypes
     for atom_type, size in zip(atom_types, atom_sizes):
@@ -448,11 +459,139 @@ def basis_text(atom_types: Sequence[int], atom_sizes: Sequence[int], convention:
         if old not in (0, size):
             raise ConversionError(f"basis size differs between atoms of type {atom_type}")
         type_sizes[atom_type - 1] = size
+    return type_sizes
 
+
+def basis_text(
+    atom_types: Sequence[int],
+    atom_sizes: Sequence[int],
+    convention: str,
+    type_shells: Optional[dict[int, List[int]]] = None,
+) -> str:
+    type_sizes = type_basis_sizes(atom_types, atom_sizes)
+    ntypes = len(type_sizes)
     lines = [f"{ntypes:10d} {sum(atom_sizes):10d}    {convention}\n"]
     for atom_type, size in enumerate(type_sizes, 1):
         lines.append(f"{atom_type:10d} {size:10d}\n")
+    if type_shells is not None:
+        for atom_type, size in enumerate(type_sizes, 1):
+            shells = type_shells[atom_type]
+            if shell_basis_size(shells) != size:
+                raise ConversionError(f"shell layout size differs for atom type {atom_type}")
+            lines.append(f"{atom_type:10d} {len(shells):10d}\n")
+            lines.extend(f"{l:d}\n" for l in shells)
     return "".join(lines)
+
+
+def put_shells(
+    shells_by_type: dict[int, List[int]],
+    atom_type: int,
+    shells: List[int],
+    path: Path,
+    label: str,
+) -> None:
+    old = shells_by_type.get(atom_type)
+    if old is not None and old != shells:
+        raise ConversionError(f"{path}: inconsistent {label} shell layout for atom type {atom_type}")
+    shells_by_type[atom_type] = shells
+
+
+def parse_abacus_aux_shell_line(line: str) -> Optional[Tuple[str, List[int]]]:
+    fields = line.split()
+    if len(fields) < 3 or (len(fields) - 1) % 2 != 0:
+        return None
+    shells: List[int] = []
+    for count_token, symbol in zip(fields[1::2], fields[2::2]):
+        if not count_token.isdigit():
+            return None
+        l = L_SYMBOLS.get(symbol.lower())
+        if l is None:
+            return None
+        shells.extend([l] * int(count_token))
+    return fields[0], shells
+
+
+def parse_abacus_basis_log(path: Path) -> Tuple[dict[int, List[int]], dict[int, List[int]]]:
+    wfc: dict[int, List[int]] = {}
+    aux: dict[int, List[int]] = {}
+    labels: dict[int, str] = {}
+    current_type: Optional[int] = None
+    current_shells: List[int] = []
+    in_aux = False
+
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = ABACUS_ATOM_TYPE_RE.match(line)
+        if match:
+            current_type = parse_int(match.group(1), "ABACUS atom type")
+            current_shells = []
+            in_aux = False
+            continue
+        if current_type is not None:
+            match = ABACUS_ATOM_LABEL_RE.search(line)
+            if match:
+                labels[current_type] = match.group(1)
+                continue
+            match = ABACUS_ZETA_RE.search(line)
+            if match:
+                l = parse_int(match.group(1), "ABACUS angular momentum")
+                nzeta = parse_int(match.group(2), "ABACUS zeta count")
+                current_shells.extend([l] * nzeta)
+                continue
+            if ABACUS_TYPE_DONE_RE.search(line):
+                put_shells(wfc, current_type, current_shells, path, "NAO")
+                current_type = None
+                current_shells = []
+                continue
+
+        if "Auxiliary basis functions" in line:
+            in_aux = True
+            continue
+        if in_aux:
+            parsed = parse_abacus_aux_shell_line(line)
+            if parsed is None:
+                if line.strip():
+                    in_aux = False
+                continue
+            label, shells = parsed
+            matches = [atom_type for atom_type, atom_label in labels.items() if atom_label == label]
+            if len(matches) == 1:
+                put_shells(aux, matches[0], shells, path, "ABF")
+    return wfc, aux
+
+
+def find_abacus_basis_log(input_dir: Path) -> Optional[Path]:
+    out_dir = input_dir / "OUT.ABACUS"
+    log_path = out_dir / "running_scf.log"
+    return log_path if out_dir.exists() and log_path.exists() else None
+
+
+def complete_shells(
+    shells_by_type: dict[int, List[int]],
+    type_sizes: Sequence[int],
+    path: Path,
+    label: str,
+) -> Optional[dict[int, List[int]]]:
+    if not shells_by_type or any(
+        atom_type not in shells_by_type for atom_type in range(1, len(type_sizes) + 1)
+    ):
+        return None
+    for atom_type, size in enumerate(type_sizes, 1):
+        shell_size = shell_basis_size(shells_by_type[atom_type])
+        if shell_size != size:
+            raise ConversionError(
+                f"{path}: {label} shell size {shell_size} for atom type {atom_type} != inferred basis size {size}"
+            )
+    return shells_by_type
+
+
+def atom_sizes_from_type_shells(
+    atom_types: Sequence[int],
+    type_shells: dict[int, List[int]],
+) -> List[int]:
+    ntypes = max(atom_types)
+    if any(atom_type not in type_shells for atom_type in range(1, ntypes + 1)):
+        raise ConversionError("ABACUS log does not contain all atom type shell layouts")
+    return [shell_basis_size(type_shells[atom_type]) for atom_type in atom_types]
 
 
 def maybe_write_basis_files(args: argparse.Namespace, input_dir: Path, stru: Stru) -> List[str]:
@@ -464,13 +603,33 @@ def maybe_write_basis_files(args: argparse.Namespace, input_dir: Path, stru: Str
     if wfc_path.exists() and aux_path.exists():
         return [f"kept existing {wfc_path.name} and {aux_path.name}"]
 
-    wfc, aux = infer_basis_from_cs(input_dir, args.cs_prefix, len(stru.atom_types))
+    log_path = find_abacus_basis_log(input_dir)
+    log_wfc_shells: dict[int, List[int]] = {}
+    log_aux_shells: dict[int, List[int]] = {}
+    if log_path is not None:
+        log_wfc_shells, log_aux_shells = parse_abacus_basis_log(log_path)
+
+    try:
+        wfc, aux = infer_basis_from_cs(input_dir, args.cs_prefix, len(stru.atom_types))
+    except ConversionError:
+        if not (log_wfc_shells and log_aux_shells):
+            raise
+        wfc = atom_sizes_from_type_shells(stru.atom_types, log_wfc_shells)
+        aux = atom_sizes_from_type_shells(stru.atom_types, log_aux_shells)
+
+    wfc_type_sizes = type_basis_sizes(stru.atom_types, wfc)
+    aux_type_sizes = type_basis_sizes(stru.atom_types, aux)
+    wfc_shells = complete_shells(log_wfc_shells, wfc_type_sizes, log_path, "NAO") if log_path else None
+    aux_shells = complete_shells(log_aux_shells, aux_type_sizes, log_path, "ABF") if log_path else None
+    convention = "abacus" if args.basis_convention == "fallback" and (wfc_shells or aux_shells) else args.basis_convention
+
     changed = []
-    if write_if_changed(wfc_path, basis_text(stru.atom_types, wfc, args.basis_convention)):
+    if write_if_changed(wfc_path, basis_text(stru.atom_types, wfc, convention, wfc_shells)):
         changed.append(wfc_path.name)
-    if write_if_changed(aux_path, basis_text(stru.atom_types, aux, args.basis_convention)):
+    if write_if_changed(aux_path, basis_text(stru.atom_types, aux, convention, aux_shells)):
         changed.append(aux_path.name)
-    return [f"wrote {', '.join(changed)}"] if changed else ["basis files already current"]
+    suffix = " with ABACUS shell metadata" if wfc_shells or aux_shells else ""
+    return [f"wrote {', '.join(changed)}{suffix}"] if changed else ["basis files already current"]
 
 
 def convert(args: argparse.Namespace) -> List[str]:
@@ -532,6 +691,26 @@ def self_test() -> None:
             "2 2 0 0 0 4 4 5\n" + " ".join(["0"] * 80) + "\n",
             encoding="utf-8",
         )
+        (root / "OUT.ABACUS").mkdir()
+        (root / "OUT.ABACUS" / "running_scf.log").write_text(
+            """
+ READING ATOM TYPE 1
+                               Atom label = H
+                      L=0, number of zeta = 2
+            Number of atoms for this type = 1
+
+ READING ATOM TYPE 2
+                               Atom label = He
+                      L=0, number of zeta = 1
+                      L=1, number of zeta = 1
+            Number of atoms for this type = 1
+
+ Auxiliary basis functions
+                H       3 s
+                He      5 s
+""",
+            encoding="utf-8",
+        )
 
         args = build_parser().parse_args([str(root)])
         actions = convert(args)
@@ -540,8 +719,15 @@ def self_test() -> None:
         assert (root / "stru_out.legacy_backup").exists()
         assert "2 1 1" not in (root / "stru_out").read_text(encoding="utf-8")
         assert len((root / "bz_sampling_out").read_text(encoding="utf-8").splitlines()) == 4
-        assert (root / "basis_wfc_out").read_text(encoding="utf-8").split()[1] == "6"
-        assert (root / "basis_aux_out").read_text(encoding="utf-8").split()[1] == "8"
+        wfc_tokens = (root / "basis_wfc_out").read_text(encoding="utf-8").split()
+        aux_tokens = (root / "basis_aux_out").read_text(encoding="utf-8").split()
+        assert wfc_tokens[1:3] == ["6", "abacus"]
+        assert aux_tokens[1:3] == ["8", "abacus"]
+        assert wfc_tokens[-8:] == ["1", "2", "0", "0", "2", "2", "0", "1"]
+        assert aux_tokens[-12:] == [
+            "1", "3", "0", "0", "0",
+            "2", "5", "0", "0", "0", "0", "0",
+        ]
 
         with (root / "bz_sampling_out").open("a", encoding="utf-8") as handle:
             handle.write("      1       1   1.000000000000E+00\n")
