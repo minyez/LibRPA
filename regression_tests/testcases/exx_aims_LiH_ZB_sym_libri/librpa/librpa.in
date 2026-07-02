@@ -3,5 +3,6 @@ task = exx
 input_dir = ../dataset
 # API runtime
 parallel_routing = libri
-use_kpara_scf_eigvec = t
+# Reference generated with k-para
+use_kpara_scf_eigvec = f
 use_symmetry_exx = t
