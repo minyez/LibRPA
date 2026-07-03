@@ -148,6 +148,8 @@ public:
 
     void redistribute_eigvecs_kpara();
 
+    void invalidate_compute_objects();
+
     /* Disable copy */
     Dataset(const Dataset &) = delete;
     Dataset &operator=(const Dataset &) = delete;

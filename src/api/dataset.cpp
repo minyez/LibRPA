@@ -79,6 +79,16 @@ void Dataset::free()
     scfk_blacs_ctxt.finalize();
 }
 
+void Dataset::invalidate_compute_objects()
+{
+    symmetry_context.clear();
+    // p_headwing.reset();
+    p_exx.reset();
+    p_chi0.reset();
+    p_g0w0.reset();
+    is_band_calc_done = false;
+}
+
 void Dataset::initialize_comm_blacs_coul()
 {
     using std::cout;

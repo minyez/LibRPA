@@ -539,6 +539,7 @@ void librpa_set_basis_convention(LibrpaHandler* h, int bloch_phase, int bloch_ra
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     pds->basis_convention = {bloch_phase, bloch_ratom, order, nega_m, posi_m};
+    pds->invalidate_compute_objects();
 
     pds->comm_h.barrier();
     if (pds->comm_h.is_root())
@@ -595,6 +596,7 @@ void librpa_set_symmetry_operations(LibrpaHandler* h, const int n_symops, const 
         bool use_row_convention = row_conv > 0 ? true : false;
         ops.push_back({array_rotmt, array_trans, use_row_convention});
     }
+    pds->invalidate_compute_objects();
 
     profiler.stop(tname);
 }
@@ -635,6 +637,7 @@ void librpa_set_latvec_and_G(LibrpaHandler* h, const double lat_mat[9], const do
     {
         atoms.set({}, {}, pbc.latvec);
     }
+    pds->invalidate_compute_objects();
     profiler.stop(tname);
 }
 
@@ -699,6 +702,7 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
         pds->comm_h.barrier();
     }
 
+    pds->invalidate_compute_objects();
     profiler.stop(tname);
 }
 
@@ -728,6 +732,7 @@ void librpa_set_kgrids_kvec(LibrpaHandler* h, int nk1, int nk2, int nk3, int nkp
     }
 
     pbc.set_kgrids_kvec(nk1, nk2, nk3, v_kvecs, v_kweights);
+    pds->invalidate_compute_objects();
 
     pds->comm_h.barrier();
     if (pds->comm_h.is_root())
@@ -788,6 +793,7 @@ void librpa_set_kq_mapping(LibrpaHandler* h, int nkpts, const int* map_q_ks)
 
     std::vector<int> map(map_q_ks, map_q_ks + nkpts);
     pbc.set_kq_mapping(map, {});
+    pds->invalidate_compute_objects();
     // ofs_myid << map << std::endl;
     pds->comm_h.barrier();
     if (pds->comm_h.is_root())
