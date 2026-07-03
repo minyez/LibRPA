@@ -11,4 +11,6 @@ namespace librpa_int
 
 #define LIBRPA_RUNTIME_ERROR(msg) std::runtime_error(LIBRPA_ERROR_PREFIX + msg)
 
+#define LIBRPA_INVALID_ARGUMENT(msg) std::invalid_argument(LIBRPA_ERROR_PREFIX + msg)
+
 }
