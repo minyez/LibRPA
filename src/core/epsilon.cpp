@@ -418,15 +418,21 @@ static SymmetryIrreducibleWRPlan build_symmetry_irreducible_wr_plan(
         return plan;
     }
 
-    librpa_int::symmetry_rspace_sector_stars_t sector_stars;
-    librpa_int::build_symmetry_rspace_sector_stars(
-        ctx, pbc.period, Rlist, sector_stars, nullptr);
-
-    for (const auto& pair_star : sector_stars)
+    for (const auto& pair_star : ctx.rspace_sector_stars)
     {
         const auto& ir_pair = pair_star.first;
+        const auto filtered_pair_iter = filtered_sector.find(ir_pair);
+        if (filtered_pair_iter == filtered_sector.end())
+        {
+            continue;
+        }
         for (const auto& R_members : pair_star.second)
         {
+            if (filtered_pair_iter->second.count(
+                    {R_members.first.x, R_members.first.y, R_members.first.z}) == 0)
+            {
+                continue;
+            }
             std::vector<librpa_int::SymmetryRSpaceRestoreMember> local_members;
             for (const auto& restore_member : R_members.second)
             {
@@ -575,6 +581,7 @@ static bool can_use_symmetry_irreducible_sector_wr_restore(
            && ctx.input_coord_frac.size() == atom_nabf.size()
            && pbc.klist.size() < static_cast<std::size_t>(pbc.get_n_cells_bvk())
            && !ctx.irreducible_sector.empty()
+           && !ctx.rspace_sector_stars.empty()
            && !ctx.rspace_operations.empty();
 }
 

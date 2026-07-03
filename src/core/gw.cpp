@@ -1385,6 +1385,7 @@ void G0W0::build_spacetime(
         && symmetry_species_layouts_match_atom_counts(
             wfc_layouts, symmetry_ctx.atom_to_type, build_atom_nw_map(atbasis_wfc))
         && !symmetry_ctx.irreducible_sector.empty()
+        && !symmetry_ctx.rspace_sector_stars.empty()
         && !symmetry_ctx.rspace_operations.empty()
         && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(natom)
         && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(natom)
@@ -1395,11 +1396,9 @@ void G0W0::build_spacetime(
                   symmetry_ctx.irreducible_sector, this->pbc.period_array)
             : std::map<std::pair<int, int>, std::set<std::array<int, 3>>>{};
     const bool restore_input_sigc_output = use_input_sigc_symmetry;
-    symmetry_rspace_sector_stars_t symmetry_sector_stars;
+    const auto& symmetry_sector_stars = symmetry_ctx.rspace_sector_stars;
     if (use_input_sigc_symmetry)
     {
-        build_symmetry_rspace_sector_stars(
-            symmetry_ctx, this->pbc.period, pbc.Rlist, symmetry_sector_stars, nullptr);
         gw_libri.set_symmetry(false, {});
         gw_libri_cplx.set_symmetry(false, {});
         if (use_complex_tensor)

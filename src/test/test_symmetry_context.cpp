@@ -209,7 +209,10 @@ void test_periodic_mappings_store_full_kpoint_members()
     pbc.set_irreducible_kgrids_kvec(3, 1, 1, kvecs_ibz, full_kstars);
 
     SymmetryContext ctx;
-    ctx.set_crystal_structure(pbc.latvec, pbc.G, {}, {});
+    ctx.set_crystal_structure(pbc.latvec,
+                              pbc.G,
+                              {{0, 0}},
+                              {{0, {0.0, 0.0, 0.0}}});
     ctx.set_rspace_operations({SpaceGroupSymOp::IDENTITY});
     ctx.set_available();
     ctx.build_periodic_mappings(pbc, pbc.Rlist);
@@ -220,6 +223,51 @@ void test_periodic_mappings_store_full_kpoint_members()
     assert(ctx.full_kpoint_members[0].ik_ibz == 0);
     assert(ctx.full_kpoint_members[1].ik_ibz == 1);
     assert(ctx.full_kpoint_members[2].ik_ibz == 1);
+    std::size_t restored_rspace_members = 0;
+    for (const auto& pair_stars : ctx.rspace_sector_stars)
+    {
+        for (const auto& R_star : pair_stars.second)
+        {
+            restored_rspace_members += R_star.second.size();
+        }
+    }
+    assert(restored_rspace_members == pbc.Rlist.size());
+}
+
+void test_periodic_mappings_accept_kq_reduced_coulomb_grid()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    const std::vector<double> kvecs{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+        2.0 * librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+    };
+    pbc.set_kgrids_kvec(3, 1, 1, kvecs);
+    pbc.set_kq_mapping({0, 1, 1});
+
+    SymmetryContext ctx;
+    ctx.set_crystal_structure(pbc.latvec,
+                              pbc.G,
+                              {{0, 0}},
+                              {{0, {0.0, 0.0, 0.0}}});
+    ctx.set_rspace_operations({SpaceGroupSymOp::IDENTITY});
+    ctx.set_available();
+    ctx.build_periodic_mappings(pbc, pbc.Rlist);
+
+    assert(ctx.kstars.size() == 2);
+    assert(ctx.kstar_grid_mapping.size() == 3);
+    assert(ctx.kstar_grid_mapping[0].iq_ibz == 0);
+    assert(ctx.kstar_grid_mapping[1].iq_ibz == 1);
+    assert(ctx.kstar_grid_mapping[2].iq_ibz == 2);
+    assert(ctx.kstar_grid_mapping[0].star_list_index == 0);
+    assert(ctx.kstar_grid_mapping[1].star_list_index == 1);
+    assert(ctx.kstar_grid_mapping[2].star_list_index == 1);
+    assert(ctx.kstar_grid_mapping[0].member_q_bz_keys.size() == 1);
+    assert(ctx.kstar_grid_mapping[1].member_q_bz_keys.size() == 2);
+    assert(ctx.kstar_grid_mapping[2].member_q_bz_keys.size() == 2);
 }
 
 void add_irreducible_sector_entry(symmetry_irreducible_sector_t& sector,
@@ -516,6 +564,7 @@ int main()
     test_species_layouts_match_basis_dimensions();
     test_atomic_basis_builds_symmetry_species_layouts();
     test_periodic_mappings_store_full_kpoint_members();
+    test_periodic_mappings_accept_kq_reduced_coulomb_grid();
     test_mgo_k333_irreducible_sector_matches_single();
     test_mgo_k333_irreducible_sector_matches_both();
     test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry();

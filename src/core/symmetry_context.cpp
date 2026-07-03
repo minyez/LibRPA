@@ -481,6 +481,7 @@ void SymmetryContext::clear()
     lattice_available = false;
     basis_convention = {};
     irreducible_sector.clear();
+    rspace_sector_stars.clear();
     rspace_operations.clear();
     rsh_rotations.clear();
     kstars.clear();
@@ -537,6 +538,7 @@ void SymmetryContext::set_crystal_structure(const Matrix3& latvec,
         input_coord_frac[atom] = coord_frac_array(coord);
     }
     irreducible_sector.clear();
+    rspace_sector_stars.clear();
     kstars.clear();
     kstar_grid_mapping.clear();
     full_kpoint_members.clear();
@@ -549,6 +551,7 @@ void SymmetryContext::build_periodic_mappings(const PeriodicBoundaryData& pbc,
                                               const std::vector<Vector3_Order<int>>& Rlist)
 {
     irreducible_sector.clear();
+    rspace_sector_stars.clear();
     kstars.clear();
     kstar_grid_mapping.clear();
     full_kpoint_members.clear();
@@ -556,6 +559,7 @@ void SymmetryContext::build_periodic_mappings(const PeriodicBoundaryData& pbc,
     kstar_member_fold_G.clear();
 
     generate_irreducible_sector(Rlist);
+    generate_rspace_sector_stars(pbc.period, Rlist);
     generate_kstars(pbc);
     generate_kstar_grid_mapping(pbc);
     generate_full_kpoint_members(pbc.kfrac_list);
@@ -567,6 +571,18 @@ void SymmetryContext::generate_irreducible_sector(const std::vector<Vector3_Orde
     {
         irreducible_sector = build_symmetry_rspace_irreducible_sector(*this, Rlist);
     }
+}
+
+void SymmetryContext::generate_rspace_sector_stars(
+    const Vector3_Order<int>& period,
+    const std::vector<Vector3_Order<int>>& Rlist)
+{
+    rspace_sector_stars.clear();
+    if (irreducible_sector.empty() || rspace_operations.empty() || Rlist.empty())
+    {
+        return;
+    }
+    build_symmetry_rspace_sector_stars(*this, period, Rlist, rspace_sector_stars, nullptr);
 }
 
 void SymmetryContext::generate_kstars(const PeriodicBoundaryData &pbc)
@@ -745,8 +761,8 @@ void SymmetryContext::build_kstar_member_rotations(const int lmax)
 
 bool SymmetryContext::empty() const
 {
-    return irreducible_sector.empty() && rspace_operations.empty() && kstars.empty()
-           && atom_to_type.empty() && rsh_rotations.empty()
+    return irreducible_sector.empty() && rspace_sector_stars.empty()
+           && rspace_operations.empty() && kstars.empty() && atom_to_type.empty() && rsh_rotations.empty()
            && kspace_return_lattice.empty() && kstar_member_fold_G.empty();
 }
 
@@ -982,10 +998,9 @@ void SymmetryContext::generate_kstar_grid_mapping(const PeriodicBoundaryData& pb
         throw LIBRPA_RUNTIME_ERROR(
             "LibRPA k-point metadata is inconsistent: `klist` and `kfrac_list` have different sizes");
     }
-    if (kstars.size() != kfrac_list.size())
+    if (kstars.empty())
     {
-        throw LIBRPA_RUNTIME_ERROR(
-            "k-star metadata does not match the loaded LibRPA IBZ k-point count");
+        return;
     }
     if (!lattice_available)
     {
@@ -1832,7 +1847,7 @@ void build_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
                                         symmetry_rspace_sector_stars_t& sector_stars,
                                         std::ostream* log)
 {
-    if (!ctx.available || ctx.irreducible_sector.empty() || ctx.rspace_operations.empty())
+    if (ctx.irreducible_sector.empty() || ctx.rspace_operations.empty())
     {
         throw LIBRPA_RUNTIME_ERROR("Real-space symmetry metadata is incomplete");
     }

@@ -39,6 +39,7 @@ struct SymmetryContext
     bool lattice_available = false;
     BasisConvention basis_convention;
     symmetry_irreducible_sector_t irreducible_sector;
+    symmetry_rspace_sector_stars_t rspace_sector_stars;
     SpaceGroupSymOps rspace_operations;
     std::vector<std::map<int, ComplexMatrix>> rsh_rotations;
     std::vector<SymmetryKStar> kstars;
@@ -75,6 +76,8 @@ struct SymmetryContext
 
 private:
     void generate_irreducible_sector(const std::vector<Vector3_Order<int>> &Rlist);
+    void generate_rspace_sector_stars(const Vector3_Order<int>& period,
+                                      const std::vector<Vector3_Order<int>>& Rlist);
     void generate_kstars(const PeriodicBoundaryData &pbc);
     void generate_kstar_grid_mapping(const PeriodicBoundaryData &pbc);
     void generate_full_kpoint_members(const std::vector<Vector3_Order<double>>& kfrac_list);
