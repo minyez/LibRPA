@@ -282,6 +282,10 @@ extern std::vector<std::pair<size_t, size_t>> local_atpair;
 extern std::vector<librpa_int::Vector3_Order<double>> ibz_kpoints;
 extern std::vector<librpa_int::Vector3_Order<double>> kfrac_band;
 
+// Store basis convention label
+extern bool is_basis_convention_read;
+extern std::string basis_convention_label;
+
 // Working handle
 extern librpa::Handler h;
 

@@ -135,6 +135,9 @@ std::vector<std::pair<size_t, size_t>> local_atpair;
 std::vector<librpa_int::Vector3_Order<double>> ibz_kpoints;
 std::vector<librpa_int::Vector3_Order<double>> kfrac_band;
 
+bool is_basis_convention_read = false;
+std::string basis_convention_label("unknown");
+
 librpa::Handler h;
 
 librpa::Options opts;

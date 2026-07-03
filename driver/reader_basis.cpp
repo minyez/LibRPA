@@ -62,11 +62,39 @@ std::string normalize_basis_convention(const std::string &convention)
     return normalized;
 }
 
+bool is_unset_basis_convention(const std::string &convention)
+{
+    return convention.empty() || convention == "unset" || convention == "unknown" ||
+           convention == "fallback" || convention == "none";
+}
+
+std::string canonical_basis_convention_label(const std::string &convention)
+{
+    if (is_unset_basis_convention(convention))
+        return "fallback";
+    if (convention == "fhiaims")
+        return "aims";
+    return convention;
+}
+
 void parse_basis_convention(const std::string &convention)
 {
     const auto normalized = normalize_basis_convention(convention);
-    if (normalized.empty() || normalized == "unset" || normalized == "unknown" ||
-        normalized == "fallback" || normalized == "none")
+    const auto label = canonical_basis_convention_label(normalized);
+
+    if (driver::is_basis_convention_read)
+    {
+        if (label != driver::basis_convention_label)
+        {
+            throw std::runtime_error("Inconsistent angular basis convention: " + convention +
+                                     " (previously read " + driver::basis_convention_label + ")");
+        }
+        return;
+    }
+    driver::is_basis_convention_read = true;
+    driver::basis_convention_label = label;
+
+    if (label == "fallback")
         return;
 
     bool known_convention = false;
@@ -74,7 +102,7 @@ void parse_basis_convention(const std::string &convention)
     LibrpaAngularOrder order;
     LibrpaRshCoeff coeff_m_nega, coeff_m_posi;
 
-    if (normalized == "aims" || normalized == "fhiaims")
+    if (label == "aims")
     {
         known_convention = true;
         bloch_phase = -1;
@@ -83,7 +111,7 @@ void parse_basis_convention(const std::string &convention)
         coeff_m_nega = LIBRPA_RSH_COEFF_1_M;
         coeff_m_posi = LIBRPA_RSH_COEFF_1_M;
     }
-    if (normalized == "abacus")
+    if (label == "abacus")
     {
         known_convention = true;
         bloch_phase = -1;
@@ -92,7 +120,7 @@ void parse_basis_convention(const std::string &convention)
         coeff_m_nega = LIBRPA_RSH_COEFF_M_1;
         coeff_m_posi = LIBRPA_RSH_COEFF_1_M;
     }
-    if (normalized == "openmx")
+    if (label == "openmx")
     {
         known_convention = true;
         bloch_phase = 1;
@@ -101,7 +129,7 @@ void parse_basis_convention(const std::string &convention)
         coeff_m_nega = LIBRPA_RSH_COEFF_1_M;
         coeff_m_posi = LIBRPA_RSH_COEFF_M_1;
     }
-    if (normalized == "pyscf")
+    if (label == "pyscf")
     {
         known_convention = true;
         bloch_phase = 1;
