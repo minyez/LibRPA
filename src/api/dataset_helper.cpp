@@ -49,13 +49,8 @@ void initialize_symmetry_context(Dataset &ds, const bool build_shell_rotations)
     auto &ctx = ds.symmetry_context;
     ctx.clear();
     ctx.set_rspace_operations(spg_symops);
-    if (ds.pbc.is_latt_set())
-    {
-        ctx.set_lattice(ds.pbc.latvec, ds.pbc.G);
-    }
-    ctx.set_structure(ds.atoms.types, ds.atoms.coords_frac);
-    ctx.generate_irreducible_sector(ds.pbc.Rlist);
-    ctx.generate_kstars(ds.pbc);
+    ctx.set_crystal_structure(ds.pbc.latvec, ds.pbc.G, ds.atoms.types, ds.atoms.coords_frac);
+    ctx.build_periodic_mappings(ds.pbc, ds.pbc.Rlist);
 
     auto mark_available = [&ctx]() {
         ctx.set_available();
@@ -82,8 +77,8 @@ void initialize_symmetry_context(Dataset &ds, const bool build_shell_rotations)
         throw LIBRPA_RUNTIME_ERROR("Cannot initialize symmetry context without basis convention");
     }
     ds.basis_convention = basis_convention;
-    ctx.generate_shell_rotations(basis_convention, lmax);
-    ctx.generate_kstar_member_rotations(lmax);
+    ctx.build_rsh_rotations(basis_convention, lmax);
+    ctx.build_kstar_member_rotations(lmax);
     mark_available();
 }
 

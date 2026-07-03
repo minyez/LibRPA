@@ -5,6 +5,7 @@
 #include <array>
 #include <cassert>
 #include <complex>
+#include <map>
 #include <vector>
 
 #include "testutils.h"
@@ -30,55 +31,6 @@ void assert_matrix_close(const ComplexMatrix& actual,
                           std::complex<double>(thres, 0.0)));
         }
     }
-}
-
-void test_abf_rotation_fallback_uses_basis_convention()
-{
-    SymmetryContext ctx;
-    ctx.basis_convention = {-1,
-                            0,
-                            LIBRPA_ANGULAR_ORDER_NATURAL,
-                            LIBRPA_RSH_COEFF_1_M,
-                            LIBRPA_RSH_COEFF_1_M};
-    SpeciesBasisLayout layout;
-    layout.label = "X";
-    layout.set({1});
-    ctx.lattice_vectors = Matrix3(1.0, 0.0, 0.0,
-                                  0.0, 1.0, 0.0,
-                                  0.0, 0.0, 1.0);
-    ctx.lattice_available = true;
-
-    const Matrix3 cartesian_rotation(0.0, -1.0, 0.0,
-                                     1.0, 0.0, 0.0,
-                                     0.0, 0.0, 1.0);
-    const Matrix3 direct_rotation = cartesian_rotation.Transpose();
-
-    const auto fallback_rotation =
-        build_symmetry_rotation_matrix(ctx, layout, {}, direct_rotation);
-    const auto expected_rotation =
-        real_spherical_harmonic_rotation_matrix(cartesian_rotation,
-                                                1,
-                                                ctx.basis_convention.order,
-                                                ctx.basis_convention.coeff_m_negative,
-                                                ctx.basis_convention.coeff_m_positive);
-    assert_matrix_close(fallback_rotation, expected_rotation);
-
-    const Matrix3 skew_lattice(2.0, 0.0, 0.0,
-                               0.5, 1.5, 0.0,
-                               0.2, 0.3, 2.0);
-    const Matrix3 fractional_rotation =
-        skew_lattice * cartesian_rotation.Transpose() * skew_lattice.Inverse();
-    ctx.lattice_vectors = skew_lattice;
-
-    const auto skew_fallback_rotation =
-        build_symmetry_rotation_matrix(ctx, layout, {}, fractional_rotation);
-    const auto skew_expected_rotation =
-        real_spherical_harmonic_rotation_matrix(cartesian_rotation,
-                                                1,
-                                                ctx.basis_convention.order,
-                                                ctx.basis_convention.coeff_m_negative,
-                                                ctx.basis_convention.coeff_m_positive);
-    assert_matrix_close(skew_fallback_rotation, skew_expected_rotation);
 }
 
 void test_kspace_shell_rotations_use_direct_rotation()
@@ -140,21 +92,19 @@ void test_kspace_shell_rotations_use_direct_rotation()
 void test_kstar_member_return_lattice_preserves_input_fractional_representative()
 {
     SymmetryContext ctx;
-    ctx.set_lattice(Matrix3(1.0, 0.0, 0.0,
-                            0.0, 1.0, 0.0,
-                            0.0, 0.0, 1.0),
-                    Matrix3(1.0, 0.0, 0.0,
-                            0.0, 1.0, 0.0,
-                            0.0, 0.0, 1.0));
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    ctx.set_crystal_structure(pbc.latvec,
+                              pbc.G,
+                              {{0, 0}, {1, 1}},
+                              {{0, {0.0, 0.0, 0.0}}, {1, {-0.25, -0.25, -0.25}}});
     ctx.basis_convention = {-1,
                             0,
                             LIBRPA_ANGULAR_ORDER_NATURAL,
                             LIBRPA_RSH_COEFF_1_M,
                             LIBRPA_RSH_COEFF_1_M};
-    ctx.atom_to_type[0] = 0;
-    ctx.atom_to_type[1] = 1;
-    ctx.input_coord_frac[0] = {0.0, 0.0, 0.0};
-    ctx.input_coord_frac[1] = {-0.25, -0.25, -0.25};
 
     SymmetryOperation op;
     op.rotation = {0, 0, -1,
@@ -172,7 +122,7 @@ void test_kstar_member_return_lattice_preserves_input_fractional_representative(
     star.members[0].k_bz = {0.0, 0.0, 0.0};
     ctx.kstars.push_back(star);
 
-    ctx.generate_kstar_member_rotations(0);
+    ctx.build_kstar_member_rotations(0);
     assert(ctx.kspace_return_lattice.at({1, 0}) == Vector3_Order<int>(0, 0, 1));
 }
 
@@ -401,20 +351,23 @@ void add_mgo_fractional_symmetry_operations(SymmetryContext& ctx)
     assert(ctx.rspace_operations.size() == 48);
 }
 
-void set_mgo_primitive_lattice(SymmetryContext& ctx)
+void set_mgo_primitive_structure(SymmetryContext& ctx,
+                                 const std::map<atom_t, int>& atom_to_type,
+                                 const std::map<atom_t, coord_t>& coord_frac)
 {
-    const Matrix3 lattice(0.0, 0.5, 0.5,
-                          0.5, 0.0, 0.5,
-                          0.5, 0.5, 0.0);
-    ctx.set_lattice(lattice, lattice.Inverse().Transpose());
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({0.0, 0.5, 0.5,
+                    0.5, 0.0, 0.5,
+                    0.5, 0.5, 0.0});
+    ctx.set_crystal_structure(pbc.latvec, pbc.G, atom_to_type, coord_frac);
 }
 
 void test_mgo_k333_irreducible_sector_matches_single()
 {
     SymmetryContext ctx;
-    ctx.atom_to_type = {{0, 0},};
-    ctx.input_coord_frac = {{0, {0.0, 0.0, 0.0}},};
-    set_mgo_primitive_lattice(ctx);
+    set_mgo_primitive_structure(ctx,
+                                {{0, 0}},
+                                {{0, {0.0, 0.0, 0.0}}});
     add_mgo_fractional_symmetry_operations(ctx);
 
     const Vector3_Order<int> period{3, 3, 3};
@@ -448,9 +401,9 @@ void test_mgo_k333_irreducible_sector_matches_single()
 void test_mgo_k333_irreducible_sector_matches_both()
 {
     SymmetryContext ctx;
-    ctx.atom_to_type = {{0, 0}, {1, 1}};
-    ctx.input_coord_frac = {{0, {0.0, 0.0, 0.0}}, {1, {0.5, 0.5, 0.5}}};
-    set_mgo_primitive_lattice(ctx);
+    set_mgo_primitive_structure(ctx,
+                                {{0, 0}, {1, 1}},
+                                {{0, {0.0, 0.0, 0.0}}, {1, {0.5, 0.5, 0.5}}});
     add_mgo_fractional_symmetry_operations(ctx);
 
     const Vector3_Order<int> period{3, 3, 3};
@@ -546,7 +499,6 @@ void test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry()
 int main()
 {
     test_symmetry_context_saves_fractional_row_operations();
-    test_abf_rotation_fallback_uses_basis_convention();
     test_kspace_shell_rotations_use_direct_rotation();
     test_kstar_member_return_lattice_preserves_input_fractional_representative();
     test_species_basis_layout_keeps_shell_order();

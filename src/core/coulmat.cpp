@@ -210,25 +210,6 @@ librpa_int::symmetry_atom_block_matrix_map_t gather_symmetry_ibz_blocks_collecti
     return build_symmetry_blocks_from_dense_matrix(dense_global, atom_nabf);
 }
 
-const librpa_int::SymmetryKStarMember& find_matching_abf_kstar_member(
-    const librpa_int::SymmetryKStar& abf_star,
-    const librpa_int::SymmetryKStarMember& ao_member)
-{
-    const auto matched = std::find_if(abf_star.members.begin(), abf_star.members.end(),
-                                      [&ao_member](const librpa_int::SymmetryKStarMember& candidate) {
-                                          return candidate.spatial_isym == ao_member.spatial_isym
-                                                 && candidate.time_reversal == ao_member.time_reversal
-                                                 && are_equivalent_symmetry_qpoints(candidate.k_bz,
-                                                                                  ao_member.k_bz);
-                                      });
-    if (matched == abf_star.members.end())
-    {
-        throw std::runtime_error(
-            "Failed to match an ABF k-star member with the AO-side symmetry member");
-    }
-    return *matched;
-}
-
 librpa_int::symmetry_irreducible_sector_t filter_symmetry_irreducible_sector_by_rlist(
     const librpa_int::symmetry_irreducible_sector_t& irreducible_sector,
     const std::vector<Vector3_Order<int>>& Rlist)
@@ -315,16 +296,6 @@ atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
     for (const auto& star_mapping : kstar_grid_mapping)
     {
         const auto& star = ctx.kstars.at(static_cast<std::size_t>(star_mapping.star_list_index));
-        const librpa_int::SymmetryKStar* abf_star = nullptr;
-        if (!ctx.abf_kstars.empty())
-        {
-            if (ctx.abf_kstars.size() != ctx.kstars.size())
-            {
-                throw std::runtime_error(
-                    "ABF k-star count is inconsistent with AO/generated k-stars");
-            }
-            abf_star = &ctx.abf_kstars.at(static_cast<std::size_t>(star_mapping.star_list_index));
-        }
 
         const auto q_ibz_internal = pbc.klist.at(static_cast<std::size_t>(star_mapping.iq_ibz));
         auto blocks_ibz =
@@ -343,8 +314,6 @@ atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
         for (std::size_t imember = 0; imember < star.members.size(); ++imember)
         {
             const auto& member = star.members[imember];
-            const auto& abf_member =
-                (abf_star == nullptr) ? member : find_matching_abf_kstar_member(*abf_star, member);
             const auto q_bz_target_frac_vec =
                 pbc.latvec * star_mapping.member_q_bz_keys[imember];
             const Vector3_Order<double> q_bz_target_frac{
@@ -353,7 +322,7 @@ atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
             try
             {
                 rotated_blocks = librpa_int::rotate_symmetry_kspace_operator_blocks(
-                    ctx, abf_layouts, abf_member, blocks_ibz, atom_nabf, star.k_ibz,
+                    ctx, abf_layouts, member, blocks_ibz, atom_nabf, star.k_ibz,
                     ctx.input_coord_frac, member.time_reversal, &target_atom_pairs,
                     &q_bz_target_frac);
             }

@@ -53,6 +53,10 @@ struct SpaceGroupSymOp
     {
         return is_identity_rotation() && nearly_integer_vector(translation, 1e-8);
     }
+
+    void to_row_convention();
+
+    void to_col_convention();
 };
 
 inline bool operator==(const SpaceGroupSymOp &op1, const SpaceGroupSymOp &op2)
@@ -60,6 +64,20 @@ inline bool operator==(const SpaceGroupSymOp &op1, const SpaceGroupSymOp &op2)
     return (op1.use_row_convention == op2.use_row_convention) &&
            is_same_matrix(op1.rotation, op2.rotation, 1e-5) &&
            (op1.translation == op2.translation);
+}
+
+inline void SpaceGroupSymOp::to_row_convention()
+{
+    if (use_row_convention) return;
+    rotation = rotation.Transpose();
+    use_row_convention = true;
+}
+
+inline void SpaceGroupSymOp::to_col_convention()
+{
+    if (!use_row_convention) return;
+    rotation = rotation.Transpose();
+    use_row_convention = false;
 }
 
 using SpaceGroupSymOps = std::vector<SpaceGroupSymOp>;

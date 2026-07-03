@@ -243,6 +243,10 @@ public:
 bool same_species_basis_layout(const SpeciesBasisLayout &lhs,
                                const SpeciesBasisLayout &rhs);
 
+const SpeciesBasisLayout& get_symmetry_species_layout(
+    const std::vector<SpeciesBasisLayout>& layouts,
+    int atom_type);
+
 SpeciesBasisLayout species_basis_layout_from_atom(const AtomicBasis &basis,
                                                   atom_t atom,
                                                   int atom_type);

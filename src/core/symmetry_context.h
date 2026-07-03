@@ -125,7 +125,6 @@ struct SymmetryContext
     SpaceGroupSymOps rspace_operations;
     std::vector<std::map<int, ComplexMatrix>> rsh_rotations;
     std::vector<SymmetryKStar> kstars;
-    std::vector<SymmetryKStar> abf_kstars;
     std::map<atom_t, int> atom_to_type;
     std::map<atom_t, std::array<double, 3>> input_coord_frac;
     Matrix3 lattice_vectors;
@@ -140,23 +139,27 @@ struct SymmetryContext
     void unset_available();
     void add_rspace_operation(SymmetryOperation operation);
     void set_rspace_operations(std::vector<SymmetryOperation> operations);
-    void set_lattice(const Matrix3& latvec, const Matrix3& G);
-    void set_structure(const std::map<atom_t, int>& types,
-                       const std::map<atom_t, coord_t>& coords_frac);
-    void generate_irreducible_sector(const std::vector<Vector3_Order<int>> &Rlist);
-    void generate_kstars(const PeriodicBoundaryData &pbc);
-    void generate_shell_rotations(const BasisConvention &basis_convention, int lmax);
-    void generate_kstar_member_rotations(int lmax);
+    void set_crystal_structure(const Matrix3& latvec,
+                               const Matrix3& reciprocal,
+                               const std::map<atom_t, int>& atom_types,
+                               const std::map<atom_t, coord_t>& coords_frac);
+    void build_periodic_mappings(const PeriodicBoundaryData& pbc,
+                                 const std::vector<Vector3_Order<int>>& Rlist);
+    void build_rsh_rotations(const BasisConvention &basis_convention, int lmax);
+    void build_kstar_member_rotations(int lmax);
+    ComplexMatrix get_rotation_matrix(const std::vector<SpeciesBasisLayout>& layouts,
+                                      int atom_type,
+                                      int isym) const;
     void print_summary(std::ostream& log) const;
     bool empty() const;
     std::size_t count_irreducible_pairs() const;
     std::size_t count_irreducible_blocks() const;
     std::size_t count_kstar_members() const;
-};
 
-const SpeciesBasisLayout& get_symmetry_species_layout(
-    const std::vector<SpeciesBasisLayout>& layouts,
-    int atom_type);
+private:
+    void generate_irreducible_sector(const std::vector<Vector3_Order<int>> &Rlist);
+    void generate_kstars(const PeriodicBoundaryData &pbc);
+};
 
 bool symmetry_species_layouts_match_atom_counts(
     const std::vector<SpeciesBasisLayout>& layouts,
@@ -207,12 +210,6 @@ ComplexMatrix build_symmetry_rotation_matrix(
     const SpeciesBasisLayout& layout,
     const std::map<int, ComplexMatrix>& shell_rotations);
 
-ComplexMatrix build_symmetry_rotation_matrix(
-    const SymmetryContext& ctx,
-    const SpeciesBasisLayout& layout,
-    const std::map<int, ComplexMatrix>& shell_rotations,
-    const Matrix3& direct_rotation);
-
 const SymmetryKStar& find_symmetry_kstar_for_kpoint(const std::vector<SymmetryKStar>& kstars,
                                                 const Vector3_Order<double>& k_point,
                                                 const std::string& label = "symmetry k-stars");
@@ -261,7 +258,6 @@ symmetry_atom_block_matrix_map_t symmetrize_symmetry_ibz_kspace_operator_blocks(
     const symmetry_atom_block_matrix_map_t& blocks_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
     const std::map<atom_t, std::array<double, 3>>& coord_frac,
-    const SymmetryKStar* abf_star = nullptr,
     const std::set<std::pair<atom_t, atom_t>>* target_atom_pairs = nullptr);
 
 ComplexMatrix rotate_symmetry_kspace_operator_matrix(

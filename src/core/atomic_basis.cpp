@@ -25,6 +25,22 @@ bool same_species_basis_layout(const SpeciesBasisLayout &lhs,
     return !lhs.is_shell_available() || lhs.l_shells == rhs.l_shells;
 }
 
+const SpeciesBasisLayout& get_symmetry_species_layout(
+    const std::vector<SpeciesBasisLayout>& layouts,
+    const int atom_type)
+{
+    if (atom_type < 0 || atom_type >= static_cast<int>(layouts.size()))
+    {
+        throw std::out_of_range("Atom type is out of range in symmetry species layout");
+    }
+    const auto& layout = layouts[static_cast<std::size_t>(atom_type)];
+    if (!layout.is_shell_available())
+    {
+        throw std::runtime_error("Symmetry species layout is missing shell metadata");
+    }
+    return layout;
+}
+
 SpeciesBasisLayout species_basis_layout_from_atom(const AtomicBasis &basis,
                                                   const atom_t atom,
                                                   const int atom_type)
