@@ -7,6 +7,8 @@
 #include <stdexcept>
 #include <tuple>
 
+#include "../utils/error.h"
+
 namespace librpa_int
 {
 
@@ -297,6 +299,20 @@ const SpaceGroupSymOp SpaceGroupSymOp::INVERSE{
 
 const SpaceGroupSymOp SpaceGroupSymOp::C41_Z{
     {0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0}, {0.0, 0.0, 0.0}, true};
+
+int find_identity_symmetry_operation(
+    const SpaceGroupSymOps &operations)
+{
+    for (std::size_t isym = 0; isym != operations.size(); ++isym)
+    {
+        const auto &op = operations.at(isym);
+        if (op.is_identity())
+        {
+            return static_cast<int>(isym);
+        }
+    }
+    throw LIBRPA_RUNTIME_ERROR("Symmetry operations do not contain the identity operation");
+}
 
 std::vector<AtomSymMapping> build_atom_to_inequivalent_symmetry_mapping(
     const std::vector<Vector3_Order<double>>& atom_positions_frac,

@@ -873,8 +873,11 @@ static void build_gf_Rt_libri_serial(
     global::ofs_myid << "map_R_IJs " << map_R_IJs << std::endl;
 
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const auto wfc_layouts = atbasis_wfc.has_l_shells()
+        ? atbasis_wfc.build_species_basis_layouts(symmetry_context.atom_to_type)
+        : std::vector<SpeciesBasisLayout>{};
     const bool can_try_symmetry_kstar_restore =
-        use_symmetry_context && symmetry_context.has_shell_layout("WFC");
+        use_symmetry_context && !wfc_layouts.empty();
     const auto full_grid_kstar_representatives =
         can_try_symmetry_kstar_restore
             ? build_symmetry_full_grid_kstar_representative_indices(
@@ -886,7 +889,7 @@ static void build_gf_Rt_libri_serial(
         can_try_symmetry_kstar_restore
         && !restore_symmetry_kstars_from_full_grid
         && can_restore_symmetry_kstar_meanfield(
-            symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
+            symmetry_context, wfc_layouts, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
     if (restore_symmetry_kstars || restore_symmetry_kstars_from_full_grid)
     {
         auto member_kfrac_targets = restore_symmetry_kstars_from_full_grid
@@ -905,7 +908,7 @@ static void build_gf_Rt_libri_serial(
             constexpr double restore_check_tol = 1e-6;
             const std::vector<Vector3_Order<int>> R_check{Rs_this.front()};
             const auto restored_check = get_symmetry_restored_gf_cplx_imagtimes_Rs(
-                symmetry_context, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, R_check, atom_nw,
+                symmetry_context, wfc_layouts, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, R_check, atom_nw,
                 symmetry_context.input_coord_frac, nbands_G, &member_kfrac_targets,
                 &full_grid_kstar_representatives).at(tau).at(R_check.front());
             const auto direct_check =
@@ -921,7 +924,7 @@ static void build_gf_Rt_libri_serial(
         if (restore_symmetry_kstars || restore_symmetry_kstars_from_full_grid)
         {
             const auto gf_cplx_R = get_symmetry_restored_gf_cplx_imagtimes_Rs(
-                symmetry_context, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, Rs_this, atom_nw,
+                symmetry_context, wfc_layouts, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, Rs_this, atom_nw,
                 symmetry_context.input_coord_frac, nbands_G, &member_kfrac_targets,
                 restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr).at(tau);
 

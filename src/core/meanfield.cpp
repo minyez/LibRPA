@@ -28,12 +28,13 @@ struct SymmetryKStarMeanFieldRestoreEntry
 
 void validate_symmetry_kstar_restore_metadata(
     const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac)
 {
-    if (!ctx.available || !ctx.has_shell_layout("WFC") || ctx.kstars.empty())
+    if (!ctx.available || wfc_layouts.empty() || ctx.kstars.empty())
     {
         throw std::runtime_error("k-star restore requires AO shell layouts in the symmetry context");
     }
@@ -61,7 +62,8 @@ void validate_symmetry_kstar_restore_metadata(
         {
             throw std::runtime_error("k-star restore missing fractional coordinates for an atom");
         }
-        if (ctx.get_shell_layout("WFC", type_iter->second).n_ao != static_cast<int>(atom_entry.second))
+        if (get_symmetry_species_layout(wfc_layouts, type_iter->second).n_ao
+            != static_cast<int>(atom_entry.second))
         {
             throw std::runtime_error("k-star restore AO layout is inconsistent with atom_nw");
         }
@@ -77,12 +79,13 @@ void validate_symmetry_kstar_restore_metadata(
 
 void validate_symmetry_kstar_meanfield_restore(
     const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac)
 {
-    validate_symmetry_kstar_restore_metadata(ctx, mf, kfrac_list, atom_nw, coord_frac);
+    validate_symmetry_kstar_restore_metadata(ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac);
     if (ctx.kstars.size() != kfrac_list.size())
     {
         throw std::runtime_error("k-star restore got inconsistent IBZ k-star counts");
@@ -95,13 +98,14 @@ void validate_symmetry_kstar_meanfield_restore(
 
 void validate_symmetry_full_grid_kstar_meanfield_restore(
     const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const symmetry_kstar_representative_indices_t& representative_k_indices)
 {
-    validate_symmetry_kstar_restore_metadata(ctx, mf, kfrac_list, atom_nw, coord_frac);
+    validate_symmetry_kstar_restore_metadata(ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac);
     if (ctx.kstars.size() >= kfrac_list.size())
     {
         throw std::runtime_error("full-grid k-star restore does not reduce the mean-field k grid");
@@ -173,6 +177,7 @@ double symmetry_kstar_geometric_weight(const SymmetryContext& ctx,
 
 std::vector<SymmetryKStarMeanFieldRestoreEntry> build_symmetry_kstar_restore_entries(
     const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::map<atom_t, size_t>& atom_nw,
@@ -186,7 +191,7 @@ std::vector<SymmetryKStarMeanFieldRestoreEntry> build_symmetry_kstar_restore_ent
     if (restore_from_full_grid)
     {
         validate_symmetry_full_grid_kstar_meanfield_restore(
-            ctx, mf, kfrac_list, atom_nw, coord_frac, *representative_k_indices);
+            ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac, *representative_k_indices);
         const double kpoint_weight = 1.0 / static_cast<double>(ctx.count_kstar_members());
         entries.reserve(ctx.kstars.size());
         for (std::size_t istar = 0; istar != ctx.kstars.size(); ++istar)
@@ -203,7 +208,7 @@ std::vector<SymmetryKStarMeanFieldRestoreEntry> build_symmetry_kstar_restore_ent
         return entries;
     }
 
-    validate_symmetry_kstar_meanfield_restore(ctx, mf, kfrac_list, atom_nw, coord_frac);
+    validate_symmetry_kstar_meanfield_restore(ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac);
     entries.reserve(kfrac_list.size());
     for (int ik_ibz = 0; ik_ibz != mf.get_n_kpoints(); ++ik_ibz)
     {
@@ -266,12 +271,13 @@ ComplexMatrix build_gf_cplx_imagtime_with_prefactor(
 
 bool can_restore_symmetry_kstar_meanfield(
     const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::map<atom_t, size_t>& atom_nw,
     const std::map<atom_t, std::array<double, 3>>& coord_frac)
 {
-    if (!ctx.available || !ctx.has_shell_layout("WFC") || ctx.kstars.empty())
+    if (!ctx.available || wfc_layouts.empty() || ctx.kstars.empty())
     {
         return false;
     }
@@ -287,7 +293,7 @@ bool can_restore_symmetry_kstar_meanfield(
     {
         return false;
     }
-    validate_symmetry_kstar_meanfield_restore(ctx, mf, kfrac_list, atom_nw, coord_frac);
+    validate_symmetry_kstar_meanfield_restore(ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac);
     return true;
 }
 
@@ -323,6 +329,7 @@ symmetry_kstar_member_kfrac_targets_t build_symmetry_kstar_member_kfrac_targets(
 
 ComplexMatrix get_symmetry_restored_dmat_cplx_R(
     const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const int ispin,
     const int ispinor_bra,
@@ -335,7 +342,7 @@ ComplexMatrix get_symmetry_restored_dmat_cplx_R(
     const symmetry_kstar_representative_indices_t* representative_k_indices)
 {
     const auto restore_entries = build_symmetry_kstar_restore_entries(
-        ctx, mf, kfrac_list, atom_nw, coord_frac, representative_k_indices);
+        ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac, representative_k_indices);
     validate_symmetry_kstar_member_kfrac_targets(restore_entries, member_kfrac_targets);
     ComplexMatrix dmat_cplx(mf.get_n_aos(), mf.get_n_aos());
 
@@ -351,7 +358,7 @@ ComplexMatrix get_symmetry_restored_dmat_cplx_R(
             const auto& k_bz_target = get_symmetry_kstar_member_kfrac_target(
                 member, member_kfrac_targets, ientry, imember);
             const auto dmat_member = librpa_int::rotate_symmetry_kspace_matrix(
-                ctx, "WFC", member, dmat_ibz, atom_nw, entry.k_source, coord_frac, member.time_reversal,
+                ctx, wfc_layouts, member, dmat_ibz, atom_nw, entry.k_source, coord_frac, member.time_reversal,
                 &k_bz_target);
             const double angle = -(k_bz_target * R) * TWO_PI;
             const auto kphase = std::complex<double>(std::cos(angle), std::sin(angle));
@@ -365,6 +372,7 @@ ComplexMatrix get_symmetry_restored_dmat_cplx_R(
 std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>>
 get_symmetry_restored_gf_cplx_imagtimes_Rs(
     const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const int ispin,
     const int ispinor_bra,
@@ -379,7 +387,7 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     const symmetry_kstar_representative_indices_t* representative_k_indices)
 {
     const auto restore_entries = build_symmetry_kstar_restore_entries(
-        ctx, mf, kfrac_list, atom_nw, coord_frac, representative_k_indices);
+        ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac, representative_k_indices);
     validate_symmetry_kstar_member_kfrac_targets(restore_entries, member_kfrac_targets);
 
     std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> gf_tau_R;
@@ -420,7 +428,7 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
                 const auto& k_bz_target = get_symmetry_kstar_member_kfrac_target(
                     member, member_kfrac_targets, ientry, imember);
                 const auto gf_member = librpa_int::rotate_symmetry_kspace_matrix(
-                    ctx, "WFC", member, gf_ibz, atom_nw, entry.k_source, coord_frac, member.time_reversal,
+                    ctx, wfc_layouts, member, gf_ibz, atom_nw, entry.k_source, coord_frac, member.time_reversal,
                     &k_bz_target);
                 for (const auto& R : Rs)
                 {

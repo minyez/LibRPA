@@ -514,6 +514,7 @@ abf_rspace_complex_block_map_t convert_dense_rspace_blocks_to_row_major(
 abf_rspace_dense_block_map_t restore_symmetry_abf_rspace_dense_blocks(
     const abf_rspace_dense_block_map_t& tensors_ir,
     const librpa_int::SymmetryContext& symmetry_ctx,
+    const std::vector<SpeciesBasisLayout>& abf_layouts,
     const librpa_int::symmetry_rspace_sector_stars_t& sector_stars)
 {
     abf_rspace_dense_block_map_t tensors_full;
@@ -545,7 +546,7 @@ abf_rspace_dense_block_map_t restore_symmetry_abf_rspace_dense_blocks(
                 for (const auto& restore_member : star_iter->second)
                 {
                     ComplexMatrix w_full = librpa_int::rotate_symmetry_rspace_matrix(
-                        symmetry_ctx, "AUX", restore_member.isym, ir_I, ir_J, R_matrix.second);
+                        symmetry_ctx, abf_layouts, restore_member.isym, ir_I, ir_J, R_matrix.second);
                     auto& target =
                         tensors_full[restore_member.full_atom_pair.first]
                                     [restore_member.full_atom_pair.second][restore_member.full_R];
@@ -577,19 +578,16 @@ std::complex<double> build_ft_wq_phase(const PeriodicBoundaryData& pbc,
 
 bool can_use_symmetry_irreducible_sector_wr_restore(
     const librpa_int::SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& abf_layouts,
     const std::map<atom_t, size_t>& atom_nabf,
     const PeriodicBoundaryData& pbc)
 {
-    try
-    {
-        (void)librpa_int::find_symmetry_shell_layout_key(ctx, atom_nabf, "AUX");
-    }
-    catch (const std::exception&)
+    if (!librpa_int::symmetry_species_layouts_match_atom_counts(
+            abf_layouts, ctx.atom_to_type, atom_nabf))
     {
         return false;
     }
     return ctx.available
-           && ctx.has_shell_layout("WFC")
            && !ctx.kstars.empty()
            && ctx.kstars.size() == pbc.kfrac_list.size()
            && !pbc.map_irk_ks.empty()
@@ -602,14 +600,12 @@ bool can_use_symmetry_irreducible_sector_wr_restore(
 
 bool can_symmetrize_symmetry_chi0_ibz_blocks(
     const librpa_int::SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& abf_layouts,
     const std::map<atom_t, size_t>& atom_nabf,
     const PeriodicBoundaryData& pbc)
 {
-    try
-    {
-        (void)librpa_int::find_symmetry_shell_layout_key(ctx, atom_nabf, "AUX");
-    }
-    catch (const std::exception&)
+    if (!librpa_int::symmetry_species_layouts_match_atom_counts(
+            abf_layouts, ctx.atom_to_type, atom_nabf))
     {
         return false;
     }
@@ -622,12 +618,13 @@ bool can_symmetrize_symmetry_chi0_ibz_blocks(
 
 atom_mapping<ComplexMatrix>::pair_t_old symmetrize_symmetry_chi0_ibz_blocks_if_needed(
     const librpa_int::SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& abf_layouts,
     const atom_mapping<ComplexMatrix>::pair_t_old& blocks_ibz,
     const Vector3_Order<double>& q_ibz_internal,
     const PeriodicBoundaryData& pbc,
     const std::map<atom_t, size_t>& atom_nabf)
 {
-    if (!can_symmetrize_symmetry_chi0_ibz_blocks(ctx, atom_nabf, pbc))
+    if (!can_symmetrize_symmetry_chi0_ibz_blocks(ctx, abf_layouts, atom_nabf, pbc))
     {
         return blocks_ibz;
     }
@@ -671,16 +668,15 @@ atom_mapping<ComplexMatrix>::pair_t_old symmetrize_symmetry_chi0_ibz_blocks_if_n
         return blocks_ibz;
     }
 
-    const auto abf_layout_key =
-        librpa_int::find_symmetry_shell_layout_key(ctx, atom_nabf, "AUX");
     const auto symmetrized_blocks = librpa_int::symmetrize_symmetry_ibz_kspace_operator_blocks(
-        ctx, abf_layout_key, q_ibz_frac, blocks_for_symmetrization, atom_nabf, ctx.input_coord_frac, abf_star,
+        ctx, abf_layouts, q_ibz_frac, blocks_for_symmetrization, atom_nabf, ctx.input_coord_frac, abf_star,
         &output_atom_pairs);
     return to_atom_mapping_blocks(symmetrized_blocks);
 }
 
 abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
     const librpa_int::SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& abf_layouts,
     const abf_qspace_complex_block_map_t& Wc_q,
     const PeriodicBoundaryData& pbc,
     const std::vector<Vector3_Order<int>>& Rlist,
@@ -692,9 +688,6 @@ abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
     {
         return {};
     }
-    const auto abf_layout_key =
-        librpa_int::find_symmetry_shell_layout_key(ctx, atom_nabf, "AUX");
-
     auto blocks_by_R_ir =
         allocate_symmetry_irreducible_wr_storage(plan.local_irreducible_sector, atom_nabf);
 
@@ -724,7 +717,7 @@ abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
         const auto rotation_atom_pairs =
             librpa_int::build_symmetry_upper_atom_pair_closure(star, plan.local_irreducible_pairs);
         blocks_ibz = librpa_int::symmetrize_symmetry_ibz_kspace_operator_blocks(
-            ctx, abf_layout_key, q_ibz_frac, blocks_ibz, atom_nabf, ctx.input_coord_frac, abf_star,
+            ctx, abf_layouts, q_ibz_frac, blocks_ibz, atom_nabf, ctx.input_coord_frac, abf_star,
             &rotation_atom_pairs);
         if (star.members.size() != star_mapping.member_q_bz_keys.size())
         {
@@ -745,7 +738,7 @@ abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
             try
             {
                 rotated_blocks = librpa_int::rotate_symmetry_kspace_operator_blocks(
-                    ctx, abf_layout_key, abf_member, blocks_ibz, atom_nabf, star.k_ibz, ctx.input_coord_frac,
+                    ctx, abf_layouts, abf_member, blocks_ibz, atom_nabf, star.k_ibz, ctx.input_coord_frac,
                     member.time_reversal, &rotation_atom_pairs, &q_bz_target_frac);
             }
             catch (const std::exception& ex)
@@ -785,7 +778,8 @@ abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
     }
 
     const auto blocks_by_R_full =
-        restore_symmetry_abf_rspace_dense_blocks(blocks_by_R_ir, ctx, plan.local_sector_stars);
+        restore_symmetry_abf_rspace_dense_blocks(
+            blocks_by_R_ir, ctx, abf_layouts, plan.local_sector_stars);
     return convert_dense_rspace_blocks_to_row_major(blocks_by_R_full);
 }
 }
@@ -2869,10 +2863,13 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     const auto &klist = chi0.pbc.klist;
     const auto &kfrac_list = chi0.pbc.kfrac_list;
     const auto atom_nabf = build_atom_nabf_map(chi0.atbasis_abf);
+    const auto abf_layouts =
+        chi0.atbasis_abf.build_species_basis_layouts(chi0.symmetry_context.atom_to_type);
     const bool use_symmetry_dense_chi0_collect =
         chi0.use_symmetry_context
         && global::mpi_comm_global_h.nprocs > 1
-        && can_symmetrize_symmetry_chi0_ibz_blocks(chi0.symmetry_context, atom_nabf, chi0.pbc);
+        && can_symmetrize_symmetry_chi0_ibz_blocks(
+            chi0.symmetry_context, abf_layouts, atom_nabf, chi0.pbc);
 
     vec<double> eigenvalues(n_abf);
     const auto validate_coulomb_block_shape = [&](const char *stage, const int mu,
@@ -3115,13 +3112,13 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     if (chi0.use_symmetry_context)
                     {
                         chi0_wq = symmetrize_symmetry_chi0_ibz_blocks_if_needed(
-                            chi0.symmetry_context, chi0_wq, q, chi0.pbc, atom_nabf);
+                            chi0.symmetry_context, abf_layouts, chi0_wq, q, chi0.pbc, atom_nabf);
                     }
                 }
                 else if (use_symmetry_dense_chi0_collect)
                 {
                     chi0_wq = symmetrize_symmetry_chi0_ibz_blocks_if_needed(
-                        chi0.symmetry_context, chi0_wq, q, chi0.pbc, atom_nabf);
+                        chi0.symmetry_context, abf_layouts, chi0_wq, q, chi0.pbc, atom_nabf);
                 }
 
                 if (use_symmetry_dense_chi0_collect)
@@ -4320,12 +4317,16 @@ atom_mapping<std::map<Vector3_Order<int>, matrix_m<complex<double>>>>::pair_t_ol
     comm_h.barrier();
 
     const auto atom_nabf = build_atom_nabf_map(atbasis_abf);
+    const auto abf_layouts =
+        atbasis_abf.build_species_basis_layouts(symmetry_context.atom_to_type);
     if (use_symmetry_context
-        && can_use_symmetry_irreducible_sector_wr_restore(symmetry_context, atom_nabf, pbc))
+        && can_use_symmetry_irreducible_sector_wr_restore(
+            symmetry_context, abf_layouts, atom_nabf, pbc))
     {
         lib_printf_root(
             "ABACUS GW symmetry accumulates irreducible-sector `W(R)` directly from IBZ q-stars\n");
-        Wc_R = accumulate_symmetry_full_wr_from_ibz_q(symmetry_context, Wc_q, pbc, Rlist, atom_nabf);
+        Wc_R = accumulate_symmetry_full_wr_from_ibz_q(
+            symmetry_context, abf_layouts, Wc_q, pbc, Rlist, atom_nabf);
         comm_h.barrier();
         lib_printf_root("Done converting Wc q -> R\n");
         return Wc_R;

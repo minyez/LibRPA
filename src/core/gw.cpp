@@ -396,6 +396,7 @@ restore_symmetry_ao_rspace_tensor_map_gw(
     const AtomicBasis& atbasis_wfc)
 {
     std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> tensors_full;
+    const auto wfc_layouts = atbasis_wfc.build_species_basis_layouts(symmetry_ctx.atom_to_type);
     for (const auto& i_entry : tensors_ir)
     {
         const auto ir_I = static_cast<atom_t>(i_entry.first);
@@ -422,7 +423,7 @@ restore_symmetry_ao_rspace_tensor_map_gw(
             for (const auto& restore_member : pair_iter->second.at(ir_R))
             {
                 const ComplexMatrix sigma_full = librpa_int::rotate_symmetry_rspace_matrix(
-                    symmetry_ctx, "WFC", restore_member.isym, ir_I, ir_J, sigma_ir);
+                    symmetry_ctx, wfc_layouts, restore_member.isym, ir_I, ir_J, sigma_ir);
                 auto& target = tensors_full[restore_member.full_atom_pair.first][{
                     static_cast<int>(restore_member.full_atom_pair.second),
                     {restore_member.full_R.x, restore_member.full_R.y, restore_member.full_R.z}}];
@@ -910,8 +911,11 @@ static void build_gf_libri_kserial(
     }
     const std::vector<Vector3_Order<int>> Rs_vec{Rs_local.cbegin(), Rs_local.cend()};
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const auto wfc_layouts = atbasis_wfc.has_l_shells()
+        ? atbasis_wfc.build_species_basis_layouts(symmetry_context.atom_to_type)
+        : std::vector<SpeciesBasisLayout>{};
     const bool can_try_symmetry_kstar_restore =
-        use_symmetry_context && symmetry_context.has_shell_layout("WFC");
+        use_symmetry_context && !wfc_layouts.empty();
     const auto full_grid_kstar_representatives =
         can_try_symmetry_kstar_restore
             ? build_symmetry_full_grid_kstar_representative_indices(
@@ -923,7 +927,7 @@ static void build_gf_libri_kserial(
         can_try_symmetry_kstar_restore
         && !restore_symmetry_kstars_from_full_grid
         && can_restore_symmetry_kstar_meanfield(
-            symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
+            symmetry_context, wfc_layouts, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
     auto member_kfrac_targets = restore_symmetry_kstars_from_full_grid
         ? build_symmetry_full_grid_kstar_member_kfrac_targets(symmetry_context, kfrac_list)
         : restore_symmetry_kstars
@@ -937,7 +941,7 @@ static void build_gf_libri_kserial(
         const std::vector<double> tau_check{taus.front()};
         const std::vector<Vector3_Order<int>> R_check{Rs_vec.front()};
         const auto restored_check = get_symmetry_restored_gf_cplx_imagtimes_Rs(
-            symmetry_context, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, tau_check,
+            symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, tau_check,
             R_check, atom_nw, symmetry_context.input_coord_frac, -1, &member_kfrac_targets,
             &full_grid_kstar_representatives).at(tau_check.front()).at(R_check.front());
         const auto direct_check =
@@ -953,7 +957,7 @@ static void build_gf_libri_kserial(
     }
     auto gf = (restore_symmetry_kstars || restore_symmetry_kstars_from_full_grid)
         ? get_symmetry_restored_gf_cplx_imagtimes_Rs(
-              symmetry_context, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec, atom_nw,
+              symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec, atom_nw,
               symmetry_context.input_coord_frac, -1, &member_kfrac_targets,
               restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr)
         : mf.get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec);
@@ -1375,6 +1379,7 @@ void G0W0::build_spacetime(
     }
 
     const auto& symmetry_ctx = this->symmetry_context;
+    const auto wfc_layouts = atbasis_wfc.build_species_basis_layouts(symmetry_ctx.atom_to_type);
     const auto n_full_rspace_blocks =
         static_cast<std::size_t>(natom) * static_cast<std::size_t>(natom) * pbc.Rlist.size();
     const bool symmetry_reduces_rspace =
@@ -1382,7 +1387,8 @@ void G0W0::build_spacetime(
     const bool use_input_sigc_symmetry =
         this->use_symmetry_context
         && symmetry_ctx.available
-        && symmetry_ctx.has_shell_layout("WFC")
+        && symmetry_species_layouts_match_atom_counts(
+            wfc_layouts, symmetry_ctx.atom_to_type, build_atom_nw_map(atbasis_wfc))
         && !symmetry_ctx.irreducible_sector.empty()
         && !symmetry_ctx.rspace_operations.empty()
         && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(natom)

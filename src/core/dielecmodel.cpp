@@ -292,13 +292,11 @@ std::complex<double> headwing_reciprocal_gauge_phase(
 
 ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
     const SymmetryContext& ctx, const SymmetryKStarMember& member,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const std::map<atom_t, size_t>& atom_nw, const Vector3_Order<double>& k_ibz,
     const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const Vector3_Order<double>* k_bz_target)
 {
-    if (!ctx.has_shell_layout("WFC"))
-        throw std::runtime_error("WFC shell layout is required before building AO Bloch rotation");
-
     const auto offsets = build_headwing_atom_offsets(atom_nw);
     const int nao_total = offsets.back();
 
@@ -331,8 +329,10 @@ ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
     for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
     {
         const auto* atom_rotation = rotations_by_from[atom];
-        atom_M_blocks[atom] = build_symmetry_rotation_matrix(
-            ctx, "WFC", atom_rotation->atom_type, atom_rotation->bloch_rsh_rotations);
+        const auto& layout =
+            get_symmetry_species_layout(wfc_layouts, atom_rotation->atom_type);
+        atom_M_blocks[atom] =
+            build_symmetry_rotation_matrix(layout, atom_rotation->bloch_rsh_rotations);
         const auto return_lattice =
             headwing_kspace_return_lattice(ctx, *atom_rotation, coord_frac, spatial_isym);
         const double phase_arg =
@@ -541,10 +541,15 @@ void diele_func::cal_head()
 
     profiler.start("cal_head");
 
+    const bool can_try_sym =
+        use_symmetry && symmetry_context_ != nullptr && atomic_basis_wfc_.has_l_shells();
+    const auto wfc_layouts =
+        can_try_sym ? atomic_basis_wfc_.build_species_basis_layouts(symmetry_context_->atom_to_type)
+                    : std::vector<SpeciesBasisLayout>{};
     const bool can_sym =
-        use_symmetry && symmetry_context_ != nullptr &&
+        can_try_sym &&
         librpa_int::can_restore_symmetry_kstar_meanfield(
-            *symmetry_context_, meanfield_df, kfrac_band, atom_nw, coord_frac);
+            *symmetry_context_, wfc_layouts, meanfield_df, kfrac_band, atom_nw, coord_frac);
 
     if (can_sym)
         cal_head_symmetric();
@@ -872,10 +877,15 @@ matrix_m<std::complex<double>> diele_func::get_rpa_chi0v_wing(const int ifreq) c
 void diele_func::cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
                           const atpair_k_cplx_mat_t &Vq)
 {
+    const bool can_try_sym =
+        use_symmetry && symmetry_context_ != nullptr && atomic_basis_wfc_.has_l_shells();
+    const auto wfc_layouts =
+        can_try_sym ? atomic_basis_wfc_.build_species_basis_layouts(symmetry_context_->atom_to_type)
+                    : std::vector<SpeciesBasisLayout>{};
     const bool can_sym =
-        use_symmetry && symmetry_context_ != nullptr &&
+        can_try_sym &&
         librpa_int::can_restore_symmetry_kstar_meanfield(
-            *symmetry_context_, meanfield_df, kfrac_band, atom_nw, coord_frac);
+            *symmetry_context_, wfc_layouts, meanfield_df, kfrac_band, atom_nw, coord_frac);
 
     if (can_sym)
         cal_wing_symmetric(Cs_data, coulomb_eigen_threshold, Vq);
@@ -1019,6 +1029,7 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
     if (symmetry_context_ == nullptr)
         throw std::runtime_error("cal_wing_symmetric: symmetry context is not set");
     const auto &ctx = *symmetry_context_;
+    const auto wfc_layouts = atomic_basis_wfc_.build_species_basis_layouts(ctx.atom_to_type);
     const auto member_targets =
         librpa_int::build_symmetry_kstar_member_kfrac_targets(ctx, pbc_);
 
@@ -1061,7 +1072,7 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
             if (source_rank)
             {
                 const auto M_full = build_symmetry_ao_bloch_rotation_matrix_full(
-                    ctx, member, atom_nw, k_ibz, coord_frac, &k_bz);
+                    ctx, member, wfc_layouts, atom_nw, k_ibz, coord_frac, &k_bz);
                 const ComplexMatrix M_full_conj = conj(M_full);
                 for (int ispin = 0; ispin != n_spin; ++ispin)
                 {

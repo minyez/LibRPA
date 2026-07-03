@@ -48,6 +48,11 @@ struct SpaceGroupSymOp
     {
         return is_same_matrix(this->rotation, Matrix3::IDENTITY, 1e-8);
     }
+
+    bool is_identity() const
+    {
+        return is_identity_rotation() && nearly_integer_vector(translation, 1e-8);
+    }
 };
 
 inline bool operator==(const SpaceGroupSymOp &op1, const SpaceGroupSymOp &op2)
@@ -176,6 +181,8 @@ inline Matrix3 fractional_rotation_to_cartesian(const SpaceGroupSymOp& symop,
                ? row_fractional_rotation_to_cartesian(symop.rotation, lattice_vectors)
                : col_fractional_rotation_to_cartesian(symop.rotation, lattice_vectors);
 }
+
+int find_identity_symmetry_operation(const SpaceGroupSymOps &operations);
 
 //! Build atom mapping from fractional atom positions and fractional symmetry operations.
 std::vector<AtomSymMapping> build_atom_to_inequivalent_symmetry_mapping(

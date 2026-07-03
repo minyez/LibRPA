@@ -19,6 +19,24 @@
 namespace librpa_int
 {
 
+namespace
+{
+
+int max_basis_l(const std::vector<const AtomicBasis*>& bases)
+{
+    int lmax = -1;
+    for (const auto* basis : bases)
+    {
+        if (basis != nullptr && basis->has_l_shells())
+        {
+            lmax = std::max(lmax, basis->get_max_l());
+        }
+    }
+    return lmax;
+}
+
+} // namespace
+
 void initialize_symmetry_context(Dataset &ds, const bool build_shell_rotations)
 {
     auto &spg_symops = ds.spg_symops;
@@ -50,10 +68,7 @@ void initialize_symmetry_context(Dataset &ds, const bool build_shell_rotations)
         return;
     }
 
-    ctx.set_basis_layouts({&ds.basis_wfc, &ds.basis_aux, &ds.basis_aux_shrink},
-                          ds.atoms.types);
-
-    const int lmax = ctx.max_l();
+    const int lmax = max_basis_l({&ds.basis_wfc, &ds.basis_aux, &ds.basis_aux_shrink});
     if (lmax < 0)
     {
         mark_available();
@@ -67,7 +82,7 @@ void initialize_symmetry_context(Dataset &ds, const bool build_shell_rotations)
         throw LIBRPA_RUNTIME_ERROR("Cannot initialize symmetry context without basis convention");
     }
     ds.basis_convention = basis_convention;
-    ctx.generate_shell_rotations(basis_convention);
+    ctx.generate_shell_rotations(basis_convention, lmax);
     ctx.generate_kstar_member_rotations(lmax);
     mark_available();
 }
@@ -80,7 +95,7 @@ void require_symmetry_shell_layouts(const Dataset &ds, const char *calculation)
         return;
     }
 
-    if (!ctx.has_shell_layout("WFC") || !ctx.has_shell_layout("AUX"))
+    if (!ds.basis_wfc.has_l_shells() || !ds.basis_aux.has_l_shells())
     {
         throw LIBRPA_RUNTIME_ERROR(
             std::string("Cannot use ") + calculation

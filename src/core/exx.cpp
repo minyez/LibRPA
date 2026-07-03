@@ -289,8 +289,11 @@ static void build_dmat_libri_kserial(
         map_R_IJs[R].push_back(IJR.first);
     }
     const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const auto wfc_layouts = atbasis_wfc.has_l_shells()
+        ? atbasis_wfc.build_species_basis_layouts(symmetry_context.atom_to_type)
+        : std::vector<SpeciesBasisLayout>{};
     const bool can_try_symmetry_kstar_restore =
-        use_symmetry_context && symmetry_context.has_shell_layout("WFC");
+        use_symmetry_context && !wfc_layouts.empty();
     const auto full_grid_kstar_representatives =
         can_try_symmetry_kstar_restore
             ? build_symmetry_full_grid_kstar_representative_indices(
@@ -302,7 +305,7 @@ static void build_dmat_libri_kserial(
         can_try_symmetry_kstar_restore
         && !restore_symmetry_kstars_from_full_grid
         && can_restore_symmetry_kstar_meanfield(
-            symmetry_context, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
+            symmetry_context, wfc_layouts, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
     auto member_kfrac_targets = restore_symmetry_kstars_from_full_grid
         ? build_symmetry_full_grid_kstar_member_kfrac_targets(symmetry_context, kfrac_list)
         : restore_symmetry_kstars
@@ -315,7 +318,7 @@ static void build_dmat_libri_kserial(
         constexpr double restore_check_tol = 1e-6;
         const auto& R_check = map_R_IJs.begin()->first;
         const auto restored_check = get_symmetry_restored_dmat_cplx_R(
-            symmetry_context, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, R_check,
+            symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, R_check,
             atom_nw, symmetry_context.input_coord_frac, &member_kfrac_targets,
             &full_grid_kstar_representatives);
         const auto direct_check =
@@ -334,7 +337,7 @@ static void build_dmat_libri_kserial(
         std::array<int,3> Ra{R.x,R.y,R.z};
         const auto dmat_cplx = (restore_symmetry_kstars || restore_symmetry_kstars_from_full_grid)
             ? get_symmetry_restored_dmat_cplx_R(
-                  symmetry_context, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, R, atom_nw,
+                  symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, R, atom_nw,
                   symmetry_context.input_coord_frac, &member_kfrac_targets,
                   restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr)
             : mf.get_dmat_cplx_R(ispin, ispinor_bra, ispinor_ket, kfrac_list, R);
@@ -527,6 +530,8 @@ void Exx::build(const LibrpaParallelRouting routing,
         exx_libri.set_parallel(comm_h.comm, atoms_pos, this->pbc.latvec_array, this->pbc.period_array);
 
     const auto& symmetry_ctx = this->symmetry_context;
+    const auto wfc_layouts = atbasis_wfc.build_species_basis_layouts(symmetry_ctx.atom_to_type);
+    const auto abf_layouts = atbasis_abf.build_species_basis_layouts(symmetry_ctx.atom_to_type);
     const auto n_full_rspace_blocks =
         static_cast<std::size_t>(n_atoms) * static_cast<std::size_t>(n_atoms) * Rlist.size();
     const bool symmetry_reduces_rspace =
@@ -534,7 +539,8 @@ void Exx::build(const LibrpaParallelRouting routing,
     const bool use_symmetry_exx =
         this->use_symmetry_context
         && symmetry_ctx.available
-        && symmetry_ctx.has_shell_layout("WFC")
+        && symmetry_species_layouts_match_atom_counts(
+            wfc_layouts, symmetry_ctx.atom_to_type, build_atom_nw_map(atbasis_wfc))
         && !symmetry_ctx.irreducible_sector.empty()
         && !symmetry_ctx.rspace_operations.empty()
         && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(n_atoms)
@@ -620,12 +626,12 @@ void Exx::build(const LibrpaParallelRouting routing,
     const atpair_R_mat_t* exx_coul_mat_ptr = &coul_mat;
     const bool use_input_exx_coulomb_restore =
         use_symmetry_exx
+        && symmetry_species_layouts_match_atom_counts(
+            abf_layouts, symmetry_ctx.atom_to_type, build_atom_nw_map(atbasis_abf))
         && exx_coulomb_uses_symmetry_irreducible_sector_layout(
             coul_mat, symmetry_ctx, Rlist.size());
     if (use_input_exx_coulomb_restore)
     {
-        const auto abf_layout_key = find_symmetry_shell_layout_key(
-            symmetry_ctx, build_atom_nw_map(atbasis_abf), "AUX");
         global::lib_printf(
             "Restoring the ABACUS EXX auxiliary Coulomb blocks from the irreducible sector to the full real-space sector before LibRI contraction\n");
         for (const auto& I_JRV : coul_mat)
@@ -656,7 +662,7 @@ void Exx::build(const LibrpaParallelRouting routing,
                     {
                         const ComplexMatrix v_full =
                             librpa_int::rotate_symmetry_rspace_matrix(
-                                symmetry_ctx, abf_layout_key, restore_member.isym,
+                                symmetry_ctx, abf_layouts, restore_member.isym,
                                 static_cast<atom_t>(ir_I),
                                 static_cast<atom_t>(ir_J), v_ir);
                         const matrix v_full_real = v_full.real();
@@ -947,7 +953,7 @@ void Exx::build(const LibrpaParallelRouting routing,
 	                                {
 	                                    const auto block_full =
 	                                        librpa_int::rotate_symmetry_rspace_matrix(
-	                                            symmetry_ctx, "WFC", restore_member.isym,
+	                                            symmetry_ctx, wfc_layouts, restore_member.isym,
 	                                            static_cast<atom_t>(I),
 	                                            static_cast<atom_t>(J), block_ir);
 	                                    store_exx_block(

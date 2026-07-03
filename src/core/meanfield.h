@@ -144,6 +144,7 @@ public:
 
 bool can_restore_symmetry_kstar_meanfield(
     const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::map<atom_t, size_t>& atom_nw,
@@ -155,6 +156,7 @@ symmetry_kstar_member_kfrac_targets_t build_symmetry_kstar_member_kfrac_targets(
 
 ComplexMatrix get_symmetry_restored_dmat_cplx_R(
     const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     int ispin, int ispinor_bra, int ispinor_ket,
     const std::vector<Vector3_Order<double>>& kfrac_list,
@@ -167,6 +169,7 @@ ComplexMatrix get_symmetry_restored_dmat_cplx_R(
 std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>>
 get_symmetry_restored_gf_cplx_imagtimes_Rs(
     const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     int ispin, int ispinor_bra, int ispinor_ket,
     const std::vector<Vector3_Order<double>>& kfrac_list,

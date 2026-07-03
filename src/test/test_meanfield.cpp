@@ -157,7 +157,7 @@ void test_symmetry_context_kstar_restored_dmat_uses_full_star_phases()
 
     librpa_int::SymmetryContext ctx;
     ctx.set_available();
-    ctx.add_basis_layouts("WFC", {{"X", {0}}});
+    const std::vector<SpeciesBasisLayout> wfc_layouts{{"X", {0}}};
     ctx.atom_to_type[0] = 0;
     ctx.input_coord_frac[0] = {0.0, 0.0, 0.0};
     librpa_int::SymmetryOperation identity_operation;
@@ -201,7 +201,7 @@ void test_symmetry_context_kstar_restored_dmat_uses_full_star_phases()
 
     const auto direct_ibz = mf.get_dmat_cplx_R(0, 0, 0, kfrac_list, R);
     const auto restored = get_symmetry_restored_dmat_cplx_R(
-        ctx, mf, 0, 0, 0, kfrac_list, R, atom_nw, coord_frac);
+        ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, R, atom_nw, coord_frac);
 
     if (std::abs(direct_ibz(0, 0)) < 1e-12)
         throw std::runtime_error("direct IBZ density matrix unexpectedly vanished");
@@ -215,7 +215,7 @@ void test_symmetry_context_kstar_restore_skips_full_grid()
 
     SymmetryContext ctx;
     ctx.set_available();
-    ctx.add_basis_layouts("WFC", {{"X", {0}}});
+    const std::vector<SpeciesBasisLayout> wfc_layouts{{"X", {0}}};
     SymmetryKStar star;
     star.members.resize(2);
     ctx.kstars.push_back(star);
@@ -227,7 +227,7 @@ void test_symmetry_context_kstar_restore_skips_full_grid()
     };
 
     assert(!can_restore_symmetry_kstar_meanfield(
-        ctx, mf, kfrac_list, {{0, 1}}, {{0, {0.0, 0.0, 0.0}}}));
+        ctx, wfc_layouts, mf, kfrac_list, {{0, 1}}, {{0, {0.0, 0.0, 0.0}}}));
 }
 
 void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k()
@@ -236,7 +236,7 @@ void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k()
 
     SymmetryContext ctx;
     ctx.set_available();
-    ctx.add_basis_layouts("WFC", {{"X", {0}}});
+    const std::vector<SpeciesBasisLayout> wfc_layouts{{"X", {0}}};
     ctx.atom_to_type[0] = 0;
     ctx.input_coord_frac[0] = {0.0, 0.0, 0.0};
 
@@ -303,7 +303,7 @@ void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k()
     {
         const auto direct = mf.get_dmat_cplx_R(0, 0, 0, kfrac_list, R);
         const auto restored = get_symmetry_restored_dmat_cplx_R(
-            ctx, mf, 0, 0, 0, kfrac_list, R, atom_nw, coord_frac,
+            ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, R, atom_nw, coord_frac,
             &member_kfrac_targets, &representative_indices);
         if (!fequal(direct(0, 0), restored(0, 0), {1e-12, 0.0}))
             throw std::runtime_error("full-grid k-star density matrix route differs from direct full-k");
@@ -312,7 +312,7 @@ void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k()
     const std::vector<double> taus{-1e-12, 1e-12};
     const auto direct_gf = mf.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_list, taus, Rs);
     const auto restored_gf = get_symmetry_restored_gf_cplx_imagtimes_Rs(
-        ctx, mf, 0, 0, 0, kfrac_list, taus, Rs, atom_nw, coord_frac, -1,
+        ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, taus, Rs, atom_nw, coord_frac, -1,
         &member_kfrac_targets, &representative_indices);
     for (const auto tau : taus)
     {
@@ -334,10 +334,9 @@ void test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge()
 
     librpa_int::SymmetryContext ctx;
     ctx.set_available();
-    ctx.ao_lmax = 0;
+    const std::vector<SpeciesBasisLayout> wfc_layouts{{"X", {0}}};
     ctx.atom_to_type[0] = 0;
     ctx.atom_to_type[1] = 0;
-    ctx.add_basis_layouts("WFC", {{"X", {0}}});
 
     librpa_int::SymmetryOperation identity_operation;
     identity_operation.rotation.Identity();
@@ -390,7 +389,7 @@ void test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge()
         {{0.0, 0.0, 0.0}, {1.5, 0.0, 0.0}}};
 
     const auto restored = get_symmetry_restored_dmat_cplx_R(
-        ctx, mf, 0, 0, 0, kfrac_list, R, atom_nw, coord_frac, &target_kfrac_list);
+        ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, R, atom_nw, coord_frac, &target_kfrac_list);
 
     const std::complex<double> expected_offdiag{0.25, -0.25};
     if (std::abs(restored(0, 1) - expected_offdiag) > 1e-12)
