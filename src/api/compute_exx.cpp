@@ -196,7 +196,7 @@ void librpa_get_exx_pot_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, con
     auto &pexx = pds->p_exx;
     // ofs_myid << pexx->exx_IJR << endl;
     // TODO: make choosing blacs/non-blacs method a run time option
-    pexx->build_KS_kgrid_blacs(pds->blacs_h);
+    pexx->build_KS_kgrid_blacs(pds->blacs_h, opts.use_gpu_replace_scalapack);
     pds->is_band_calc_done = false;
     const int n_states_calc = i_state_high - i_state_low;
     const bool publish_local_values =
@@ -256,7 +256,7 @@ void librpa_get_exx_pot_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, co
         const auto bvk_remap = librpa_int::api::build_band_bvk_remap(
             pds->atoms, pds->pbc, opts.option_bvk_remap);
         pexx->build_KS_band_blacs(pds->mf_band.get_eigenvectors(), pds->kfrac_band_list,
-                                  bvk_remap, pds->blacs_h);
+                                  bvk_remap, pds->blacs_h, opts.use_gpu_replace_scalapack);
         pds->is_band_calc_done = true;
     }
     const int n_states_calc = i_state_high - i_state_low;
