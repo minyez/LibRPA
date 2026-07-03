@@ -97,6 +97,24 @@ static typename QMap::const_iterator find_matching_symmetry_qpoint(
     });
 }
 
+template <typename QMap>
+static typename QMap::const_iterator find_matching_internal_qpoint(
+    const QMap& q_map,
+    const PeriodicBoundaryData& pbc,
+    const Vector3_Order<double>& q_target)
+{
+    const auto exact_iter = q_map.find(q_target);
+    if (exact_iter != q_map.end())
+    {
+        return exact_iter;
+    }
+    const Vector3_Order<double> q_target_frac{pbc.latvec * q_target};
+    return std::find_if(q_map.begin(), q_map.end(), [&pbc, &q_target_frac](const auto& entry) {
+        const Vector3_Order<double> q_current_frac{pbc.latvec * entry.first};
+        return are_equivalent_symmetry_qpoints(q_current_frac, q_target_frac);
+    });
+}
+
 template <typename QVector>
 static typename QVector::const_iterator find_matching_symmetry_qpoint_in_sequence(
     const QVector& q_sequence,
@@ -664,6 +682,10 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
     }
     auto blocks_by_R_ir =
         allocate_symmetry_irreducible_wr_storage(plan.local_irreducible_sector, atom_nabf);
+    const auto full_grid_member_targets =
+        build_symmetry_full_grid_kstar_member_kfrac_targets(ctx, pbc.kfrac_list);
+    const bool use_full_grid_member_targets =
+        full_grid_member_targets.size() == ctx.kstars.size();
 
     for (const auto& star_mapping : plan.kstar_grid_mapping)
     {
@@ -691,10 +713,11 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
         for (std::size_t imember = 0; imember < star.members.size(); ++imember)
         {
             const auto& member = star.members[imember];
-            const auto q_bz_target_frac_vec =
-                pbc.latvec * star_mapping.member_q_bz_keys[imember];
-            const Vector3_Order<double> q_bz_target_frac{
-                q_bz_target_frac_vec.x, q_bz_target_frac_vec.y, q_bz_target_frac_vec.z};
+            const Vector3_Order<double> q_bz_target_frac =
+                use_full_grid_member_targets
+                    ? full_grid_member_targets[static_cast<std::size_t>(
+                          star_mapping.star_list_index)][imember]
+                    : Vector3_Order<double>{pbc.latvec * star_mapping.member_q_bz_keys[imember]};
             librpa_int::symmetry_atom_block_matrix_map_t rotated_blocks;
             try
             {
@@ -713,7 +736,11 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
                 throw std::runtime_error(oss.str());
             }
 
-            const auto& q_internal = star_mapping.member_q_bz_keys[imember];
+            const auto q_internal_from_full_grid = q_bz_target_frac * pbc.G;
+            const Vector3_Order<double> q_internal =
+                use_full_grid_member_targets
+                    ? Vector3_Order<double>{q_internal_from_full_grid}
+                    : star_mapping.member_q_bz_keys[imember];
             for (const auto& atom_i_pair : rotated_blocks)
             {
                 for (const auto& atom_j_pair : atom_i_pair.second)
@@ -808,18 +835,17 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
         coul_chi0_block_ptr = coul_chi0_block.ptr();
         ipiv_ptr = ipiv.data();
     }
-    const auto &klist = chi0.pbc.klist;
-    const auto &map_q_weight = chi0.pbc.map_q_weight;
+    const auto &qpts = chi0.active_qpoints();
     complex<double> tot_RPA_energy(0.0, 0.0);
     map<Vector3_Order<double>, complex<double>> cRPA_q;
     if(comm_h.is_root())
         lib_printf("Finish init RPA blacs 2d\n");
 #ifdef LIBRPA_USE_LIBRI
-    for (const auto &q: klist)
+    for (const auto &q: qpts)
     {
         coul_block.zero_out();
 
-        int iq = std::distance(klist.begin(), std::find(klist.begin(), klist.end(), q));
+        int iq = std::distance(qpts.begin(), std::find(qpts.begin(), qpts.end(), q));
         std::array<double, 3> qa = {q.x, q.y, q.z};
         // collect the block elements of coulomb matrices
         {
@@ -1018,8 +1044,9 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
             {
                 lib_printf("| TIME of DET-freq-q:  %f,  q: ( %f, %f, %f)  TOT: %f  CHI_arr: %f  CHI_comm: %f, CHI_2d: %f, Pi: %f, Det: %f\n",freq, q.x,q.y,q.z,pi_freq_end-pi_freq_begin, chi_arr_time,chi_comm_time,chi_2d_time,pi_end-pi_begin,det_end-pi_end);
                 complex<double> rpa_for_omega_q = complex<double>(trace_pi + ln_det);
-                cRPA_q[q] += rpa_for_omega_q * freq_weight * map_q_weight.at(q) / TWO_PI;//!check
-                tot_RPA_energy += rpa_for_omega_q * freq_weight * map_q_weight.at(q) / TWO_PI;
+                const auto qweight = chi0.q_weight(q);
+                cRPA_q[q] += rpa_for_omega_q * freq_weight * qweight / TWO_PI;//!check
+                tot_RPA_energy += rpa_for_omega_q * freq_weight * qweight / TWO_PI;
             }
         }
     }
@@ -1069,7 +1096,6 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
         lib_printf("Calculating EcRPA with BLACS/ScaLAPACK 2D\n");
     // lib_printf("Calculating EcRPA with BLACS, pid:  %d\n", comm_h.myid);
     // const auto & mf = chi0.mf;
-    const auto &klist = chi0.pbc.klist;
     const int n_abf = chi0.atbasis_abf.nb_total;
     const auto part_range = chi0.atbasis_abf.get_part_range();
 
@@ -1093,10 +1119,8 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
     // ofs_myid << "Iset Jset " << s0_s1 << endl;
     // ofs_myid << "atpair_unordered_local of myid " << blacs_h.myid << " " << atpair_unordered_local << endl;
 
-    const auto &map_q_weight = chi0.pbc.map_q_weight;
-
     // NOTE: this may change later when q-points are parallelized
-    vector<Vector3_Order<double>> qpts(chi0.pbc.klist_coul);
+    vector<Vector3_Order<double>> qpts(chi0.active_qpoints());
     // const auto &chi0q = chi0.get_chi0_q();
     // for (const auto &qMuNuchi: chi0q.at(chi0.tfg.get_freq_nodes()[0]))
     //     qpts.push_back(qMuNuchi.first);
@@ -1420,8 +1444,9 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
                                headwing_proj_right_time, headwing_trace_log_time);
                 }
                 //cout << " ifreq:" << freq << "      rpa_for_omega_k: " << rpa_for_omega_q << "      lnt_det: " << ln_det << "    trace_pi " << trace_pi << endl;
-                cRPA_q[q] += rpa_for_omega_q * freq_weight * map_q_weight.at(q) / TWO_PI;//!check
-                tot_RPA_energy += rpa_for_omega_q * freq_weight * map_q_weight.at(q) / TWO_PI;
+                const auto qweight = chi0.q_weight(q);
+                cRPA_q[q] += rpa_for_omega_q * freq_weight * qweight / TWO_PI;//!check
+                tot_RPA_energy += rpa_for_omega_q * freq_weight * qweight / TWO_PI;
             }
         }
     }
@@ -1873,7 +1898,7 @@ CorrEnergy compute_RPA_correlation_blacs(const Chi0 &chi0, const atpair_k_cplx_m
             if(comm_h.myid==0)
             {
                 std::complex<double> rpa_for_omega_q = trace_pi + ln_det;
-                const auto kweight = chi0.pbc.map_q_weight.at(q);
+                const auto kweight = chi0.q_weight(q);
                 //cout << " ifreq:" << freq << "      rpa_for_omega_k: " << rpa_for_omega_q << "      lnt_det: " << ln_det << "    trace_pi " << trace_pi << endl;
                 cRPA_q[q] += rpa_for_omega_q * freq_weight * kweight / TWO_PI;//!check
                 tot_RPA_energy += rpa_for_omega_q * freq_weight * kweight / TWO_PI;
@@ -1952,7 +1977,7 @@ CorrEnergy compute_RPA_correlation(LibrpaParallelRouting routing, const Chi0 &ch
 // printf("success before freq_q_MuNupi processid:%d, freq_q_MuNupi.size(): %zu\n",
 //        mpi_comm_global_h.myid, freq_q_MuNupi.size());
 #endif
-        for (const auto &q : chi0.pbc.klist)
+        for (const auto &q : chi0.active_qpoints())
         {
             atom_mapping<ComplexMatrix>::pair_t_old q_MuNupi;
             if (!chi0.get_chi0_q().empty()) q_MuNupi = freq_q_MuNupi.at(q);
@@ -2053,7 +2078,7 @@ CorrEnergy compute_RPA_correlation(LibrpaParallelRouting routing, const Chi0 &ch
                 // cout << "PI trace vector:" << endl;
                 // cout << endl;
                 rpa_for_omega_q = ln_det + trace_pi;
-                const auto kweight = chi0.pbc.map_q_weight.at(q);
+                const auto kweight = chi0.q_weight(q);
                 // cout << " ifreq:" << freq << "      rpa_for_omega_k: " << rpa_for_omega_q << "      lnt_det: " << ln_det << "    trace_pi " << trace_pi << endl;
                 cRPA_q[q] += rpa_for_omega_q * freq_weight * kweight / TWO_PI;
                 tot_RPA_energy += rpa_for_omega_q * freq_weight * kweight / TWO_PI;
@@ -2062,9 +2087,9 @@ CorrEnergy compute_RPA_correlation(LibrpaParallelRouting routing, const Chi0 &ch
         // lib_printf("Finish EcRPA %4d, size %zu\n", comm_h.myid, pi_freq_q_Mu_Nu.size());
         comm_h.barrier();
         map<Vector3_Order<double>, complex<double>> global_cRPA_q;
-        for (const auto &q_weight: chi0.pbc.map_q_weight)
+        for (const auto &q : chi0.active_qpoints())
         {
-            MPI_Reduce(&cRPA_q[q_weight.first], &global_cRPA_q[q_weight.first], 1,
+            MPI_Reduce(&cRPA_q[q], &global_cRPA_q[q], 1,
                        MPI_DOUBLE_COMPLEX, MPI_SUM, 0, comm_h.comm);
         }
 
@@ -2256,14 +2281,12 @@ map<double, map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>>
     // std::stringstream ss;
     // ss<<"out_pi_rank_"<<comm_h.myid<<".txt";
     // fp.open(ss.str());
-    const auto &irk_weight = chi0.pbc.map_q_weight;
     const auto &comm_h = chi0.comm_h;
     #ifdef OPEN_TEST_FOR_LU_DECOMPOSITION
     // printf("success before irk_weight, pid: %d\n", mpi_comm_global_h.myid);
     #endif
-    for (auto &k_pair : irk_weight)
+    for (const auto &ik_vec : chi0.active_qpoints())
     {
-        Vector3_Order<double> ik_vec = k_pair.first;
         for (int I = 0; I != as_int(chi0.atbasis_abf.n_atoms); I++)
         {
             #ifdef OPEN_TEST_FOR_LU_DECOMPOSITION
@@ -2502,7 +2525,7 @@ compute_Wc_freq_q(
     map<double, std::map<Vector3_Order<double>, Matz>> Wc_freq_q;
     const int range_all = chi0.atbasis_abf.nb_total;
     const auto &part_range = chi0.atbasis_abf.get_part_range();
-    const auto &klist = chi0.pbc.klist;
+    const auto &qpts_active = chi0.active_qpoints();
 
     const auto &comm_h = chi0.comm_h;
     const auto &abf = chi0.atbasis_abf;
@@ -2531,13 +2554,11 @@ compute_Wc_freq_q(
 
     comm_h.barrier();
     // use q-points as the outmost loop, so that square root of Coulomb will not be recalculated at each frequency point
-    std::vector<Vector3_Order<double>> qpts;
-    for (const auto &qMuNuchi : chi0.get_chi0_q().at(chi0.tfg.get_freq_nodes()[0]))
-        qpts.push_back(qMuNuchi.first);
+    std::vector<Vector3_Order<double>> qpts(qpts_active.begin(), qpts_active.end());
 
     for (const auto &q : qpts)
     {
-        int iq = std::distance(klist.begin(), std::find(klist.begin(), klist.end(), q));
+        int iq = std::distance(qpts.begin(), std::find(qpts.begin(), qpts.end(), q));
         char fn[80];
 
         Matz Vq_all(range_all, range_all, MAJOR::COL);
@@ -2816,9 +2837,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         map_loc_v[I].push_back(iI);
     }
 
-    vector<Vector3_Order<double>> qpts;
-    for (const auto &q_weight: chi0.pbc.map_q_weight)
-        qpts.push_back(q_weight.first);
+    vector<Vector3_Order<double>> qpts(chi0.active_qpoints().begin(), chi0.active_qpoints().end());
     const auto &klist = chi0.pbc.klist;
     const auto &kfrac_list = chi0.pbc.kfrac_list;
     const auto atom_nabf = build_atom_nabf_map(chi0.atbasis_abf);
@@ -2858,10 +2877,18 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     for (const auto &q : qpts)
     {
         const int iq = std::distance(qpts.cbegin(), std::find(qpts.cbegin(), qpts.cend(), q));
-        const int iq_in_k =
-            std::distance(klist.cbegin(), std::find(klist.cbegin(), klist.cend(), q));
+        const auto q_in_k = std::find(klist.cbegin(), klist.cend(), q);
         // q-point in fractional coordinates
-        const auto &qf = kfrac_list[iq_in_k];
+        Vector3_Order<double> qf;
+        if (q_in_k != klist.cend())
+        {
+            const int iq_in_k = std::distance(klist.cbegin(), q_in_k);
+            qf = kfrac_list[iq_in_k];
+        }
+        else
+        {
+            qf = Vector3_Order<double>{chi0.pbc.latvec * q};
+        }
         librpa_int::global::lib_printf_root("Computing Wc(q), %d / %d, q=(%f, %f, %f)\n", iq + 1,
                                             qpts.size(), qf.x, qf.y, qf.z);
         coul_block.zero_out();
@@ -3511,9 +3538,192 @@ void unfold_Wc_freq_q_blacs(
     }
 }
 
+static void fill_blacs_local_from_dense(Matz& local_matrix,
+                                        const ArrayDesc& desc,
+                                        const ComplexMatrix& dense_matrix)
+{
+    if (dense_matrix.nr != desc.m() || dense_matrix.nc != desc.n())
+    {
+        throw LIBRPA_RUNTIME_ERROR("Dense symmetry rotation matrix dimension mismatch");
+    }
+    local_matrix.zero_out();
+    for (int i_lo = 0; i_lo != desc.m_loc(); ++i_lo)
+    {
+        const int i_glo = desc.indx_l2g_r(i_lo);
+        for (int j_lo = 0; j_lo != desc.n_loc(); ++j_lo)
+        {
+            const int j_glo = desc.indx_l2g_c(j_lo);
+            local_matrix(i_lo, j_lo) = dense_matrix(i_glo, j_glo);
+        }
+    }
+}
+
+static Matz rotate_symmetry_blacs_wq(const Matz& Wq_rep,
+                                     const ArrayDesc& desc,
+                                     const ComplexMatrix& rotation_dense,
+                                     const bool use_time_reversal)
+{
+    if (desc.m() != desc.n())
+    {
+        throw LIBRPA_RUNTIME_ERROR("Dense Wc symmetry restore requires a square descriptor");
+    }
+    const int n = desc.m();
+    auto rotation = init_local_mat<cplxdb>(desc, MAJOR::COL);
+    auto tmp = init_local_mat<cplxdb>(desc, MAJOR::COL);
+    auto Wq_member = init_local_mat<cplxdb>(desc, MAJOR::COL);
+    fill_blacs_local_from_dense(rotation, desc, rotation_dense);
+
+    if (use_time_reversal)
+    {
+        auto Wq_conj = Wq_rep.copy();
+        Wq_conj.conj();
+        ScalapackConnector::pgemm_f('C', 'N', n, n, n, 1.0,
+                                    rotation.ptr(), 1, 1, desc.desc,
+                                    Wq_conj.ptr(), 1, 1, desc.desc,
+                                    0.0, tmp.ptr(), 1, 1, desc.desc);
+        ScalapackConnector::pgemm_f('N', 'N', n, n, n, 1.0,
+                                    tmp.ptr(), 1, 1, desc.desc,
+                                    rotation.ptr(), 1, 1, desc.desc,
+                                    0.0, Wq_member.ptr(), 1, 1, desc.desc);
+    }
+    else
+    {
+        auto rotation_conj = rotation.copy();
+        rotation_conj.conj();
+        ScalapackConnector::pgemm_f('T', 'N', n, n, n, 1.0,
+                                    rotation.ptr(), 1, 1, desc.desc,
+                                    Wq_rep.ptr(), 1, 1, desc.desc,
+                                    0.0, tmp.ptr(), 1, 1, desc.desc);
+        ScalapackConnector::pgemm_f('N', 'N', n, n, n, 1.0,
+                                    tmp.ptr(), 1, 1, desc.desc,
+                                    rotation_conj.ptr(), 1, 1, desc.desc,
+                                    0.0, Wq_member.ptr(), 1, 1, desc.desc);
+    }
+    return Wq_member;
+}
+
+static Matz restore_symmetry_blacs_wq_to_star_source(const Matz& Wq_source,
+                                                     const ArrayDesc& desc,
+                                                     const ComplexMatrix& source_rotation_dense,
+                                                     const bool source_uses_time_reversal)
+{
+    if (desc.m() != desc.n())
+    {
+        throw LIBRPA_RUNTIME_ERROR("Dense Wc symmetry source restore requires a square descriptor");
+    }
+    const int n = desc.m();
+    auto source_rotation = init_local_mat<cplxdb>(desc, MAJOR::COL);
+    auto source_rotation_conj = init_local_mat<cplxdb>(desc, MAJOR::COL);
+    auto tmp = init_local_mat<cplxdb>(desc, MAJOR::COL);
+    auto Wq_star = init_local_mat<cplxdb>(desc, MAJOR::COL);
+    fill_blacs_local_from_dense(source_rotation, desc, source_rotation_dense);
+    source_rotation_conj = source_rotation.copy();
+    source_rotation_conj.conj();
+
+    auto Wq_effective = Wq_source.copy();
+    if (source_uses_time_reversal)
+    {
+        Wq_effective.conj();
+    }
+
+    ScalapackConnector::pgemm_f('N', 'N', n, n, n, 1.0,
+                                source_rotation_conj.ptr(), 1, 1, desc.desc,
+                                Wq_effective.ptr(), 1, 1, desc.desc,
+                                0.0, tmp.ptr(), 1, 1, desc.desc);
+    ScalapackConnector::pgemm_f('N', 'T', n, n, n, 1.0,
+                                tmp.ptr(), 1, 1, desc.desc,
+                                source_rotation.ptr(), 1, 1, desc.desc,
+                                0.0, Wq_star.ptr(), 1, 1, desc.desc);
+    return Wq_star;
+}
+
+static std::map<Vector3_Order<double>, Matz> restore_symmetry_dense_wq_map(
+    const std::map<Vector3_Order<double>, Matz>& Wq_rep_map,
+    const PeriodicBoundaryData& pbc,
+    const SymmetryQPointView& qpoint_view,
+    const SymmetryContext& symmetry_context,
+    const AtomicBasis& atbasis_Wc,
+    const ArrayDesc& ad_Wc)
+{
+    const auto atom_nabf = build_atom_nabf_map(atbasis_Wc);
+    const auto abf_layouts =
+        atbasis_Wc.build_species_basis_layouts(symmetry_context.atom_to_type);
+    if (!symmetry_species_layouts_match_atom_counts(
+            abf_layouts, symmetry_context.atom_to_type, atom_nabf))
+    {
+        throw LIBRPA_RUNTIME_ERROR("Dense Wc symmetry restore ABF layout mismatch");
+    }
+
+    std::map<Vector3_Order<double>, Matz> Wq_full_map;
+    for (const auto& q_rep : qpoint_view.representatives)
+    {
+        const auto Wq_iter = find_matching_symmetry_qpoint(Wq_rep_map, q_rep);
+        if (Wq_iter == Wq_rep_map.end())
+        {
+            throw LIBRPA_RUNTIME_ERROR("Dense Wc symmetry restore is missing a representative q");
+        }
+        const Vector3_Order<double> q_rep_frac{pbc.latvec * q_rep};
+        const auto& star =
+            find_symmetry_kstar_for_kpoint(symmetry_context.kstars, q_rep_frac,
+                                           "dense Wc q-star restore");
+        const auto& members = qpoint_view.members.at(q_rep);
+        auto find_star_member_index = [](const SymmetryKStar& star,
+                                         const Vector3_Order<double>& q_frac)
+        {
+            for (std::size_t imember = 0; imember != star.members.size(); ++imember)
+            {
+                if (same_fractional_kpoint(star.members[imember].k_bz, q_frac, 1e-5))
+                {
+                    return imember;
+                }
+            }
+            return star.members.size();
+        };
+        const auto source_member_index = find_star_member_index(star, q_rep_frac);
+        if (source_member_index == star.members.size())
+        {
+            throw LIBRPA_RUNTIME_ERROR("Dense Wc symmetry restore could not find the representative in its q-star");
+        }
+        const auto& source_member = star.members[source_member_index];
+        const auto source_rotation = build_symmetry_kspace_rotation_matrix(
+            symmetry_context, abf_layouts, source_member, atom_nabf, star.k_ibz,
+            source_member.time_reversal, &q_rep_frac);
+        const auto Wq_star_source = restore_symmetry_blacs_wq_to_star_source(
+            Wq_iter->second, ad_Wc, source_rotation, source_member.time_reversal);
+
+        for (std::size_t imember = 0; imember != members.size(); ++imember)
+        {
+            const auto& q_member = members[imember];
+            const Vector3_Order<double> q_member_frac{pbc.latvec * q_member};
+            const auto star_member_index = find_star_member_index(star, q_member_frac);
+            if (star_member_index == star.members.size())
+            {
+                throw LIBRPA_RUNTIME_ERROR("Dense Wc symmetry restore could not match a q-star member");
+            }
+            const auto& member = star.members[star_member_index];
+            if (star_member_index == source_member_index)
+            {
+                Wq_full_map[q_member] = Wq_iter->second.copy();
+                continue;
+            }
+
+            const auto rotation = build_symmetry_kspace_rotation_matrix(
+                symmetry_context, abf_layouts, member, atom_nabf, star.k_ibz,
+                member.time_reversal, &q_member_frac);
+            Wq_full_map[q_member] =
+                rotate_symmetry_blacs_wq(Wq_star_source, ad_Wc, rotation, member.time_reversal);
+        }
+    }
+    return Wq_full_map;
+}
+
 std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
     const MpiCommHandler &comm_h, map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
-    const PeriodicBoundaryData &pbc, bool remove_freq_q)
+    const PeriodicBoundaryData &pbc, bool remove_freq_q,
+    const SymmetryQPointView *qpoint_view,
+    const SymmetryContext *symmetry_context,
+    const AtomicBasis *atbasis_Wc,
+    const ArrayDesc *ad_Wc)
 {
     using librpa_int::global::ofs_myid;
     using librpa_int::global::lib_printf;
@@ -3578,6 +3788,14 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
         throw LIBRPA_RUNTIME_ERROR(
             "full-BZ k-point list size is inconsistent with the BvK grid");
     }
+    const bool use_full_crystal_restore =
+        qpoint_view != nullptr
+        && qpoint_view->restore_mode == SymmetryQPointRestoreMode::FULL_CRYSTAL;
+    if (use_full_crystal_restore
+        && (symmetry_context == nullptr || atbasis_Wc == nullptr || ad_Wc == nullptr))
+    {
+        throw LIBRPA_RUNTIME_ERROR("Dense Wc symmetry restore is missing symmetry inputs");
+    }
     // initialize conversion matrix.
     // major does not have to conform the original one
     Matz coeff_k2r(n_k_points, n_k_points, MAJOR::COL);
@@ -3610,7 +3828,25 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
     for (auto it_freq = Wc_freq_q.begin(); it_freq != Wc_freq_q.end();)
     {
         const auto freq = it_freq->first;
-        const auto map_q_mat = it_freq->second;
+        const bool use_full_crystal_restore_this_freq =
+            use_full_crystal_restore
+            && it_freq->second.size() == qpoint_view->representatives.size();
+        std::map<Vector3_Order<double>, Matz> restored_map_q_mat;
+        if (use_full_crystal_restore_this_freq)
+        {
+            restored_map_q_mat = restore_symmetry_dense_wq_map(
+                it_freq->second, pbc, *qpoint_view, *symmetry_context, *atbasis_Wc, *ad_Wc);
+            for (const auto& q_full : klist_full)
+            {
+                if (find_matching_internal_qpoint(restored_map_q_mat, pbc, q_full)
+                    == restored_map_q_mat.end())
+                {
+                    throw LIBRPA_RUNTIME_ERROR("Dense Wc symmetry restore did not cover the full q grid");
+                }
+            }
+        }
+        const auto& map_q_mat =
+            use_full_crystal_restore_this_freq ? restored_map_q_mat : it_freq->second;
         // initialize
         for (const auto &R: Rlist)
         {
@@ -3627,27 +3863,47 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
                 // Copy raw data
                 // for (const auto &[q, mat] : map_q_mat)
                 // for (auto it = map_q_mat.begin(); it != map_q_mat.end(); it++)
-                #pragma omp parallel for schedule(dynamic)
-                for (size_t iq = 0; iq < pbc.klist_coul.size(); iq++)
+                std::fill(kmat.begin(), kmat.end(), cplxdb{0.0, 0.0});
+                if (use_full_crystal_restore_this_freq)
                 {
-                    const auto &q = pbc.klist_coul[iq];
-                    auto it = map_q_mat.find(q);
-                    if (it == map_q_mat.end()) continue;
-                    const auto &mat = it->second;
-                    for (const auto &q_fbz: pbc.map_irk_ks.at(q))
+                    #pragma omp parallel for schedule(dynamic)
+                    for (int iq = 0; iq < n_k_points; iq++)
                     {
-                        const auto iq = pbc.get_k_index_full(q_fbz);
-                        if (q_fbz == q)
+                        const auto& q = klist_full[static_cast<std::size_t>(iq)];
+                        const auto it = find_matching_internal_qpoint(map_q_mat, pbc, q);
+                        if (it == map_q_mat.end())
                         {
-                            memcpy(kmat.data() + iq * size_batch_max,
-                                   mat.ptr() + displ_data, size_this_batch * sizeof(cplxdb));
+                            continue;
                         }
-                        else // assume q_fbz = -q: mat(-q) = conjgate(mat(q))
+                        const auto& mat = it->second;
+                        memcpy(kmat.data() + static_cast<std::size_t>(iq) * size_batch_max,
+                               mat.ptr() + displ_data, size_this_batch * sizeof(cplxdb));
+                    }
+                }
+                else
+                {
+                    #pragma omp parallel for schedule(dynamic)
+                    for (size_t iq = 0; iq < pbc.klist_coul.size(); iq++)
+                    {
+                        const auto &q = pbc.klist_coul[iq];
+                        auto it = map_q_mat.find(q);
+                        if (it == map_q_mat.end()) continue;
+                        const auto &mat = it->second;
+                        for (const auto &q_fbz: pbc.map_irk_ks.at(q))
                         {
-                            Matz tmp(size_this_batch, 1, mat.ptr() + displ_data);
-                            memcpy(kmat.data() + iq * size_batch_max,
-                                   tmp.conj().ptr(),
-                                   size_this_batch * sizeof(cplxdb));
+                            const auto iq = pbc.get_k_index_full(q_fbz);
+                            if (q_fbz == q)
+                            {
+                                memcpy(kmat.data() + iq * size_batch_max,
+                                       mat.ptr() + displ_data, size_this_batch * sizeof(cplxdb));
+                            }
+                            else // assume q_fbz = -q: mat(-q) = conjgate(mat(q))
+                            {
+                                Matz tmp(size_this_batch, 1, mat.ptr() + displ_data);
+                                memcpy(kmat.data() + iq * size_batch_max,
+                                       tmp.conj().ptr(),
+                                       size_this_batch * sizeof(cplxdb));
+                            }
                         }
                     }
                 }
@@ -3690,7 +3946,9 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
     const PeriodicBoundaryData &pbc, const TFGrids &tfg, bool remove_freq_q,
     bool output_wc_rf, int ifreq_output_wc_start, int ifreq_output_wc_end,
     bool output_wc_rf_atom_pair, const std::string &output_dir,
-    const ArrayDesc *ad_Wc, const AtomicBasis *atbasis_Wc)
+    const ArrayDesc *ad_Wc, const AtomicBasis *atbasis_Wc,
+    const SymmetryQPointView *qpoint_view,
+    const SymmetryContext *symmetry_context)
 {
     using std::endl;
 
@@ -3729,7 +3987,8 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
     comm_h.barrier();
 
     // Perform Fourier transform first, then inverse cosine transform
-    auto Wc_freq_R = FT_Wc_freq_q(comm_h, Wc_freq_q, pbc, remove_freq_q);
+    auto Wc_freq_R = FT_Wc_freq_q(comm_h, Wc_freq_q, pbc, remove_freq_q,
+                                  qpoint_view, symmetry_context, atbasis_Wc, ad_Wc);
     if (output_wc_rf)
     {
         if (ad_Wc == nullptr)

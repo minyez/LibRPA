@@ -1,5 +1,6 @@
 #include "../core/symmetry_context.h"
 #include "../core/pbc.h"
+#include "../core/qpoint_view.h"
 #include "../math/rsh.h"
 #include "../utils/constants.h"
 
@@ -7,6 +8,7 @@
 #include <cassert>
 #include <complex>
 #include <map>
+#include <stdexcept>
 #include <vector>
 
 #include "testutils.h"
@@ -270,6 +272,168 @@ void test_periodic_mappings_accept_kq_reduced_coulomb_grid()
     assert(ctx.kstar_grid_mapping[2].member_q_bz_keys.size() == 2);
 }
 
+void test_qpoint_view_uses_pbc_without_symmetry()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    const std::vector<double> kvecs{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+        2.0 * librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+    };
+    pbc.set_kgrids_kvec(3, 1, 1, kvecs);
+
+    SymmetryContext ctx;
+    const auto view = build_symmetry_qpoint_view(ctx, pbc, false);
+    assert(view.restore_mode == SymmetryQPointRestoreMode::NONE);
+    assert(view.representatives.size() == 3);
+    assert(std::abs(view.weights.at(pbc.klist_coul[0]) - 1.0 / 3.0) < 1e-12);
+}
+
+void test_qpoint_view_preserves_time_reversal_mapping_without_crystal_symmetry()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    const std::vector<double> kvecs{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+        2.0 * librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+    };
+    pbc.set_kgrids_kvec(3, 1, 1, kvecs);
+    pbc.set_kq_mapping({0, 1, 1});
+
+    SymmetryContext ctx;
+    const auto view = build_symmetry_qpoint_view(ctx, pbc, false);
+    assert(view.restore_mode == SymmetryQPointRestoreMode::TIME_REVERSAL);
+    assert(view.representatives.size() == 2);
+    assert(view.members.at(pbc.klist_coul[1]).size() == 2);
+    assert(std::abs(view.weights.at(pbc.klist_coul[1]) - 2.0 / 3.0) < 1e-12);
+}
+
+void test_qpoint_view_preserves_time_reversal_q_reduction_with_crystal_symmetry()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    const std::vector<double> kvecs{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+        2.0 * librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+    };
+    pbc.set_kgrids_kvec(3, 1, 1, kvecs);
+    pbc.set_kq_mapping({0, 1, 1});
+
+    SymmetryContext ctx;
+    ctx.set_crystal_structure(pbc.latvec,
+                              pbc.G,
+                              {{0, 0}},
+                              {{0, {0.0, 0.0, 0.0}}});
+    ctx.set_rspace_operations({SpaceGroupSymOp::IDENTITY});
+    ctx.set_available();
+    ctx.build_periodic_mappings(pbc, pbc.Rlist);
+
+    const auto view = build_symmetry_qpoint_view(ctx, pbc, true);
+    assert(view.restore_mode == SymmetryQPointRestoreMode::TIME_REVERSAL);
+    assert(view.representatives == pbc.klist_coul);
+    assert(view.members.at(pbc.klist_coul[1]).size() == 2);
+    assert(std::abs(view.weights.at(pbc.klist_coul[1]) - 2.0 / 3.0) < 1e-12);
+}
+
+void test_qpoint_view_rejects_reduced_input_without_symmetry()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({2.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    const std::vector<double> kvecs_ibz{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI / 6.0, 0.0, 0.0,
+    };
+    const std::vector<std::vector<Vector3_Order<double>>> full_kstars{
+        {{0.0, 0.0, 0.0}},
+        {{1.0 / 6.0, 0.0, 0.0}, {-1.0 / 6.0, 0.0, 0.0}},
+    };
+    pbc.set_irreducible_kgrids_kvec(3, 1, 1, kvecs_ibz, full_kstars);
+
+    bool threw = false;
+    try
+    {
+        SymmetryContext ctx;
+        (void)build_symmetry_qpoint_view(ctx, pbc, false);
+    }
+    catch (const std::runtime_error&)
+    {
+        threw = true;
+    }
+    assert(threw);
+}
+
+void test_qpoint_view_accepts_reduced_input_with_symmetry()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({2.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    const std::vector<double> kvecs_ibz{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI / 6.0, 0.0, 0.0,
+    };
+    const std::vector<std::vector<Vector3_Order<double>>> full_kstars{
+        {{0.0, 0.0, 0.0}},
+        {{1.0 / 6.0, 0.0, 0.0}, {-1.0 / 6.0, 0.0, 0.0}},
+    };
+    pbc.set_irreducible_kgrids_kvec(3, 1, 1, kvecs_ibz, full_kstars);
+
+    SymmetryContext ctx;
+    ctx.set_crystal_structure(pbc.latvec,
+                              pbc.G,
+                              {{0, 0}},
+                              {{0, {0.0, 0.0, 0.0}}});
+    ctx.set_rspace_operations({SpaceGroupSymOp::IDENTITY});
+    ctx.set_available();
+    ctx.build_periodic_mappings(pbc, pbc.Rlist);
+
+    const auto view = build_symmetry_qpoint_view(ctx, pbc, true);
+    assert(view.restore_mode == SymmetryQPointRestoreMode::FULL_CRYSTAL);
+    assert(view.representatives == pbc.klist_coul);
+    assert(view.members.at(pbc.klist_coul[1]).size() == 2);
+    assert(std::abs(view.weights.at(pbc.klist_coul[1]) - 2.0 / 3.0) < 1e-12);
+}
+
+void test_qpoint_view_keeps_full_input_grid_without_parsed_crystal_symmetry()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    const std::vector<double> kvecs{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+        2.0 * librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+    };
+    pbc.set_kgrids_kvec(3, 1, 1, kvecs);
+
+    SymmetryContext ctx;
+    ctx.set_crystal_structure(pbc.latvec,
+                              pbc.G,
+                              {{0, 0}},
+                              {{0, {0.0, 0.0, 0.0}}});
+    ctx.set_rspace_operations({SpaceGroupSymOp::IDENTITY});
+    ctx.set_available();
+    ctx.build_periodic_mappings(pbc, pbc.Rlist);
+
+    const auto view = build_symmetry_qpoint_view(ctx, pbc, true);
+    assert(view.restore_mode == SymmetryQPointRestoreMode::NONE);
+    assert(view.representatives == pbc.klist_coul);
+    assert(view.representatives.size() == 3);
+    assert(std::abs(view.weights.at(pbc.klist_coul[1]) - 1.0 / 3.0) < 1e-12);
+}
+
 void add_irreducible_sector_entry(symmetry_irreducible_sector_t& sector,
                                   const atom_t atom_i,
                                   const atom_t atom_j,
@@ -421,6 +585,381 @@ void set_mgo_primitive_structure(SymmetryContext& ctx,
     ctx.set_crystal_structure(pbc.latvec, pbc.G, atom_to_type, coord_frac);
 }
 
+void test_single_atom_qpoint_view_reduces_full_input_to_crystal_qstars()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({0.0, 0.5, 0.5,
+                    0.5, 0.0, 0.5,
+                    0.5, 0.5, 0.0});
+
+    std::vector<double> kvecs;
+    for (const auto& kfrac : build_uniform_kmesh_frac({3, 3, 3}))
+    {
+        const auto kvec = kfrac * pbc.G;
+        kvecs.push_back(kvec.x * TWO_PI);
+        kvecs.push_back(kvec.y * TWO_PI);
+        kvecs.push_back(kvec.z * TWO_PI);
+    }
+    pbc.set_kgrids_kvec(3, 3, 3, kvecs);
+
+    SymmetryContext ctx;
+    set_mgo_primitive_structure(ctx,
+                                {{0, 0}},
+                                {{0, {0.0, 0.0, 0.0}}});
+    add_mgo_fractional_symmetry_operations(ctx);
+    ctx.set_available();
+    ctx.build_periodic_mappings(pbc, pbc.Rlist);
+
+    const auto view = build_symmetry_qpoint_view(ctx, pbc, true);
+    assert(view.restore_mode == SymmetryQPointRestoreMode::FULL_CRYSTAL);
+    assert(view.representatives.size() == ctx.kstars.size());
+    assert(view.representatives.size() == 4);
+    std::size_t n_members = 0;
+    double weight_sum = 0.0;
+    for (const auto& q : view.representatives)
+    {
+        n_members += view.members.at(q).size();
+        weight_sum += view.weights.at(q);
+    }
+    assert(n_members == pbc.klist_full.size());
+    assert(std::abs(weight_sum - 1.0) < 1e-12);
+}
+
+void test_mgo_qpoint_view_reduces_time_reversal_q_list_to_crystal_qstars_for_full_input()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({0.0, 0.5, 0.5,
+                    0.5, 0.0, 0.5,
+                    0.5, 0.5, 0.0});
+
+    std::vector<double> kvecs;
+    for (const auto& kfrac : build_uniform_kmesh_frac({3, 3, 3}))
+    {
+        const auto kvec = kfrac * pbc.G;
+        kvecs.push_back(kvec.x * TWO_PI);
+        kvecs.push_back(kvec.y * TWO_PI);
+        kvecs.push_back(kvec.z * TWO_PI);
+    }
+    pbc.set_kgrids_kvec(3, 3, 3, kvecs);
+
+    std::vector<int> map_q_ks(pbc.kfrac_list.size(), -1);
+    for (std::size_t ik = 0; ik != pbc.kfrac_list.size(); ++ik)
+    {
+        const auto minus_k =
+            restrict_fractional_coordinate(Vector3_Order<double>{-pbc.kfrac_list[ik].x,
+                                                                  -pbc.kfrac_list[ik].y,
+                                                                  -pbc.kfrac_list[ik].z});
+        int minus_ik = -1;
+        for (std::size_t jk = 0; jk != pbc.kfrac_list.size(); ++jk)
+        {
+            if (same_fractional_kpoint(pbc.kfrac_list[jk], minus_k, 1e-5))
+            {
+                minus_ik = static_cast<int>(jk);
+                break;
+            }
+        }
+        assert(minus_ik >= 0);
+        map_q_ks[ik] = std::min(static_cast<int>(ik), minus_ik);
+    }
+    pbc.set_kq_mapping(map_q_ks);
+    assert(pbc.klist_coul.size() == 14);
+
+    SymmetryContext ctx;
+    set_mgo_primitive_structure(ctx,
+                                {{0, 0}, {1, 1}},
+                                {{0, {0.0, 0.0, 0.0}}, {1, {0.5, 0.5, 0.5}}});
+    add_mgo_fractional_symmetry_operations(ctx);
+    ctx.set_available();
+    ctx.build_periodic_mappings(pbc, pbc.Rlist);
+
+    const auto view = build_symmetry_qpoint_view(ctx, pbc, true);
+    assert(view.restore_mode == SymmetryQPointRestoreMode::FULL_CRYSTAL);
+    assert(view.representatives.size() == ctx.kstars.size());
+    assert(view.representatives.size() == 4);
+    std::size_t n_members = 0;
+    double weight_sum = 0.0;
+    for (const auto& q : view.representatives)
+    {
+        n_members += view.members.at(q).size();
+        weight_sum += view.weights.at(q);
+    }
+    assert(n_members == pbc.klist_full.size());
+    assert(std::abs(weight_sum - 1.0) < 1e-12);
+}
+
+void test_mgo_keeps_all_kspace_operations_for_full_qstars()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({0.0, 0.5, 0.5,
+                    0.5, 0.0, 0.5,
+                    0.5, 0.5, 0.0});
+
+    std::vector<double> kvecs;
+    for (const auto& kfrac : build_uniform_kmesh_frac({3, 3, 3}))
+    {
+        const auto kvec = kfrac * pbc.G;
+        kvecs.push_back(kvec.x * TWO_PI);
+        kvecs.push_back(kvec.y * TWO_PI);
+        kvecs.push_back(kvec.z * TWO_PI);
+    }
+    pbc.set_kgrids_kvec(3, 3, 3, kvecs);
+
+    SymmetryContext ctx;
+    set_mgo_primitive_structure(ctx,
+                                {{0, 0}, {1, 1}},
+                                {{0, {0.0, 0.0, 0.0}}, {1, {0.5, 0.5, 0.5}}});
+
+    SpaceGroupSymOps signed_permutation_operations;
+    const std::array<std::array<int, 3>, 6> permutations{{
+        {{0, 1, 2}},
+        {{0, 2, 1}},
+        {{1, 0, 2}},
+        {{1, 2, 0}},
+        {{2, 0, 1}},
+        {{2, 1, 0}},
+    }};
+    const std::array<int, 2> signs{{-1, 1}};
+    for (const auto& permutation : permutations)
+    {
+        for (const int sx : signs)
+        {
+            for (const int sy : signs)
+            {
+                for (const int sz : signs)
+                {
+                    const std::array<int, 3> sign{{sx, sy, sz}};
+                    std::array<int, 9> rotation{};
+                    for (int col = 0; col != 3; ++col)
+                    {
+                        rotation[3 * permutation[col] + col] = sign[col];
+                    }
+                    signed_permutation_operations.push_back(
+                        make_row_symmetry_operation(rotation));
+                }
+            }
+        }
+    }
+
+    ctx.set_rspace_operations(signed_permutation_operations);
+    assert(ctx.rspace_operations.size() == 48);
+    int metric_preserving_ops = 0;
+    for (const auto& op : ctx.rspace_operations)
+    {
+        if (preserves_lattice_metric(op.rotation, ctx.lattice_vectors, 1e-6))
+        {
+            ++metric_preserving_ops;
+        }
+    }
+    assert(metric_preserving_ops == 48);
+
+    ctx.set_available();
+    ctx.build_periodic_mappings(pbc, pbc.Rlist);
+    assert(ctx.kstars.size() == 4);
+    const auto view = build_symmetry_qpoint_view(ctx, pbc, true);
+    assert(view.restore_mode == SymmetryQPointRestoreMode::FULL_CRYSTAL);
+    assert(view.representatives.size() == ctx.kstars.size());
+}
+
+void test_kstar_routes_prefer_improper_spatial_operation_over_time_reversal()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+
+    std::vector<double> kvecs;
+    for (const auto& kfrac : build_uniform_kmesh_frac({3, 3, 3}))
+    {
+        const auto kvec = kfrac * pbc.G;
+        kvecs.push_back(kvec.x * TWO_PI);
+        kvecs.push_back(kvec.y * TWO_PI);
+        kvecs.push_back(kvec.z * TWO_PI);
+    }
+    pbc.set_kgrids_kvec(3, 3, 3, kvecs);
+
+    SymmetryContext ctx;
+    ctx.set_crystal_structure(pbc.latvec,
+                              pbc.G,
+                              {{0, 0}},
+                              {{0, {0.0, 0.0, 0.0}}});
+    ctx.set_rspace_operations({SpaceGroupSymOp::IDENTITY, SpaceGroupSymOp::INVERSE});
+    ctx.set_available();
+    ctx.build_periodic_mappings(pbc, pbc.Rlist);
+
+    bool checked_minus_q_member = false;
+    for (const auto& star : ctx.kstars)
+    {
+        if (same_fractional_kpoint(star.k_ibz, {0.0, 0.0, 0.0}, 1e-5))
+        {
+            continue;
+        }
+        const auto minus_rep =
+            restrict_fractional_coordinate(Vector3_Order<double>{-star.k_ibz.x,
+                                                                  -star.k_ibz.y,
+                                                                  -star.k_ibz.z});
+        for (const auto& member : star.members)
+        {
+            if (!same_fractional_kpoint(member.k_bz, minus_rep, 1e-5)
+                || same_fractional_kpoint(member.k_bz, star.k_ibz, 1e-5))
+            {
+                continue;
+            }
+            assert(member.spatial_isym == 1);
+            assert(!member.time_reversal);
+            checked_minus_q_member = true;
+        }
+    }
+    assert(checked_minus_q_member);
+}
+
+ComplexMatrix make_test_dense_operator(const int n)
+{
+    ComplexMatrix matrix(n, n);
+    for (int row = 0; row != n; ++row)
+    {
+        for (int col = 0; col != n; ++col)
+        {
+            matrix(row, col) =
+                std::complex<double>{0.1 * (row + 1) + 0.03 * (col + 1),
+                                     0.07 * (row - col)};
+        }
+    }
+    return matrix;
+}
+
+librpa_int::symmetry_atom_block_matrix_map_t dense_to_atom_blocks(
+    const ComplexMatrix& matrix,
+    const std::map<atom_t, size_t>& atom_nabf)
+{
+    librpa_int::symmetry_atom_block_matrix_map_t blocks;
+    std::map<atom_t, int> offsets;
+    int offset = 0;
+    for (const auto& [atom, nbf] : atom_nabf)
+    {
+        offsets[atom] = offset;
+        offset += static_cast<int>(nbf);
+    }
+    for (const auto& [atom_i, n_i_size] : atom_nabf)
+    {
+        const int n_i = static_cast<int>(n_i_size);
+        for (const auto& [atom_j, n_j_size] : atom_nabf)
+        {
+            const int n_j = static_cast<int>(n_j_size);
+            ComplexMatrix block(n_i, n_j);
+            for (int i = 0; i != n_i; ++i)
+            {
+                for (int j = 0; j != n_j; ++j)
+                {
+                    block(i, j) = matrix(offsets.at(atom_i) + i,
+                                         offsets.at(atom_j) + j);
+                }
+            }
+            blocks[atom_i][atom_j] = block;
+        }
+    }
+    return blocks;
+}
+
+ComplexMatrix atom_blocks_to_dense(
+    const librpa_int::symmetry_atom_block_matrix_map_t& blocks,
+    const std::map<atom_t, size_t>& atom_nabf)
+{
+    std::map<atom_t, int> offsets;
+    int total = 0;
+    for (const auto& [atom, nbf] : atom_nabf)
+    {
+        offsets[atom] = total;
+        total += static_cast<int>(nbf);
+    }
+    ComplexMatrix matrix(total, total);
+    for (const auto& [atom_i, row_blocks] : blocks)
+    {
+        for (const auto& [atom_j, block] : row_blocks)
+        {
+            const int row_offset = offsets.at(atom_i);
+            const int col_offset = offsets.at(atom_j);
+            for (int i = 0; i != block.nr; ++i)
+            {
+                for (int j = 0; j != block.nc; ++j)
+                {
+                    matrix(row_offset + i, col_offset + j) = block(i, j);
+                }
+            }
+        }
+    }
+    return matrix;
+}
+
+ComplexMatrix rotate_dense_operator_from_rotation_matrix(
+    const ComplexMatrix& matrix,
+    const ComplexMatrix& rotation,
+    const bool use_time_reversal)
+{
+    if (use_time_reversal)
+    {
+        return transpose(rotation, true) * conj(matrix) * rotation;
+    }
+    return transpose(rotation, false) * matrix * conj(rotation);
+}
+
+void test_mgo_dense_kspace_rotation_matches_atom_block_rotation()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({0.0, 0.5, 0.5,
+                    0.5, 0.0, 0.5,
+                    0.5, 0.5, 0.0});
+
+    std::vector<double> kvecs;
+    for (const auto& kfrac : build_uniform_kmesh_frac({3, 3, 3}))
+    {
+        const auto kvec = kfrac * pbc.G;
+        kvecs.push_back(kvec.x * TWO_PI);
+        kvecs.push_back(kvec.y * TWO_PI);
+        kvecs.push_back(kvec.z * TWO_PI);
+    }
+    pbc.set_kgrids_kvec(3, 3, 3, kvecs);
+
+    SymmetryContext ctx;
+    set_mgo_primitive_structure(ctx,
+                                {{0, 0}, {1, 1}},
+                                {{0, {0.0, 0.0, 0.0}}, {1, {0.5, 0.5, 0.5}}});
+    add_mgo_fractional_symmetry_operations(ctx);
+    ctx.set_available();
+    ctx.build_periodic_mappings(pbc, pbc.Rlist);
+    ctx.build_rsh_rotations({-1,
+                             0,
+                             LIBRPA_ANGULAR_ORDER_NATURAL,
+                             LIBRPA_RSH_COEFF_1_M,
+                             LIBRPA_RSH_COEFF_1_M},
+                            1);
+    ctx.build_kstar_member_rotations(1);
+
+    AtomicBasis basis(std::vector<std::size_t>{4, 4});
+    basis.set_l_shells({{0, 1}, {0, 1}});
+    const auto layouts = basis.build_species_basis_layouts(ctx.atom_to_type);
+    const std::map<atom_t, size_t> atom_nabf{{0, 4}, {1, 4}};
+    const auto matrix = make_test_dense_operator(8);
+    const auto blocks = dense_to_atom_blocks(matrix, atom_nabf);
+
+    for (const auto& star : ctx.kstars)
+    {
+        for (const auto& member : star.members)
+        {
+            const auto rotation = build_symmetry_kspace_rotation_matrix(
+                ctx, layouts, member, atom_nabf, star.k_ibz, member.time_reversal,
+                &member.k_bz);
+            const auto rotated_dense = rotate_dense_operator_from_rotation_matrix(
+                matrix, rotation, member.time_reversal);
+            const auto rotated_blocks = rotate_symmetry_kspace_operator_blocks(
+                ctx, layouts, member, blocks, atom_nabf, star.k_ibz,
+                member.time_reversal, nullptr, &member.k_bz);
+            assert_matrix_close(rotated_dense,
+                                atom_blocks_to_dense(rotated_blocks, atom_nabf),
+                                1e-10);
+        }
+    }
+}
+
 void test_mgo_k333_irreducible_sector_matches_single()
 {
     SymmetryContext ctx;
@@ -565,6 +1104,17 @@ int main()
     test_atomic_basis_builds_symmetry_species_layouts();
     test_periodic_mappings_store_full_kpoint_members();
     test_periodic_mappings_accept_kq_reduced_coulomb_grid();
+    test_qpoint_view_uses_pbc_without_symmetry();
+    test_qpoint_view_preserves_time_reversal_mapping_without_crystal_symmetry();
+    test_qpoint_view_preserves_time_reversal_q_reduction_with_crystal_symmetry();
+    test_qpoint_view_rejects_reduced_input_without_symmetry();
+    test_qpoint_view_accepts_reduced_input_with_symmetry();
+    test_qpoint_view_keeps_full_input_grid_without_parsed_crystal_symmetry();
+    test_single_atom_qpoint_view_reduces_full_input_to_crystal_qstars();
+    test_mgo_qpoint_view_reduces_time_reversal_q_list_to_crystal_qstars_for_full_input();
+    test_mgo_keeps_all_kspace_operations_for_full_qstars();
+    test_kstar_routes_prefer_improper_spatial_operation_over_time_reversal();
+    test_mgo_dense_kspace_rotation_matches_atom_block_rotation();
     test_mgo_k333_irreducible_sector_matches_single();
     test_mgo_k333_irreducible_sector_matches_both();
     test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry();

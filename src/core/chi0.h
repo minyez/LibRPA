@@ -19,6 +19,7 @@
 #include "symmetry_context.h"
 #include "meanfield.h"
 #include "pbc.h"
+#include "qpoint_view.h"
 #include "ri.h"
 #include "timefreq.h"
 
@@ -49,6 +50,7 @@ private:
 
     //! chi0 data in frequency domain and reciprocal space, [omega][q]
     std::map<double, std::map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> chi0_q;
+    SymmetryQPointView qpoint_view_;
 
     void build_gf_Rt(Vector3_Order<int> R, double tau);
 
@@ -130,6 +132,9 @@ public:
                std::map<Vector3_Order<double>, ComplexMatrix> &sinvS,
                const BlacsCtxtHandler &blacs_ctxt_h);
     const std::map<double, std::map<Vector3_Order<double>, atom_mapping<ComplexMatrix>::pair_t_old>> & get_chi0_q() const { return chi0_q; }
+    const SymmetryQPointView &qpoint_view() const { return qpoint_view_; }
+    const std::vector<Vector3_Order<double>> &active_qpoints() const { return qpoint_view_.representatives; }
+    double q_weight(const Vector3_Order<double> &q) const { return qpoint_view_.weights.at(q); }
     void free_chi0_q(const double freq, const Vector3_Order<double> q);
 
     void unfold_abfs_Wc(

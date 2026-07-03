@@ -12,6 +12,7 @@
 #include "meanfield.h"
 #include "geometry.h"
 #include "pbc.h"
+#include "qpoint_view.h"
 #include "ri.h"
 #include "timefreq.h"
 
@@ -51,6 +52,7 @@ public:
     const PeriodicBoundaryData &pbc;
     const SymmetryContext &symmetry_context;
     const bool use_symmetry_context;
+    const SymmetryQPointView qpoint_view;
     const TFGrids &tfg;
     const MpiCommHandler &comm_h;
     const KPointBlacsParallelContext &kblacs_ctxt;

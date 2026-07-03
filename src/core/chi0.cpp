@@ -567,7 +567,8 @@ Chi0::Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const TFGrids &tfg_in, const KPointBlacsParallelContext &kblacs_ctxt_in,
            const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed,
            const bool use_symmetry_context_in)
-    : mf(mf_in),
+    : qpoint_view_(build_symmetry_qpoint_view(symmetry_context_in, pbc_in, use_symmetry_context_in)),
+      mf(mf_in),
       desc_wfc(desc_wfc_in),
       atbasis_wfc(atbasis_wfc_in),
       atbasis_abf(atbasis_abf_in),
@@ -1696,7 +1697,7 @@ static void shrink_abfs_chi0(
                 for (auto &Jqc : IJqc.second)
                 {
                     auto &J = Jqc.first.first;
-                    auto &c = Jqc.second;
+                    // auto &c = Jqc.second;
                     global::ofs_myid << "chi0ss I " << I << " J " << J << std::endl;
                 }
             }
@@ -1749,7 +1750,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     const bool use_shrink_chi = sinvS.size() > 0;
     const bool use_delayed_ft_shrink = use_shrink_chi && global::dev_opts.use_delayed_ft_shrink;
     global::profiler.start("LibRI_routing", "Loop over LibRI");
-    const auto &qlist = this->pbc.klist_coul;
+    const auto &qlist = this->active_qpoints();
     const std::vector<Vector3_Order<double>> qlist_all(qlist.begin(), qlist.end());
     const auto all_atpairs_ABF = generate_atom_pair_from_nat(atbasis_abf.n_atoms, false);
     const auto q_uhap_process_shape = resolve_chi0_q_uhap_process_shape(
@@ -1966,7 +1967,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
 
     // omp_lock_t lock_chi0_fourier_cosine;
     // omp_init_lock(&lock_chi0_fourier_cosine);
-    int count_gf = 0;
+    // int count_gf = 0;
     map<double, Chi0CollectMap<Tdata>> chi0_freq_R;
     for (size_t it = 0; it != tfg.size(); it++)
     {
@@ -2307,7 +2308,7 @@ void Chi0::build_chi0_q_space_time_R_tau_routing(const Cs_LRI &Cs,
                            comm_h.nprocs, true, false);
     map<Vector3_Order<double>,int> qlist2myid;
 
-    const auto &qlist = pbc.klist_coul;
+    const auto &qlist = this->active_qpoints();
     auto loc_qlist = librpa_int::dispatch_vector(qlist , comm_h.myid, comm_h.nprocs, true);
     for(int id=0;id!=comm_h.nprocs;id++)
     {
@@ -2449,7 +2450,7 @@ void Chi0::build_chi0_q_space_time_atom_pair_routing(const Cs_LRI &Cs,
     const auto &LRI_Cs = Cs.data_IJR;
 
     const auto &latvec = this->pbc.latvec;
-    const auto &qlist = this->pbc.klist_coul;
+    const auto &qlist = this->active_qpoints();
     const int nfreq = as_int(tfg.size());
 
     const auto n_spinor = mf.get_n_spinor();

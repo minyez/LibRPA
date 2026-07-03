@@ -173,6 +173,14 @@ ComplexMatrix rotate_symmetry_kspace_matrix(const SymmetryContext& ctx,
                                           const bool use_time_reversal = false,
                                           const Vector3_Order<double>* k_bz_target = nullptr);
 
+ComplexMatrix build_symmetry_kspace_rotation_matrix(const SymmetryContext& ctx,
+                                                    const std::vector<SpeciesBasisLayout>& layouts,
+                                                    const SymmetryKStarMember& member,
+                                                    const std::map<atom_t, size_t>& atom_nw,
+                                                    const Vector3_Order<double>& k_ibz,
+                                                    bool use_time_reversal = false,
+                                                    const Vector3_Order<double>* k_bz_target = nullptr);
+
 symmetry_irreducible_sector_t build_symmetry_rspace_irreducible_sector(
     const SymmetryContext& ctx,
     const std::vector<Vector3_Order<int>>& Rlist);

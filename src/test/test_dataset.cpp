@@ -5,6 +5,7 @@
 #include "../io/global_io.h"
 #include "../utils/constants.h"
 #include "librpa_enums.h"
+#include "librpa_options.h"
 #include "testutils.h"
 
 template <typename T, typename = void>
@@ -307,6 +308,50 @@ static void test_redistribute_eigvecs_kpara_np4()
     ds.free();
 }
 
+static void setup_spinor_dataset(librpa_int::Dataset &ds)
+{
+    using namespace librpa_int;
+
+    ds.mf.set(1, 1, 1, 1, 2);
+    ds.pbc.set_latvec({1, 0, 0, 0, 1, 0, 0, 0, 1});
+    ds.pbc.set_kgrids_kvec(1, 1, 1, {0.0, 0.0, 0.0});
+}
+
+static void test_spinor_symmetry_speedup_rejected()
+{
+    using namespace librpa_int;
+
+    auto rejects = [](auto init, auto set_symmetry_flag) {
+        Dataset ds(MPI_COMM_WORLD);
+        setup_spinor_dataset(ds);
+        LibrpaOptions opts;
+        librpa_init_options(&opts);
+        set_symmetry_flag(opts);
+
+        bool threw = false;
+        try
+        {
+            init(ds, opts);
+        }
+        catch (const std::runtime_error&)
+        {
+            threw = true;
+        }
+        ds.free();
+        return threw;
+    };
+
+    assert(rejects(initialize_ds_exx, [](LibrpaOptions &opts) {
+        opts.use_symmetry_exx = LIBRPA_SWITCH_ON;
+    }));
+    assert(rejects(initialize_ds_chi0, [](LibrpaOptions &opts) {
+        opts.use_symmetry_rpa = LIBRPA_SWITCH_ON;
+    }));
+    assert(rejects(initialize_ds_g0w0, [](LibrpaOptions &opts) {
+        opts.use_symmetry_gw = LIBRPA_SWITCH_ON;
+    }));
+}
+
 int main (int argc, char *argv[])
 {
     using namespace librpa_int;
@@ -325,6 +370,7 @@ int main (int argc, char *argv[])
     test_redistribute_blacs2ap_np4({2, 3});
     test_redistribute_blacs2ap_np4({10, 4, 5});
     test_redistribute_eigvecs_kpara_np4();
+    test_spinor_symmetry_speedup_rejected();
 
     finalize_global_io();
     finalize_global_mpi();

@@ -92,6 +92,7 @@ list(APPEND lib_sources
         core/meanfield_mpi.cpp
         core/minimax_gx.cpp
         core/pbc.cpp
+        core/qpoint_view.cpp
         core/qpe_solver.cpp
         core/ri.cpp
         core/timefreq.cpp

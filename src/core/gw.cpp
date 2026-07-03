@@ -637,6 +637,7 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
       pbc(pbc_in),
       symmetry_context(symmetry_context_in),
       use_symmetry_context(use_symmetry_context_in),
+      qpoint_view(build_symmetry_qpoint_view(symmetry_context_in, pbc_in, use_symmetry_context_in)),
       tfg(tfg_in),
       comm_h(kblacs_ctxt_in.comm_global_h),
       kblacs_ctxt(kblacs_ctxt_in)
@@ -1260,7 +1261,8 @@ void G0W0::build_spacetime(
         profiler.start("g0w0_build_spacetime_ct_ft_real_work", "Perform transformation");
         auto Wc_tau_R_blacs = CT_FT_Wc_freq_q(
             comm_h, Wc_freq_q, pbc, tfg, true, output_wc_rf, ifreq_output_wc_start,
-            ifreq_output_wc_end, output_wc_rf_atom_pair, output_dir, &ad_Wc, &atbasis_abf);
+            ifreq_output_wc_end, output_wc_rf_atom_pair, output_dir, &ad_Wc, &atbasis_abf,
+            &qpoint_view, &symmetry_context);
         release_free_mem();
         profiler.stop("g0w0_build_spacetime_ct_ft_real_work");
 

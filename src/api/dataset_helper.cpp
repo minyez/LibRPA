@@ -48,8 +48,8 @@ void initialize_symmetry_context(Dataset &ds, const bool build_shell_rotations)
 
     auto &ctx = ds.symmetry_context;
     ctx.clear();
-    ctx.set_rspace_operations(spg_symops);
     ctx.set_crystal_structure(ds.pbc.latvec, ds.pbc.G, ds.atoms.types, ds.atoms.coords_frac);
+    ctx.set_rspace_operations(spg_symops);
     ctx.build_periodic_mappings(ds.pbc, ds.pbc.Rlist);
 
     auto mark_available = [&ctx]() {
@@ -96,6 +96,17 @@ void require_symmetry_shell_layouts(const Dataset &ds, const char *calculation)
             std::string("Cannot use ") + calculation
             + " symmetry without l-shell basis layouts for AO and ABF species");
     }
+}
+
+void reject_spinor_symmetry_speedup(const Dataset &ds, const char *calculation)
+{
+    if (ds.mf.get_n_spinor() <= 1)
+    {
+        return;
+    }
+    throw LIBRPA_RUNTIME_ERROR(
+        std::string("Cannot use ") + calculation
+        + " symmetry speed-up with spinor wave functions; disable symmetry for spinor runs");
 }
 
 void initialize_ds_tfgrids(Dataset &ds, const LibrpaOptions &opts)
@@ -198,6 +209,10 @@ void initialize_ds_exx(Dataset &ds, const LibrpaOptions &opts)
 {
     global::profiler.start("initialize_ds_exx");
     const bool use_symmetry = opts.use_symmetry_exx == LIBRPA_SWITCH_ON;
+    if (use_symmetry)
+    {
+        reject_spinor_symmetry_speedup(ds, "EXX");
+    }
     initialize_symmetry_context(ds, use_symmetry);
     if (use_symmetry)
     {
@@ -218,6 +233,10 @@ void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts)
 {
     global::profiler.start("initialize_ds_chi0");
     const bool use_symmetry = opts.use_symmetry_rpa == LIBRPA_SWITCH_ON;
+    if (use_symmetry)
+    {
+        reject_spinor_symmetry_speedup(ds, "RPA/chi0");
+    }
     initialize_symmetry_context(ds, use_symmetry);
     if (use_symmetry)
     {
@@ -249,6 +268,10 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts)
 {
     global::profiler.start("initialize_ds_g0w0");
     const bool use_symmetry = opts.use_symmetry_gw == LIBRPA_SWITCH_ON;
+    if (use_symmetry)
+    {
+        reject_spinor_symmetry_speedup(ds, "GW");
+    }
     initialize_symmetry_context(ds, use_symmetry);
     if (use_symmetry)
     {

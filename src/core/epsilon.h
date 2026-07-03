@@ -10,9 +10,10 @@
 #include "atomic_basis.h"
 #include "chi0.h"
 #include "dielecmodel.h"
-#include "symmetry_context.h"
 #include "pbc.h"
+#include "qpoint_view.h"
 #include "ri.h"
+#include "symmetry_context.h"
 
 namespace librpa_int {
 
@@ -74,7 +75,11 @@ void unfold_Wc_freq_q_blacs(
 std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
     const MpiCommHandler &comm_h,
     std::map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
-    const PeriodicBoundaryData &pbc, bool remove_freq_q = true);
+    const PeriodicBoundaryData &pbc, bool remove_freq_q = true,
+    const SymmetryQPointView *qpoint_view = nullptr,
+    const SymmetryContext *symmetry_context = nullptr,
+    const AtomicBasis *atbasis_Wc = nullptr,
+    const ArrayDesc *ad_Wc = nullptr);
 
 std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
     const MpiCommHandler &comm_h,
@@ -83,7 +88,9 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
     bool output_wc_rf = false, int ifreq_output_wc_start = 0,
     int ifreq_output_wc_end = -1, bool output_wc_rf_atom_pair = false,
     const std::string &output_dir = ".", const ArrayDesc *ad_Wc = nullptr,
-    const AtomicBasis *atbasis_Wc = nullptr);
+    const AtomicBasis *atbasis_Wc = nullptr,
+    const SymmetryQPointView *qpoint_view = nullptr,
+    const SymmetryContext *symmetry_context = nullptr);
 
 // @brief Fourier transform screened Coulomb Wc(q,w) -> Wc(R,w) -> W(R,t)
 // @details transform step by step to output Wc_freq_R, and return full atom-pair matrix

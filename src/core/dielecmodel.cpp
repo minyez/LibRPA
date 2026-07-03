@@ -239,30 +239,6 @@ static std::vector<int> build_headwing_atom_offsets(const std::map<atom_t, size_
     return offsets;
 }
 
-static Vector3_Order<int> headwing_kspace_return_lattice(
-    const SymmetryContext& ctx, const SymmetryKAtomRotation& atom_rotation,
-    const int spatial_isym)
-{
-    const auto stored = ctx.kspace_return_lattice.find({atom_rotation.atom_from, spatial_isym});
-    if (stored != ctx.kspace_return_lattice.end()) return stored->second;
-
-    const auto from_iter = ctx.input_coord_frac.find(static_cast<atom_t>(atom_rotation.atom_from));
-    const auto to_iter = ctx.input_coord_frac.find(static_cast<atom_t>(atom_rotation.atom_to));
-    if (from_iter == ctx.input_coord_frac.end() || to_iter == ctx.input_coord_frac.end())
-        throw std::runtime_error("headwing AO rotation missing fractional coordinates");
-    if (spatial_isym < 0 || spatial_isym >= static_cast<int>(ctx.rspace_operations.size()))
-        throw std::runtime_error("headwing AO rotation uses an invalid symmetry index");
-
-    const Vector3_Order<double> coord_from{from_iter->second};
-    const Vector3_Order<double> coord_to{to_iter->second};
-    const auto transformed = apply_space_group_symmetry_operation(
-        ctx.rspace_operations[static_cast<std::size_t>(spatial_isym)], coord_from);
-    const auto return_lattice = transformed - coord_to;
-    if (!nearly_integer_vector(return_lattice, 1.e-5))
-        throw std::runtime_error("headwing AO rotation produced a non-integer return lattice");
-    return round_to_integer_vector(return_lattice);
-}
-
 static Vector3_Order<int> headwing_equivalent_kpoint_shift(
     const Vector3_Order<double>& k_source, const Vector3_Order<double>& k_target)
 {
@@ -317,13 +293,10 @@ static ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
             throw std::runtime_error("headwing AO atom mapping is not a full permutation");
     }
 
-    const int spatial_isym = member.spatial_isym;
-    if (spatial_isym < 0 || spatial_isym >= static_cast<int>(ctx.rspace_operations.size()))
+    if (member.spatial_isym < 0
+        || member.spatial_isym >= static_cast<int>(ctx.rspace_operations.size()))
         throw std::runtime_error("headwing AO rotation uses an invalid symmetry index");
 
-    const Vector3_Order<double> delta_k{k_ibz.x - member.k_bz.x,
-                                        k_ibz.y - member.k_bz.y,
-                                        k_ibz.z - member.k_bz.z};
     std::vector<ComplexMatrix> atom_M_blocks(atom_nw.size());
     for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
     {
@@ -332,13 +305,6 @@ static ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
             get_symmetry_species_layout(wfc_layouts, atom_rotation->atom_type);
         atom_M_blocks[atom] =
             build_symmetry_rotation_matrix(layout, atom_rotation->bloch_rsh_rotations);
-        const auto return_lattice =
-            headwing_kspace_return_lattice(ctx, *atom_rotation, spatial_isym);
-        const double phase_arg =
-            TWO_PI * (delta_k.x * static_cast<double>(return_lattice.x)
-                      + delta_k.y * static_cast<double>(return_lattice.y)
-                      + delta_k.z * static_cast<double>(return_lattice.z));
-        atom_M_blocks[atom] *= std::complex<double>(std::cos(phase_arg), std::sin(phase_arg));
     }
 
     const bool apply_target_gauge = (k_bz_target != nullptr);
