@@ -79,6 +79,25 @@ bool type_layouts_have_shells(const std::map<int, SpeciesBasisLayout> &layouts)
                           });
 }
 
+std::vector<SpeciesBasisLayout> AtomicBasis::build_species_basis_layouts(
+    const std::map<atom_t, int>& atom_to_type) const
+{
+    std::map<int, SpeciesBasisLayout> layouts_by_type;
+    condense_species_basis_layouts(*this, atom_to_type, layouts_by_type);
+    if (layouts_by_type.empty())
+    {
+        return {};
+    }
+
+    std::vector<SpeciesBasisLayout> layouts(
+        static_cast<std::size_t>(layouts_by_type.rbegin()->first + 1));
+    for (const auto& entry : layouts_by_type)
+    {
+        layouts[static_cast<std::size_t>(entry.first)] = entry.second;
+    }
+    return layouts;
+}
+
 void AtomicBasis::initialize()
 {
     n_atoms = nbs_.size();

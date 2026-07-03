@@ -101,6 +101,31 @@ static void test_species_layout()
     assert(layout.shell_counts == shell_counts);
 }
 
+static void test_species_layouts_from_basis()
+{
+    AtomicBasis ab({1, 3, 1});
+    ab.set_l_shells({{0}, {1}, {0}});
+
+    const auto layouts =
+        ab.build_species_basis_layouts({{0, 0}, {1, 1}, {2, 0}});
+    assert(layouts.size() == 2);
+    assert(layouts[0].n_ao == 1);
+    assert(layouts[0].l_shells == std::vector<int>{0});
+    assert(layouts[1].n_ao == 3);
+    assert(layouts[1].l_shells == std::vector<int>{1});
+
+    bool caught = false;
+    try
+    {
+        (void)ab.build_species_basis_layouts({{0, 0}, {1, 0}, {2, 0}});
+    }
+    catch (const std::runtime_error&)
+    {
+        caught = true;
+    }
+    assert(caught);
+}
+
 static void test_get_2d_indices()
 {
     AtomicBasis ab({1, 2, 3});
@@ -180,6 +205,7 @@ int main (int argc, char *argv[])
     test_constuctor();
     test_l_shell_metadata();
     test_species_layout();
+    test_species_layouts_from_basis();
     test_indexing();
     test_get_2d_indices();
     test_get_1d_indices();

@@ -234,6 +234,8 @@ public:
     inline const std::vector<std::vector<int>>& get_l_shells() const noexcept { return l_shells_; }
     inline const std::vector<int>& get_l_shells(int i_atom) const noexcept { return l_shells_.at(i_atom); }
     inline int get_max_l() const noexcept { return max_l_; }
+    std::vector<SpeciesBasisLayout> build_species_basis_layouts(
+        const std::map<atom_t, int>& atom_to_type) const;
     inline const std::vector<std::size_t>& get_part_range() const noexcept { return part_range_; }
     inline bool initialized() const noexcept { return initialized_; }
 };
