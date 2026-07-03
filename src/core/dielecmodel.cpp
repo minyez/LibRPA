@@ -143,15 +143,14 @@ std::vector<int> headwing_local_kpoint_roots(const int n_kpoints,
     return kpoints;
 }
 
-namespace
-{
-
-bool use_matching_kpoint_blacs(const int n_kpoints, const KPointBlacsParallelContext *kblacs_ctxt)
+static bool use_matching_kpoint_blacs(const int n_kpoints,
+                                      const KPointBlacsParallelContext *kblacs_ctxt)
 {
     return kblacs_ctxt && kblacs_ctxt->is_initialized() && kblacs_ctxt->n_kpoints() == n_kpoints;
 }
 
-void allreduce_head_matrices(std::vector<matrix_m<std::complex<double>>> &head, const MPI_Comm comm)
+static void allreduce_head_matrices(std::vector<matrix_m<std::complex<double>>> &head,
+                                    const MPI_Comm comm)
 {
     for (auto &mat : head)
     {
@@ -163,7 +162,7 @@ void allreduce_head_matrices(std::vector<matrix_m<std::complex<double>>> &head, 
     }
 }
 
-void allreduce_head_check(
+static void allreduce_head_check(
     std::vector<std::array<std::array<std::complex<double>, 3>, 3>> &head_check,
     const MPI_Comm comm)
 {
@@ -175,7 +174,7 @@ void allreduce_head_check(
                   MPI_SUM, comm);
 }
 
-std::array<ComplexMatrix, 3> rotate_headwing_velocity_by_shape(
+static std::array<ComplexMatrix, 3> rotate_headwing_velocity_by_shape(
     const SymmetryContext &ctx, const SymmetryKStarMember &member,
     const std::array<ComplexMatrix, 3> &v_band_ibz, const int n_bands,
     const bool use_time_reversal)
@@ -224,7 +223,7 @@ std::array<ComplexMatrix, 3> rotate_headwing_velocity_by_shape(
     return v_band_bz;
 }
 
-std::vector<int> build_headwing_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
+static std::vector<int> build_headwing_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
 {
     std::vector<int> offsets(atom_nw.size() + 1, 0);
     int running = 0;
@@ -240,16 +239,16 @@ std::vector<int> build_headwing_atom_offsets(const std::map<atom_t, size_t>& ato
     return offsets;
 }
 
-Vector3_Order<int> headwing_kspace_return_lattice(
+static Vector3_Order<int> headwing_kspace_return_lattice(
     const SymmetryContext& ctx, const SymmetryKAtomRotation& atom_rotation,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac, const int spatial_isym)
+    const int spatial_isym)
 {
     const auto stored = ctx.kspace_return_lattice.find({atom_rotation.atom_from, spatial_isym});
     if (stored != ctx.kspace_return_lattice.end()) return stored->second;
 
-    const auto from_iter = coord_frac.find(static_cast<atom_t>(atom_rotation.atom_from));
-    const auto to_iter = coord_frac.find(static_cast<atom_t>(atom_rotation.atom_to));
-    if (from_iter == coord_frac.end() || to_iter == coord_frac.end())
+    const auto from_iter = ctx.input_coord_frac.find(static_cast<atom_t>(atom_rotation.atom_from));
+    const auto to_iter = ctx.input_coord_frac.find(static_cast<atom_t>(atom_rotation.atom_to));
+    if (from_iter == ctx.input_coord_frac.end() || to_iter == ctx.input_coord_frac.end())
         throw std::runtime_error("headwing AO rotation missing fractional coordinates");
     if (spatial_isym < 0 || spatial_isym >= static_cast<int>(ctx.rspace_operations.size()))
         throw std::runtime_error("headwing AO rotation uses an invalid symmetry index");
@@ -264,7 +263,7 @@ Vector3_Order<int> headwing_kspace_return_lattice(
     return round_to_integer_vector(return_lattice);
 }
 
-Vector3_Order<int> headwing_equivalent_kpoint_shift(
+static Vector3_Order<int> headwing_equivalent_kpoint_shift(
     const Vector3_Order<double>& k_source, const Vector3_Order<double>& k_target)
 {
     const Vector3_Order<double> k_shift{k_target.x - k_source.x,
@@ -275,12 +274,13 @@ Vector3_Order<int> headwing_equivalent_kpoint_shift(
     return round_to_integer_vector(k_shift);
 }
 
-std::complex<double> headwing_reciprocal_gauge_phase(
-    const Vector3_Order<int>& k_shift, const atom_t atom,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac)
+static std::complex<double> headwing_reciprocal_gauge_phase(
+    const SymmetryContext& ctx,
+    const Vector3_Order<int>& k_shift,
+    const atom_t atom)
 {
-    const auto coord_iter = coord_frac.find(atom);
-    if (coord_iter == coord_frac.end())
+    const auto coord_iter = ctx.input_coord_frac.find(atom);
+    if (coord_iter == ctx.input_coord_frac.end())
         throw std::runtime_error("headwing AO rotation missing target-gauge coordinate");
     const Vector3_Order<double> tau{coord_iter->second};
     const double phase_arg =
@@ -290,11 +290,10 @@ std::complex<double> headwing_reciprocal_gauge_phase(
     return {std::cos(phase_arg), std::sin(phase_arg)};
 }
 
-ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
+static ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
     const SymmetryContext& ctx, const SymmetryKStarMember& member,
     const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const std::map<atom_t, size_t>& atom_nw, const Vector3_Order<double>& k_ibz,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const Vector3_Order<double>* k_bz_target)
 {
     const auto offsets = build_headwing_atom_offsets(atom_nw);
@@ -334,7 +333,7 @@ ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
         atom_M_blocks[atom] =
             build_symmetry_rotation_matrix(layout, atom_rotation->bloch_rsh_rotations);
         const auto return_lattice =
-            headwing_kspace_return_lattice(ctx, *atom_rotation, coord_frac, spatial_isym);
+            headwing_kspace_return_lattice(ctx, *atom_rotation, spatial_isym);
         const double phase_arg =
             TWO_PI * (delta_k.x * static_cast<double>(return_lattice.x)
                       + delta_k.y * static_cast<double>(return_lattice.y)
@@ -349,7 +348,7 @@ ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
         const auto k_shift = headwing_equivalent_kpoint_shift(member.k_bz, *k_bz_target);
         for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
             atom_target_phases[atom] =
-                headwing_reciprocal_gauge_phase(k_shift, static_cast<atom_t>(atom), coord_frac);
+                headwing_reciprocal_gauge_phase(ctx, k_shift, static_cast<atom_t>(atom));
     }
 
     ComplexMatrix M_full(nao_total, nao_total);
@@ -365,8 +364,6 @@ ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
     }
     return M_full;
 }
-
-}  // namespace
 
 void initialize_velocity_matrix(velocity_matrix_t &velocity, const int n_spins,
                                 const int n_kpoints, const int n_states)
@@ -549,7 +546,7 @@ void diele_func::cal_head()
     const bool can_sym =
         can_try_sym &&
         librpa_int::can_restore_symmetry_kstar_meanfield(
-            *symmetry_context_, wfc_layouts, meanfield_df, kfrac_band, atom_nw, coord_frac);
+            *symmetry_context_, wfc_layouts, meanfield_df, kfrac_band, atom_nw);
 
     if (can_sym)
         cal_head_symmetric();
@@ -885,7 +882,7 @@ void diele_func::cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
     const bool can_sym =
         can_try_sym &&
         librpa_int::can_restore_symmetry_kstar_meanfield(
-            *symmetry_context_, wfc_layouts, meanfield_df, kfrac_band, atom_nw, coord_frac);
+            *symmetry_context_, wfc_layouts, meanfield_df, kfrac_band, atom_nw);
 
     if (can_sym)
         cal_wing_symmetric(Cs_data, coulomb_eigen_threshold, Vq);
@@ -1072,7 +1069,7 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
             if (source_rank)
             {
                 const auto M_full = build_symmetry_ao_bloch_rotation_matrix_full(
-                    ctx, member, wfc_layouts, atom_nw, k_ibz, coord_frac, &k_bz);
+                    ctx, member, wfc_layouts, atom_nw, k_ibz, &k_bz);
                 const ComplexMatrix M_full_conj = conj(M_full);
                 for (int ispin = 0; ispin != n_spin; ++ispin)
                 {

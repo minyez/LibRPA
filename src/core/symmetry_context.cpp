@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
-#include <cstdlib>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -23,15 +22,12 @@
 namespace librpa_int
 {
 
-namespace
-{
-
 constexpr double kSymmetryCoordTol = 1e-5;
 // Real-space atom mapping is reconstructed from fractional coordinates. The looser tolerance
 // below remains as a fallback for text-derived coordinates and lattice-inversion noise.
 constexpr double kSymmetryRSpaceAtomMapTol = 5e-5;
 
-std::vector<int> build_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
+static std::vector<int> build_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
 {
     std::vector<int> offsets(atom_nw.size() + 1, 0);
     int running = 0;
@@ -49,32 +45,11 @@ std::vector<int> build_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
     return offsets;
 }
 
-bool nearly_same_kpoint(const Vector3_Order<double>& lhs,
-                        const Vector3_Order<double>& rhs,
-                        const double tol = kSymmetryCoordTol)
-{
-    const auto is_same_component = [tol](const double lhs_component, const double rhs_component) {
-        return std::abs((lhs_component - rhs_component) - std::round(lhs_component - rhs_component))
-               < tol;
-    };
-    return is_same_component(lhs.x, rhs.x) && is_same_component(lhs.y, rhs.y)
-           && is_same_component(lhs.z, rhs.z);
-}
-
-bool preserves_lattice_metric(const Matrix3& rotation,
-                              const Matrix3& lattice_vectors,
-                              const double tol = 1e-8)
-{
-    const Matrix3 metric = lattice_vectors * lattice_vectors.Transpose();
-    const Matrix3 rotated_metric = rotation * metric * rotation.Transpose();
-    return is_same_matrix(rotated_metric, metric, tol);
-}
-
-ComplexMatrix extract_atom_block(const ComplexMatrix& matrix,
-                                 const atom_t atom_i,
-                                 const atom_t atom_j,
-                                 const std::map<atom_t, size_t>& atom_nw,
-                                 const std::vector<int>& offsets)
+static ComplexMatrix extract_atom_block(const ComplexMatrix& matrix,
+                                        const atom_t atom_i,
+                                        const atom_t atom_j,
+                                        const std::map<atom_t, size_t>& atom_nw,
+                                        const std::vector<int>& offsets)
 {
     const int ni = static_cast<int>(atom_nw.at(atom_i));
     const int nj = static_cast<int>(atom_nw.at(atom_j));
@@ -91,11 +66,11 @@ ComplexMatrix extract_atom_block(const ComplexMatrix& matrix,
     return block;
 }
 
-void set_atom_block(ComplexMatrix& matrix,
-                    const atom_t atom_i,
-                    const atom_t atom_j,
-                    const ComplexMatrix& block,
-                    const std::vector<int>& offsets)
+static void set_atom_block(ComplexMatrix& matrix,
+                           const atom_t atom_i,
+                           const atom_t atom_j,
+                           const ComplexMatrix& block,
+                           const std::vector<int>& offsets)
 {
     const int row0 = offsets[atom_i];
     const int col0 = offsets[atom_j];
@@ -108,11 +83,8 @@ void set_atom_block(ComplexMatrix& matrix,
     }
 }
 
-std::vector<int> build_rspace_inverse_map(
-    const SymmetryContext& ctx,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac)
+static std::vector<int> build_rspace_inverse_map(const SymmetryContext& ctx)
 {
-    (void)coord_frac;
     std::vector<int> inverse_map(ctx.rspace_operations.size(), -1);
     for (std::size_t isym = 0; isym < ctx.rspace_operations.size(); ++isym)
     {
@@ -138,7 +110,7 @@ std::vector<int> build_rspace_inverse_map(
     return inverse_map;
 }
 
-Vector3_Order<int> rotate_rspace_vector(
+static Vector3_Order<int> rotate_rspace_vector(
     const Vector3_Order<int>& R,
     const SpaceGroupAtomMapping<atom_t>& op_info,
     const SpaceGroupSymOp& op,
@@ -165,7 +137,7 @@ Vector3_Order<int> rotate_rspace_vector(
     return round_to_integer_vector(mapped_j_cell);
 }
 
-Vector3_Order<int> canonicalize_bvk_rspace_vector(
+static Vector3_Order<int> canonicalize_bvk_rspace_vector(
     const Vector3_Order<int>& R,
     const Vector3_Order<int>& period)
 {
@@ -192,26 +164,19 @@ Vector3_Order<int> canonicalize_bvk_rspace_vector(
             centered_mod(R.z, period.z)};
 }
 
-symmetry_R_t to_symmetry_R(const Vector3_Order<int>& R)
+static symmetry_R_t to_symmetry_R(const Vector3_Order<int>& R)
 {
     return {R.x, R.y, R.z};
 }
 
-struct ParsedSymmetryStru
-{
-    std::vector<std::string> species_labels;
-    std::vector<std::string> orbital_files;
-    std::map<atom_t, int> atom_to_type;
-    std::map<atom_t, std::array<double, 3>> coord_frac;
-};
-
-std::array<double, 3> coord_frac_array(const coord_t &coord)
+static std::array<double, 3> coord_frac_array(const coord_t &coord)
 {
     return {coord.x, coord.y, coord.z};
 }
 
-Vector3_Order<double> coord_frac_vector(const std::map<atom_t, std::array<double, 3>> &coords,
-                                        const atom_t atom)
+static Vector3_Order<double> coord_frac_vector(
+    const std::map<atom_t, std::array<double, 3>> &coords,
+    const atom_t atom)
 {
     const auto iter = coords.find(atom);
     if (iter == coords.end())
@@ -233,7 +198,7 @@ struct KStarOperations
     std::vector<KStarOperationInfo> info;
 };
 
-KStarOperations build_kstar_operations_with_time_reversal(
+static KStarOperations build_kstar_operations_with_time_reversal(
     const SpaceGroupSymOps &operations)
 {
     KStarOperations kstar_operations;
@@ -257,14 +222,7 @@ KStarOperations build_kstar_operations_with_time_reversal(
     return kstar_operations;
 }
 
-bool same_fractional_kpoint(const Vector3_Order<double> &lhs,
-                            const Vector3_Order<double> &rhs,
-                            const double tol)
-{
-    return nearly_integer_vector(lhs - rhs, tol);
-}
-
-void build_symmetry_pbc_index_kstars(
+static void build_symmetry_pbc_index_kstars(
     SymmetryContext &ctx,
     const std::vector<Vector3_Order<double>> &kpoints)
 {
@@ -290,20 +248,8 @@ void build_symmetry_pbc_index_kstars(
     }
 }
 
-std::vector<Vector3_Order<double>> build_uniform_kmesh_frac(const Vector3_Order<int> &period)
-{
-    std::vector<Vector3_Order<double>> kpoints;
-    kpoints.reserve(static_cast<std::size_t>(period.x * period.y * period.z));
-    for (int i = 0; i != period.x; ++i)
-        for (int j = 0; j != period.y; ++j)
-            for (int k = 0; k != period.z; ++k)
-                kpoints.push_back({static_cast<double>(i) / period.x,
-                                   static_cast<double>(j) / period.y,
-                                   static_cast<double>(k) / period.z});
-    return kpoints;
-}
-
-std::vector<Vector3_Order<double>> full_kpoints_frac_from_pbc(const PeriodicBoundaryData &pbc)
+static std::vector<Vector3_Order<double>> full_kpoints_frac_from_pbc(
+    const PeriodicBoundaryData &pbc)
 {
     if (static_cast<int>(pbc.kfrac_list_full.size()) == pbc.get_n_cells_bvk())
     {
@@ -316,7 +262,8 @@ std::vector<Vector3_Order<double>> full_kpoints_frac_from_pbc(const PeriodicBoun
     return pbc.kfrac_list_full.empty() ? pbc.kfrac_list : pbc.kfrac_list_full;
 }
 
-std::vector<Vector3_Order<double>> coul_kpoints_frac_from_pbc(const PeriodicBoundaryData &pbc)
+static std::vector<Vector3_Order<double>> coul_kpoints_frac_from_pbc(
+    const PeriodicBoundaryData &pbc)
 {
     if (pbc.klist_coul.empty())
     {
@@ -333,10 +280,10 @@ std::vector<Vector3_Order<double>> coul_kpoints_frac_from_pbc(const PeriodicBoun
     return kpoints;
 }
 
-atom_t find_symmetry_atom_target(const SymmetryContext &ctx,
-                                 const atom_t atom_from,
-                                 const int spatial_isym,
-                                 Vector3_Order<int> &return_lattice)
+static atom_t find_symmetry_atom_target(const SymmetryContext &ctx,
+                                        const atom_t atom_from,
+                                        const int spatial_isym,
+                                        Vector3_Order<int> &return_lattice)
 {
     const auto &op = ctx.rspace_operations.at(static_cast<std::size_t>(spatial_isym));
     const auto atom_type = ctx.atom_to_type.at(atom_from);
@@ -370,56 +317,11 @@ atom_t find_symmetry_atom_target(const SymmetryContext &ctx,
     return matched_atom;
 }
 
-void populate_symmetry_kstar_member_rotations(SymmetryContext &ctx,
-                                              const SymmetryKStar &star,
-                                              SymmetryKStarMember &member,
-                                              const int lmax)
-{
-    const int n_spatial_operations = static_cast<int>(ctx.rspace_operations.size());
-    const int spatial_isym = member.spatial_isym;
-    if (spatial_isym < 0 || spatial_isym >= n_spatial_operations)
-    {
-        throw LIBRPA_RUNTIME_ERROR("Generated symmetry k-star member has an invalid symmetry index");
-    }
-    const auto &operation = ctx.rspace_operations.at(static_cast<std::size_t>(spatial_isym));
-
-    member.atom_rotations.clear();
-    member.atom_rotations.reserve(ctx.atom_to_type.size());
-    for (const auto &[atom_from, atom_type] : ctx.atom_to_type)
-    {
-        Vector3_Order<int> return_lattice{0, 0, 0};
-        const atom_t atom_to =
-            find_symmetry_atom_target(ctx, atom_from, spatial_isym, return_lattice);
-        const auto inserted = ctx.kspace_return_lattice.emplace(
-            std::make_pair(static_cast<int>(atom_from), spatial_isym), return_lattice);
-        if (!inserted.second && inserted.first->second != return_lattice)
-        {
-            throw LIBRPA_RUNTIME_ERROR("Symmetry generated inconsistent atom return lattices");
-        }
-
-        SymmetryKAtomRotation atom_rotation;
-        atom_rotation.atom_from = static_cast<int>(atom_from);
-        atom_rotation.atom_to = static_cast<int>(atom_to);
-        atom_rotation.atom_type = atom_type;
-        atom_rotation.lmax = lmax;
-        atom_rotation.bloch_rsh_rotations =
-            build_symmetry_kspace_shell_rotations(operation,
-                                                  ctx.lattice_vectors,
-                                                  lmax,
-                                                  ctx.basis_convention,
-                                                  star.k_ibz,
-                                                  member.k_bz,
-                                                  coord_frac_vector(ctx.input_coord_frac, atom_from),
-                                                  coord_frac_vector(ctx.input_coord_frac, atom_to),
-                                                  return_lattice);
-        member.atom_rotations.push_back(std::move(atom_rotation));
-    }
-}
-
-void store_generated_symmetry_kstars(SymmetryContext &ctx,
-                                     const std::vector<KPointStar> &generated_stars,
-                                     const std::vector<Vector3_Order<double>> &kpoints_ibz,
-                                     const std::vector<KStarOperationInfo> &operation_info)
+static void store_generated_symmetry_kstars(
+    SymmetryContext &ctx,
+    const std::vector<KPointStar> &generated_stars,
+    const std::vector<Vector3_Order<double>> &kpoints_ibz,
+    const std::vector<KStarOperationInfo> &operation_info)
 {
     if (kpoints_ibz.size() != generated_stars.size())
     {
@@ -456,42 +358,6 @@ void store_generated_symmetry_kstars(SymmetryContext &ctx,
         }
         ctx.kstars.push_back(std::move(star));
     }
-}
-
-} // namespace
-
-std::vector<SymmetryOperation> make_symmetry_operations(const int n_symops,
-                                                                   const bool use_row_convention,
-                                                                   const int* rotmats,
-                                                                   const double* translations)
-{
-    if (n_symops < 0)
-    {
-        throw LIBRPA_INVALID_ARGUMENT("number of symmetry operations must be non-negative");
-    }
-    if (n_symops > 0 && rotmats == nullptr)
-    {
-        throw LIBRPA_INVALID_ARGUMENT("symmetry operation rotation matrices must not be null");
-    }
-
-    std::vector<SymmetryOperation> operations;
-    operations.reserve(static_cast<std::size_t>(n_symops));
-    for (int isym = 0; isym != n_symops; ++isym)
-    {
-        const int* rotation = rotmats + 9 * isym;
-        SymmetryOperation operation;
-        operation.rotation = Matrix3(rotation[0], rotation[1], rotation[2],
-                                     rotation[3], rotation[4], rotation[5],
-                                     rotation[6], rotation[7], rotation[8]);
-        if (translations != nullptr)
-        {
-            const double* translation = translations + 3 * isym;
-            operation.translation = {translation[0], translation[1], translation[2]};
-        }
-        operation.use_row_convention = use_row_convention;
-        operations.push_back(std::move(operation));
-    }
-    return operations;
 }
 
 ComplexMatrix build_symmetry_shell_rotation_from_direct_rotation(
@@ -618,6 +484,8 @@ void SymmetryContext::clear()
     rspace_operations.clear();
     rsh_rotations.clear();
     kstars.clear();
+    kstar_grid_mapping.clear();
+    full_kpoint_members.clear();
     atom_to_type.clear();
     input_coord_frac.clear();
     lattice_vectors.Reset();
@@ -670,6 +538,8 @@ void SymmetryContext::set_crystal_structure(const Matrix3& latvec,
     }
     irreducible_sector.clear();
     kstars.clear();
+    kstar_grid_mapping.clear();
+    full_kpoint_members.clear();
     rsh_rotations.clear();
     kspace_return_lattice.clear();
     kstar_member_fold_G.clear();
@@ -680,18 +550,22 @@ void SymmetryContext::build_periodic_mappings(const PeriodicBoundaryData& pbc,
 {
     irreducible_sector.clear();
     kstars.clear();
+    kstar_grid_mapping.clear();
+    full_kpoint_members.clear();
     kspace_return_lattice.clear();
     kstar_member_fold_G.clear();
 
     generate_irreducible_sector(Rlist);
     generate_kstars(pbc);
+    generate_kstar_grid_mapping(pbc);
+    generate_full_kpoint_members(pbc.kfrac_list);
 }
 
 void SymmetryContext::generate_irreducible_sector(const std::vector<Vector3_Order<int>> &Rlist)
 {
     if (!atom_to_type.empty() && !input_coord_frac.empty() && !Rlist.empty())
     {
-        irreducible_sector = build_symmetry_rspace_irreducible_sector(*this, input_coord_frac, Rlist);
+        irreducible_sector = build_symmetry_rspace_irreducible_sector(*this, Rlist);
     }
 }
 
@@ -818,9 +692,52 @@ void SymmetryContext::build_kstar_member_rotations(const int lmax)
     {
         for (auto &member : star.members)
         {
-            if (member.atom_rotations.empty())
+            if (!member.atom_rotations.empty())
             {
-                populate_symmetry_kstar_member_rotations(*this, star, member, lmax);
+                continue;
+            }
+
+            const int n_spatial_operations = static_cast<int>(rspace_operations.size());
+            const int spatial_isym = member.spatial_isym;
+            if (spatial_isym < 0 || spatial_isym >= n_spatial_operations)
+            {
+                throw LIBRPA_RUNTIME_ERROR(
+                    "Generated symmetry k-star member has an invalid symmetry index");
+            }
+            const auto &operation = rspace_operations.at(static_cast<std::size_t>(spatial_isym));
+
+            member.atom_rotations.clear();
+            member.atom_rotations.reserve(atom_to_type.size());
+            for (const auto &[atom_from, atom_type] : atom_to_type)
+            {
+                Vector3_Order<int> return_lattice{0, 0, 0};
+                const atom_t atom_to =
+                    find_symmetry_atom_target(*this, atom_from, spatial_isym, return_lattice);
+                const auto inserted = kspace_return_lattice.emplace(
+                    std::make_pair(static_cast<int>(atom_from), spatial_isym), return_lattice);
+                if (!inserted.second && inserted.first->second != return_lattice)
+                {
+                    throw LIBRPA_RUNTIME_ERROR(
+                        "Symmetry generated inconsistent atom return lattices");
+                }
+
+                SymmetryKAtomRotation atom_rotation;
+                atom_rotation.atom_from = static_cast<int>(atom_from);
+                atom_rotation.atom_to = static_cast<int>(atom_to);
+                atom_rotation.atom_type = atom_type;
+                atom_rotation.lmax = lmax;
+                atom_rotation.bloch_rsh_rotations =
+                    build_symmetry_kspace_shell_rotations(
+                        operation,
+                        lattice_vectors,
+                        lmax,
+                        basis_convention,
+                        star.k_ibz,
+                        member.k_bz,
+                        coord_frac_vector(input_coord_frac, atom_from),
+                        coord_frac_vector(input_coord_frac, atom_to),
+                        return_lattice);
+                member.atom_rotations.push_back(std::move(atom_rotation));
             }
         }
     }
@@ -984,12 +901,9 @@ ComplexMatrix SymmetryContext::get_rotation_matrix(
     return build_symmetry_rotation_matrix(layout, shell_rotations);
 }
 
-namespace
-{
-
-int find_symmetry_kstar_index_for_kpoint(const std::vector<SymmetryKStar>& kstars,
-                                       const Vector3_Order<double>& k_point,
-                                       const std::string& label)
+static int find_symmetry_kstar_index_for_kpoint(const std::vector<SymmetryKStar>& kstars,
+                                                const Vector3_Order<double>& k_point,
+                                                const std::string& label)
 {
     int matched_index = -1;
 
@@ -997,7 +911,7 @@ int find_symmetry_kstar_index_for_kpoint(const std::vector<SymmetryKStar>& kstar
     // gauge as the generated ABACUS k-star.
     for (std::size_t istar = 0; istar < kstars.size(); ++istar)
     {
-        if (!nearly_same_kpoint(kstars[istar].k_ibz, k_point))
+        if (!same_fractional_kpoint(kstars[istar].k_ibz, k_point, kSymmetryCoordTol))
         {
             continue;
         }
@@ -1021,7 +935,8 @@ int find_symmetry_kstar_index_for_kpoint(const std::vector<SymmetryKStar>& kstar
         const bool star_contains_kpoint =
             std::any_of(star.members.begin(), star.members.end(),
                         [&k_point](const SymmetryKStarMember& member) {
-                            return nearly_same_kpoint(member.k_bz, k_point);
+                            return same_fractional_kpoint(
+                                member.k_bz, k_point, kSymmetryCoordTol);
                         });
         if (!star_contains_kpoint)
         {
@@ -1041,8 +956,6 @@ int find_symmetry_kstar_index_for_kpoint(const std::vector<SymmetryKStar>& kstar
     return matched_index;
 }
 
-} // namespace
-
 const SymmetryKStar& find_symmetry_kstar_for_kpoint(const std::vector<SymmetryKStar>& kstars,
                                                 const Vector3_Order<double>& k_point,
                                                 const std::string& label)
@@ -1057,31 +970,32 @@ const SymmetryKStar& find_symmetry_kstar_for_ibz_kpoint(const SymmetryContext& c
     return find_symmetry_kstar_for_kpoint(ctx.kstars, k_ibz);
 }
 
-std::vector<SymmetryKStarGridMappingEntry> build_symmetry_kstar_grid_mapping(
-    const SymmetryContext& ctx,
-    const std::vector<Vector3_Order<double>>& klist_internal,
-    const std::vector<Vector3_Order<double>>& kfrac_list,
-    const std::map<Vector3_Order<double>, std::vector<Vector3_Order<double>>>& irk_to_full_kpoints)
+void SymmetryContext::generate_kstar_grid_mapping(const PeriodicBoundaryData& pbc)
 {
+    const auto& klist_internal = pbc.klist;
+    const auto& kfrac_list = pbc.kfrac_list;
+    const auto& irk_to_full_kpoints = pbc.map_irk_ks;
+
+    kstar_grid_mapping.clear();
     if (klist_internal.size() != kfrac_list.size())
     {
         throw LIBRPA_RUNTIME_ERROR(
             "LibRPA k-point metadata is inconsistent: `klist` and `kfrac_list` have different sizes");
     }
-    if (ctx.kstars.size() != kfrac_list.size())
+    if (kstars.size() != kfrac_list.size())
     {
         throw LIBRPA_RUNTIME_ERROR(
             "k-star metadata does not match the loaded LibRPA IBZ k-point count");
     }
-    if (!ctx.lattice_available)
+    if (!lattice_available)
     {
         throw LIBRPA_RUNTIME_ERROR(
             "k-star grid mapping requires reciprocal lattice vectors from the structure input");
     }
 
-    auto convert_fractional_to_internal = [&ctx](const Vector3_Order<double>& kfrac) {
+    auto convert_fractional_to_internal = [this](const Vector3_Order<double>& kfrac) {
         // Keep the row-vector convention used for PeriodicBoundaryData k-point keys.
-        const auto& G = ctx.reciprocal_vectors;
+        const auto& G = reciprocal_vectors;
         return Vector3_Order<double>{kfrac.x * G.e11 + kfrac.y * G.e21 + kfrac.z * G.e31,
                                      kfrac.x * G.e12 + kfrac.y * G.e22 + kfrac.z * G.e32,
                                      kfrac.x * G.e13 + kfrac.y * G.e23 + kfrac.z * G.e33};
@@ -1098,24 +1012,25 @@ std::vector<SymmetryKStarGridMappingEntry> build_symmetry_kstar_grid_mapping(
 
         return std::find_if(irk_to_full_kpoints.begin(), irk_to_full_kpoints.end(),
                             [&q_ibz_key](const auto& entry) {
-                                return nearly_same_kpoint(entry.first, q_ibz_key);
+                                return same_fractional_kpoint(
+                                    entry.first, q_ibz_key, kSymmetryCoordTol);
                             });
     };
 
     std::vector<SymmetryKStarGridMappingEntry> mapping(kfrac_list.size());
-    std::vector<bool> matched_stars(ctx.kstars.size(), false);
+    std::vector<bool> matched_stars(kstars.size(), false);
 
     for (std::size_t iq_ibz = 0; iq_ibz < kfrac_list.size(); ++iq_ibz)
     {
         const int matched_star_index = find_symmetry_kstar_index_for_kpoint(
-            ctx.kstars, kfrac_list[iq_ibz], "symmetry k-stars");
+            kstars, kfrac_list[iq_ibz], "symmetry k-stars");
 
         matched_stars[static_cast<std::size_t>(matched_star_index)] = true;
         auto& entry = mapping[iq_ibz];
         entry.iq_ibz = static_cast<int>(iq_ibz);
         entry.star_list_index = matched_star_index;
 
-        const auto& star = ctx.kstars[static_cast<std::size_t>(matched_star_index)];
+        const auto& star = kstars[static_cast<std::size_t>(matched_star_index)];
         const auto q_ibz_key = klist_internal[iq_ibz];
         const auto full_list_iter = find_matching_ibz_full_list(q_ibz_key);
         const std::vector<Vector3_Order<double>>* full_q_keys =
@@ -1144,7 +1059,8 @@ std::vector<SymmetryKStarGridMappingEntry> build_symmetry_kstar_grid_mapping(
             for (std::size_t ifull = 0; ifull < full_q_keys->size(); ++ifull)
             {
                 if (matched_full_q[ifull]
-                    || !nearly_same_kpoint((*full_q_keys)[ifull], member_q_internal))
+                    || !same_fractional_kpoint(
+                        (*full_q_keys)[ifull], member_q_internal, kSymmetryCoordTol))
                 {
                     continue;
                 }
@@ -1174,30 +1090,30 @@ std::vector<SymmetryKStarGridMappingEntry> build_symmetry_kstar_grid_mapping(
         }
     }
 
-    return mapping;
+    kstar_grid_mapping = std::move(mapping);
 }
 
-std::vector<SymmetryFullKpointMemberEntry> build_symmetry_full_kpoint_member_list(
-    const SymmetryContext& ctx,
+void SymmetryContext::generate_full_kpoint_members(
     const std::vector<Vector3_Order<double>>& kfrac_list)
 {
+    full_kpoint_members.clear();
     std::vector<SymmetryFullKpointMemberEntry> members;
-    if (!ctx.available || ctx.kstars.empty())
+    if (kstars.empty())
     {
-        return members;
+        return;
     }
-    if (ctx.kstars.size() != kfrac_list.size())
+    if (kstars.size() != kfrac_list.size())
     {
-        return members;
+        return;
     }
 
-    members.reserve(ctx.count_kstar_members());
+    members.reserve(count_kstar_members());
     for (int ik_ibz = 0; ik_ibz != static_cast<int>(kfrac_list.size()); ++ik_ibz)
     {
         const int matched_star_index = find_symmetry_kstar_index_for_kpoint(
-            ctx.kstars, kfrac_list[static_cast<std::size_t>(ik_ibz)], "symmetry k-stars");
+            kstars, kfrac_list[static_cast<std::size_t>(ik_ibz)], "symmetry k-stars");
 
-        const auto& star = ctx.kstars[static_cast<std::size_t>(matched_star_index)];
+        const auto& star = kstars[static_cast<std::size_t>(matched_star_index)];
         for (int imember = 0; imember != static_cast<int>(star.members.size()); ++imember)
         {
             const auto& member = star.members[static_cast<std::size_t>(imember)];
@@ -1206,7 +1122,7 @@ std::vector<SymmetryFullKpointMemberEntry> build_symmetry_full_kpoint_member_lis
         }
     }
 
-    return members;
+    full_kpoint_members = std::move(members);
 }
 
 symmetry_kstar_representative_indices_t build_symmetry_full_grid_kstar_representative_indices(
@@ -1303,10 +1219,9 @@ symmetry_kstar_member_kfrac_targets_t build_symmetry_full_grid_kstar_member_kfra
     return targets;
 }
 
-Vector3_Order<int> build_symmetry_kspace_return_lattice(
+static Vector3_Order<int> build_symmetry_kspace_return_lattice(
     const SymmetryContext& ctx,
     const SymmetryKAtomRotation& atom_rotation,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac_map,
     const int spatial_isym)
 {
     const auto stored_return_lattice =
@@ -1316,9 +1231,12 @@ Vector3_Order<int> build_symmetry_kspace_return_lattice(
         return stored_return_lattice->second;
     }
 
-    const auto coord_from_iter = coord_frac_map.find(static_cast<atom_t>(atom_rotation.atom_from));
-    const auto coord_to_iter = coord_frac_map.find(static_cast<atom_t>(atom_rotation.atom_to));
-    if (coord_from_iter == coord_frac_map.end() || coord_to_iter == coord_frac_map.end())
+    const auto coord_from_iter =
+        ctx.input_coord_frac.find(static_cast<atom_t>(atom_rotation.atom_from));
+    const auto coord_to_iter =
+        ctx.input_coord_frac.find(static_cast<atom_t>(atom_rotation.atom_to));
+    if (coord_from_iter == ctx.input_coord_frac.end()
+        || coord_to_iter == ctx.input_coord_frac.end())
     {
         throw LIBRPA_RUNTIME_ERROR("Missing fractional coordinate for k-space phase correction");
     }
@@ -1341,7 +1259,7 @@ Vector3_Order<int> build_symmetry_kspace_return_lattice(
     return round_to_integer_vector(return_lattice);
 }
 
-Vector3_Order<int> build_symmetry_equivalent_kpoint_shift(
+static Vector3_Order<int> build_symmetry_equivalent_kpoint_shift(
     const Vector3_Order<double>& k_bz_source,
     const Vector3_Order<double>& k_bz_target)
 {
@@ -1358,14 +1276,15 @@ Vector3_Order<int> build_symmetry_equivalent_kpoint_shift(
     return round_to_integer_vector(k_shift);
 }
 
-std::pair<atom_t, atom_t> canonicalize_symmetry_upper_atom_pair(const atom_t atom_i,
-                                                              const atom_t atom_j)
+static std::pair<atom_t, atom_t> canonicalize_symmetry_upper_atom_pair(
+    const atom_t atom_i,
+    const atom_t atom_j)
 {
     return (atom_i <= atom_j) ? std::make_pair(atom_i, atom_j)
                               : std::make_pair(atom_j, atom_i);
 }
 
-std::vector<const SymmetryKAtomRotation*> build_symmetry_rotations_by_from(
+static std::vector<const SymmetryKAtomRotation*> build_symmetry_rotations_by_from(
     const SymmetryKStarMember& member)
 {
     int max_atom_index = -1;
@@ -1430,10 +1349,7 @@ std::set<std::pair<atom_t, atom_t>> build_symmetry_upper_atom_pair_closure(
     return closure_pairs;
 }
 
-namespace
-{
-
-std::complex<double> build_symmetry_reciprocal_gauge_phase(
+static std::complex<double> build_symmetry_reciprocal_gauge_phase(
     const Vector3_Order<int>& k_shift,
     const atom_t atom,
     const std::map<atom_t, std::array<double, 3>>& coord_frac_map)
@@ -1452,16 +1368,108 @@ std::complex<double> build_symmetry_reciprocal_gauge_phase(
     return std::complex<double>(std::cos(phase_arg), std::sin(phase_arg));
 }
 
-} // namespace
+struct KSpaceRotationPlan
+{
+    bool apply_time_reversal = false;
+    bool apply_target_gauge = false;
+    std::vector<const SymmetryKAtomRotation*> rotations_by_from;
+    std::vector<ComplexMatrix> atom_M_blocks;
+    std::vector<std::complex<double>> atom_target_phases;
+};
+
+static KSpaceRotationPlan build_kspace_rotation_plan(
+    const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& layouts,
+    const SymmetryKStarMember& member,
+    const std::map<atom_t, size_t>& atom_counts,
+    const Vector3_Order<double>& k_ibz,
+    const bool use_time_reversal,
+    const Vector3_Order<double>* k_bz_target,
+    const char* label)
+{
+    KSpaceRotationPlan plan;
+    plan.apply_time_reversal = use_time_reversal || member.time_reversal;
+    plan.rotations_by_from.assign(atom_counts.size(), nullptr);
+
+    std::vector<bool> visited_to(atom_counts.size(), false);
+    for (const auto& atom_rotation : member.atom_rotations)
+    {
+        if (atom_rotation.atom_from < 0
+            || atom_rotation.atom_from >= static_cast<int>(atom_counts.size())
+            || atom_rotation.atom_to < 0
+            || atom_rotation.atom_to >= static_cast<int>(atom_counts.size()))
+        {
+            throw LIBRPA_RUNTIME_ERROR(std::string(label) + " atom mapping is out of range");
+        }
+        plan.rotations_by_from[static_cast<std::size_t>(atom_rotation.atom_from)] =
+            &atom_rotation;
+        visited_to[static_cast<std::size_t>(atom_rotation.atom_to)] = true;
+    }
+
+    for (std::size_t atom = 0; atom < atom_counts.size(); ++atom)
+    {
+        if (plan.rotations_by_from[atom] == nullptr)
+        {
+            throw LIBRPA_RUNTIME_ERROR(std::string(label)
+                                      + " atom rotations do not cover every atom");
+        }
+        if (!visited_to[atom])
+        {
+            throw LIBRPA_RUNTIME_ERROR(std::string(label)
+                                      + " atom mapping is not a full permutation");
+        }
+    }
+
+    const int spatial_isym = member.spatial_isym;
+    if (spatial_isym < 0 || spatial_isym >= static_cast<int>(ctx.rspace_operations.size()))
+    {
+        throw LIBRPA_RUNTIME_ERROR(std::string(label) + " uses an invalid symmetry index");
+    }
+
+    const Vector3_Order<double> delta_k{k_ibz.x - member.k_bz.x,
+                                        k_ibz.y - member.k_bz.y,
+                                        k_ibz.z - member.k_bz.z};
+    plan.atom_M_blocks.resize(atom_counts.size());
+    for (std::size_t atom = 0; atom < atom_counts.size(); ++atom)
+    {
+        const auto* atom_rotation = plan.rotations_by_from[atom];
+        const auto& layout = get_symmetry_species_layout(layouts, atom_rotation->atom_type);
+        plan.atom_M_blocks[atom] =
+            build_symmetry_rotation_matrix(layout, atom_rotation->bloch_rsh_rotations);
+        const auto return_lattice =
+            build_symmetry_kspace_return_lattice(ctx,
+                                                 *atom_rotation,
+                                                 spatial_isym);
+        const double phase_arg =
+            TWO_PI * (delta_k.x * static_cast<double>(return_lattice.x)
+                      + delta_k.y * static_cast<double>(return_lattice.y)
+                      + delta_k.z * static_cast<double>(return_lattice.z));
+        plan.atom_M_blocks[atom] *=
+            std::complex<double>(std::cos(phase_arg), std::sin(phase_arg));
+    }
+
+    plan.apply_target_gauge = (k_bz_target != nullptr);
+    plan.atom_target_phases.assign(atom_counts.size(), {1.0, 0.0});
+    if (plan.apply_target_gauge)
+    {
+        const auto k_shift = build_symmetry_equivalent_kpoint_shift(member.k_bz, *k_bz_target);
+        for (std::size_t atom = 0; atom < atom_counts.size(); ++atom)
+        {
+            plan.atom_target_phases[atom] = build_symmetry_reciprocal_gauge_phase(
+                k_shift, static_cast<atom_t>(atom), ctx.input_coord_frac);
+        }
+    }
+
+    return plan;
+}
 
 symmetry_atom_block_matrix_map_t rotate_symmetry_kspace_operator_blocks(
     const SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& layouts,
     const SymmetryKStarMember& member,
     const symmetry_atom_block_matrix_map_t& blocks_ibz,
-    const std::map<atom_t, size_t>& atom_nabf,
+    const std::map<atom_t, size_t>& atom_nbasis,
     const Vector3_Order<double>& k_ibz,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac_map,
     const bool use_time_reversal,
     const std::set<std::pair<atom_t, atom_t>>* target_atom_pairs,
     const Vector3_Order<double>* k_bz_target)
@@ -1489,18 +1497,18 @@ symmetry_atom_block_matrix_map_t rotate_symmetry_kspace_operator_blocks(
             }
         }
 
-        throw LIBRPA_RUNTIME_ERROR("Missing ABF atom block while rotating the q-space operator");
+        throw LIBRPA_RUNTIME_ERROR("Missing atom block while rotating the q-space operator");
     };
     // The identity member at the IBZ representative is an exact no-op as long as no
     // target-representative gauge shift is requested. Returning the original/hermitian-completed
     // blocks here avoids rebuilding an M matrix that should mathematically be the identity.
     if (!apply_time_reversal && member.spatial_isym == 0 && k_bz_target == nullptr
-        && nearly_same_kpoint(member.k_bz, k_ibz))
+        && same_fractional_kpoint(member.k_bz, k_ibz, kSymmetryCoordTol))
     {
         symmetry_atom_block_matrix_map_t identity_blocks;
-        for (std::size_t atom_i = 0; atom_i < atom_nabf.size(); ++atom_i)
+        for (std::size_t atom_i = 0; atom_i < atom_nbasis.size(); ++atom_i)
         {
-            for (std::size_t atom_j = 0; atom_j < atom_nabf.size(); ++atom_j)
+            for (std::size_t atom_j = 0; atom_j < atom_nbasis.size(); ++atom_j)
             {
                 if (target_atom_pairs != nullptr
                     && target_atom_pairs->count({static_cast<atom_t>(atom_i),
@@ -1516,74 +1524,21 @@ symmetry_atom_block_matrix_map_t rotate_symmetry_kspace_operator_blocks(
         return identity_blocks;
     }
 
-    std::vector<const SymmetryKAtomRotation*> rotations_by_from(atom_nabf.size(), nullptr);
-    std::vector<bool> visited_to(atom_nabf.size(), false);
-    for (const auto& atom_rotation : member.atom_rotations)
-    {
-        if (atom_rotation.atom_from < 0 || atom_rotation.atom_from >= static_cast<int>(atom_nabf.size())
-            || atom_rotation.atom_to < 0 || atom_rotation.atom_to >= static_cast<int>(atom_nabf.size()))
-        {
-            throw LIBRPA_RUNTIME_ERROR("K-space atom mapping is out of range for ABF rotation");
-        }
-        rotations_by_from[static_cast<std::size_t>(atom_rotation.atom_from)] = &atom_rotation;
-        visited_to[static_cast<std::size_t>(atom_rotation.atom_to)] = true;
-    }
-    for (std::size_t atom = 0; atom < atom_nabf.size(); ++atom)
-    {
-        if (rotations_by_from[atom] == nullptr)
-        {
-            throw LIBRPA_RUNTIME_ERROR("K-space ABF rotations do not cover every atom");
-        }
-        if (!visited_to[atom])
-        {
-            throw LIBRPA_RUNTIME_ERROR("K-space ABF atom mapping is not a full permutation");
-        }
-    }
-
-    const int n_spatial_operations = static_cast<int>(ctx.rspace_operations.size());
-    const int spatial_isym = member.spatial_isym;
-    if (spatial_isym < 0 || spatial_isym >= n_spatial_operations)
-    {
-        throw LIBRPA_RUNTIME_ERROR("q-space operator rotation uses an invalid symmetry index");
-    }
-    const Vector3_Order<double> delta_k{k_ibz.x - member.k_bz.x,
-                                        k_ibz.y - member.k_bz.y,
-                                        k_ibz.z - member.k_bz.z};
-
-    std::vector<ComplexMatrix> atom_M_blocks(atom_nabf.size());
-    for (std::size_t atom = 0; atom < atom_nabf.size(); ++atom)
-    {
-        const auto* atom_rotation = rotations_by_from[atom];
-        const auto& layout = get_symmetry_species_layout(layouts, atom_rotation->atom_type);
-        atom_M_blocks[atom] =
-            build_symmetry_rotation_matrix(layout, atom_rotation->bloch_rsh_rotations);
-        const auto return_lattice =
-            build_symmetry_kspace_return_lattice(ctx, *atom_rotation, coord_frac_map, spatial_isym);
-        const double phase_arg =
-            TWO_PI * (delta_k.x * static_cast<double>(return_lattice.x)
-                      + delta_k.y * static_cast<double>(return_lattice.y)
-                      + delta_k.z * static_cast<double>(return_lattice.z));
-        atom_M_blocks[atom] *= std::complex<double>(std::cos(phase_arg), std::sin(phase_arg));
-    }
-
-    const bool apply_target_gauge = (k_bz_target != nullptr);
-    std::vector<std::complex<double>> atom_target_phases(atom_nabf.size(), {1.0, 0.0});
-    if (apply_target_gauge)
-    {
-        const auto k_shift = build_symmetry_equivalent_kpoint_shift(member.k_bz, *k_bz_target);
-        for (std::size_t atom = 0; atom < atom_nabf.size(); ++atom)
-        {
-            atom_target_phases[atom] = build_symmetry_reciprocal_gauge_phase(
-                k_shift, static_cast<atom_t>(atom), coord_frac_map);
-        }
-    }
+    const auto plan = build_kspace_rotation_plan(ctx,
+                                                 layouts,
+                                                 member,
+                                                 atom_nbasis,
+                                                 k_ibz,
+                                                 use_time_reversal,
+                                                 k_bz_target,
+                                                 "K-space rotation");
 
     symmetry_atom_block_matrix_map_t rotated_blocks;
-    for (std::size_t atom_i = 0; atom_i < atom_nabf.size(); ++atom_i)
+    for (std::size_t atom_i = 0; atom_i < atom_nbasis.size(); ++atom_i)
     {
-        const auto* rot_i = rotations_by_from[atom_i];
-        const auto& M_i = atom_M_blocks[atom_i];
-        for (std::size_t atom_j = 0; atom_j < atom_nabf.size(); ++atom_j)
+        const auto* rot_i = plan.rotations_by_from[atom_i];
+        const auto& M_i = plan.atom_M_blocks[atom_i];
+        for (std::size_t atom_j = 0; atom_j < atom_nbasis.size(); ++atom_j)
         {
             if (target_atom_pairs != nullptr
                 && target_atom_pairs->count({static_cast<atom_t>(atom_i),
@@ -1591,8 +1546,8 @@ symmetry_atom_block_matrix_map_t rotate_symmetry_kspace_operator_blocks(
             {
                 continue;
             }
-            const auto* rot_j = rotations_by_from[atom_j];
-            const auto& M_j = atom_M_blocks[atom_j];
+            const auto* rot_j = plan.rotations_by_from[atom_j];
+            const auto& M_j = plan.atom_M_blocks[atom_j];
             const auto target_i = static_cast<atom_t>(atom_i);
             const auto target_j = static_cast<atom_t>(atom_j);
             const auto source_i = static_cast<atom_t>(rot_i->atom_to);
@@ -1605,23 +1560,23 @@ symmetry_atom_block_matrix_map_t rotate_symmetry_kspace_operator_blocks(
             catch (const std::exception&)
             {
                 std::ostringstream oss;
-                oss << "Missing ABF atom block while rotating the q-space operator: "
+                oss << "Missing atom block while rotating the q-space operator: "
                     << "target_pair=(" << target_i << "," << target_j << "), "
                     << "source_pair=(" << source_i << "," << source_j << "), "
                     << "spatial_isym=" << member.spatial_isym << ", "
-                    << "time_reversal=" << (apply_time_reversal ? "true" : "false");
+                    << "time_reversal=" << (plan.apply_time_reversal ? "true" : "false");
                 throw LIBRPA_RUNTIME_ERROR(oss.str());
             }
 
-            if (block_ibz.nr != static_cast<int>(atom_nabf.at(source_i))
-                || block_ibz.nc != static_cast<int>(atom_nabf.at(source_j)))
+            if (block_ibz.nr != static_cast<int>(atom_nbasis.at(source_i))
+                || block_ibz.nc != static_cast<int>(atom_nbasis.at(source_j)))
             {
                 throw LIBRPA_RUNTIME_ERROR(
-                    "The ABF atom block dimension is incompatible with the rotated source atom pair");
+                    "The atom block dimension is incompatible with the rotated source atom pair");
             }
 
             ComplexMatrix block_rotated;
-            if (apply_time_reversal)
+            if (plan.apply_time_reversal)
             {
                 // Use the same row-major convention as the AO-side k-space rotation:
                 //   TRS: O_bz[I,J] = M_I^dagger · conj(O_ibz[S(I),S(J)]) · M_J
@@ -1633,10 +1588,10 @@ symmetry_atom_block_matrix_map_t rotate_symmetry_kspace_operator_blocks(
                 //   non-TRS: O_bz[I,J] = M_I^T · O_ibz[S(I),S(J)] · conj(M_J)
                 block_rotated = transpose(M_i, false) * block_ibz * conj(M_j);
             }
-            if (apply_target_gauge)
+            if (plan.apply_target_gauge)
             {
-                const auto left_phase = atom_target_phases[atom_i];
-                const auto right_phase = atom_target_phases[atom_j];
+                const auto left_phase = plan.atom_target_phases[atom_i];
+                const auto right_phase = plan.atom_target_phases[atom_j];
                 block_rotated *= left_phase * std::conj(right_phase);
             }
             rotated_blocks[static_cast<atom_t>(atom_i)][static_cast<atom_t>(atom_j)] =
@@ -1652,8 +1607,7 @@ symmetry_atom_block_matrix_map_t symmetrize_symmetry_ibz_kspace_operator_blocks(
     const std::vector<SpeciesBasisLayout>& layouts,
     const Vector3_Order<double>& k_ibz,
     const symmetry_atom_block_matrix_map_t& blocks_ibz,
-    const std::map<atom_t, size_t>& atom_nabf,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
+    const std::map<atom_t, size_t>& atom_nbasis,
     const std::set<std::pair<atom_t, atom_t>>* target_atom_pairs)
 {
     std::set<std::pair<atom_t, atom_t>> inferred_target_pairs;
@@ -1683,7 +1637,7 @@ symmetry_atom_block_matrix_map_t symmetrize_symmetry_ibz_kspace_operator_blocks(
         {
             continue;
         }
-        if (!nearly_same_kpoint(member.k_bz, k_ibz))
+        if (!same_fractional_kpoint(member.k_bz, k_ibz, kSymmetryCoordTol))
         {
             continue;
         }
@@ -1692,8 +1646,8 @@ symmetry_atom_block_matrix_map_t symmetrize_symmetry_ibz_kspace_operator_blocks(
         // active LibRPA label by a reciprocal-lattice vector G. Re-apply the target gauge so the
         // averaged operator is accumulated in the same k_ibz representative used by LibRPA.
         const auto rotated_blocks = rotate_symmetry_kspace_operator_blocks(
-            ctx, layouts, member, blocks_ibz, atom_nabf, k_ibz, coord_frac, false, target_atom_pairs,
-            &k_ibz);
+            ctx, layouts, member, blocks_ibz, atom_nbasis, k_ibz, false,
+            target_atom_pairs, &k_ibz);
 
         for (const auto& atom_i_pair : rotated_blocks)
         {
@@ -1729,97 +1683,15 @@ symmetry_atom_block_matrix_map_t symmetrize_symmetry_ibz_kspace_operator_blocks(
     return accumulated_blocks;
 }
 
-ComplexMatrix rotate_symmetry_kspace_operator_matrix(
-    const SymmetryContext& ctx,
-    const std::vector<SpeciesBasisLayout>& layouts,
-    const SymmetryKStarMember& member,
-    const ComplexMatrix& matrix_ibz,
-    const std::map<atom_t, size_t>& atom_nabf,
-    const Vector3_Order<double>& k_ibz,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac_map,
-    const bool use_time_reversal,
-    const Vector3_Order<double>* k_bz_target)
-{
-    const auto offsets = build_atom_offsets(atom_nabf);
-    const int nabf_total = offsets.back();
-    if (matrix_ibz.nr != nabf_total || matrix_ibz.nc != nabf_total)
-    {
-        throw LIBRPA_RUNTIME_ERROR("The input matrix dimension is incompatible with the ABF basis layout");
-    }
-
-    symmetry_atom_block_matrix_map_t blocks_ibz;
-    for (std::size_t atom_i = 0; atom_i < atom_nabf.size(); ++atom_i)
-    {
-        for (std::size_t atom_j = 0; atom_j < atom_nabf.size(); ++atom_j)
-        {
-            blocks_ibz[static_cast<atom_t>(atom_i)][static_cast<atom_t>(atom_j)] =
-                extract_atom_block(matrix_ibz, static_cast<atom_t>(atom_i), static_cast<atom_t>(atom_j),
-                                   atom_nabf, offsets);
-        }
-    }
-
-    const auto rotated_blocks = rotate_symmetry_kspace_operator_blocks(
-        ctx, layouts, member, blocks_ibz, atom_nabf, k_ibz, coord_frac_map, use_time_reversal,
-        nullptr, k_bz_target);
-
-    ComplexMatrix rotated_matrix(nabf_total, nabf_total);
-    for (const auto& atom_i_pair : rotated_blocks)
-    {
-        for (const auto& atom_j_pair : atom_i_pair.second)
-        {
-            set_atom_block(rotated_matrix, atom_i_pair.first, atom_j_pair.first, atom_j_pair.second,
-                           offsets);
-        }
-    }
-    return rotated_matrix;
-}
-
-ComplexMatrix symmetrize_symmetry_ibz_kspace_operator_matrix(
-    const SymmetryContext& ctx,
-    const std::vector<SpeciesBasisLayout>& layouts,
-    const Vector3_Order<double>& k_ibz,
-    const ComplexMatrix& matrix_ibz,
-    const std::map<atom_t, size_t>& atom_nabf,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac)
-{
-    const auto offsets = build_atom_offsets(atom_nabf);
-    symmetry_atom_block_matrix_map_t blocks_ibz;
-    for (std::size_t atom_i = 0; atom_i < atom_nabf.size(); ++atom_i)
-    {
-        for (std::size_t atom_j = 0; atom_j < atom_nabf.size(); ++atom_j)
-        {
-            blocks_ibz[static_cast<atom_t>(atom_i)][static_cast<atom_t>(atom_j)] =
-                extract_atom_block(matrix_ibz, static_cast<atom_t>(atom_i), static_cast<atom_t>(atom_j),
-                                   atom_nabf, offsets);
-        }
-    }
-
-    const auto rotated_blocks = symmetrize_symmetry_ibz_kspace_operator_blocks(
-        ctx, layouts, k_ibz, blocks_ibz, atom_nabf, coord_frac);
-
-    ComplexMatrix accumulated(matrix_ibz.nr, matrix_ibz.nc);
-    for (const auto& atom_i_pair : rotated_blocks)
-    {
-        for (const auto& atom_j_pair : atom_i_pair.second)
-        {
-            set_atom_block(accumulated, atom_i_pair.first, atom_j_pair.first, atom_j_pair.second,
-                           offsets);
-        }
-    }
-    return accumulated;
-}
-
 ComplexMatrix rotate_symmetry_kspace_matrix(const SymmetryContext& ctx,
-                                          const std::vector<SpeciesBasisLayout>& layouts,
-                                          const SymmetryKStarMember& member,
-                                          const ComplexMatrix& matrix_ibz,
-                                          const std::map<atom_t, size_t>& atom_nw,
-                                          const Vector3_Order<double>& k_ibz,
-                                          const std::map<atom_t, std::array<double, 3>>& coord_frac_map,
-                                          const bool use_time_reversal,
-                                          const Vector3_Order<double>* k_bz_target)
+                                            const std::vector<SpeciesBasisLayout>& layouts,
+                                            const SymmetryKStarMember& member,
+                                            const ComplexMatrix& matrix_ibz,
+                                            const std::map<atom_t, size_t>& atom_nw,
+                                            const Vector3_Order<double>& k_ibz,
+                                            const bool use_time_reversal,
+                                            const Vector3_Order<double>* k_bz_target)
 {
-    const bool apply_time_reversal = use_time_reversal || member.time_reversal;
     // -------------------------------------------------------------------------
     // Rotate D(k_ibz) to D(k_bz) using the input-convention Bloch rotation matrix M.
     //
@@ -1827,7 +1699,7 @@ ComplexMatrix rotate_symmetry_kspace_matrix(const SymmetryContext& ctx,
     // internal restore_dm() path uses k_ibz when constructing M(R, k). We must
     // therefore rebuild the internal matrix by multiplying the exported block
     // with exp[i (k_ibz - k_bz) · O], where O is the atom-resolved return
-    // lattice. This is the AO counterpart of the already validated ABF-side
+    // lattice. This is the AO counterpart of the already validated side
     // phase correction.
     //
     // ABACUS col-major:  D^T(k_bz) = M† · D^T(k_ibz) · M
@@ -1844,72 +1716,16 @@ ComplexMatrix rotate_symmetry_kspace_matrix(const SymmetryContext& ctx,
         throw LIBRPA_RUNTIME_ERROR("The input matrix dimension is incompatible with the AO basis layout");
     }
 
-    // Build atom permutation: rotations_by_from[I] gives the rotation entry for atom I.
-    std::vector<const SymmetryKAtomRotation*> rotations_by_from(atom_nw.size(), nullptr);
-    std::vector<bool> visited_to(atom_nw.size(), false);
-    for (const auto& atom_rotation : member.atom_rotations)
-    {
-        if (atom_rotation.atom_from < 0 || atom_rotation.atom_from >= static_cast<int>(atom_nw.size())
-            || atom_rotation.atom_to < 0 || atom_rotation.atom_to >= static_cast<int>(atom_nw.size()))
-        {
-            throw LIBRPA_RUNTIME_ERROR("k-space atom mapping is out of range");
-        }
-        rotations_by_from[static_cast<std::size_t>(atom_rotation.atom_from)] = &atom_rotation;
-        visited_to[static_cast<std::size_t>(atom_rotation.atom_to)] = true;
-    }
+    const auto plan = build_kspace_rotation_plan(ctx,
+                                                 layouts,
+                                                 member,
+                                                 atom_nw,
+                                                 k_ibz,
+                                                 use_time_reversal,
+                                                 k_bz_target,
+                                                 "AO k-space rotation");
 
-    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
-    {
-        if (rotations_by_from[atom] == nullptr)
-        {
-            throw LIBRPA_RUNTIME_ERROR("k-space atom rotations do not cover every atom");
-        }
-        if (!visited_to[atom])
-        {
-            throw LIBRPA_RUNTIME_ERROR("k-space atom mapping is not a full permutation");
-        }
-    }
-
-    // Build the AO rotation blocks M_I for each atom.
     ComplexMatrix rotated_matrix(nao_total, nao_total);
-
-    const int n_spatial_operations = static_cast<int>(ctx.rspace_operations.size());
-    const int spatial_isym = member.spatial_isym;
-    if (spatial_isym < 0 || spatial_isym >= n_spatial_operations)
-    {
-        throw LIBRPA_RUNTIME_ERROR("AO k-space rotation uses an invalid symmetry index");
-    }
-    const Vector3_Order<double> delta_k{k_ibz.x - member.k_bz.x,
-                                        k_ibz.y - member.k_bz.y,
-                                        k_ibz.z - member.k_bz.z};
-
-    std::vector<ComplexMatrix> atom_M_blocks(atom_nw.size());
-    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
-    {
-        const auto* atom_rotation = rotations_by_from[atom];
-        const auto& layout = get_symmetry_species_layout(layouts, atom_rotation->atom_type);
-        atom_M_blocks[atom] =
-            build_symmetry_rotation_matrix(layout, atom_rotation->bloch_rsh_rotations);
-        const auto return_lattice =
-            build_symmetry_kspace_return_lattice(ctx, *atom_rotation, coord_frac_map, spatial_isym);
-        const double phase_arg =
-            TWO_PI * (delta_k.x * static_cast<double>(return_lattice.x)
-                      + delta_k.y * static_cast<double>(return_lattice.y)
-                      + delta_k.z * static_cast<double>(return_lattice.z));
-        atom_M_blocks[atom] *= std::complex<double>(std::cos(phase_arg), std::sin(phase_arg));
-    }
-
-    const bool apply_target_gauge = (k_bz_target != nullptr);
-    std::vector<std::complex<double>> atom_target_phases(atom_nw.size(), {1.0, 0.0});
-    if (apply_target_gauge)
-    {
-        const auto k_shift = build_symmetry_equivalent_kpoint_shift(member.k_bz, *k_bz_target);
-        for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
-        {
-            atom_target_phases[atom] = build_symmetry_reciprocal_gauge_phase(
-                k_shift, static_cast<atom_t>(atom), coord_frac_map);
-        }
-    }
 
     // Apply the block-level rotation formula.
     //
@@ -1926,12 +1742,12 @@ ComplexMatrix rotate_symmetry_kspace_matrix(const SymmetryContext& ctx,
     // Source indices: S(I) = atom_to,  destination indices: I = atom_from.
     for (std::size_t atom_i = 0; atom_i < atom_nw.size(); ++atom_i)
     {
-        const auto* rot_i = rotations_by_from[atom_i];
-        const auto& M_i = atom_M_blocks[atom_i];
+        const auto* rot_i = plan.rotations_by_from[atom_i];
+        const auto& M_i = plan.atom_M_blocks[atom_i];
         for (std::size_t atom_j = 0; atom_j < atom_nw.size(); ++atom_j)
         {
-            const auto* rot_j = rotations_by_from[atom_j];
-            const auto& M_j = atom_M_blocks[atom_j];
+            const auto* rot_j = plan.rotations_by_from[atom_j];
+            const auto& M_j = plan.atom_M_blocks[atom_j];
             // Read from D_ibz at the MAPPED atom positions S(I), S(J)
             const ComplexMatrix block_ibz =
                 extract_atom_block(matrix_ibz,
@@ -1939,7 +1755,7 @@ ComplexMatrix rotate_symmetry_kspace_matrix(const SymmetryContext& ctx,
                                    static_cast<atom_t>(rot_j->atom_to),
                                    atom_nw, offsets);
             ComplexMatrix block_rotated;
-            if (apply_time_reversal)
+            if (plan.apply_time_reversal)
             {
                 // TRS: D_bz[I,J] = M_I† · conj(D_ibz[S(I),S(J)]) · M_J
                 block_rotated = transpose(M_i, true) * conj(block_ibz) * M_j;
@@ -1949,10 +1765,10 @@ ComplexMatrix rotate_symmetry_kspace_matrix(const SymmetryContext& ctx,
                 // Space group: D_bz[I,J] = M_I^T · D_ibz[S(I),S(J)] · conj(M_J)
                 block_rotated = transpose(M_i, false) * block_ibz * conj(M_j);
             }
-            if (apply_target_gauge)
+            if (plan.apply_target_gauge)
             {
-                const auto left_phase = atom_target_phases[atom_i];
-                const auto right_phase = atom_target_phases[atom_j];
+                const auto left_phase = plan.atom_target_phases[atom_i];
+                const auto right_phase = plan.atom_target_phases[atom_j];
                 block_rotated *= left_phase * std::conj(right_phase);
             }
             // Write to D_bz at the ORIGINAL atom positions I, J
@@ -1969,13 +1785,15 @@ ComplexMatrix rotate_symmetry_kspace_matrix(const SymmetryContext& ctx,
 
 symmetry_irreducible_sector_t build_symmetry_rspace_irreducible_sector(
     const SymmetryContext& ctx,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const std::vector<Vector3_Order<int>>& Rlist)
 {
-    const auto& rspace_coord_frac =
-        (ctx.input_coord_frac.size() == ctx.atom_to_type.size()) ? ctx.input_coord_frac : coord_frac;
+    if (ctx.input_coord_frac.size() != ctx.atom_to_type.size())
+    {
+        throw LIBRPA_RUNTIME_ERROR("Fractional coordinates are unavailable for real-space symmetry");
+    }
+
     std::map<int, Vector3_Order<double>> generic_coord_frac;
-    for (const auto& [atom, coord] : rspace_coord_frac)
+    for (const auto& [atom, coord] : ctx.input_coord_frac)
     {
         generic_coord_frac[static_cast<int>(atom)] = {coord[0], coord[1], coord[2]};
     }
@@ -2009,11 +1827,10 @@ symmetry_irreducible_sector_t build_symmetry_rspace_irreducible_sector(
 }
 
 void build_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
-                                      const std::map<atom_t, std::array<double, 3>>& coord_frac,
-                                      const Vector3_Order<int>& period,
-                                      const std::vector<Vector3_Order<int>>& Rlist,
-                                      symmetry_rspace_sector_stars_t& sector_stars,
-                                      std::ostream* log)
+                                        const Vector3_Order<int>& period,
+                                        const std::vector<Vector3_Order<int>>& Rlist,
+                                        symmetry_rspace_sector_stars_t& sector_stars,
+                                        std::ostream* log)
 {
     if (!ctx.available || ctx.irreducible_sector.empty() || ctx.rspace_operations.empty())
     {
@@ -2023,14 +1840,17 @@ void build_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
     {
         throw LIBRPA_RUNTIME_ERROR("Atom-to-type mapping is unavailable for real-space symmetry");
     }
+    if (ctx.input_coord_frac.size() != ctx.atom_to_type.size())
+    {
+        throw LIBRPA_RUNTIME_ERROR("Fractional coordinates are unavailable for real-space symmetry");
+    }
 
-    const auto& rspace_coord_frac =
-        (ctx.input_coord_frac.size() == ctx.atom_to_type.size()) ? ctx.input_coord_frac : coord_frac;
     std::vector<SpaceGroupAtomMapping<atom_t>> op_infos;
     op_infos.reserve(ctx.rspace_operations.size());
     for (const auto &op: ctx.rspace_operations)
     {
-        op_infos.push_back(get_space_group_atom_mapping(op, rspace_coord_frac, ctx.atom_to_type, kSymmetryRSpaceAtomMapTol));
+        op_infos.push_back(get_space_group_atom_mapping(
+            op, ctx.input_coord_frac, ctx.atom_to_type, kSymmetryRSpaceAtomMapTol));
     }
     std::vector<bool> use_operation(ctx.rspace_operations.size(), true);
     if (ctx.lattice_available)
@@ -2041,7 +1861,7 @@ void build_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
                 preserves_lattice_metric(ctx.rspace_operations[isym].rotation, ctx.lattice_vectors);
         }
     }
-    const auto inverse_map = build_rspace_inverse_map(ctx, rspace_coord_frac);
+    const auto inverse_map = build_rspace_inverse_map(ctx);
 
     sector_stars.clear();
     std::set<Vector3_Order<int>> Rset(Rlist.begin(), Rlist.end());
@@ -2133,13 +1953,13 @@ void build_symmetry_rspace_sector_stars(const SymmetryContext& ctx,
     }
 }
 
-ComplexMatrix rotate_symmetry_rspace_matrix(const SymmetryContext& ctx,
-                                            const std::vector<SpeciesBasisLayout>& layouts_i,
-                                            const std::vector<SpeciesBasisLayout>& layouts_j,
-                                            const int isym,
-                                            const atom_t atom_from_i,
-                                            const atom_t atom_from_j,
-                                            const ComplexMatrix& matrix_source)
+ComplexMatrix rotate_symmetry_rspace_block(const SymmetryContext& ctx,
+                                           const std::vector<SpeciesBasisLayout>& layouts_i,
+                                           const std::vector<SpeciesBasisLayout>& layouts_j,
+                                           const int isym,
+                                           const atom_t atom_from_i,
+                                           const atom_t atom_from_j,
+                                           const ComplexMatrix& matrix_source)
 {
     const int type_i = ctx.atom_to_type.at(atom_from_i);
     const int type_j = ctx.atom_to_type.at(atom_from_j);
@@ -2157,14 +1977,15 @@ ComplexMatrix rotate_symmetry_rspace_matrix(const SymmetryContext& ctx,
     return transpose(T_i, false) * matrix_source * conj(T_j);
 }
 
-ComplexMatrix rotate_symmetry_rspace_matrix(const SymmetryContext& ctx,
-                                            const std::vector<SpeciesBasisLayout>& layouts,
-                                            const int isym,
-                                            const atom_t atom_from_i,
-                                            const atom_t atom_from_j,
-                                            const ComplexMatrix& matrix_source)
+ComplexMatrix rotate_symmetry_rspace_block(const SymmetryContext& ctx,
+                                           const std::vector<SpeciesBasisLayout>& layouts,
+                                           const int isym,
+                                           const atom_t atom_from_i,
+                                           const atom_t atom_from_j,
+                                           const ComplexMatrix& matrix_source)
 {
-    return rotate_symmetry_rspace_matrix(ctx, layouts, layouts, isym, atom_from_i, atom_from_j, matrix_source);
+    return rotate_symmetry_rspace_block(
+        ctx, layouts, layouts, isym, atom_from_i, atom_from_j, matrix_source);
 }
 
 }  // namespace librpa_int

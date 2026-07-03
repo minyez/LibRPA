@@ -51,8 +51,6 @@ using std::vector;
 
 namespace librpa_int {
 
-namespace
-{
 using abf_qspace_complex_block_map_t =
     atom_mapping<std::map<Vector3_Order<double>, matrix_m<std::complex<double>>>>::pair_t_old;
 using abf_rspace_complex_block_map_t =
@@ -60,19 +58,20 @@ using abf_rspace_complex_block_map_t =
 using abf_rspace_dense_block_map_t =
     std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, ComplexMatrix>>>;
 
-void dump_blacs_debug_matrix(const bool debug, const std::string &output_dir,
-                             const std::string &file_name,
-                             const matrix_m<std::complex<double>> &matrix_local,
-                             const ArrayDesc &matrix_desc, const std::string &comment = "", const double threshold = 1e-15)
+static void dump_blacs_debug_matrix(const bool debug, const std::string &output_dir,
+                                    const std::string &file_name,
+                                    const matrix_m<std::complex<double>> &matrix_local,
+                                    const ArrayDesc &matrix_desc, const std::string &comment = "",
+                                    const double threshold = 1e-15)
 {
     if (!debug) return;
     print_matrix_mm_file_parallel(path_as_directory(output_dir) + file_name, matrix_local,
                                   matrix_desc, comment, threshold);
 }
 
-bool are_equivalent_symmetry_qpoints(const Vector3_Order<double>& lhs,
-                                   const Vector3_Order<double>& rhs,
-                                   const double tol = 1e-5)
+static bool are_equivalent_symmetry_qpoints(const Vector3_Order<double>& lhs,
+                                            const Vector3_Order<double>& rhs,
+                                            const double tol = 1e-5)
 {
     const auto same_component = [tol](const double lhs_component, const double rhs_component) {
         return std::abs((lhs_component - rhs_component) - std::round(lhs_component - rhs_component))
@@ -83,8 +82,9 @@ bool are_equivalent_symmetry_qpoints(const Vector3_Order<double>& lhs,
 }
 
 template <typename QMap>
-typename QMap::const_iterator find_matching_symmetry_qpoint(const QMap& q_map,
-                                                          const Vector3_Order<double>& q_target)
+static typename QMap::const_iterator find_matching_symmetry_qpoint(
+    const QMap& q_map,
+    const Vector3_Order<double>& q_target)
 {
     const auto exact_iter = q_map.find(q_target);
     if (exact_iter != q_map.end())
@@ -98,7 +98,7 @@ typename QMap::const_iterator find_matching_symmetry_qpoint(const QMap& q_map,
 }
 
 template <typename QVector>
-typename QVector::const_iterator find_matching_symmetry_qpoint_in_sequence(
+static typename QVector::const_iterator find_matching_symmetry_qpoint_in_sequence(
     const QVector& q_sequence,
     const Vector3_Order<double>& q_target)
 {
@@ -113,7 +113,7 @@ typename QVector::const_iterator find_matching_symmetry_qpoint_in_sequence(
     });
 }
 
-std::map<atom_t, size_t> build_atom_nabf_map(const AtomicBasis& basis_abf)
+static std::map<atom_t, size_t> build_atom_nabf_map(const AtomicBasis& basis_abf)
 {
     std::map<atom_t, size_t> atom_nabf;
     for (atom_t atom = 0; atom != static_cast<atom_t>(basis_abf.n_atoms); ++atom)
@@ -123,7 +123,7 @@ std::map<atom_t, size_t> build_atom_nabf_map(const AtomicBasis& basis_abf)
     return atom_nabf;
 }
 
-ComplexMatrix to_complex_matrix(const matrix_m<std::complex<double>>& mat)
+static ComplexMatrix to_complex_matrix(const matrix_m<std::complex<double>>& mat)
 {
     ComplexMatrix complex_mat(mat.nr(), mat.nc());
     for (int row = 0; row < mat.nr(); ++row)
@@ -136,14 +136,14 @@ ComplexMatrix to_complex_matrix(const matrix_m<std::complex<double>>& mat)
     return complex_mat;
 }
 
-matrix_m<std::complex<double>> to_row_major_matrix_m(const ComplexMatrix& mat)
+static matrix_m<std::complex<double>> to_row_major_matrix_m(const ComplexMatrix& mat)
 {
     return matrix_m<std::complex<double>>(mat.nr, mat.nc, mat.c, MAJOR::ROW);
 }
 
-void add_scaled_complex_matrix(ComplexMatrix& matrix_dst,
-                               const ComplexMatrix& matrix_src,
-                               const std::complex<double>& scale)
+static void add_scaled_complex_matrix(ComplexMatrix& matrix_dst,
+                                      const ComplexMatrix& matrix_src,
+                                      const std::complex<double>& scale)
 {
     if (matrix_dst.nr != matrix_src.nr || matrix_dst.nc != matrix_src.nc)
     {
@@ -155,7 +155,7 @@ void add_scaled_complex_matrix(ComplexMatrix& matrix_dst,
     }
 }
 
-librpa_int::symmetry_atom_block_matrix_map_t collect_symmetry_abf_ibz_blocks_for_q(
+static librpa_int::symmetry_atom_block_matrix_map_t collect_symmetry_abf_ibz_blocks_for_q(
     const abf_qspace_complex_block_map_t& blocks_by_q,
     const Vector3_Order<double>& q_ibz_internal)
 {
@@ -176,7 +176,7 @@ librpa_int::symmetry_atom_block_matrix_map_t collect_symmetry_abf_ibz_blocks_for
     return blocks_ibz;
 }
 
-librpa_int::symmetry_atom_block_matrix_map_t to_ordered_symmetry_blocks(
+static librpa_int::symmetry_atom_block_matrix_map_t to_ordered_symmetry_blocks(
     const atom_mapping<ComplexMatrix>::pair_t_old& atom_blocks)
 {
     librpa_int::symmetry_atom_block_matrix_map_t ordered_blocks;
@@ -190,7 +190,7 @@ librpa_int::symmetry_atom_block_matrix_map_t to_ordered_symmetry_blocks(
     return ordered_blocks;
 }
 
-atom_mapping<ComplexMatrix>::pair_t_old to_atom_mapping_blocks(
+static atom_mapping<ComplexMatrix>::pair_t_old to_atom_mapping_blocks(
     const librpa_int::symmetry_atom_block_matrix_map_t& ordered_blocks)
 {
     atom_mapping<ComplexMatrix>::pair_t_old atom_blocks;
@@ -204,7 +204,7 @@ atom_mapping<ComplexMatrix>::pair_t_old to_atom_mapping_blocks(
     return atom_blocks;
 }
 
-std::set<std::pair<atom_t, atom_t>> collect_symmetry_atom_pairs(
+static std::set<std::pair<atom_t, atom_t>> collect_symmetry_atom_pairs(
     const librpa_int::symmetry_atom_block_matrix_map_t& atom_blocks)
 {
     std::set<std::pair<atom_t, atom_t>> atom_pairs;
@@ -218,7 +218,7 @@ std::set<std::pair<atom_t, atom_t>> collect_symmetry_atom_pairs(
     return atom_pairs;
 }
 
-std::set<std::pair<atom_t, atom_t>> collect_symmetry_atom_pairs(
+static std::set<std::pair<atom_t, atom_t>> collect_symmetry_atom_pairs(
     const atom_mapping<ComplexMatrix>::pair_t_old& atom_blocks)
 {
     std::set<std::pair<atom_t, atom_t>> atom_pairs;
@@ -232,7 +232,7 @@ std::set<std::pair<atom_t, atom_t>> collect_symmetry_atom_pairs(
     return atom_pairs;
 }
 
-std::set<std::pair<atom_t, atom_t>> collect_all_upper_atom_pairs(
+static std::set<std::pair<atom_t, atom_t>> collect_all_upper_atom_pairs(
     const std::map<atom_t, size_t>& atom_nabf)
 {
     std::set<std::pair<atom_t, atom_t>> atom_pairs;
@@ -246,7 +246,7 @@ std::set<std::pair<atom_t, atom_t>> collect_all_upper_atom_pairs(
     return atom_pairs;
 }
 
-std::set<std::pair<atom_t, atom_t>> collect_local_target_atom_pairs_from_qspace(
+static std::set<std::pair<atom_t, atom_t>> collect_local_target_atom_pairs_from_qspace(
     const abf_qspace_complex_block_map_t& blocks_by_q)
 {
     std::set<std::pair<atom_t, atom_t>> target_atom_pairs;
@@ -263,7 +263,7 @@ std::set<std::pair<atom_t, atom_t>> collect_local_target_atom_pairs_from_qspace(
     return target_atom_pairs;
 }
 
-std::vector<int> build_symmetry_atom_offsets(const std::map<atom_t, size_t>& atom_nabf)
+static std::vector<int> build_symmetry_atom_offsets(const std::map<atom_t, size_t>& atom_nabf)
 {
     std::vector<int> offsets(atom_nabf.size() + 1, 0);
     for (std::size_t atom = 0; atom < atom_nabf.size(); ++atom)
@@ -274,7 +274,7 @@ std::vector<int> build_symmetry_atom_offsets(const std::map<atom_t, size_t>& ato
     return offsets;
 }
 
-ComplexMatrix build_dense_symmetry_hermitian_matrix_from_local_blocks(
+static ComplexMatrix build_dense_symmetry_hermitian_matrix_from_local_blocks(
     const librpa_int::symmetry_atom_block_matrix_map_t& local_blocks,
     const std::map<atom_t, size_t>& atom_nabf)
 {
@@ -315,7 +315,7 @@ ComplexMatrix build_dense_symmetry_hermitian_matrix_from_local_blocks(
     return dense;
 }
 
-librpa_int::symmetry_atom_block_matrix_map_t build_symmetry_blocks_from_dense_matrix(
+static librpa_int::symmetry_atom_block_matrix_map_t build_symmetry_blocks_from_dense_matrix(
     const ComplexMatrix& dense_matrix,
     const std::map<atom_t, size_t>& atom_nabf)
 {
@@ -344,7 +344,7 @@ librpa_int::symmetry_atom_block_matrix_map_t build_symmetry_blocks_from_dense_ma
     return atom_blocks;
 }
 
-librpa_int::symmetry_atom_block_matrix_map_t gather_symmetry_ibz_blocks_collective(
+static librpa_int::symmetry_atom_block_matrix_map_t gather_symmetry_ibz_blocks_collective(
     const librpa_int::symmetry_atom_block_matrix_map_t& blocks_ibz_local,
     const std::map<atom_t, size_t>& atom_nabf)
 {
@@ -360,7 +360,7 @@ librpa_int::symmetry_atom_block_matrix_map_t gather_symmetry_ibz_blocks_collecti
     return build_symmetry_blocks_from_dense_matrix(dense_ibz_global, atom_nabf);
 }
 
-librpa_int::symmetry_irreducible_sector_t filter_symmetry_irreducible_sector_by_rlist(
+static librpa_int::symmetry_irreducible_sector_t filter_symmetry_irreducible_sector_by_rlist(
     const librpa_int::symmetry_irreducible_sector_t& irreducible_sector,
     const std::vector<Vector3_Order<int>>& Rlist)
 {
@@ -381,7 +381,7 @@ librpa_int::symmetry_irreducible_sector_t filter_symmetry_irreducible_sector_by_
     return filtered_sector;
 }
 
-std::set<std::pair<atom_t, atom_t>> build_symmetry_irreducible_target_atom_pairs(
+static std::set<std::pair<atom_t, atom_t>> build_symmetry_irreducible_target_atom_pairs(
     const librpa_int::symmetry_irreducible_sector_t& irreducible_sector)
 {
     std::set<std::pair<atom_t, atom_t>> target_atom_pairs;
@@ -404,7 +404,7 @@ struct SymmetryIrreducibleWRPlan
     std::vector<librpa_int::SymmetryKStarGridMappingEntry> kstar_grid_mapping;
 };
 
-SymmetryIrreducibleWRPlan build_symmetry_irreducible_wr_plan(
+static SymmetryIrreducibleWRPlan build_symmetry_irreducible_wr_plan(
     const librpa_int::SymmetryContext& ctx,
     const std::set<std::pair<atom_t, atom_t>>& local_target_pairs,
     const PeriodicBoundaryData& pbc,
@@ -420,7 +420,7 @@ SymmetryIrreducibleWRPlan build_symmetry_irreducible_wr_plan(
 
     librpa_int::symmetry_rspace_sector_stars_t sector_stars;
     librpa_int::build_symmetry_rspace_sector_stars(
-        ctx, ctx.input_coord_frac, pbc.period, Rlist, sector_stars, nullptr);
+        ctx, pbc.period, Rlist, sector_stars, nullptr);
 
     for (const auto& pair_star : sector_stars)
     {
@@ -448,13 +448,12 @@ SymmetryIrreducibleWRPlan build_symmetry_irreducible_wr_plan(
 
     plan.local_irreducible_pairs =
         build_symmetry_irreducible_target_atom_pairs(plan.local_irreducible_sector);
-    plan.kstar_grid_mapping =
-        librpa_int::build_symmetry_kstar_grid_mapping(ctx, pbc.klist, pbc.kfrac_list, pbc.map_irk_ks);
+    plan.kstar_grid_mapping = ctx.kstar_grid_mapping;
     plan.available = true;
     return plan;
 }
 
-abf_rspace_dense_block_map_t allocate_symmetry_irreducible_wr_storage(
+static abf_rspace_dense_block_map_t allocate_symmetry_irreducible_wr_storage(
     const librpa_int::symmetry_irreducible_sector_t& irreducible_sector,
     const std::map<atom_t, size_t>& atom_nabf)
 {
@@ -474,7 +473,7 @@ abf_rspace_dense_block_map_t allocate_symmetry_irreducible_wr_storage(
     return blocks_by_R_dense;
 }
 
-abf_rspace_complex_block_map_t convert_dense_rspace_blocks_to_row_major(
+static abf_rspace_complex_block_map_t convert_dense_rspace_blocks_to_row_major(
     const abf_rspace_dense_block_map_t& dense_blocks)
 {
     abf_rspace_complex_block_map_t row_major_blocks;
@@ -492,7 +491,7 @@ abf_rspace_complex_block_map_t convert_dense_rspace_blocks_to_row_major(
     return row_major_blocks;
 }
 
-abf_rspace_dense_block_map_t restore_symmetry_abf_rspace_dense_blocks(
+static abf_rspace_dense_block_map_t restore_symmetry_abf_rspace_dense_blocks(
     const abf_rspace_dense_block_map_t& tensors_ir,
     const librpa_int::SymmetryContext& symmetry_ctx,
     const std::vector<SpeciesBasisLayout>& abf_layouts,
@@ -526,7 +525,7 @@ abf_rspace_dense_block_map_t restore_symmetry_abf_rspace_dense_blocks(
 
                 for (const auto& restore_member : star_iter->second)
                 {
-                    ComplexMatrix w_full = librpa_int::rotate_symmetry_rspace_matrix(
+                    ComplexMatrix w_full = librpa_int::rotate_symmetry_rspace_block(
                         symmetry_ctx, abf_layouts, restore_member.isym, ir_I, ir_J, R_matrix.second);
                     auto& target =
                         tensors_full[restore_member.full_atom_pair.first]
@@ -547,9 +546,9 @@ abf_rspace_dense_block_map_t restore_symmetry_abf_rspace_dense_blocks(
     return tensors_full;
 }
 
-std::complex<double> build_ft_wq_phase(const PeriodicBoundaryData& pbc,
-                                       const Vector3_Order<double>& q_internal,
-                                       const Vector3_Order<int>& R)
+static std::complex<double> build_ft_wq_phase(const PeriodicBoundaryData& pbc,
+                                              const Vector3_Order<double>& q_internal,
+                                              const Vector3_Order<int>& R)
 {
     const auto q_frac = pbc.latvec * q_internal;
     const double ang = -(q_frac * R) * TWO_PI;
@@ -557,7 +556,7 @@ std::complex<double> build_ft_wq_phase(const PeriodicBoundaryData& pbc,
            / static_cast<double>(pbc.get_n_cells_bvk());
 }
 
-bool can_use_symmetry_irreducible_sector_wr_restore(
+static bool can_use_symmetry_irreducible_sector_wr_restore(
     const librpa_int::SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& abf_layouts,
     const std::map<atom_t, size_t>& atom_nabf,
@@ -579,7 +578,7 @@ bool can_use_symmetry_irreducible_sector_wr_restore(
            && !ctx.rspace_operations.empty();
 }
 
-bool can_symmetrize_symmetry_chi0_ibz_blocks(
+static bool can_symmetrize_symmetry_chi0_ibz_blocks(
     const librpa_int::SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& abf_layouts,
     const std::map<atom_t, size_t>& atom_nabf,
@@ -597,7 +596,7 @@ bool can_symmetrize_symmetry_chi0_ibz_blocks(
            && ctx.input_coord_frac.size() == atom_nabf.size();
 }
 
-atom_mapping<ComplexMatrix>::pair_t_old symmetrize_symmetry_chi0_ibz_blocks_if_needed(
+static atom_mapping<ComplexMatrix>::pair_t_old symmetrize_symmetry_chi0_ibz_blocks_if_needed(
     const librpa_int::SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& abf_layouts,
     const atom_mapping<ComplexMatrix>::pair_t_old& blocks_ibz,
@@ -638,12 +637,11 @@ atom_mapping<ComplexMatrix>::pair_t_old symmetrize_symmetry_chi0_ibz_blocks_if_n
     }
 
     const auto symmetrized_blocks = librpa_int::symmetrize_symmetry_ibz_kspace_operator_blocks(
-        ctx, abf_layouts, q_ibz_frac, blocks_for_symmetrization, atom_nabf, ctx.input_coord_frac,
-        &output_atom_pairs);
+        ctx, abf_layouts, q_ibz_frac, blocks_for_symmetrization, atom_nabf, &output_atom_pairs);
     return to_atom_mapping_blocks(symmetrized_blocks);
 }
 
-abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
+static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
     const librpa_int::SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& abf_layouts,
     const abf_qspace_complex_block_map_t& Wc_q,
@@ -676,8 +674,7 @@ abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
         const auto rotation_atom_pairs =
             librpa_int::build_symmetry_upper_atom_pair_closure(star, plan.local_irreducible_pairs);
         blocks_ibz = librpa_int::symmetrize_symmetry_ibz_kspace_operator_blocks(
-            ctx, abf_layouts, q_ibz_frac, blocks_ibz, atom_nabf, ctx.input_coord_frac,
-            &rotation_atom_pairs);
+            ctx, abf_layouts, q_ibz_frac, blocks_ibz, atom_nabf, &rotation_atom_pairs);
         if (star.members.size() != star_mapping.member_q_bz_keys.size())
         {
             throw std::runtime_error(
@@ -695,7 +692,7 @@ abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
             try
             {
                 rotated_blocks = librpa_int::rotate_symmetry_kspace_operator_blocks(
-                    ctx, abf_layouts, member, blocks_ibz, atom_nabf, star.k_ibz, ctx.input_coord_frac,
+                    ctx, abf_layouts, member, blocks_ibz, atom_nabf, star.k_ibz,
                     member.time_reversal, &rotation_atom_pairs, &q_bz_target_frac);
             }
             catch (const std::exception& ex)
@@ -739,8 +736,6 @@ abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
             blocks_by_R_ir, ctx, abf_layouts, plan.local_sector_stars);
     return convert_dense_rspace_blocks_to_row_major(blocks_by_R_full);
 }
-}
-
 CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx_mat_t &coulmat,
                                                        const std::vector<atpair_t> &local_atpair,
                                                        const BlacsCtxtHandler &blacs_h, bool use_gpu_replace_scalapack)

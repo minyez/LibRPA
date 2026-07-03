@@ -197,11 +197,9 @@ void test_symmetry_context_kstar_restored_dmat_uses_full_star_phases()
     const std::vector<Vector3_Order<double>> kfrac_list{{0.0, 0.0, 0.0}};
     const Vector3_Order<int> R{1, 0, 0};
     const std::map<atom_t, size_t> atom_nw{{0, 1}};
-    const std::map<atom_t, std::array<double, 3>> coord_frac{{0, {0.0, 0.0, 0.0}}};
-
     const auto direct_ibz = mf.get_dmat_cplx_R(0, 0, 0, kfrac_list, R);
     const auto restored = get_symmetry_restored_dmat_cplx_R(
-        ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, R, atom_nw, coord_frac);
+        ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, R, atom_nw);
 
     if (std::abs(direct_ibz(0, 0)) < 1e-12)
         throw std::runtime_error("direct IBZ density matrix unexpectedly vanished");
@@ -227,7 +225,7 @@ void test_symmetry_context_kstar_restore_skips_full_grid()
     };
 
     assert(!can_restore_symmetry_kstar_meanfield(
-        ctx, wfc_layouts, mf, kfrac_list, {{0, 1}}, {{0, {0.0, 0.0, 0.0}}}));
+        ctx, wfc_layouts, mf, kfrac_list, {{0, 1}}));
 }
 
 void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k()
@@ -290,7 +288,6 @@ void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k()
         {1, 0, 0},
     };
     const std::map<atom_t, size_t> atom_nw{{0, 1}};
-    const std::map<atom_t, std::array<double, 3>> coord_frac{{0, {0.0, 0.0, 0.0}}};
     const auto representative_indices =
         build_symmetry_full_grid_kstar_representative_indices(
             ctx, kfrac_list);
@@ -303,7 +300,7 @@ void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k()
     {
         const auto direct = mf.get_dmat_cplx_R(0, 0, 0, kfrac_list, R);
         const auto restored = get_symmetry_restored_dmat_cplx_R(
-            ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, R, atom_nw, coord_frac,
+            ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, R, atom_nw,
             &member_kfrac_targets, &representative_indices);
         if (!fequal(direct(0, 0), restored(0, 0), {1e-12, 0.0}))
             throw std::runtime_error("full-grid k-star density matrix route differs from direct full-k");
@@ -312,7 +309,7 @@ void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k()
     const std::vector<double> taus{-1e-12, 1e-12};
     const auto direct_gf = mf.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_list, taus, Rs);
     const auto restored_gf = get_symmetry_restored_gf_cplx_imagtimes_Rs(
-        ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, taus, Rs, atom_nw, coord_frac, -1,
+        ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, taus, Rs, atom_nw, -1,
         &member_kfrac_targets, &representative_indices);
     for (const auto tau : taus)
     {
@@ -337,6 +334,10 @@ void test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge()
     const std::vector<SpeciesBasisLayout> wfc_layouts{{"X", {0}}};
     ctx.atom_to_type[0] = 0;
     ctx.atom_to_type[1] = 0;
+    ctx.input_coord_frac = {
+        {0, {0.0, 0.0, 0.0}},
+        {1, {0.25, 0.0, 0.0}},
+    };
 
     librpa_int::SymmetryOperation identity_operation;
     identity_operation.rotation.Identity();
@@ -381,15 +382,11 @@ void test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge()
     const std::vector<Vector3_Order<double>> kfrac_list{{0.0, 0.0, 0.0}};
     const Vector3_Order<int> R{0, 0, 0};
     const std::map<atom_t, size_t> atom_nw{{0, 1}, {1, 1}};
-    const std::map<atom_t, std::array<double, 3>> coord_frac{
-        {0, {0.0, 0.0, 0.0}},
-        {1, {0.25, 0.0, 0.0}},
-    };
     const std::vector<std::vector<Vector3_Order<double>>> target_kfrac_list{
         {{0.0, 0.0, 0.0}, {1.5, 0.0, 0.0}}};
 
     const auto restored = get_symmetry_restored_dmat_cplx_R(
-        ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, R, atom_nw, coord_frac, &target_kfrac_list);
+        ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, R, atom_nw, &target_kfrac_list);
 
     const std::complex<double> expected_offdiag{0.25, -0.25};
     if (std::abs(restored(0, 1) - expected_offdiag) > 1e-12)

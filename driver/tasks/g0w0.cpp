@@ -161,14 +161,11 @@ void driver::task_g0w0()
     const auto &kfrac_list = pds->pbc.kfrac_list;
     const auto &mf = pds->mf;
     const auto &symmetry_context = pds->symmetry_context;
-    std::vector<librpa_int::SymmetryFullKpointMemberEntry> full_k_members;
-    if (driver::get_bool(driver::opts.use_symmetry_gw)
-        && symmetry_context.available && !symmetry_context.kstars.empty())
-    {
-        full_k_members = librpa_int::build_symmetry_full_kpoint_member_list(
-            symmetry_context, kfrac_list);
-    }
-    const bool output_full_kgrid_from_symmetry = full_k_members.size() > kfrac_list.size();
+    const auto& full_k_members = symmetry_context.full_kpoint_members;
+    const bool output_full_kgrid_from_symmetry =
+        driver::get_bool(driver::opts.use_symmetry_gw)
+        && symmetry_context.available
+        && full_k_members.size() > kfrac_list.size();
     const int n_kpoints_output = output_full_kgrid_from_symmetry
         ? as_int(full_k_members.size())
         : n_kpoints;

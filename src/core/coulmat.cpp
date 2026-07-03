@@ -14,12 +14,9 @@
 
 namespace librpa_int {
 
-namespace
-{
-
-bool are_equivalent_symmetry_qpoints(const Vector3_Order<double>& lhs,
-                                   const Vector3_Order<double>& rhs,
-                                   const double tol = 1e-5)
+static bool are_equivalent_symmetry_qpoints(const Vector3_Order<double>& lhs,
+                                            const Vector3_Order<double>& rhs,
+                                            const double tol = 1e-5)
 {
     const auto same_component = [tol](const double lhs_component, const double rhs_component) {
         return std::abs((lhs_component - rhs_component) - std::round(lhs_component - rhs_component))
@@ -30,8 +27,9 @@ bool are_equivalent_symmetry_qpoints(const Vector3_Order<double>& lhs,
 }
 
 template <typename QMap>
-typename QMap::const_iterator find_matching_symmetry_qpoint(const QMap& q_map,
-                                                          const Vector3_Order<double>& q_target)
+static typename QMap::const_iterator find_matching_symmetry_qpoint(
+    const QMap& q_map,
+    const Vector3_Order<double>& q_target)
 {
     const auto exact_iter = q_map.find(q_target);
     if (exact_iter != q_map.end())
@@ -44,7 +42,7 @@ typename QMap::const_iterator find_matching_symmetry_qpoint(const QMap& q_map,
     });
 }
 
-std::map<atom_t, size_t> build_atom_nabf_map(const AtomicBasis& basis_abf)
+static std::map<atom_t, size_t> build_atom_nabf_map(const AtomicBasis& basis_abf)
 {
     std::map<atom_t, size_t> atom_nabf;
     for (atom_t atom = 0; atom != static_cast<atom_t>(basis_abf.n_atoms); ++atom)
@@ -54,9 +52,10 @@ std::map<atom_t, size_t> build_atom_nabf_map(const AtomicBasis& basis_abf)
     return atom_nabf;
 }
 
-bool has_complete_symmetry_abf_ibz_coverage(const atpair_k_cplx_mat_t& blocks_by_q_ibz,
-                                          const std::map<atom_t, size_t>& atom_nabf,
-                                          const PeriodicBoundaryData& pbc)
+static bool has_complete_symmetry_abf_ibz_coverage(
+    const atpair_k_cplx_mat_t& blocks_by_q_ibz,
+    const std::map<atom_t, size_t>& atom_nabf,
+    const PeriodicBoundaryData& pbc)
 {
     for (std::size_t atom_i = 0; atom_i < atom_nabf.size(); ++atom_i)
     {
@@ -92,7 +91,7 @@ bool has_complete_symmetry_abf_ibz_coverage(const atpair_k_cplx_mat_t& blocks_by
     return true;
 }
 
-librpa_int::symmetry_atom_block_matrix_map_t collect_symmetry_abf_ibz_blocks_for_q(
+static librpa_int::symmetry_atom_block_matrix_map_t collect_symmetry_abf_ibz_blocks_for_q(
     const atpair_k_cplx_mat_t& blocks_by_q,
     const Vector3_Order<double>& q_ibz_internal)
 {
@@ -113,7 +112,7 @@ librpa_int::symmetry_atom_block_matrix_map_t collect_symmetry_abf_ibz_blocks_for
     return blocks_ibz;
 }
 
-std::vector<int> build_symmetry_atom_offsets(const std::map<atom_t, size_t>& atom_nabf)
+static std::vector<int> build_symmetry_atom_offsets(const std::map<atom_t, size_t>& atom_nabf)
 {
     std::vector<int> offsets(atom_nabf.size() + 1, 0);
     for (std::size_t atom = 0; atom < atom_nabf.size(); ++atom)
@@ -124,7 +123,7 @@ std::vector<int> build_symmetry_atom_offsets(const std::map<atom_t, size_t>& ato
     return offsets;
 }
 
-ComplexMatrix build_dense_symmetry_hermitian_matrix_from_local_blocks(
+static ComplexMatrix build_dense_symmetry_hermitian_matrix_from_local_blocks(
     const librpa_int::symmetry_atom_block_matrix_map_t& local_blocks,
     const std::map<atom_t, size_t>& atom_nabf)
 {
@@ -165,7 +164,7 @@ ComplexMatrix build_dense_symmetry_hermitian_matrix_from_local_blocks(
     return dense;
 }
 
-librpa_int::symmetry_atom_block_matrix_map_t build_symmetry_blocks_from_dense_matrix(
+static librpa_int::symmetry_atom_block_matrix_map_t build_symmetry_blocks_from_dense_matrix(
     const ComplexMatrix& dense_matrix,
     const std::map<atom_t, size_t>& atom_nabf)
 {
@@ -194,7 +193,7 @@ librpa_int::symmetry_atom_block_matrix_map_t build_symmetry_blocks_from_dense_ma
     return atom_blocks;
 }
 
-librpa_int::symmetry_atom_block_matrix_map_t gather_symmetry_ibz_blocks_collective(
+static librpa_int::symmetry_atom_block_matrix_map_t gather_symmetry_ibz_blocks_collective(
     const librpa_int::symmetry_atom_block_matrix_map_t& blocks_ibz_local,
     const std::map<atom_t, size_t>& atom_nabf)
 {
@@ -210,7 +209,7 @@ librpa_int::symmetry_atom_block_matrix_map_t gather_symmetry_ibz_blocks_collecti
     return build_symmetry_blocks_from_dense_matrix(dense_global, atom_nabf);
 }
 
-librpa_int::symmetry_irreducible_sector_t filter_symmetry_irreducible_sector_by_rlist(
+static librpa_int::symmetry_irreducible_sector_t filter_symmetry_irreducible_sector_by_rlist(
     const librpa_int::symmetry_irreducible_sector_t& irreducible_sector,
     const std::vector<Vector3_Order<int>>& Rlist)
 {
@@ -231,7 +230,7 @@ librpa_int::symmetry_irreducible_sector_t filter_symmetry_irreducible_sector_by_
     return filtered_sector;
 }
 
-std::set<std::pair<atom_t, atom_t>> build_symmetry_irreducible_target_atom_pairs(
+static std::set<std::pair<atom_t, atom_t>> build_symmetry_irreducible_target_atom_pairs(
     const librpa_int::symmetry_irreducible_sector_t& irreducible_sector)
 {
     std::set<std::pair<atom_t, atom_t>> target_atom_pairs;
@@ -245,9 +244,9 @@ std::set<std::pair<atom_t, atom_t>> build_symmetry_irreducible_target_atom_pairs
     return target_atom_pairs;
 }
 
-std::complex<double> build_ft_vq_phase(const PeriodicBoundaryData& pbc,
-                                       const Vector3_Order<double>& q_internal,
-                                       const Vector3_Order<int>& R)
+static std::complex<double> build_ft_vq_phase(const PeriodicBoundaryData& pbc,
+                                              const Vector3_Order<double>& q_internal,
+                                              const Vector3_Order<int>& R)
 {
     const auto q_frac = pbc.latvec * q_internal;
     const double ang = -(q_frac * R) * TWO_PI;
@@ -255,7 +254,7 @@ std::complex<double> build_ft_vq_phase(const PeriodicBoundaryData& pbc,
            / static_cast<double>(pbc.get_n_cells_bvk());
 }
 
-atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
+static atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
     const SymmetryContext& ctx,
     const AtomicBasis& basis_abf,
     const atpair_k_cplx_mat_t& blocks_by_q_ibz,
@@ -277,8 +276,6 @@ atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
     }
 
     const auto target_atom_pairs = build_symmetry_irreducible_target_atom_pairs(filtered_sector);
-    const auto kstar_grid_mapping =
-        librpa_int::build_symmetry_kstar_grid_mapping(ctx, pbc.klist, pbc.kfrac_list, pbc.map_irk_ks);
     for (const auto& pair_Rs : filtered_sector)
     {
         const auto atom_i = pair_Rs.first.first;
@@ -293,7 +290,7 @@ atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
         }
     }
 
-    for (const auto& star_mapping : kstar_grid_mapping)
+    for (const auto& star_mapping : ctx.kstar_grid_mapping)
     {
         const auto& star = ctx.kstars.at(static_cast<std::size_t>(star_mapping.star_list_index));
 
@@ -323,8 +320,7 @@ atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
             {
                 rotated_blocks = librpa_int::rotate_symmetry_kspace_operator_blocks(
                     ctx, abf_layouts, member, blocks_ibz, atom_nabf, star.k_ibz,
-                    ctx.input_coord_frac, member.time_reversal, &target_atom_pairs,
-                    &q_bz_target_frac);
+                    member.time_reversal, &target_atom_pairs, &q_bz_target_frac);
             }
             catch (const std::exception& ex)
             {
@@ -375,10 +371,10 @@ atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
     return blocks_by_R_real;
 }
 
-bool can_use_symmetry_irreducible_sector_ft_vq(const SymmetryContext& ctx,
-                                             const AtomicBasis& basis_abf,
-                                             const atpair_k_cplx_mat_t& coulmat_k,
-                                             const PeriodicBoundaryData& pbc)
+static bool can_use_symmetry_irreducible_sector_ft_vq(const SymmetryContext& ctx,
+                                                      const AtomicBasis& basis_abf,
+                                                      const atpair_k_cplx_mat_t& coulmat_k,
+                                                      const PeriodicBoundaryData& pbc)
 {
     const auto atom_nabf = build_atom_nabf_map(basis_abf);
     const auto abf_layouts = basis_abf.build_species_basis_layouts(ctx.atom_to_type);
@@ -400,8 +396,6 @@ bool can_use_symmetry_irreducible_sector_ft_vq(const SymmetryContext& ctx,
            && !ctx.irreducible_sector.empty()
            && !ctx.rspace_operations.empty();
 }
-
-} // namespace
 
 atpair_R_mat_t FT_Vq(const AtomicBasis &basis_abf,
                      const SymmetryContext &symmetry_context,

@@ -14,9 +14,6 @@
 
 namespace librpa_int {
 
-namespace
-{
-
 struct SymmetryKStarMeanFieldRestoreEntry
 {
     const SymmetryKStar* star = nullptr;
@@ -26,13 +23,12 @@ struct SymmetryKStarMeanFieldRestoreEntry
     double kpoint_weight = 0.0;
 };
 
-void validate_symmetry_kstar_restore_metadata(
+static void validate_symmetry_kstar_restore_metadata(
     const SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
-    const std::map<atom_t, size_t>& atom_nw,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac)
+    const std::map<atom_t, size_t>& atom_nw)
 {
     if (!ctx.available || wfc_layouts.empty() || ctx.kstars.empty())
     {
@@ -58,7 +54,7 @@ void validate_symmetry_kstar_restore_metadata(
         {
             throw std::runtime_error("k-star restore missing AO type metadata for an atom");
         }
-        if (coord_frac.count(atom) == 0)
+        if (ctx.input_coord_frac.count(atom) == 0)
         {
             throw std::runtime_error("k-star restore missing fractional coordinates for an atom");
         }
@@ -77,15 +73,14 @@ void validate_symmetry_kstar_restore_metadata(
     }
 }
 
-void validate_symmetry_kstar_meanfield_restore(
+static void validate_symmetry_kstar_meanfield_restore(
     const SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
-    const std::map<atom_t, size_t>& atom_nw,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac)
+    const std::map<atom_t, size_t>& atom_nw)
 {
-    validate_symmetry_kstar_restore_metadata(ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac);
+    validate_symmetry_kstar_restore_metadata(ctx, wfc_layouts, mf, kfrac_list, atom_nw);
     if (ctx.kstars.size() != kfrac_list.size())
     {
         throw std::runtime_error("k-star restore got inconsistent IBZ k-star counts");
@@ -96,16 +91,15 @@ void validate_symmetry_kstar_meanfield_restore(
     }
 }
 
-void validate_symmetry_full_grid_kstar_meanfield_restore(
+static void validate_symmetry_full_grid_kstar_meanfield_restore(
     const SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::map<atom_t, size_t>& atom_nw,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const symmetry_kstar_representative_indices_t& representative_k_indices)
 {
-    validate_symmetry_kstar_restore_metadata(ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac);
+    validate_symmetry_kstar_restore_metadata(ctx, wfc_layouts, mf, kfrac_list, atom_nw);
     if (ctx.kstars.size() >= kfrac_list.size())
     {
         throw std::runtime_error("full-grid k-star restore does not reduce the mean-field k grid");
@@ -127,7 +121,7 @@ void validate_symmetry_full_grid_kstar_meanfield_restore(
     }
 }
 
-void validate_symmetry_kstar_member_kfrac_targets(
+static void validate_symmetry_kstar_member_kfrac_targets(
     const std::vector<SymmetryKStarMeanFieldRestoreEntry>& restore_entries,
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets)
 {
@@ -151,7 +145,7 @@ void validate_symmetry_kstar_member_kfrac_targets(
     }
 }
 
-const Vector3_Order<double>& get_symmetry_kstar_member_kfrac_target(
+static const Vector3_Order<double>& get_symmetry_kstar_member_kfrac_target(
     const librpa_int::SymmetryKStarMember& member,
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets,
     const std::size_t ik_ibz,
@@ -164,8 +158,8 @@ const Vector3_Order<double>& get_symmetry_kstar_member_kfrac_target(
     return (*member_kfrac_targets)[ik_ibz][imember];
 }
 
-double symmetry_kstar_geometric_weight(const SymmetryContext& ctx,
-                                             const librpa_int::SymmetryKStar& star)
+static double symmetry_kstar_geometric_weight(const SymmetryContext& ctx,
+                                              const librpa_int::SymmetryKStar& star)
 {
     const double full_count = static_cast<double>(ctx.count_kstar_members());
     if (full_count <= 0.0)
@@ -175,13 +169,12 @@ double symmetry_kstar_geometric_weight(const SymmetryContext& ctx,
     return static_cast<double>(star.members.size()) / full_count;
 }
 
-std::vector<SymmetryKStarMeanFieldRestoreEntry> build_symmetry_kstar_restore_entries(
+static std::vector<SymmetryKStarMeanFieldRestoreEntry> build_symmetry_kstar_restore_entries(
     const SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const std::map<atom_t, size_t>& atom_nw,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const symmetry_kstar_representative_indices_t* representative_k_indices)
 {
     std::vector<SymmetryKStarMeanFieldRestoreEntry> entries;
@@ -191,7 +184,7 @@ std::vector<SymmetryKStarMeanFieldRestoreEntry> build_symmetry_kstar_restore_ent
     if (restore_from_full_grid)
     {
         validate_symmetry_full_grid_kstar_meanfield_restore(
-            ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac, *representative_k_indices);
+            ctx, wfc_layouts, mf, kfrac_list, atom_nw, *representative_k_indices);
         const double kpoint_weight = 1.0 / static_cast<double>(ctx.count_kstar_members());
         entries.reserve(ctx.kstars.size());
         for (std::size_t istar = 0; istar != ctx.kstars.size(); ++istar)
@@ -208,7 +201,7 @@ std::vector<SymmetryKStarMeanFieldRestoreEntry> build_symmetry_kstar_restore_ent
         return entries;
     }
 
-    validate_symmetry_kstar_meanfield_restore(ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac);
+    validate_symmetry_kstar_meanfield_restore(ctx, wfc_layouts, mf, kfrac_list, atom_nw);
     entries.reserve(kfrac_list.size());
     for (int ik_ibz = 0; ik_ibz != mf.get_n_kpoints(); ++ik_ibz)
     {
@@ -227,7 +220,7 @@ std::vector<SymmetryKStarMeanFieldRestoreEntry> build_symmetry_kstar_restore_ent
     return entries;
 }
 
-ComplexMatrix build_gf_cplx_imagtime_with_prefactor(
+static ComplexMatrix build_gf_cplx_imagtime_with_prefactor(
     const MeanField& mf,
     const int ispin,
     const int ispinor_bra,
@@ -267,15 +260,12 @@ ComplexMatrix build_gf_cplx_imagtime_with_prefactor(
     return transpose(*wfc_bra, false) * scaled_wfc_conj;
 }
 
-} // namespace
-
 bool can_restore_symmetry_kstar_meanfield(
     const SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
-    const std::map<atom_t, size_t>& atom_nw,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac)
+    const std::map<atom_t, size_t>& atom_nw)
 {
     if (!ctx.available || wfc_layouts.empty() || ctx.kstars.empty())
     {
@@ -293,7 +283,7 @@ bool can_restore_symmetry_kstar_meanfield(
     {
         return false;
     }
-    validate_symmetry_kstar_meanfield_restore(ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac);
+    validate_symmetry_kstar_meanfield_restore(ctx, wfc_layouts, mf, kfrac_list, atom_nw);
     return true;
 }
 
@@ -306,8 +296,7 @@ symmetry_kstar_member_kfrac_targets_t build_symmetry_kstar_member_kfrac_targets(
         return {};
     }
 
-    const auto mapping = librpa_int::build_symmetry_kstar_grid_mapping(
-        ctx, pbc.klist, pbc.kfrac_list, pbc.map_irk_ks);
+    const auto& mapping = ctx.kstar_grid_mapping;
     symmetry_kstar_member_kfrac_targets_t targets(mapping.size());
 
     for (const auto& entry : mapping)
@@ -337,12 +326,11 @@ ComplexMatrix get_symmetry_restored_dmat_cplx_R(
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const Vector3_Order<int>& R,
     const std::map<atom_t, size_t>& atom_nw,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets,
     const symmetry_kstar_representative_indices_t* representative_k_indices)
 {
     const auto restore_entries = build_symmetry_kstar_restore_entries(
-        ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac, representative_k_indices);
+        ctx, wfc_layouts, mf, kfrac_list, atom_nw, representative_k_indices);
     validate_symmetry_kstar_member_kfrac_targets(restore_entries, member_kfrac_targets);
     ComplexMatrix dmat_cplx(mf.get_n_aos(), mf.get_n_aos());
 
@@ -358,8 +346,8 @@ ComplexMatrix get_symmetry_restored_dmat_cplx_R(
             const auto& k_bz_target = get_symmetry_kstar_member_kfrac_target(
                 member, member_kfrac_targets, ientry, imember);
             const auto dmat_member = librpa_int::rotate_symmetry_kspace_matrix(
-                ctx, wfc_layouts, member, dmat_ibz, atom_nw, entry.k_source, coord_frac, member.time_reversal,
-                &k_bz_target);
+                ctx, wfc_layouts, member, dmat_ibz, atom_nw, entry.k_source,
+                member.time_reversal, &k_bz_target);
             const double angle = -(k_bz_target * R) * TWO_PI;
             const auto kphase = std::complex<double>(std::cos(angle), std::sin(angle));
             dmat_cplx += (entry.star_factor * kphase) * dmat_member;
@@ -381,13 +369,12 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     const std::vector<double>& imagtimes,
     const std::vector<Vector3_Order<int>>& Rs,
     const std::map<atom_t, size_t>& atom_nw,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const int nbands_G,
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets,
     const symmetry_kstar_representative_indices_t* representative_k_indices)
 {
     const auto restore_entries = build_symmetry_kstar_restore_entries(
-        ctx, wfc_layouts, mf, kfrac_list, atom_nw, coord_frac, representative_k_indices);
+        ctx, wfc_layouts, mf, kfrac_list, atom_nw, representative_k_indices);
     validate_symmetry_kstar_member_kfrac_targets(restore_entries, member_kfrac_targets);
 
     std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> gf_tau_R;
@@ -428,8 +415,8 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
                 const auto& k_bz_target = get_symmetry_kstar_member_kfrac_target(
                     member, member_kfrac_targets, ientry, imember);
                 const auto gf_member = librpa_int::rotate_symmetry_kspace_matrix(
-                    ctx, wfc_layouts, member, gf_ibz, atom_nw, entry.k_source, coord_frac, member.time_reversal,
-                    &k_bz_target);
+                    ctx, wfc_layouts, member, gf_ibz, atom_nw, entry.k_source,
+                    member.time_reversal, &k_bz_target);
                 for (const auto& R : Rs)
                 {
                     const double angle = -(k_bz_target * R) * TWO_PI;

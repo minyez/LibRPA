@@ -51,12 +51,9 @@ using std::map;
 using std::pair;
 using std::vector;
 
-namespace
-{
-
 constexpr int SHRINK_SCALAPACK_BLOCK_CAP = 2048;
 
-std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
+static std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
 {
     std::map<atom_t, size_t> atom_nw;
     for (atom_t atom = 0; atom != as_atom(atbasis.n_atoms); ++atom)
@@ -564,8 +561,6 @@ static void reduce_chi0_q_partial_to_q_owner(
     }
 }
 
-} // namespace
-
 Chi0::Chi0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const AtomicBasis &atbasis_abf_in, const PeriodicBoundaryData &pbc_in,
            const SymmetryContext &symmetry_context_in,
@@ -889,7 +884,7 @@ static void build_gf_Rt_libri_serial(
         can_try_symmetry_kstar_restore
         && !restore_symmetry_kstars_from_full_grid
         && can_restore_symmetry_kstar_meanfield(
-            symmetry_context, wfc_layouts, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
+            symmetry_context, wfc_layouts, mf, kfrac_list, atom_nw);
     if (restore_symmetry_kstars || restore_symmetry_kstars_from_full_grid)
     {
         auto member_kfrac_targets = restore_symmetry_kstars_from_full_grid
@@ -909,8 +904,7 @@ static void build_gf_Rt_libri_serial(
             const std::vector<Vector3_Order<int>> R_check{Rs_this.front()};
             const auto restored_check = get_symmetry_restored_gf_cplx_imagtimes_Rs(
                 symmetry_context, wfc_layouts, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, R_check, atom_nw,
-                symmetry_context.input_coord_frac, nbands_G, &member_kfrac_targets,
-                &full_grid_kstar_representatives).at(tau).at(R_check.front());
+                nbands_G, &member_kfrac_targets, &full_grid_kstar_representatives).at(tau).at(R_check.front());
             const auto direct_check =
                 mf.get_gf_cplx_imagtimes_Rs(
                       ispin, isoc1, isoc2, kfrac_list, {tau}, R_check).at(tau).at(R_check.front());
@@ -925,7 +919,7 @@ static void build_gf_Rt_libri_serial(
         {
             const auto gf_cplx_R = get_symmetry_restored_gf_cplx_imagtimes_Rs(
                 symmetry_context, wfc_layouts, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, Rs_this, atom_nw,
-                symmetry_context.input_coord_frac, nbands_G, &member_kfrac_targets,
+                nbands_G, &member_kfrac_targets,
                 restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr).at(tau);
 
             for (const auto &R_IJs : map_R_IJs)
@@ -3049,12 +3043,9 @@ void Chi0::free_chi0_q(const double freq, const Vector3_Order<double> q)
     ap_n_map<ComplexMatrix>().swap(chi0_for_free);
 }
 
-namespace
-{
-
-bool nearly_same_qpoint(const Vector3_Order<double> &lhs,
-                        const Vector3_Order<double> &rhs,
-                        const double tol = 1e-5)
+static bool nearly_same_qpoint(const Vector3_Order<double> &lhs,
+                               const Vector3_Order<double> &rhs,
+                               const double tol = 1e-5)
 {
     const auto same_component = [tol](const double lhs_component,
                                       const double rhs_component) {
@@ -3066,8 +3057,8 @@ bool nearly_same_qpoint(const Vector3_Order<double> &lhs,
 }
 
 template <typename QMap>
-typename QMap::iterator find_matching_qpoint(QMap &q_map,
-                                             const Vector3_Order<double> &q_target)
+static typename QMap::iterator find_matching_qpoint(QMap &q_map,
+                                                    const Vector3_Order<double> &q_target)
 {
     const auto exact_iter = q_map.find(q_target);
     if (exact_iter != q_map.end())
@@ -3081,8 +3072,9 @@ typename QMap::iterator find_matching_qpoint(QMap &q_map,
 }
 
 template <typename QMap>
-typename QMap::const_iterator find_matching_qpoint(const QMap &q_map,
-                                                   const Vector3_Order<double> &q_target)
+static typename QMap::const_iterator find_matching_qpoint(
+    const QMap &q_map,
+    const Vector3_Order<double> &q_target)
 {
     const auto exact_iter = q_map.find(q_target);
     if (exact_iter != q_map.end())
@@ -3094,8 +3086,6 @@ typename QMap::const_iterator find_matching_qpoint(const QMap &q_map,
         return nearly_same_qpoint(entry.first, q_target);
     });
 }
-
-}  // namespace
 
 void Chi0::unfold_abfs_Wc(
     map<Vector3_Order<double>, ComplexMatrix> &sinvS,

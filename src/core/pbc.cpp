@@ -18,22 +18,13 @@ static const double KPT_MATCH_TOL = 1e-5;
 static const double KWEIGHT_MATCH_TOL = 1e-6;
 static const double KWEIGHT_SUM_TOL = 1e-12;
 
-namespace
-{
-
-bool same_fractional_kpoint(const Vector3_Order<double> &lhs,
-                            const Vector3_Order<double> &rhs)
-{
-    return nearly_integer_vector(lhs - rhs, KPT_MATCH_TOL);
-}
-
-Vector3_Order<double> normalize_fractional_kpoint(const Vector3_Order<double> &kfrac)
+static Vector3_Order<double> normalize_fractional_kpoint(const Vector3_Order<double> &kfrac)
 {
     return restrict_fractional_coordinate(kfrac, KPT_MATCH_TOL);
 }
 
-Vector3_Order<double> kvec_from_fractional(const Matrix3 &G,
-                                           const Vector3_Order<double> &kfrac)
+static Vector3_Order<double> kvec_from_fractional(const Matrix3 &G,
+                                                  const Vector3_Order<double> &kfrac)
 {
     return kfrac * G;
 }
@@ -51,13 +42,13 @@ std::vector<Vector3_Order<double>> build_uniform_kmesh_frac(const Vector3_Order<
     return kpoints;
 }
 
-int find_matching_kpoint(const std::vector<Vector3_Order<double>> &kpoints,
-                         const Vector3_Order<double> &target)
+static int find_matching_kpoint(const std::vector<Vector3_Order<double>> &kpoints,
+                                const Vector3_Order<double> &target)
 {
     int matched_index = -1;
     for (std::size_t ik = 0; ik != kpoints.size(); ++ik)
     {
-        if (!same_fractional_kpoint(kpoints[ik], target))
+        if (!nearly_integer_vector(kpoints[ik] - target, KPT_MATCH_TOL))
         {
             continue;
         }
@@ -69,8 +60,6 @@ int find_matching_kpoint(const std::vector<Vector3_Order<double>> &kpoints,
     }
     return matched_index;
 }
-
-} // namespace
 
 // Initialized as a huge box to emulate isolated case
 PeriodicBoundaryData::PeriodicBoundaryData():

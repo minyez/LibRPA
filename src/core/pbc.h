@@ -111,6 +111,8 @@ public:
 // TODO: make it into a template
 std::vector<Vector3_Order<int>> construct_R_grid(const Vector3_Order<int> &period);
 
+std::vector<Vector3_Order<double>> build_uniform_kmesh_frac(const Vector3_Order<int> &period);
+
 //! Get the index of R in an Rlist. If R is not found in the list, return a negative number
 int get_R_index(const std::vector<Vector3_Order<int>> &Rlist, const Vector3_Order<int> &R);
 

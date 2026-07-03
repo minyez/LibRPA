@@ -1,6 +1,7 @@
 #include "../core/symmetry_context.h"
 #include "../core/pbc.h"
 #include "../math/rsh.h"
+#include "../utils/constants.h"
 
 #include <array>
 #include <cassert>
@@ -191,24 +192,34 @@ void test_atomic_basis_builds_symmetry_species_layouts()
     assert(get_symmetry_species_layout(layouts, 1).n_ao == 3);
 }
 
-void test_full_kpoint_members_skip_full_grid()
+void test_periodic_mappings_store_full_kpoint_members()
 {
-    SymmetryContext ctx;
-    ctx.set_available();
-
-    SymmetryKStar star;
-    star.k_ibz = {0.0, 0.0, 0.0};
-    star.members.resize(2);
-    star.members[0].k_bz = {0.0, 0.0, 0.0};
-    star.members[1].k_bz = {0.5, 0.0, 0.0};
-    ctx.kstars.push_back(star);
-
-    const std::vector<Vector3_Order<double>> full_kpoints{
-        {0.0, 0.0, 0.0},
-        {0.5, 0.0, 0.0},
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({2.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    const std::vector<double> kvecs_ibz{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI / 6.0, 0.0, 0.0,
     };
+    const std::vector<std::vector<Vector3_Order<double>>> full_kstars{
+        {{0.0, 0.0, 0.0}},
+        {{1.0 / 6.0, 0.0, 0.0}, {-1.0 / 6.0, 0.0, 0.0}},
+    };
+    pbc.set_irreducible_kgrids_kvec(3, 1, 1, kvecs_ibz, full_kstars);
 
-    assert(build_symmetry_full_kpoint_member_list(ctx, full_kpoints).empty());
+    SymmetryContext ctx;
+    ctx.set_crystal_structure(pbc.latvec, pbc.G, {}, {});
+    ctx.set_rspace_operations({SpaceGroupSymOp::IDENTITY});
+    ctx.set_available();
+    ctx.build_periodic_mappings(pbc, pbc.Rlist);
+
+    assert(ctx.kstars.size() == 2);
+    assert(ctx.kstar_grid_mapping.size() == 2);
+    assert(ctx.full_kpoint_members.size() == 3);
+    assert(ctx.full_kpoint_members[0].ik_ibz == 0);
+    assert(ctx.full_kpoint_members[1].ik_ibz == 1);
+    assert(ctx.full_kpoint_members[2].ik_ibz == 1);
 }
 
 void add_irreducible_sector_entry(symmetry_irreducible_sector_t& sector,
@@ -373,7 +384,7 @@ void test_mgo_k333_irreducible_sector_matches_single()
     const Vector3_Order<int> period{3, 3, 3};
     const auto Rlist = construct_R_grid(period);
     const auto generated_sector =
-        build_symmetry_rspace_irreducible_sector(ctx, {}, Rlist);
+        build_symmetry_rspace_irreducible_sector(ctx, Rlist);
 
     symmetry_irreducible_sector_t expected_sector;
     add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1, -1});
@@ -386,7 +397,7 @@ void test_mgo_k333_irreducible_sector_matches_single()
     ctx.irreducible_sector = generated_sector;
     ctx.set_available();
     symmetry_rspace_sector_stars_t sector_stars;
-    build_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
+    build_symmetry_rspace_sector_stars(ctx, period, Rlist, sector_stars);
     std::size_t restored_members = 0;
     for (const auto& pair_stars : sector_stars)
     {
@@ -409,7 +420,7 @@ void test_mgo_k333_irreducible_sector_matches_both()
     const Vector3_Order<int> period{3, 3, 3};
     const auto Rlist = construct_R_grid(period);
     const auto generated_sector =
-        build_symmetry_rspace_irreducible_sector(ctx, {}, Rlist);
+        build_symmetry_rspace_irreducible_sector(ctx, Rlist);
 
     symmetry_irreducible_sector_t expected_sector;
     add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1, -1});
@@ -441,7 +452,7 @@ void test_mgo_k333_irreducible_sector_matches_both()
     ctx.irreducible_sector = generated_sector;
     ctx.set_available();
     symmetry_rspace_sector_stars_t sector_stars;
-    build_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
+    build_symmetry_rspace_sector_stars(ctx, period, Rlist, sector_stars);
     std::size_t restored_members = 0;
     for (const auto& pair_stars : sector_stars)
     {
@@ -459,7 +470,7 @@ void test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry()
     const Vector3_Order<int> period{2, 2, 2};
     const auto Rlist = construct_R_grid(period);
     const auto generated_sector =
-        build_symmetry_rspace_irreducible_sector(ctx, {}, Rlist);
+        build_symmetry_rspace_irreducible_sector(ctx, Rlist);
 
     symmetry_irreducible_sector_t expected_sector;
     add_irreducible_sector_entry(expected_sector, 0, 0, {-1, -1, -1});
@@ -482,7 +493,7 @@ void test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry()
     ctx.irreducible_sector = generated_sector;
     ctx.set_available();
     symmetry_rspace_sector_stars_t sector_stars;
-    build_symmetry_rspace_sector_stars(ctx, {}, period, Rlist, sector_stars);
+    build_symmetry_rspace_sector_stars(ctx, period, Rlist, sector_stars);
     std::size_t restored_members = 0;
     for (const auto& pair_stars : sector_stars)
     {
@@ -504,7 +515,7 @@ int main()
     test_species_basis_layout_keeps_shell_order();
     test_species_layouts_match_basis_dimensions();
     test_atomic_basis_builds_symmetry_species_layouts();
-    test_full_kpoint_members_skip_full_grid();
+    test_periodic_mappings_store_full_kpoint_members();
     test_mgo_k333_irreducible_sector_matches_single();
     test_mgo_k333_irreducible_sector_matches_both();
     test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry();

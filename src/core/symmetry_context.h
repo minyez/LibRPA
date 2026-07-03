@@ -11,13 +11,13 @@
 #include <map>
 #include <set>
 #include <string>
-#include <tuple>
 #include <vector>
 
 #include "atom.h"
 #include "atomic_basis.h"
 #include "geometry.h"
 #include "pbc.h"
+#include "symmetry_types.h"
 #include "../math/complexmatrix.h"
 #include "../math/matrix3.h"
 #include "../math/symmetry.h"
@@ -25,89 +25,6 @@
 
 namespace librpa_int
 {
-
-using symmetry_R_t = std::array<int, 3>;
-using symmetry_irreducible_sector_t = std::map<atpair_t, std::set<symmetry_R_t>>;
-
-using SymmetryOperation = SpaceGroupSymOp;
-
-/*!
- * @brief Atom-resolved k-space symmetry information exported by a symmetry convention.
- */
-struct SymmetryKAtomRotation
-{
-    int atom_from = -1;
-    int atom_to = -1;
-    int atom_type = -1;
-    int lmax = -1;
-    std::map<int, ComplexMatrix> bloch_rsh_rotations;
-};
-
-/*!
- * @brief One member of an irreducible k-star.
- */
-struct SymmetryKStarMember
-{
-    int spatial_isym = -1;
-    bool time_reversal = false;
-    Vector3_Order<double> k_bz{0.0, 0.0, 0.0};
-    std::vector<SymmetryKAtomRotation> atom_rotations;
-};
-
-/*!
- * @brief One irreducible k-star exported by a symmetry convention.
- */
-struct SymmetryKStar
-{
-    int star_index = -1;
-    Vector3_Order<double> k_ibz{0.0, 0.0, 0.0};
-    std::vector<SymmetryKStarMember> members;
-};
-
-/*!
- * @brief Explicit mapping between one loaded LibRPA IBZ q-index and one symmetry k-star.
- *
- * The mapping stores the full-BZ q keys that LibRPA should use for every star member.
- * Symmetry coordinates are treated as the source of truth; when LibRPA already
- * has an equivalent internal q key, that exact key is reused to keep later lookups
- * aligned with existing storage.
- */
-struct SymmetryKStarGridMappingEntry
-{
-    int iq_ibz = -1;
-    int star_list_index = -1;
-    std::vector<Vector3_Order<double>> member_q_bz_keys;
-};
-
-/*!
- * @brief One full-BZ k-point member expanded from a symmetry IBZ k-star.
- */
-struct SymmetryFullKpointMemberEntry
-{
-    int ik_ibz = -1;
-    int star_list_index = -1;
-    int member_index = -1;
-    int spatial_isym = -1;
-    bool time_reversal = false;
-    Vector3_Order<double> k_bz{0.0, 0.0, 0.0};
-};
-
-/*!
- * @brief One full real-space member generated from an irreducible {atom pair, R}.
- */
-struct SymmetryRSpaceRestoreMember
-{
-    int isym = -1;
-    atpair_t full_atom_pair;
-    Vector3_Order<int> full_R{0, 0, 0};
-};
-
-using symmetry_rspace_sector_stars_t =
-    std::map<atpair_t, std::map<Vector3_Order<int>, std::vector<SymmetryRSpaceRestoreMember>>>;
-using symmetry_atom_block_matrix_map_t = std::map<atom_t, std::map<atom_t, ComplexMatrix>>;
-using symmetry_kstar_member_kfrac_targets_t =
-    std::vector<std::vector<Vector3_Order<double>>>;
-using symmetry_kstar_representative_indices_t = std::vector<int>;
 
 /*!
  * @brief In-memory representation of the system symmetry.
@@ -125,14 +42,14 @@ struct SymmetryContext
     SpaceGroupSymOps rspace_operations;
     std::vector<std::map<int, ComplexMatrix>> rsh_rotations;
     std::vector<SymmetryKStar> kstars;
+    std::vector<SymmetryKStarGridMappingEntry> kstar_grid_mapping;
+    std::vector<SymmetryFullKpointMemberEntry> full_kpoint_members;
     std::map<atom_t, int> atom_to_type;
     std::map<atom_t, std::array<double, 3>> input_coord_frac;
     Matrix3 lattice_vectors;
     Matrix3 reciprocal_vectors;
     std::map<std::pair<int, int>, Vector3_Order<int>> kspace_return_lattice;
     std::map<std::pair<int, int>, Vector3_Order<int>> kstar_member_fold_G;
-
-    // void build_shell_rotmat_T(int lmax, BasisConvention conv);
 
     void clear();
     void set_available();
@@ -159,18 +76,14 @@ struct SymmetryContext
 private:
     void generate_irreducible_sector(const std::vector<Vector3_Order<int>> &Rlist);
     void generate_kstars(const PeriodicBoundaryData &pbc);
+    void generate_kstar_grid_mapping(const PeriodicBoundaryData &pbc);
+    void generate_full_kpoint_members(const std::vector<Vector3_Order<double>>& kfrac_list);
 };
 
 bool symmetry_species_layouts_match_atom_counts(
     const std::vector<SpeciesBasisLayout>& layouts,
     const std::map<atom_t, int>& atom_to_type,
     const std::map<atom_t, size_t>& atom_nb);
-
-std::vector<SymmetryOperation> make_symmetry_operations(
-    int n_symops,
-    bool use_row_convention,
-    const int* rotmats,
-    const double* translations = nullptr);
 
 ComplexMatrix build_symmetry_shell_rotation_from_direct_rotation(
     const SpaceGroupSymOp& operation,
@@ -217,16 +130,6 @@ const SymmetryKStar& find_symmetry_kstar_for_kpoint(const std::vector<SymmetryKS
 const SymmetryKStar& find_symmetry_kstar_for_ibz_kpoint(const SymmetryContext& ctx,
                                                     const Vector3_Order<double>& k_ibz);
 
-std::vector<SymmetryKStarGridMappingEntry> build_symmetry_kstar_grid_mapping(
-    const SymmetryContext& ctx,
-    const std::vector<Vector3_Order<double>>& klist_internal,
-    const std::vector<Vector3_Order<double>>& kfrac_list,
-    const std::map<Vector3_Order<double>, std::vector<Vector3_Order<double>>>& irk_to_full_kpoints);
-
-std::vector<SymmetryFullKpointMemberEntry> build_symmetry_full_kpoint_member_list(
-    const SymmetryContext& ctx,
-    const std::vector<Vector3_Order<double>>& kfrac_list);
-
 symmetry_kstar_representative_indices_t build_symmetry_full_grid_kstar_representative_indices(
     const SymmetryContext& ctx,
     const std::vector<Vector3_Order<double>>& kfrac_list);
@@ -246,7 +149,6 @@ symmetry_atom_block_matrix_map_t rotate_symmetry_kspace_operator_blocks(
     const symmetry_atom_block_matrix_map_t& blocks_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
     const Vector3_Order<double>& k_ibz,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
     bool use_time_reversal = false,
     const std::set<std::pair<atom_t, atom_t>>* target_atom_pairs = nullptr,
     const Vector3_Order<double>* k_bz_target = nullptr);
@@ -257,27 +159,7 @@ symmetry_atom_block_matrix_map_t symmetrize_symmetry_ibz_kspace_operator_blocks(
     const Vector3_Order<double>& k_ibz,
     const symmetry_atom_block_matrix_map_t& blocks_ibz,
     const std::map<atom_t, size_t>& atom_nabf,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const std::set<std::pair<atom_t, atom_t>>* target_atom_pairs = nullptr);
-
-ComplexMatrix rotate_symmetry_kspace_operator_matrix(
-    const SymmetryContext& ctx,
-    const std::vector<SpeciesBasisLayout>& layouts,
-    const SymmetryKStarMember& member,
-    const ComplexMatrix& matrix_ibz,
-    const std::map<atom_t, size_t>& atom_nabf,
-    const Vector3_Order<double>& k_ibz,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
-    bool use_time_reversal = false,
-    const Vector3_Order<double>* k_bz_target = nullptr);
-
-ComplexMatrix symmetrize_symmetry_ibz_kspace_operator_matrix(
-    const SymmetryContext& ctx,
-    const std::vector<SpeciesBasisLayout>& layouts,
-    const Vector3_Order<double>& k_ibz,
-    const ComplexMatrix& matrix_ibz,
-    const std::map<atom_t, size_t>& atom_nabf,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac);
 
 ComplexMatrix rotate_symmetry_kspace_matrix(const SymmetryContext& ctx,
                                           const std::vector<SpeciesBasisLayout>& layouts,
@@ -285,36 +167,40 @@ ComplexMatrix rotate_symmetry_kspace_matrix(const SymmetryContext& ctx,
                                           const ComplexMatrix& matrix_ibz,
                                           const std::map<atom_t, size_t>& atom_nw,
                                           const Vector3_Order<double>& k_ibz,
-                                          const std::map<atom_t, std::array<double, 3>>& coord_frac,
                                           const bool use_time_reversal = false,
                                           const Vector3_Order<double>* k_bz_target = nullptr);
 
 symmetry_irreducible_sector_t build_symmetry_rspace_irreducible_sector(
     const SymmetryContext& ctx,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const std::vector<Vector3_Order<int>>& Rlist);
 
 void build_symmetry_rspace_sector_stars(
     const SymmetryContext& ctx,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const Vector3_Order<int>& period,
     const std::vector<Vector3_Order<int>>& Rlist,
     symmetry_rspace_sector_stars_t& sector_stars,
     std::ostream* log = nullptr);
 
-ComplexMatrix rotate_symmetry_rspace_matrix(const SymmetryContext& ctx,
-                                            const std::vector<SpeciesBasisLayout>& layouts_i,
-                                            const std::vector<SpeciesBasisLayout>& layouts_j,
-                                            const int isym,
-                                            const atom_t atom_from_i,
-                                            const atom_t atom_from_j,
-                                            const ComplexMatrix& matrix_source);
+/*!
+ * @brief Rotate one dense atom-pair block between symmetry-related real-space sectors.
+ *
+ * `matrix_source` contains all basis rows on `atom_from_i` and all basis columns
+ * on `atom_from_j`. Shell RSH rotations are assembled into one atom-level basis
+ * rotation for each side before applying the block transform.
+ */
+ComplexMatrix rotate_symmetry_rspace_block(const SymmetryContext& ctx,
+                                           const std::vector<SpeciesBasisLayout>& layouts_i,
+                                           const std::vector<SpeciesBasisLayout>& layouts_j,
+                                           const int isym,
+                                           const atom_t atom_from_i,
+                                           const atom_t atom_from_j,
+                                           const ComplexMatrix& matrix_source);
 
-ComplexMatrix rotate_symmetry_rspace_matrix(const SymmetryContext& ctx,
-                                            const std::vector<SpeciesBasisLayout>& layouts,
-                                            const int isym,
-                                            const atom_t atom_from_i,
-                                            const atom_t atom_from_j,
-                                            const ComplexMatrix& matrix_source);
+ComplexMatrix rotate_symmetry_rspace_block(const SymmetryContext& ctx,
+                                           const std::vector<SpeciesBasisLayout>& layouts,
+                                           const int isym,
+                                           const atom_t atom_from_i,
+                                           const atom_t atom_from_j,
+                                           const ComplexMatrix& matrix_source);
 
 } // namespace librpa_int

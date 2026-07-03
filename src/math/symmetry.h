@@ -174,10 +174,25 @@ Vector3_Order<double> apply_space_group_rotation_to_kpoint(
     const SpaceGroupSymOp& operation,
     const Vector3_Order<double>& kpoint);
 
+//! True when two fractional k-points differ by an integer reciprocal vector.
+bool same_fractional_kpoint(const Vector3_Order<double>& lhs,
+                            const Vector3_Order<double>& rhs,
+                            double tol = 1e-8);
+
+bool try_fold_fractional_kpoint_to_target(
+    const Vector3_Order<double>& kpoint,
+    const Vector3_Order<double>& target_kpoint,
+    double tol,
+    FoldedKPoint& folded);
+
 FoldedKPoint fold_fractional_kpoint_to_targets(
     const Vector3_Order<double>& kpoint,
     const std::vector<Vector3_Order<double>>& target_kpoints,
     double tol = 1e-8);
+
+bool preserves_lattice_metric(const Matrix3& rotation,
+                              const Matrix3& lattice_vectors,
+                              double tol = 1e-8);
 
 inline Matrix3 row_fractional_rotation_to_cartesian(const Matrix3& row_fractional_rotation,
                                                     const Matrix3& row_lattice_vectors)

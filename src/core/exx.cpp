@@ -40,10 +40,7 @@
 namespace librpa_int
 {
 
-namespace
-{
-
-std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
+static std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
 {
     std::map<atom_t, size_t> atom_nw;
     for (atom_t atom = 0; atom != as_atom(atbasis.n_atoms); ++atom)
@@ -53,7 +50,7 @@ std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
     return atom_nw;
 }
 
-bool use_symmetry_ibz_root_projection(
+static bool use_symmetry_ibz_root_projection(
     const SymmetryContext& ctx,
     const PeriodicBoundaryData& pbc,
     const int n_target_kpoints,
@@ -65,7 +62,7 @@ bool use_symmetry_ibz_root_projection(
         && n_target_kpoints == n_meanfield_kpoints;
 }
 
-std::map<std::pair<int, int>, std::set<std::array<int, 3>>>
+static std::map<std::pair<int, int>, std::set<std::array<int, 3>>>
 convert_symmetry_irreducible_sector_to_libri(
     const librpa_int::symmetry_irreducible_sector_t& irreducible_sector,
     const std::array<int, 3>& period)
@@ -98,7 +95,7 @@ convert_symmetry_irreducible_sector_to_libri(
     return libri_sector;
 }
 
-bool exx_coulomb_uses_symmetry_irreducible_sector_layout(
+static bool exx_coulomb_uses_symmetry_irreducible_sector_layout(
     const atpair_R_mat_t& coul_mat,
     const librpa_int::SymmetryContext& symmetry_ctx,
     const std::size_t n_R_blocks)
@@ -209,8 +206,6 @@ class OutputOnlyFilter_Atom_Symmetry : public RI::Filter_Atom<TA, std::pair<TA, 
 };
 #endif
 
-} // namespace
-
 Exx::Exx(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
          const PeriodicBoundaryData &pbc_in, const SymmetryContext &symmetry_context_in,
          const KPointBlacsParallelContext &kblacs_ctxt_in,
@@ -305,7 +300,7 @@ static void build_dmat_libri_kserial(
         can_try_symmetry_kstar_restore
         && !restore_symmetry_kstars_from_full_grid
         && can_restore_symmetry_kstar_meanfield(
-            symmetry_context, wfc_layouts, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
+            symmetry_context, wfc_layouts, mf, kfrac_list, atom_nw);
     auto member_kfrac_targets = restore_symmetry_kstars_from_full_grid
         ? build_symmetry_full_grid_kstar_member_kfrac_targets(symmetry_context, kfrac_list)
         : restore_symmetry_kstars
@@ -319,8 +314,7 @@ static void build_dmat_libri_kserial(
         const auto& R_check = map_R_IJs.begin()->first;
         const auto restored_check = get_symmetry_restored_dmat_cplx_R(
             symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, R_check,
-            atom_nw, symmetry_context.input_coord_frac, &member_kfrac_targets,
-            &full_grid_kstar_representatives);
+            atom_nw, &member_kfrac_targets, &full_grid_kstar_representatives);
         const auto direct_check =
             mf.get_dmat_cplx_R(ispin, ispinor_bra, ispinor_ket, kfrac_list, R_check);
         const auto diff = restored_check - direct_check;
@@ -338,7 +332,7 @@ static void build_dmat_libri_kserial(
         const auto dmat_cplx = (restore_symmetry_kstars || restore_symmetry_kstars_from_full_grid)
             ? get_symmetry_restored_dmat_cplx_R(
                   symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, R, atom_nw,
-                  symmetry_context.input_coord_frac, &member_kfrac_targets,
+                  &member_kfrac_targets,
                   restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr)
             : mf.get_dmat_cplx_R(ispin, ispinor_bra, ispinor_ket, kfrac_list, R);
         // global::ofs_myid << R << std::endl;
@@ -558,8 +552,7 @@ void Exx::build(const LibrpaParallelRouting routing,
         global::lib_printf(
             "Reducing EXX real-space contractions with irreducible sectors\n");
         librpa_int::build_symmetry_rspace_sector_stars(
-            symmetry_ctx, symmetry_ctx.input_coord_frac, this->pbc.period, Rlist,
-            symmetry_sector_stars, nullptr);
+            symmetry_ctx, this->pbc.period, Rlist, symmetry_sector_stars, nullptr);
         exx_libri.set_symmetry(false, {});
         exx_libri_cplx.set_symmetry(false, {});
         if (use_complex_exx_r)
@@ -661,7 +654,7 @@ void Exx::build(const LibrpaParallelRouting routing,
                     for (const auto& restore_member : star_iter->second)
                     {
                         const ComplexMatrix v_full =
-                            librpa_int::rotate_symmetry_rspace_matrix(
+                            librpa_int::rotate_symmetry_rspace_block(
                                 symmetry_ctx, abf_layouts, restore_member.isym,
                                 static_cast<atom_t>(ir_I),
                                 static_cast<atom_t>(ir_J), v_ir);
@@ -952,7 +945,7 @@ void Exx::build(const LibrpaParallelRouting routing,
 	                                for (const auto& restore_member : pair_iter->second.at(R))
 	                                {
 	                                    const auto block_full =
-	                                        librpa_int::rotate_symmetry_rspace_matrix(
+	                                        librpa_int::rotate_symmetry_rspace_block(
 	                                            symmetry_ctx, wfc_layouts, restore_member.isym,
 	                                            static_cast<atom_t>(I),
 	                                            static_cast<atom_t>(J), block_ir);

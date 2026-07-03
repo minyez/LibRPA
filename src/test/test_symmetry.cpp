@@ -141,12 +141,6 @@ static std::vector<Vector3_Order<int>> make_centered_R_grid(const int n)
     return Rlist;
 }
 
-static bool same_fractional_kpoint(const Vector3_Order<double>& lhs,
-                                   const Vector3_Order<double>& rhs)
-{
-    return nearly_integer_vector(lhs - rhs, 1e-8);
-}
-
 static void assert_kpoint_representatives_match(
     const std::vector<KPointStar>& stars,
     const std::vector<Vector3_Order<double>>& expected_representatives)
@@ -356,6 +350,13 @@ static void test_kpoint_rotation_and_target_fold()
     assert(target_folded.target_k_index == 0);
     assert(target_folded.kpoint == Vector3_Order<double>(1.8, 0.6, 0.0));
     assert(target_folded.fold_G == Vector3_Order<int>(-2, 0, 0));
+
+    assert(same_fractional_kpoint({0.0, 0.5, -1.0}, {1.0, -0.5, 0.0}));
+    FoldedKPoint folded_to_single_target;
+    assert(try_fold_fractional_kpoint_to_target(
+        {1.25, -0.75, 0.0}, {0.25, 0.25, 0.0}, 1e-8, folded_to_single_target));
+    assert(folded_to_single_target.kpoint == Vector3_Order<double>(0.25, 0.25, 0.0));
+    assert(folded_to_single_target.fold_G == Vector3_Order<int>(1, -1, 0));
 }
 
 static void test_kpoint_stars_from_full_grid()

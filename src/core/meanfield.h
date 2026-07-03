@@ -147,8 +147,7 @@ bool can_restore_symmetry_kstar_meanfield(
     const std::vector<SpeciesBasisLayout>& wfc_layouts,
     const MeanField& mf,
     const std::vector<Vector3_Order<double>>& kfrac_list,
-    const std::map<atom_t, size_t>& atom_nw,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac);
+    const std::map<atom_t, size_t>& atom_nw);
 
 symmetry_kstar_member_kfrac_targets_t build_symmetry_kstar_member_kfrac_targets(
     const SymmetryContext& ctx,
@@ -162,7 +161,6 @@ ComplexMatrix get_symmetry_restored_dmat_cplx_R(
     const std::vector<Vector3_Order<double>>& kfrac_list,
     const Vector3_Order<int>& R,
     const std::map<atom_t, size_t>& atom_nw,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr,
     const symmetry_kstar_representative_indices_t* representative_k_indices = nullptr);
 
@@ -176,7 +174,6 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     const std::vector<double>& imagtimes,
     const std::vector<Vector3_Order<int>>& Rs,
     const std::map<atom_t, size_t>& atom_nw,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac,
     int nbands_G = -1,
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr,
     const symmetry_kstar_representative_indices_t* representative_k_indices = nullptr);

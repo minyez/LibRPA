@@ -59,10 +59,7 @@ namespace librpa_int
 
 using std::vector;
 
-namespace
-{
-
-int infer_target_n_bands(
+static int infer_target_n_bands(
     const MpiCommHandler &comm_h,
     const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
     const int fallback)
@@ -96,7 +93,7 @@ int infer_target_n_bands(
     return n_bands_max;
 }
 
-std::vector<int> collect_target_iks(
+static std::vector<int> collect_target_iks(
     const MpiCommHandler &comm_h,
     const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
     const int n_kpts)
@@ -127,7 +124,7 @@ std::vector<int> collect_target_iks(
     return iks;
 }
 
-std::string make_sigc_ks_imagfreq_band_stem(const std::string &output_dir, const int index)
+static std::string make_sigc_ks_imagfreq_band_stem(const std::string &output_dir, const int index)
 {
     std::ostringstream ss;
     ss << path_as_directory(output_dir) << "self_energy_omega_band_"
@@ -135,7 +132,7 @@ std::string make_sigc_ks_imagfreq_band_stem(const std::string &output_dir, const
     return ss.str();
 }
 
-std::vector<std::string> make_sigc_rf_filenames(
+static std::vector<std::string> make_sigc_rf_filenames(
     const std::string &input_dir, const int ispin, const int ispinor_bra,
     const int ispinor_ket, const int n_spinor, const int iomega, const int myid)
 {
@@ -164,7 +161,7 @@ std::vector<std::string> make_sigc_rf_filenames(
     return names;
 }
 
-int parse_sigc_rf_myid(const std::string &file_path)
+static int parse_sigc_rf_myid(const std::string &file_path)
 {
     const auto name = base_name(file_path);
     const auto tag = std::string{"_myid_"};
@@ -188,9 +185,9 @@ int parse_sigc_rf_myid(const std::string &file_path)
     return myid;
 }
 
-int discover_sigc_rf_nprocs_old(const std::string &input_dir)
+static int discover_sigc_rf_nprocs_old(const std::string &input_dir)
 {
-    // ponytail: old SigcRF files have no manifest; largest _myid_ is the old rank count.
+    // Old SigcRF files have no manifest; largest _myid_ is the old rank count.
     int myid_max = -1;
     for (const auto &file_path: discover_files_with_prefix(input_dir, "SigcRF_"))
     {
@@ -199,7 +196,7 @@ int discover_sigc_rf_nprocs_old(const std::string &input_dir)
     return myid_max + 1;
 }
 
-int count_sigc_rf_files_for_rank(const int nfiles, const int nprocs, const int myid)
+static int count_sigc_rf_files_for_rank(const int nfiles, const int nprocs, const int myid)
 {
     const int count_base = nfiles / nprocs;
     const int count_extra = nfiles % nprocs;
@@ -210,7 +207,7 @@ int count_sigc_rf_files_for_rank(const int nfiles, const int nprocs, const int m
     return count_base;
 }
 
-std::pair<int, int> sigc_rf_file_range_for_rank(
+static std::pair<int, int> sigc_rf_file_range_for_rank(
     const int nfiles, const int nprocs, const int myid)
 {
     int begin = 0;
@@ -221,7 +218,7 @@ std::pair<int, int> sigc_rf_file_range_for_rank(
     return {begin, begin + count_sigc_rf_files_for_rank(nfiles, nprocs, myid)};
 }
 
-std::string find_sigc_rf_file(
+static std::string find_sigc_rf_file(
     const std::string &input_dir, const int ispin, const int ispinor_bra,
     const int ispinor_ket, const int n_spinor, const int iomega, const int myid,
     bool *found)
@@ -241,14 +238,14 @@ std::string find_sigc_rf_file(
     return candidates.front();
 }
 
-void read_exact(std::ifstream &ifs, void *dst, const std::streamsize n,
-                const std::string &fn)
+static void read_exact(std::ifstream &ifs, void *dst, const std::streamsize n,
+                       const std::string &fn)
 {
     if (!ifs.read(static_cast<char *>(dst), n))
         throw LIBRPA_RUNTIME_ERROR("failed to read SigC checkpoint file: " + fn);
 }
 
-std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
+static std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
 {
     std::map<atom_t, size_t> atom_nw;
     for (atom_t atom = 0; atom != as_atom(atbasis.n_atoms); ++atom)
@@ -258,7 +255,7 @@ std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
     return atom_nw;
 }
 
-bool use_symmetry_ibz_root_projection(
+static bool use_symmetry_ibz_root_projection(
     const SymmetryContext& ctx,
     const PeriodicBoundaryData& pbc,
     const int n_target_kpoints,
@@ -270,9 +267,9 @@ bool use_symmetry_ibz_root_projection(
         && n_target_kpoints == n_meanfield_kpoints;
 }
 
-std::map<std::pair<int, int>, std::set<std::array<int, 3>>>
+static std::map<std::pair<int, int>, std::set<std::array<int, 3>>>
 convert_symmetry_irreducible_sector_to_libri_gw(
-    const librpa_int::symmetry_irreducible_sector_t& irreducible_sector,
+    const symmetry_irreducible_sector_t& irreducible_sector,
     const std::array<int, 3>& period)
 {
     auto canonicalize_r = [&period](const std::array<int, 3>& r) {
@@ -365,7 +362,7 @@ class OutputOnlyFilter_GW_Symmetry : public RI::Filter_Atom<TA, std::pair<TA, TC
 };
 
 template <typename Tdata>
-RI::Tensor<Tdata> convert_complex_matrix_to_libri_tensor_gw(
+static RI::Tensor<Tdata> convert_complex_matrix_to_libri_tensor_gw(
     const ComplexMatrix& matrix)
 {
     RI::Tensor<Tdata> tensor(
@@ -388,11 +385,11 @@ RI::Tensor<Tdata> convert_complex_matrix_to_libri_tensor_gw(
 }
 
 template <typename Tdata>
-std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>>
+static std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>>
 restore_symmetry_ao_rspace_tensor_map_gw(
     const std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>>& tensors_ir,
-    const librpa_int::SymmetryContext& symmetry_ctx,
-    const librpa_int::symmetry_rspace_sector_stars_t& sector_stars,
+    const SymmetryContext& symmetry_ctx,
+    const symmetry_rspace_sector_stars_t& sector_stars,
     const AtomicBasis& atbasis_wfc)
 {
     std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> tensors_full;
@@ -422,7 +419,7 @@ restore_symmetry_ao_rspace_tensor_map_gw(
                 convert_libri_tensor_to_complex_matrix(jr_entry.second, nao_I, nao_J);
             for (const auto& restore_member : pair_iter->second.at(ir_R))
             {
-                const ComplexMatrix sigma_full = librpa_int::rotate_symmetry_rspace_matrix(
+                const ComplexMatrix sigma_full = rotate_symmetry_rspace_block(
                     symmetry_ctx, wfc_layouts, restore_member.isym, ir_I, ir_J, sigma_ir);
                 auto& target = tensors_full[restore_member.full_atom_pair.first][{
                     static_cast<int>(restore_member.full_atom_pair.second),
@@ -441,8 +438,8 @@ restore_symmetry_ao_rspace_tensor_map_gw(
 #endif
 
 template <typename T>
-bool is_effectively_zero_matrix(const matrix_m<T> &mat,
-                                const typename matrix_m<T>::real_t threshold = 1e-15)
+static bool is_effectively_zero_matrix(const matrix_m<T> &mat,
+                                       const typename matrix_m<T>::real_t threshold = 1e-15)
 {
     const auto data = mat.sptr();
     if (!data) return true;
@@ -453,7 +450,7 @@ bool is_effectively_zero_matrix(const matrix_m<T> &mat,
     return true;
 }
 
-void complete_hermitian_Wc_q_blocks(
+static void complete_hermitian_Wc_q_blocks(
     atom_mapping<std::map<Vector3_Order<double>, Matz>>::pair_t_old &Wc_q)
 {
     std::vector<atom_t> atoms_row;
@@ -486,7 +483,7 @@ void complete_hermitian_Wc_q_blocks(
     }
 }
 
-int wc_rf_checked_ifreq_end(const int start, const int end, const int n_freq)
+static int wc_rf_checked_ifreq_end(const int start, const int end, const int n_freq)
 {
     if (start < 0)
         throw LIBRPA_RUNTIME_ERROR("ifreq_output_wc_start must be non-negative");
@@ -500,7 +497,7 @@ int wc_rf_checked_ifreq_end(const int start, const int end, const int n_freq)
     return checked_end;
 }
 
-void write_wc_rf_atom_blocks(
+static void write_wc_rf_atom_blocks(
     const atom_mapping<std::map<Vector3_Order<int>, Matz>>::pair_t_old &Wc_R,
     const PeriodicBoundaryData &pbc, const std::string &output_dir, const int ifreq,
     const double freq)
@@ -527,7 +524,7 @@ void write_wc_rf_atom_blocks(
     }
 }
 
-void write_wc_rf_full_matrix_from_atom_blocks(
+static void write_wc_rf_full_matrix_from_atom_blocks(
     const atom_mapping<std::map<Vector3_Order<int>, Matz>>::pair_t_old &Wc_R,
     const AtomicBasis &atbasis_abf, const ArrayDesc &ad_Wc,
     const PeriodicBoundaryData &pbc, const std::string &output_dir, const int ifreq,
@@ -563,7 +560,7 @@ void write_wc_rf_full_matrix_from_atom_blocks(
     }
 }
 
-void write_sigc_matrix_binary(const Matz &mat, const std::string &fn)
+static void write_sigc_matrix_binary(const Matz &mat, const std::string &fn)
 {
     const std::int32_t n_states = mat.nr();
     const std::int32_t type_bytes = sizeof(double);
@@ -589,9 +586,9 @@ void write_sigc_matrix_binary(const Matz &mat, const std::string &fn)
     }
 }
 
-void write_sigc_matrix_binary_parallel(const Matz &mat_loc,
-                                       const ArrayDesc &desc,
-                                       const std::string &fn)
+static void write_sigc_matrix_binary_parallel(const Matz &mat_loc,
+                                              const ArrayDesc &desc,
+                                              const std::string &fn)
 {
     if (!desc.is_initialized())
         throw LIBRPA_RUNTIME_ERROR("SigC matrix output descriptor is not initialized");
@@ -610,11 +607,11 @@ void write_sigc_matrix_binary_parallel(const Matz &mat_loc,
     desc.barrier();
 }
 
-void write_sigc_nao_kf_matrix(const Matz &mat, const ArrayDesc &desc,
-                              const std::string &output_dir, const std::string &source,
-                              const int ispin, const int ispinor_bra,
-                              const int ispinor_ket, const int n_spinor,
-                              const int ik, const int ifreq)
+static void write_sigc_nao_kf_matrix(const Matz &mat, const ArrayDesc &desc,
+                                     const std::string &output_dir, const std::string &source,
+                                     const int ispin, const int ispinor_bra,
+                                     const int ispinor_ket, const int n_spinor,
+                                     const int ik, const int ifreq)
 {
     std::ostringstream ss;
     ss << path_as_directory(output_dir) << "SigcKF_" << source
@@ -626,8 +623,6 @@ void write_sigc_nao_kf_matrix(const Matz &mat, const ArrayDesc &desc,
     ss << "_ik_" << ik << "_ifreq_" << ifreq << ".mtx";
     print_matrix_mm_file_parallel(ss.str(), mat, desc, "", 1e-10);
 }
-
-}  // namespace
 
 G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const PeriodicBoundaryData &pbc_in,
@@ -927,7 +922,7 @@ static void build_gf_libri_kserial(
         can_try_symmetry_kstar_restore
         && !restore_symmetry_kstars_from_full_grid
         && can_restore_symmetry_kstar_meanfield(
-            symmetry_context, wfc_layouts, mf, kfrac_list, atom_nw, symmetry_context.input_coord_frac);
+            symmetry_context, wfc_layouts, mf, kfrac_list, atom_nw);
     auto member_kfrac_targets = restore_symmetry_kstars_from_full_grid
         ? build_symmetry_full_grid_kstar_member_kfrac_targets(symmetry_context, kfrac_list)
         : restore_symmetry_kstars
@@ -942,7 +937,7 @@ static void build_gf_libri_kserial(
         const std::vector<Vector3_Order<int>> R_check{Rs_vec.front()};
         const auto restored_check = get_symmetry_restored_gf_cplx_imagtimes_Rs(
             symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, tau_check,
-            R_check, atom_nw, symmetry_context.input_coord_frac, -1, &member_kfrac_targets,
+            R_check, atom_nw, -1, &member_kfrac_targets,
             &full_grid_kstar_representatives).at(tau_check.front()).at(R_check.front());
         const auto direct_check =
             mf.get_gf_cplx_imagtimes_Rs(
@@ -958,7 +953,7 @@ static void build_gf_libri_kserial(
     auto gf = (restore_symmetry_kstars || restore_symmetry_kstars_from_full_grid)
         ? get_symmetry_restored_gf_cplx_imagtimes_Rs(
               symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec, atom_nw,
-              symmetry_context.input_coord_frac, -1, &member_kfrac_targets,
+              -1, &member_kfrac_targets,
               restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr)
         : mf.get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec);
     // global::ofs_myid << "gf " << gf << std::endl;
@@ -1400,12 +1395,11 @@ void G0W0::build_spacetime(
                   symmetry_ctx.irreducible_sector, this->pbc.period_array)
             : std::map<std::pair<int, int>, std::set<std::array<int, 3>>>{};
     const bool restore_input_sigc_output = use_input_sigc_symmetry;
-    librpa_int::symmetry_rspace_sector_stars_t symmetry_sector_stars;
+    symmetry_rspace_sector_stars_t symmetry_sector_stars;
     if (use_input_sigc_symmetry)
     {
-        librpa_int::build_symmetry_rspace_sector_stars(
-            symmetry_ctx, symmetry_ctx.input_coord_frac, this->pbc.period, pbc.Rlist,
-            symmetry_sector_stars, nullptr);
+        build_symmetry_rspace_sector_stars(
+            symmetry_ctx, this->pbc.period, pbc.Rlist, symmetry_sector_stars, nullptr);
         gw_libri.set_symmetry(false, {});
         gw_libri_cplx.set_symmetry(false, {});
         if (use_complex_tensor)
@@ -1463,9 +1457,9 @@ void G0W0::build_spacetime(
 
     for (auto itau = 0; itau != nfreq; itau++)
     {
-        // librpa_int::global::lib_printf("task %d itau %d start\n", mpi_comm_global_h.myid, itau);
+        // global::lib_printf("task %d itau %d start\n", mpi_comm_global_h.myid, itau);
         const auto tau = tfg.get_time_nodes()[itau];
-        // librpa_int::global::lib_printf("task %d Wc_tau_R.count(tau) %zu\n", mpi_comm_global_h.myid, Wc_tau_R.count(tau));
+        // global::lib_printf("task %d Wc_tau_R.count(tau) %zu\n", mpi_comm_global_h.myid, Wc_tau_R.count(tau));
         profiler.start("g0w0_build_spacetime_3", "Setup LibRI Wc");
         size_t n_obj_wc_libri = 0;
         if (use_complex_tensor)
@@ -1623,7 +1617,7 @@ void G0W0::build_spacetime(
                             //                 << "_I_" << std::setfill('0') << std::setw(5) << I
                             //                 << "_J_" << std::setfill('0') << std::setw(5) << JR.first
                             //                 << "_iR_" << std::setfill('0') << std::setw(5) << get_R_index(pbc.Rlist, R) << ".dat";
-                            //             librpa_int::global::ofs_myid << "Writing GF to " << ss.str() << " " << tau << " " << I << " " << JR.second << " " << R << std::endl;
+                            //             global::ofs_myid << "Writing GF to " << ss.str() << " " << tau << " " << I << " " << JR.second << " " << R << std::endl;
                             //             std::ofstream ofs(ss.str());
                             //             ofs << gf << std::endl;
                             //             ofs.close();
@@ -1646,7 +1640,7 @@ void G0W0::build_spacetime(
                             //                 << "_I_" << std::setfill('0') << std::setw(5) << I
                             //                 << "_J_" << std::setfill('0') << std::setw(5) << JR.first
                             //                 << "_iR_" << std::setfill('0') << std::setw(5) << get_R_index(pbc.Rlist, R) << ".dat";
-                            //             librpa_int::global::ofs_myid << "Writing GF to " << ss.str() << " " << tau << " " << I << " " << JR.second << " " << R << std::endl;
+                            //             global::ofs_myid << "Writing GF to " << ss.str() << " " << tau << " " << I << " " << JR.second << " " << R << std::endl;
                             //             std::ofstream ofs(ss.str());
                             //             ofs << gf << std::endl;
                             //             ofs.close();
@@ -1695,13 +1689,13 @@ void G0W0::build_spacetime(
                         }
                         wtime_g0w0_cal_sigc = omp_get_wtime() - wtime_g0w0_cal_sigc;
                         if (n_spinor > 1)
-                            librpa_int::global::lib_printf(
+                            global::lib_printf(
                                 "Task %4d. libRI G0W0, spin %1d, bra %1d, ket %1d, time grid %12.6f. Wc size %zu, GF "
                                 "size %zu. Wall time %f\n",
                                 comm_h.myid, ispin, ispinor_bra, ispinor_ket, t, n_obj_wc_libri, n_obj_gf_libri,
                                 wtime_g0w0_cal_sigc);
                         else
-                            librpa_int::global::lib_printf(
+                            global::lib_printf(
                                 "Task %4d. libRI G0W0, spin %1d, time grid %12.6f. Wc size %zu, GF "
                                 "size %zu. Wall time %f\n",
                                 comm_h.myid, ispin, t, n_obj_wc_libri, n_obj_gf_libri,
@@ -2499,7 +2493,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
 void G0W0::build_sigc_matrix_KS_kgrid(const Atoms &geometry)
 {
     comm_h.barrier();
-    librpa_int::global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid" << std::endl;
+    global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid" << std::endl;
     this->build_sigc_matrix_KS(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {});
     if (this->output_sigc_ks_kf)
     {
@@ -2517,7 +2511,7 @@ void G0W0::build_sigc_matrix_KS_band(const std::map<int, std::map<int, std::map<
     comm_h.barrier();
     if (comm_h.myid == 0)
     {
-        librpa_int::global::lib_printf("build_sigc_matrix_KS_kgrid: constructing self-energy matrix for band k-path\n");
+        global::lib_printf("build_sigc_matrix_KS_kgrid: constructing self-energy matrix for band k-path\n");
     }
     this->build_sigc_matrix_KS(wfc, kfrac_band, bvk_remap);
     if (this->output_sigc_ks_kf)
@@ -2537,7 +2531,7 @@ void G0W0::build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h
                                                    const bool use_gpu_replace_scalapack)
 {
     comm_h.barrier();
-    librpa_int::global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid with BLACS" << std::endl;
+    global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid with BLACS" << std::endl;
     this->build_sigc_matrix_KS_blacs(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {}, blacs_ctxt_h, use_gpu_replace_scalapack, "kgrid");
     if (this->output_sigc_ks_kf)
     {
@@ -2558,7 +2552,7 @@ void G0W0::build_sigc_matrix_KS_band_blacs(
     comm_h.barrier();
     if (comm_h.myid == 0)
     {
-        librpa_int::global::lib_printf("build_sigc_matrix_KS_band: constructing self-energy matrix for band k-path with BLACS\n");
+        global::lib_printf("build_sigc_matrix_KS_band: constructing self-energy matrix for band k-path with BLACS\n");
     }
     const int output_band_index = output_sigc_ks_kf_band_index_;
     this->build_sigc_matrix_KS_blacs(wfc, kfrac_band, bvk_remap, blacs_ctxt_h,

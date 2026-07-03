@@ -12,8 +12,12 @@
 namespace librpa_int
 {
 
-namespace
+bool same_fractional_kpoint(const Vector3_Order<double>& lhs,
+                            const Vector3_Order<double>& rhs,
+                            const double tol)
 {
+    return nearly_integer_vector(lhs - rhs, tol);
+}
 
 bool try_fold_fractional_kpoint_to_target(const Vector3_Order<double>& kpoint,
                                           const Vector3_Order<double>& target_kpoint,
@@ -30,12 +34,12 @@ bool try_fold_fractional_kpoint_to_target(const Vector3_Order<double>& kpoint,
     return true;
 }
 
-bool find_atom_to_target_mapping(const std::vector<Vector3_Order<double>>& atom_positions,
-                                 const SpaceGroupSymOps& operations,
-                                 const int atom,
-                                 const int target,
-                                 const double tol,
-                                 AtomSymMapping& mapping)
+static bool find_atom_to_target_mapping(const std::vector<Vector3_Order<double>>& atom_positions,
+                                        const SpaceGroupSymOps& operations,
+                                        const int atom,
+                                        const int target,
+                                        const double tol,
+                                        AtomSymMapping& mapping)
 {
     const auto atom_position = atom_positions[atom];
     const auto target_position = atom_positions[target];
@@ -58,11 +62,11 @@ bool find_atom_to_target_mapping(const std::vector<Vector3_Order<double>>& atom_
     return false;
 }
 
-bool find_kpoint_sym_mapping(const Vector3_Order<double>& representative_kpoint,
-                             const Vector3_Order<double>& member_kpoint,
-                             const SpaceGroupSymOps& operations,
-                             const double tol,
-                             KPointSymMapping& mapping)
+static bool find_kpoint_sym_mapping(const Vector3_Order<double>& representative_kpoint,
+                                    const Vector3_Order<double>& member_kpoint,
+                                    const SpaceGroupSymOps& operations,
+                                    const double tol,
+                                    KPointSymMapping& mapping)
 {
     for (std::size_t isym = 0; isym < operations.size(); ++isym)
     {
@@ -80,7 +84,7 @@ bool find_kpoint_sym_mapping(const Vector3_Order<double>& representative_kpoint,
     return false;
 }
 
-int choose_kpoint_star_representative(
+static int choose_kpoint_star_representative(
     const KPointStar& star,
     const std::size_t fallback_full_k_index,
     const std::vector<Vector3_Order<double>>& preferred_representative_kpoints,
@@ -114,14 +118,14 @@ int choose_kpoint_star_representative(
 
 bool preserves_lattice_metric(const Matrix3& rotation,
                               const Matrix3& lattice_vectors,
-                              const double tol = 1e-8)
+                              const double tol)
 {
     const Matrix3 metric = lattice_vectors * lattice_vectors.Transpose();
     const Matrix3 rotated_metric = rotation * metric * rotation.Transpose();
     return is_same_matrix(rotated_metric, metric, tol);
 }
 
-Vector3_Order<int> rotate_rspace_vector(
+static Vector3_Order<int> rotate_rspace_vector(
     const Vector3_Order<int>& R,
     const SpaceGroupAtomMapping<int>& op_info,
     const SpaceGroupSymOp& op,
@@ -150,8 +154,8 @@ Vector3_Order<int> rotate_rspace_vector(
 
 using RSpaceKey = std::tuple<int, int, Vector3_Order<int>>;
 
-bool rspace_representative_less(const RSpaceKey& lhs,
-                                const RSpaceKey& rhs)
+static bool rspace_representative_less(const RSpaceKey& lhs,
+                                       const RSpaceKey& rhs)
 {
     if (std::get<0>(lhs) != std::get<0>(rhs))
     {
@@ -169,8 +173,6 @@ bool rspace_representative_less(const RSpaceKey& lhs,
     }
     return std::get<2>(lhs) < std::get<2>(rhs);
 }
-
-} // namespace
 
 SpaceGroupSymOp compose_space_group_symmetry_operations(
     const SpaceGroupSymOp& lhs,
@@ -249,10 +251,7 @@ FoldedKPoint fold_fractional_kpoint_to_targets(
     return matched;
 }
 
-namespace
-{
-
-std::vector<AtomSymMapping> build_fractional_atom_to_inequivalent_symmetry_mapping(
+static std::vector<AtomSymMapping> build_fractional_atom_to_inequivalent_symmetry_mapping(
     const std::vector<Vector3_Order<double>>& atom_positions,
     const SpaceGroupSymOps& operations,
     const double tol)
@@ -288,8 +287,6 @@ std::vector<AtomSymMapping> build_fractional_atom_to_inequivalent_symmetry_mappi
 
     return mappings;
 }
-
-} // namespace
 
 const SpaceGroupSymOp SpaceGroupSymOp::IDENTITY{
     {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0}, {0.0, 0.0, 0.0}, true};
