@@ -57,37 +57,7 @@ inline bool operator==(const SpaceGroupSymOp &op1, const SpaceGroupSymOp &op2)
            (op1.translation == op2.translation);
 }
 
-/*!
- * @brief Container for a set of space-group symmetry operations.
- */
-template <typename OperationType = SpaceGroupSymOp>
-struct SpaceGroupSymOps
-{
-    using operation_type = OperationType;
-
-    std::vector<operation_type> operations;
-
-    void clear() { operations.clear(); }
-    bool empty() const { return operations.empty(); }
-    std::size_t size() const { return operations.size(); }
-    void reserve(const std::size_t count) { operations.reserve(count); }
-
-    void push_back(const operation_type& operation) { operations.push_back(operation); }
-    void push_back(operation_type&& operation) { operations.push_back(std::move(operation)); }
-
-    operation_type& at(const std::size_t index) { return operations.at(index); }
-    const operation_type& at(const std::size_t index) const { return operations.at(index); }
-
-    operation_type& operator[](const std::size_t index) { return operations[index]; }
-    const operation_type& operator[](const std::size_t index) const { return operations[index]; }
-
-    auto begin() { return operations.begin(); }
-    auto begin() const { return operations.begin(); }
-    auto cbegin() const { return operations.cbegin(); }
-    auto end() { return operations.end(); }
-    auto end() const { return operations.end(); }
-    auto cend() const { return operations.cend(); }
-};
+using SpaceGroupSymOps = std::vector<SpaceGroupSymOp>;
 
 /*!
  * @brief Atom mapping induced by one space-group operation.
@@ -210,34 +180,13 @@ inline Matrix3 fractional_rotation_to_cartesian(const SpaceGroupSymOp& symop,
 //! Build atom mapping from fractional atom positions and fractional symmetry operations.
 std::vector<AtomSymMapping> build_atom_to_inequivalent_symmetry_mapping(
     const std::vector<Vector3_Order<double>>& atom_positions_frac, const Matrix3& lattice_vectors,
-    const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations, double tol = 1e-5);
-
-template <typename OperationType>
-std::vector<AtomSymMapping> build_atom_to_inequivalent_symmetry_mapping(
-    const std::vector<Vector3_Order<double>>& atom_positions_frac,
-    const Matrix3& lattice_vectors,
-    const SpaceGroupSymOps<OperationType>& fractional_operations,
-    const double tol = 1e-5)
-{
-    SpaceGroupSymOps<SpaceGroupSymOp> base_operations;
-    base_operations.reserve(fractional_operations.size());
-    for (const auto& operation : fractional_operations)
-    {
-        SpaceGroupSymOp base_operation;
-        base_operation.rotation = operation.rotation;
-        base_operation.translation = operation.translation;
-        base_operation.use_row_convention = operation.use_row_convention;
-        base_operations.push_back(base_operation);
-    }
-    return build_atom_to_inequivalent_symmetry_mapping(
-        atom_positions_frac, lattice_vectors, base_operations, tol);
-}
+    const SpaceGroupSymOps& fractional_operations, double tol = 1e-5);
 
 std::vector<int> collect_inequivalent_atoms(
     const std::vector<AtomSymMapping>& mappings);
 
 SpaceGroupRSpaceSector build_space_group_rspace_irreducible_sector(
-    const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations,
+    const SpaceGroupSymOps& fractional_operations,
     const std::map<int, Vector3_Order<double>>& coord_frac,
     const std::map<int, int>& atom_to_type,
     const std::vector<Vector3_Order<int>>& Rlist,
@@ -245,81 +194,17 @@ SpaceGroupRSpaceSector build_space_group_rspace_irreducible_sector(
     double atom_map_tol = 5e-5,
     double coord_tol = 1e-5);
 
-template <typename OperationType>
-SpaceGroupRSpaceSector build_space_group_rspace_irreducible_sector(
-    const SpaceGroupSymOps<OperationType>& fractional_operations,
-    const std::map<int, Vector3_Order<double>>& coord_frac,
-    const std::map<int, int>& atom_to_type,
-    const std::vector<Vector3_Order<int>>& Rlist,
-    const Matrix3* lattice_vectors = nullptr,
-    const double atom_map_tol = 5e-5,
-    const double coord_tol = 1e-5)
-{
-    SpaceGroupSymOps<SpaceGroupSymOp> base_operations;
-    base_operations.reserve(fractional_operations.size());
-    for (const auto& operation : fractional_operations)
-    {
-        SpaceGroupSymOp base_operation;
-        base_operation.rotation = operation.rotation;
-        base_operation.translation = operation.translation;
-        base_operation.use_row_convention = operation.use_row_convention;
-        base_operations.push_back(base_operation);
-    }
-    return build_space_group_rspace_irreducible_sector(
-        base_operations, coord_frac, atom_to_type, Rlist, lattice_vectors, atom_map_tol, coord_tol);
-}
-
 std::vector<KPointStar> build_kpoint_stars(
     const std::vector<Vector3_Order<double>>& full_kpoints_frac,
-    const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations,
+    const SpaceGroupSymOps& fractional_operations,
     double tol = 1e-8);
 
 //! Preferred representatives are tried in order; non-member hints are ignored.
 std::vector<KPointStar> build_kpoint_stars(
     const std::vector<Vector3_Order<double>>& full_kpoints_frac,
-    const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations,
+    const SpaceGroupSymOps& fractional_operations,
     const std::vector<Vector3_Order<double>>& preferred_representative_kpoints,
     double tol = 1e-8);
-
-template <typename OperationType>
-std::vector<KPointStar> build_kpoint_stars(
-    const std::vector<Vector3_Order<double>>& full_kpoints_frac,
-    const SpaceGroupSymOps<OperationType>& fractional_operations,
-    const double tol = 1e-8)
-{
-    SpaceGroupSymOps<SpaceGroupSymOp> base_operations;
-    base_operations.reserve(fractional_operations.size());
-    for (const auto& operation : fractional_operations)
-    {
-        SpaceGroupSymOp base_operation;
-        base_operation.rotation = operation.rotation;
-        base_operation.translation = operation.translation;
-        base_operation.use_row_convention = operation.use_row_convention;
-        base_operations.push_back(base_operation);
-    }
-    return build_kpoint_stars(full_kpoints_frac, base_operations, tol);
-}
-
-template <typename OperationType>
-std::vector<KPointStar> build_kpoint_stars(
-    const std::vector<Vector3_Order<double>>& full_kpoints_frac,
-    const SpaceGroupSymOps<OperationType>& fractional_operations,
-    const std::vector<Vector3_Order<double>>& preferred_representative_kpoints,
-    const double tol = 1e-8)
-{
-    SpaceGroupSymOps<SpaceGroupSymOp> base_operations;
-    base_operations.reserve(fractional_operations.size());
-    for (const auto& operation : fractional_operations)
-    {
-        SpaceGroupSymOp base_operation;
-        base_operation.rotation = operation.rotation;
-        base_operation.translation = operation.translation;
-        base_operation.use_row_convention = operation.use_row_convention;
-        base_operations.push_back(base_operation);
-    }
-    return build_kpoint_stars(
-        full_kpoints_frac, base_operations, preferred_representative_kpoints, tol);
-}
 
 template <typename AtomIndex, typename coord_t, typename AtomType>
 SpaceGroupAtomMapping<AtomIndex> get_space_group_atom_mapping(

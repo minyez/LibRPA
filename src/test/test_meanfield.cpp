@@ -163,26 +163,27 @@ void test_symmetry_context_kstar_restored_dmat_uses_full_star_phases()
     librpa_int::SymmetryOperation identity_operation;
     identity_operation.rotation.Identity();
     identity_operation.translation = {0.0, 0.0, 0.0};
-    identity_operation.shell_rotations[0] = ComplexMatrix(1, 1);
-    identity_operation.shell_rotations[0](0, 0) = {1.0, 0.0};
     ctx.rspace_operations.push_back(identity_operation);
+    ctx.rsh_rotations.emplace_back();
+    ctx.rsh_rotations.back()[0] = ComplexMatrix(1, 1);
+    ctx.rsh_rotations.back()[0](0, 0) = {1.0, 0.0};
 
     librpa_int::SymmetryKAtomRotation atom_rotation;
     atom_rotation.atom_from = 0;
     atom_rotation.atom_to = 0;
     atom_rotation.atom_type = 0;
     atom_rotation.lmax = 0;
-    atom_rotation.shell_rotations[0] = ComplexMatrix(1, 1);
-    atom_rotation.shell_rotations[0](0, 0) = {1.0, 0.0};
+    atom_rotation.bloch_rsh_rotations[0] = ComplexMatrix(1, 1);
+    atom_rotation.bloch_rsh_rotations[0](0, 0) = {1.0, 0.0};
 
     librpa_int::SymmetryKStar star;
     star.star_index = 0;
     star.k_ibz = {0.0, 0.0, 0.0};
     star.members.resize(2);
-    star.members[0].isym = 0;
+    star.members[0].spatial_isym = 0;
     star.members[0].k_bz = {0.0, 0.0, 0.0};
     star.members[0].atom_rotations.push_back(atom_rotation);
-    star.members[1].isym = 0;
+    star.members[1].spatial_isym = 0;
     star.members[1].k_bz = {0.5, 0.0, 0.0};
     star.members[1].atom_rotations.push_back(atom_rotation);
     ctx.kstars.push_back(star);
@@ -242,26 +243,27 @@ void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k()
     SymmetryOperation identity_operation;
     identity_operation.rotation.Identity();
     identity_operation.translation = {0.0, 0.0, 0.0};
-    identity_operation.shell_rotations[0] = ComplexMatrix(1, 1);
-    identity_operation.shell_rotations[0](0, 0) = {1.0, 0.0};
     ctx.rspace_operations.push_back(identity_operation);
+    ctx.rsh_rotations.emplace_back();
+    ctx.rsh_rotations.back()[0] = ComplexMatrix(1, 1);
+    ctx.rsh_rotations.back()[0](0, 0) = {1.0, 0.0};
 
     SymmetryKAtomRotation atom_rotation;
     atom_rotation.atom_from = 0;
     atom_rotation.atom_to = 0;
     atom_rotation.atom_type = 0;
     atom_rotation.lmax = 0;
-    atom_rotation.shell_rotations[0] = ComplexMatrix(1, 1);
-    atom_rotation.shell_rotations[0](0, 0) = {1.0, 0.0};
+    atom_rotation.bloch_rsh_rotations[0] = ComplexMatrix(1, 1);
+    atom_rotation.bloch_rsh_rotations[0](0, 0) = {1.0, 0.0};
 
     SymmetryKStar star;
     star.star_index = 0;
     star.k_ibz = {0.0, 0.0, 0.0};
     star.members.resize(2);
-    star.members[0].isym = 0;
+    star.members[0].spatial_isym = 0;
     star.members[0].k_bz = {0.0, 0.0, 0.0};
     star.members[0].atom_rotations.push_back(atom_rotation);
-    star.members[1].isym = 0;
+    star.members[1].spatial_isym = 0;
     star.members[1].k_bz = {0.5, 0.0, 0.0};
     star.members[1].atom_rotations.push_back(atom_rotation);
     ctx.kstars.push_back(star);
@@ -340,9 +342,10 @@ void test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge()
     librpa_int::SymmetryOperation identity_operation;
     identity_operation.rotation.Identity();
     identity_operation.translation = {0.0, 0.0, 0.0};
-    identity_operation.shell_rotations[0] = ComplexMatrix(1, 1);
-    identity_operation.shell_rotations[0](0, 0) = {1.0, 0.0};
     ctx.rspace_operations.push_back(identity_operation);
+    ctx.rsh_rotations.emplace_back();
+    ctx.rsh_rotations.back()[0] = ComplexMatrix(1, 1);
+    ctx.rsh_rotations.back()[0](0, 0) = {1.0, 0.0};
 
     auto make_atom_rotation = [](const atom_t atom) {
         librpa_int::SymmetryKAtomRotation atom_rotation;
@@ -350,8 +353,8 @@ void test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge()
         atom_rotation.atom_to = static_cast<int>(atom);
         atom_rotation.atom_type = 0;
         atom_rotation.lmax = 0;
-        atom_rotation.shell_rotations[0] = ComplexMatrix(1, 1);
-        atom_rotation.shell_rotations[0](0, 0) = {1.0, 0.0};
+        atom_rotation.bloch_rsh_rotations[0] = ComplexMatrix(1, 1);
+        atom_rotation.bloch_rsh_rotations[0](0, 0) = {1.0, 0.0};
         return atom_rotation;
     };
 
@@ -359,11 +362,11 @@ void test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge()
     star.star_index = 0;
     star.k_ibz = {0.0, 0.0, 0.0};
     star.members.resize(2);
-    star.members[0].isym = 0;
+    star.members[0].spatial_isym = 0;
     star.members[0].k_bz = {0.0, 0.0, 0.0};
     star.members[0].atom_rotations.push_back(make_atom_rotation(0));
     star.members[0].atom_rotations.push_back(make_atom_rotation(1));
-    star.members[1].isym = 0;
+    star.members[1].spatial_isym = 0;
     star.members[1].k_bz = {0.5, 0.0, 0.0};
     star.members[1].atom_rotations.push_back(make_atom_rotation(0));
     star.members[1].atom_rotations.push_back(make_atom_rotation(1));

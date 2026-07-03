@@ -30,13 +30,7 @@ class PeriodicBoundaryData;
 using symmetry_R_t = std::array<int, 3>;
 using symmetry_irreducible_sector_t = std::map<atpair_t, std::set<symmetry_R_t>>;
 
-/*!
- * @brief Real-space symmetry operation exported by a symmetry convention.
- */
-struct SymmetryOperation : SpaceGroupSymOp
-{
-    std::map<int, ComplexMatrix> shell_rotations;
-};
+using SymmetryOperation = SpaceGroupSymOp;
 
 /*!
  * @brief Atom-resolved k-space symmetry information exported by a symmetry convention.
@@ -47,7 +41,7 @@ struct SymmetryKAtomRotation
     int atom_to = -1;
     int atom_type = -1;
     int lmax = -1;
-    std::map<int, ComplexMatrix> shell_rotations;
+    std::map<int, ComplexMatrix> bloch_rsh_rotations;
 };
 
 /*!
@@ -55,7 +49,8 @@ struct SymmetryKAtomRotation
  */
 struct SymmetryKStarMember
 {
-    int isym = -1;
+    int spatial_isym = -1;
+    bool time_reversal = false;
     Vector3_Order<double> k_bz{0.0, 0.0, 0.0};
     std::vector<SymmetryKAtomRotation> atom_rotations;
 };
@@ -93,7 +88,8 @@ struct SymmetryFullKpointMemberEntry
     int ik_ibz = -1;
     int star_list_index = -1;
     int member_index = -1;
-    int isym = -1;
+    int spatial_isym = -1;
+    bool time_reversal = false;
     Vector3_Order<double> k_bz{0.0, 0.0, 0.0};
 };
 
@@ -129,7 +125,8 @@ struct SymmetryContext
     int abf_lmax = -1;
     BasisConvention basis_convention;
     symmetry_irreducible_sector_t irreducible_sector;
-    SpaceGroupSymOps<SymmetryOperation> rspace_operations;
+    SpaceGroupSymOps rspace_operations;
+    std::vector<std::map<int, ComplexMatrix>> rsh_rotations;
     std::vector<SymmetryKStar> kstars;
     std::vector<SymmetryKStar> abf_kstars;
     std::map<std::string, std::vector<SpeciesBasisLayout>> map_key_layouts;

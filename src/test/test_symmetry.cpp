@@ -18,7 +18,7 @@ static Matrix3 lih_primitive_lattice()
 }
 
 static void add_lih_basis_preserving_fractional_symmetry_operations(
-    SpaceGroupSymOps<SpaceGroupSymOp>& operations,
+    SpaceGroupSymOps& operations,
     const Matrix3& lattice)
 {
     const std::array<std::array<int, 3>, 6> permutations{{
@@ -70,17 +70,17 @@ static void add_lih_basis_preserving_fractional_symmetry_operations(
     assert(operations.size() == 24);
 }
 
-static SpaceGroupSymOps<SpaceGroupSymOp> lih_basis_preserving_fractional_symmetry_operations()
+static SpaceGroupSymOps lih_basis_preserving_fractional_symmetry_operations()
 {
-    SpaceGroupSymOps<SpaceGroupSymOp> operations;
+    SpaceGroupSymOps operations;
     add_lih_basis_preserving_fractional_symmetry_operations(operations, lih_primitive_lattice());
     return operations;
 }
 
-static SpaceGroupSymOps<SpaceGroupSymOp> add_time_reversal(
-    const SpaceGroupSymOps<SpaceGroupSymOp>& operations)
+static SpaceGroupSymOps add_time_reversal(
+    const SpaceGroupSymOps& operations)
 {
-    SpaceGroupSymOps<SpaceGroupSymOp> operations_with_trs;
+    SpaceGroupSymOps operations_with_trs;
     operations_with_trs.reserve(operations.size() * 2);
     for (const auto& operation : operations)
     {
@@ -277,7 +277,7 @@ static void test_atom_to_inequivalent_symmetry_mapping()
         {0.75, 0.75, 0.0},
     };
 
-    SpaceGroupSymOps<SpaceGroupSymOp> operations;
+    SpaceGroupSymOps operations;
     operations.push_back(SpaceGroupSymOp{Matrix3(), {0.0, 0.0, 0.0}});
     operations.push_back(SpaceGroupSymOp{Matrix3(), {0.5, 0.5, 0.0}});
 
@@ -317,7 +317,7 @@ static void test_symmetry_mapping_keeps_operations_fractional()
         multiply_row_vector(source_frac, rotation) + translation_frac, 1e-10);
 
     const std::vector<Vector3_Order<double>> atom_positions{target, source_frac};
-    SpaceGroupSymOps<SpaceGroupSymOp> fractional_operations;
+    SpaceGroupSymOps fractional_operations;
     fractional_operations.push_back(SpaceGroupSymOp{Matrix3(), {0.0, 0.0, 0.0}});
     fractional_operations.push_back(SpaceGroupSymOp{rotation, translation_frac});
 
@@ -371,7 +371,7 @@ static void test_kpoint_stars_from_full_grid()
     const Matrix3 rot270(0.0, 1.0, 0.0,
                          -1.0, 0.0, 0.0,
                          0.0, 0.0, 1.0);
-    SpaceGroupSymOps<SpaceGroupSymOp> operations;
+    SpaceGroupSymOps operations;
     operations.push_back(SpaceGroupSymOp{identity, {0.0, 0.0, 0.0}});
     operations.push_back(SpaceGroupSymOp{rot90, {0.0, 0.0, 0.0}});
     operations.push_back(SpaceGroupSymOp{rot180, {0.0, 0.0, 0.0}});

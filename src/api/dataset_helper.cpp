@@ -30,17 +30,7 @@ void initialize_symmetry_context(Dataset &ds, const bool build_shell_rotations)
 
     auto &ctx = ds.symmetry_context;
     ctx.clear();
-    std::vector<SymmetryOperation> operations;
-    operations.reserve(spg_symops.size());
-    for (const auto &op : spg_symops)
-    {
-        SymmetryOperation operation;
-        operation.rotation = op.rotation;
-        operation.translation = op.translation;
-        operation.use_row_convention = op.use_row_convention;
-        operations.push_back(std::move(operation));
-    }
-    ctx.set_rspace_operations(std::move(operations));
+    ctx.set_rspace_operations(spg_symops);
     if (ds.pbc.is_latt_set())
     {
         ctx.set_lattice(ds.pbc.latvec, ds.pbc.G);

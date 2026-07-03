@@ -29,7 +29,7 @@ bool try_fold_fractional_kpoint_to_target(const Vector3_Order<double>& kpoint,
 }
 
 bool find_atom_to_target_mapping(const std::vector<Vector3_Order<double>>& atom_positions,
-                                 const SpaceGroupSymOps<SpaceGroupSymOp>& operations,
+                                 const SpaceGroupSymOps& operations,
                                  const int atom,
                                  const int target,
                                  const double tol,
@@ -58,7 +58,7 @@ bool find_atom_to_target_mapping(const std::vector<Vector3_Order<double>>& atom_
 
 bool find_kpoint_sym_mapping(const Vector3_Order<double>& representative_kpoint,
                              const Vector3_Order<double>& member_kpoint,
-                             const SpaceGroupSymOps<SpaceGroupSymOp>& operations,
+                             const SpaceGroupSymOps& operations,
                              const double tol,
                              KPointSymMapping& mapping)
 {
@@ -252,7 +252,7 @@ namespace
 
 std::vector<AtomSymMapping> build_fractional_atom_to_inequivalent_symmetry_mapping(
     const std::vector<Vector3_Order<double>>& atom_positions,
-    const SpaceGroupSymOps<SpaceGroupSymOp>& operations,
+    const SpaceGroupSymOps& operations,
     const double tol)
 {
     std::vector<AtomSymMapping> mappings(atom_positions.size());
@@ -301,7 +301,7 @@ const SpaceGroupSymOp SpaceGroupSymOp::C41_Z{
 std::vector<AtomSymMapping> build_atom_to_inequivalent_symmetry_mapping(
     const std::vector<Vector3_Order<double>>& atom_positions_frac,
     const Matrix3& lattice_vectors,
-    const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations,
+    const SpaceGroupSymOps& fractional_operations,
     const double tol)
 {
     if (std::fabs(lattice_vectors.Det()) < 1e-14)
@@ -330,7 +330,7 @@ std::vector<int> collect_inequivalent_atoms(
 }
 
 SpaceGroupRSpaceSector build_space_group_rspace_irreducible_sector(
-    const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations,
+    const SpaceGroupSymOps& fractional_operations,
     const std::map<int, Vector3_Order<double>>& coord_frac,
     const std::map<int, int>& atom_to_type,
     const std::vector<Vector3_Order<int>>& Rlist,
@@ -419,7 +419,7 @@ SpaceGroupRSpaceSector build_space_group_rspace_irreducible_sector(
 
 std::vector<KPointStar> build_kpoint_stars(
     const std::vector<Vector3_Order<double>>& full_kpoints_frac,
-    const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations,
+    const SpaceGroupSymOps& fractional_operations,
     const double tol)
 {
     return build_kpoint_stars(
@@ -428,7 +428,7 @@ std::vector<KPointStar> build_kpoint_stars(
 
 std::vector<KPointStar> build_kpoint_stars(
     const std::vector<Vector3_Order<double>>& full_kpoints_frac,
-    const SpaceGroupSymOps<SpaceGroupSymOp>& fractional_operations,
+    const SpaceGroupSymOps& fractional_operations,
     const std::vector<Vector3_Order<double>>& preferred_representative_kpoints,
     const double tol)
 {

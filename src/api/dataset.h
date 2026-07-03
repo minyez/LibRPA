@@ -73,7 +73,7 @@ public:
     AtomicBasis basis_aux_shrink;
     //! Basis ordering and real-spherical-harmonic convention.
     BasisConvention basis_convention;
-    SpaceGroupSymOps<SpaceGroupSymOp> spg_symops;
+    SpaceGroupSymOps spg_symops;
     //! Symmetry context built from structure and full k-point grid.
     SymmetryContext symmetry_context;
     //! Atomic structure

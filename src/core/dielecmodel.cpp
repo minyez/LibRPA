@@ -199,12 +199,11 @@ std::array<ComplexMatrix, 3> rotate_headwing_velocity_by_shape(
         }
     }
 
-    const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
-    const int spatial_isym = use_time_reversal ? member.isym - nsym_space : member.isym;
-    if (spatial_isym < 0 || spatial_isym >= nsym_space)
+    const int spatial_isym = member.spatial_isym;
+    if (spatial_isym < 0 || spatial_isym >= static_cast<int>(ctx.rsh_rotations.size()))
         throw std::runtime_error("rotate_headwing_velocity: invalid symmetry index");
-    const auto rot_iter = ctx.rspace_operations.at(spatial_isym).shell_rotations.find(1);
-    if (rot_iter == ctx.rspace_operations.at(spatial_isym).shell_rotations.end())
+    const auto rot_iter = ctx.rsh_rotations.at(spatial_isym).find(1);
+    if (rot_iter == ctx.rsh_rotations.at(spatial_isym).end())
         throw std::runtime_error("rotate_headwing_velocity: missing l=1 Cartesian rotation");
     const ComplexMatrix &rot_cm = rot_iter->second;
     if (rot_cm.nr != 3 || rot_cm.nc != 3)
@@ -294,7 +293,7 @@ std::complex<double> headwing_reciprocal_gauge_phase(
 ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
     const SymmetryContext& ctx, const SymmetryKStarMember& member,
     const std::map<atom_t, size_t>& atom_nw, const Vector3_Order<double>& k_ibz,
-    const std::map<atom_t, std::array<double, 3>>& coord_frac, const bool use_time_reversal,
+    const std::map<atom_t, std::array<double, 3>>& coord_frac,
     const Vector3_Order<double>* k_bz_target)
 {
     if (!ctx.has_shell_layout("WFC"))
@@ -321,9 +320,8 @@ ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
             throw std::runtime_error("headwing AO atom mapping is not a full permutation");
     }
 
-    const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
-    const int spatial_isym = use_time_reversal ? member.isym - nsym_space : member.isym;
-    if (spatial_isym < 0 || spatial_isym >= nsym_space)
+    const int spatial_isym = member.spatial_isym;
+    if (spatial_isym < 0 || spatial_isym >= static_cast<int>(ctx.rspace_operations.size()))
         throw std::runtime_error("headwing AO rotation uses an invalid symmetry index");
 
     const Vector3_Order<double> delta_k{k_ibz.x - member.k_bz.x,
@@ -334,7 +332,7 @@ ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
     {
         const auto* atom_rotation = rotations_by_from[atom];
         atom_M_blocks[atom] = build_symmetry_rotation_matrix(
-            ctx, "WFC", atom_rotation->atom_type, atom_rotation->shell_rotations);
+            ctx, "WFC", atom_rotation->atom_type, atom_rotation->bloch_rsh_rotations);
         const auto return_lattice =
             headwing_kspace_return_lattice(ctx, *atom_rotation, coord_frac, spatial_isym);
         const double phase_arg =
@@ -638,7 +636,6 @@ void diele_func::cal_head_symmetric()
     if (symmetry_context_ == nullptr)
         throw std::runtime_error("cal_head_symmetric: symmetry context is not set");
     const auto& ctx = *symmetry_context_;
-    const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
 
     // Build the per-member BZ k-point targets so the rotated quantities land on
     // the same grid keys that the rest of the code expects (mirrors the
@@ -699,7 +696,6 @@ void diele_func::cal_head_symmetric()
             for (std::size_t imember = 0; imember != star.members.size(); ++imember)
             {
                 const auto &member = star.members[imember];
-                const bool use_time_reversal = member.isym >= nsym_space;
                 const auto &k_bz =
                     member_targets.empty() ? member.k_bz : member_targets[ik_ibz][imember];
 
@@ -707,7 +703,7 @@ void diele_func::cal_head_symmetric()
                 // components in one call.
                 (void)k_bz;
                 const auto v_band_bz = rotate_headwing_velocity_by_shape(
-                    ctx, member, v_band_ibz, n_states, use_time_reversal);
+                    ctx, member, v_band_ibz, n_states, member.time_reversal);
 
                 // Sum over band pairs. Eigenvalues are symmetry-invariant, so the
                 // IBZ gap Delta_cv applies to every star member unchanged.
@@ -1023,7 +1019,6 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
     if (symmetry_context_ == nullptr)
         throw std::runtime_error("cal_wing_symmetric: symmetry context is not set");
     const auto &ctx = *symmetry_context_;
-    const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
     const auto member_targets =
         librpa_int::build_symmetry_kstar_member_kfrac_targets(ctx, pbc_);
 
@@ -1043,7 +1038,6 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
         for (std::size_t imember = 0; imember != star.members.size(); ++imember)
         {
             const auto &member = star.members[imember];
-            const bool use_time_reversal = member.isym >= nsym_space;
             const auto &k_bz =
                 member_targets.empty() ? member.k_bz : member_targets[ik_ibz][imember];
 
@@ -1054,7 +1048,7 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
                                                               velocity_[ispin][ik_ibz][1],
                                                               velocity_[ispin][ik_ibz][2]};
                 velocity_bz[ispin] = rotate_headwing_velocity_by_shape(
-                    ctx, member, v_band_ibz, n_states, use_time_reversal);
+                    ctx, member, v_band_ibz, n_states, member.time_reversal);
             }
 
             std::vector<std::vector<ComplexMatrix>> wfc_bz_storage(n_spin);
@@ -1067,7 +1061,7 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
             if (source_rank)
             {
                 const auto M_full = build_symmetry_ao_bloch_rotation_matrix_full(
-                    ctx, member, atom_nw, k_ibz, coord_frac, use_time_reversal, &k_bz);
+                    ctx, member, atom_nw, k_ibz, coord_frac, &k_bz);
                 const ComplexMatrix M_full_conj = conj(M_full);
                 for (int ispin = 0; ispin != n_spin; ++ispin)
                 {

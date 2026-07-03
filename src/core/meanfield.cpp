@@ -337,7 +337,6 @@ ComplexMatrix get_symmetry_restored_dmat_cplx_R(
     const auto restore_entries = build_symmetry_kstar_restore_entries(
         ctx, mf, kfrac_list, atom_nw, coord_frac, representative_k_indices);
     validate_symmetry_kstar_member_kfrac_targets(restore_entries, member_kfrac_targets);
-    const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
     ComplexMatrix dmat_cplx(mf.get_n_aos(), mf.get_n_aos());
 
     for (std::size_t ientry = 0; ientry != restore_entries.size(); ++ientry)
@@ -351,9 +350,8 @@ ComplexMatrix get_symmetry_restored_dmat_cplx_R(
             const auto& member = star.members[imember];
             const auto& k_bz_target = get_symmetry_kstar_member_kfrac_target(
                 member, member_kfrac_targets, ientry, imember);
-            const bool use_time_reversal = member.isym >= nsym_space;
             const auto dmat_member = librpa_int::rotate_symmetry_kspace_matrix(
-                ctx, "WFC", member, dmat_ibz, atom_nw, entry.k_source, coord_frac, use_time_reversal,
+                ctx, "WFC", member, dmat_ibz, atom_nw, entry.k_source, coord_frac, member.time_reversal,
                 &k_bz_target);
             const double angle = -(k_bz_target * R) * TWO_PI;
             const auto kphase = std::complex<double>(std::cos(angle), std::sin(angle));
@@ -394,7 +392,6 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
         return gf_tau_R;
     }
 
-    const int nsym_space = static_cast<int>(ctx.rspace_operations.size());
     const int n_bands = mf.get_n_bands();
     const double scale_spin = 0.5 * mf.get_n_spins() * mf.get_n_spinor();
 
@@ -422,9 +419,8 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
                 const auto& member = star.members[imember];
                 const auto& k_bz_target = get_symmetry_kstar_member_kfrac_target(
                     member, member_kfrac_targets, ientry, imember);
-                const bool use_time_reversal = member.isym >= nsym_space;
                 const auto gf_member = librpa_int::rotate_symmetry_kspace_matrix(
-                    ctx, "WFC", member, gf_ibz, atom_nw, entry.k_source, coord_frac, use_time_reversal,
+                    ctx, "WFC", member, gf_ibz, atom_nw, entry.k_source, coord_frac, member.time_reversal,
                     &k_bz_target);
                 for (const auto& R : Rs)
                 {

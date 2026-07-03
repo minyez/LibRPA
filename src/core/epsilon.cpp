@@ -366,7 +366,8 @@ const librpa_int::SymmetryKStarMember& find_matching_abf_kstar_member(
 {
     const auto matched = std::find_if(abf_star.members.begin(), abf_star.members.end(),
                                       [&ao_member](const librpa_int::SymmetryKStarMember& candidate) {
-                                          return candidate.isym == ao_member.isym
+                                          return candidate.spatial_isym == ao_member.spatial_isym
+                                                 && candidate.time_reversal == ao_member.time_reversal
                                                  && are_equivalent_symmetry_qpoints(candidate.k_bz,
                                                                                   ao_member.k_bz);
                                       });
@@ -420,7 +421,6 @@ struct SymmetryIrreducibleWRPlan
     librpa_int::symmetry_rspace_sector_stars_t local_sector_stars;
     std::set<std::pair<atom_t, atom_t>> local_irreducible_pairs;
     std::vector<librpa_int::SymmetryKStarGridMappingEntry> kstar_grid_mapping;
-    int nsym_space = 0;
 };
 
 SymmetryIrreducibleWRPlan build_symmetry_irreducible_wr_plan(
@@ -469,7 +469,6 @@ SymmetryIrreducibleWRPlan build_symmetry_irreducible_wr_plan(
         build_symmetry_irreducible_target_atom_pairs(plan.local_irreducible_sector);
     plan.kstar_grid_mapping =
         librpa_int::build_symmetry_kstar_grid_mapping(ctx, pbc.klist, pbc.kfrac_list, pbc.map_irk_ks);
-    plan.nsym_space = static_cast<int>(ctx.rspace_operations.size());
     plan.available = true;
     return plan;
 }
@@ -738,7 +737,6 @@ abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
             const auto& member = star.members[imember];
             const auto& abf_member =
                 (abf_star == nullptr) ? member : find_matching_abf_kstar_member(*abf_star, member);
-            const bool use_time_reversal = member.isym >= plan.nsym_space;
             const auto q_bz_target_frac_vec =
                 pbc.latvec * star_mapping.member_q_bz_keys[imember];
             const Vector3_Order<double> q_bz_target_frac{
@@ -748,13 +746,15 @@ abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
             {
                 rotated_blocks = librpa_int::rotate_symmetry_kspace_operator_blocks(
                     ctx, abf_layout_key, abf_member, blocks_ibz, atom_nabf, star.k_ibz, ctx.input_coord_frac,
-                    use_time_reversal, &rotation_atom_pairs, &q_bz_target_frac);
+                    member.time_reversal, &rotation_atom_pairs, &q_bz_target_frac);
             }
             catch (const std::exception& ex)
             {
                 std::ostringstream oss;
                 oss << "ABACUS irreducible-sector W(q)->W(R) accumulation failed for star="
-                    << star.star_index << ", member=" << imember << ", isym=" << member.isym
+                    << star.star_index << ", member=" << imember
+                    << ", spatial_isym=" << member.spatial_isym
+                    << ", time_reversal=" << member.time_reversal
                     << ": " << ex.what();
                 throw std::runtime_error(oss.str());
             }

@@ -169,7 +169,7 @@ void test_kstar_member_return_lattice_preserves_input_fractional_representative(
     star.star_index = 0;
     star.k_ibz = {0.0, 0.0, 0.0};
     star.members.resize(1);
-    star.members[0].isym = 0;
+    star.members[0].spatial_isym = 0;
     star.members[0].k_bz = {0.0, 0.0, 0.0};
     ctx.kstars.push_back(star);
 
@@ -299,9 +299,6 @@ void test_symmetry_context_saves_fractional_row_operations()
     op.rotation = col_rotation;
     op.translation = translation;
     op.use_row_convention = false;
-    ComplexMatrix shell_rotation(1, 1);
-    shell_rotation(0, 0) = {2.0, 0.0};
-    op.shell_rotations[0] = shell_rotation;
 
     const SpaceGroupSymOp original_op{col_rotation, translation, false};
     const Vector3_Order<double> coord{0.2, 0.3, 0.4};
@@ -319,7 +316,6 @@ void test_symmetry_context_saves_fractional_row_operations()
     assert(fequal(saved.translation.x, translation.x));
     assert(fequal(saved.translation.y, translation.y));
     assert(fequal(saved.translation.z, translation.z));
-    assert_matrix_close(saved.shell_rotations.at(0), shell_rotation);
 
     const auto actual = apply_space_group_symmetry_operation(saved, coord);
     assert(fequal(actual.x, expected.x));
