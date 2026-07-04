@@ -384,7 +384,9 @@ void evaluate_spectral_function_diagonal(
 void ensure_band_sigc_ks_blacs(librpa_int::Dataset &ds, const LibrpaOptions &opts,
                                const std::vector<int> &iks_output)
 {
-    if (ds.is_band_calc_done && ds.p_g0w0 && !ds.p_g0w0->sigc_is_ik_f_KS.empty())
+    if (ds.is_band_calc_done && ds.p_g0w0
+        && ds.p_g0w0->sigc_kspace_source().rfind("band_", 0) == 0
+        && !ds.p_g0w0->sigc_diag_is_ik_f_KS.empty())
     {
         return;
     }

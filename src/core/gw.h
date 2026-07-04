@@ -22,16 +22,30 @@ namespace librpa_int
 class G0W0
 {
 private:
+    enum class SigcRspaceBlacsRouting
+    {
+        None,
+        GlobalBlacs,
+        KLocalBlacs
+    };
+
+    using SigcRspaceMap =
+        std::map<int, std::map<int, std::map<int, std::map<double, ap_p_map<std::map<Vector3_Order<int>, Matz>>>>>>;
+
     bool is_mf_eigvec_k_distributed_;
     bool is_rspace_built_;
     bool is_kspace_built_;
     bool is_rspace_redist_for_KS_;
     bool is_rspace_redist_blacs_;
+    bool has_sigc_is_f_IJ_R_unredist_;
+    SigcRspaceBlacsRouting sigc_rspace_blacs_routing_;
     int output_sigc_ks_kf_band_index_;
+    std::string sigc_kspace_source_;
 
     //! frequency-domain reciprocal-space correlation self-energy, indices [ispin][ispinor_bra][ispinor_ket][freq][R][I][J](n_I, n_J)
     // Sparse storage from LibRI calculation
-    std::map<int, std::map<int, std::map<int, std::map<double, ap_p_map<std::map<Vector3_Order<int>, Matz>>>>>> sigc_is_f_IJ_R;
+    SigcRspaceMap sigc_is_f_IJ_R;
+    SigcRspaceMap sigc_is_f_IJ_R_unredist_;
 
     void build_sigc_matrix_KS(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
                               const std::vector<Vector3_Order<double>> &kfrac_target,
@@ -42,6 +56,7 @@ private:
                                     const AtomPairBvKRemap<atom_t> &bvk_remap,
                                     const BlacsCtxtHandler &blacs_ctxt_h,
                                     bool use_gpu_replace_scalapack,
+                                    bool wfc_target_is_kblacs_distributed,
                                     const std::string &source);
 
 public:
@@ -111,6 +126,9 @@ public:
 
     //! Check if the real-space self-energy matrix is built
     bool is_rspace_built() const { return is_rspace_built_; }
+
+    //! Source tag for the currently cached K-S self-energy matrices.
+    const std::string &sigc_kspace_source() const { return sigc_kspace_source_; }
 
     //! Read real-space imaginary-frequency correlation self-energy matrices from disk
     void read_sigc(const std::string &input_dir);

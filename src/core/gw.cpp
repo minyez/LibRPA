@@ -649,7 +649,10 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
     is_kspace_built_ = false;
     is_rspace_redist_for_KS_ = false;
     is_rspace_redist_blacs_ = false;
+    has_sigc_is_f_IJ_R_unredist_ = false;
+    sigc_rspace_blacs_routing_ = SigcRspaceBlacsRouting::None;
     output_sigc_ks_kf_band_index_ = 0;
+    sigc_kspace_source_.clear();
 
     // Public runtime options
     libri_threshold_C = 0.0;
@@ -673,11 +676,15 @@ void G0W0::reset_rspace()
     is_rspace_built_ = false;
     is_rspace_redist_for_KS_ = false;
     is_rspace_redist_blacs_ = false;
+    has_sigc_is_f_IJ_R_unredist_ = false;
+    sigc_rspace_blacs_routing_ = SigcRspaceBlacsRouting::None;
+    sigc_is_f_IJ_R_unredist_.clear();
 }
 
 void G0W0::reset_kspace()
 {
     sigc_is_ik_f_KS.clear(); sigc_diag_is_ik_f_KS.clear(); is_kspace_built_ = false;
+    sigc_kspace_source_.clear();
 }
 
 void G0W0::read_sigc(const std::string &input_dir)
@@ -1922,6 +1929,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                       const AtomPairBvKRemap<atom_t> &bvk_remap,
                                       const BlacsCtxtHandler &blacs_ctxt_h,
                                       const bool use_gpu_replace_scalapack,
+                                      const bool wfc_target_is_kblacs_distributed,
                                       const std::string &source)
 {
     assert(blacs_ctxt_h.comm() == this->comm_h.comm);
@@ -1937,6 +1945,20 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     const int n_bands = mf.get_n_bands();
     const int n_spins = mf.get_n_spins();
     const int n_spinor = mf.get_n_spinor();
+    const int n_target_kpoints = static_cast<int>(kfrac_target.size());
+    const bool use_klocal_rotation = wfc_target_is_kblacs_distributed;
+    if (use_klocal_rotation)
+    {
+        if (!kblacs_ctxt.is_initialized())
+            throw LIBRPA_RUNTIME_ERROR("k-point BLACS context is not initialized");
+        if (kblacs_ctxt.n_kpoints() != n_target_kpoints)
+            throw LIBRPA_RUNTIME_ERROR("k-point BLACS context has inconsistent number of target k-points");
+    }
+    const auto target_sigc_routing = use_klocal_rotation
+                                         ? SigcRspaceBlacsRouting::KLocalBlacs
+                                         : SigcRspaceBlacsRouting::GlobalBlacs;
+    const BlacsCtxtHandler &rotation_blacs_h =
+        use_klocal_rotation ? kblacs_ctxt.blacs_h : blacs_ctxt_h;
 
     global::profiler.start("g0w0_build_sigc_KS");
 
@@ -1949,21 +1971,21 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     global::mpi_comm_global_h.barrier();
     throw LIBRPA_RUNTIME_ERROR("G0W0 needs compilation with LibRI");
 #else
-    ArrayDesc desc_nband_nao(blacs_ctxt_h);
+    ArrayDesc desc_nband_nao(rotation_blacs_h);
     desc_nband_nao.init_1b1p(n_bands, n_aos, 0, 0);
-    ArrayDesc desc_nao_nao(blacs_ctxt_h);
+    ArrayDesc desc_nao_nao(rotation_blacs_h);
     desc_nao_nao.init_1b1p(n_aos, n_aos, 0, 0);
-    ArrayDesc desc_nband_nband(blacs_ctxt_h);
+    ArrayDesc desc_nband_nband(rotation_blacs_h);
     desc_nband_nband.init_1b1p(n_bands, n_bands, 0, 0);
 
     int mb_opt = std::min(128, std::min(desc_nband_nao.mb(), desc_nband_nao.nb()));
-    ArrayDesc desc_nband_nao_opt(blacs_ctxt_h), desc_nao_nao_opt(blacs_ctxt_h);
-    ArrayDesc desc_nao_nband_opt(blacs_ctxt_h),  desc_nband_nband_opt(blacs_ctxt_h);
+    ArrayDesc desc_nband_nao_opt(rotation_blacs_h), desc_nao_nao_opt(rotation_blacs_h);
+    ArrayDesc desc_nao_nband_opt(rotation_blacs_h),  desc_nband_nband_opt(rotation_blacs_h);
     desc_nband_nao_opt.init(n_bands, n_aos, mb_opt, mb_opt, 0, 0);
     desc_nao_nao_opt.init(n_aos, n_aos, mb_opt, mb_opt, 0, 0);
     desc_nband_nband_opt.init(n_bands, n_bands, mb_opt, mb_opt, 0, 0);
     desc_nao_nband_opt.init(n_aos, n_bands, mb_opt, mb_opt, 0, 0);
-    desc_sigc_is_ik_f_KS.reset_handler(blacs_ctxt_h);
+    desc_sigc_is_ik_f_KS.reset_handler(rotation_blacs_h);
     desc_sigc_is_ik_f_KS.init(n_bands, n_bands, mb_opt, mb_opt, 0, 0);
 
     auto wfc_bra_opt = init_local_mat<complex<double>>(desc_nao_nband_opt, MAJOR::COL);
@@ -1978,13 +2000,13 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     size_t size_wfc = 0, size_sigc_nao = 0, size_temp = 0, size_sigc_nband = 0;
     if (use_gpu_replace_scalapack)
     {
-        auto &blacs_ctxt_h_nc = const_cast<BlacsCtxtHandler &>(blacs_ctxt_h);
-        if (blacs_ctxt_h_nc.ddla_handle == nullptr)
-            blacs_ctxt_h_nc.init_ddla_handle();
-        desc_nao_nband_opt.set_ddla_desc(blacs_ctxt_h.ddla_handle);
-        desc_nao_nao_opt.set_ddla_desc(blacs_ctxt_h.ddla_handle);
-        desc_nband_nao_opt.set_ddla_desc(blacs_ctxt_h.ddla_handle);
-        desc_nband_nband_opt.set_ddla_desc(blacs_ctxt_h.ddla_handle);
+        auto &rotation_blacs_h_nc = const_cast<BlacsCtxtHandler &>(rotation_blacs_h);
+        if (rotation_blacs_h_nc.ddla_handle == nullptr)
+            rotation_blacs_h_nc.init_ddla_handle();
+        desc_nao_nband_opt.set_ddla_desc(rotation_blacs_h.ddla_handle);
+        desc_nao_nao_opt.set_ddla_desc(rotation_blacs_h.ddla_handle);
+        desc_nband_nao_opt.set_ddla_desc(rotation_blacs_h.ddla_handle);
+        desc_nband_nband_opt.set_ddla_desc(rotation_blacs_h.ddla_handle);
 
         size_wfc = static_cast<size_t>(desc_nao_nband_opt.m_loc()) *
                    desc_nao_nband_opt.n_loc();
@@ -1994,18 +2016,17 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                     desc_nband_nao_opt.n_loc();
         size_sigc_nband = static_cast<size_t>(desc_nband_nband_opt.m_loc()) *
                           desc_nband_nband_opt.n_loc();
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_bra, size_wfc * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_ket, size_wfc * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_sigc_nao, size_sigc_nao * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_temp, size_temp * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_sigc_nband, size_sigc_nband * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_bra, size_wfc * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_ket, size_wfc * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_sigc_nao, size_sigc_nao * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_temp, size_temp * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_sigc_nband, size_sigc_nband * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
     }
 #endif
 
-    ArrayDesc desc_nao_nband_fb(blacs_ctxt_h);  // For k-parallel
-    ArrayDesc desc_nao_nao_fb(blacs_ctxt_h);
-    ArrayDesc desc_nband_nband_fb(blacs_ctxt_h);
-    const int n_target_kpoints = static_cast<int>(kfrac_target.size());
+    ArrayDesc desc_nao_nband_fb(rotation_blacs_h);  // For k-parallel
+    ArrayDesc desc_nao_nao_fb(rotation_blacs_h);
+    ArrayDesc desc_nband_nband_fb(rotation_blacs_h);
     const bool use_root_dense_projection =
         this->use_symmetry_context
         && use_symmetry_ibz_root_projection(this->symmetry_context,
@@ -2021,16 +2042,25 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao);
 
     // Check Sigmac matrix distribution
-    if (!is_rspace_redist_for_KS_)
+    const bool need_sigc_redist =
+        !is_rspace_redist_for_KS_ || sigc_rspace_blacs_routing_ != target_sigc_routing;
+    if (need_sigc_redist)
     {
         global::profiler.start("g0w0_build_sigc_KS_rspace_redist");
+        if (!has_sigc_is_f_IJ_R_unredist_)
+        {
+            sigc_is_f_IJ_R_unredist_ = sigc_is_f_IJ_R;
+            has_sigc_is_f_IJ_R_unredist_ = true;
+        }
+        const auto &sigc_redist_source = sigc_is_f_IJ_R_unredist_;
         for (int isp = 0; isp < n_spins; isp++)
         {
             for (int ispn_bra = 0; ispn_bra < n_spinor; ispn_bra++)
             {
                 for (int ispn_ket = 0; ispn_ket < n_spinor; ispn_ket++)
                 {
-                    auto sigc_orig = find_nested_int_map_3(sigc_is_f_IJ_R, isp, ispn_bra, ispn_ket);
+                    const auto sigc_orig =
+                        find_nested_int_map_3(sigc_redist_source, isp, ispn_bra, ispn_ket);
                     for (const auto& freq: this->tfg.get_freq_nodes())
                     {
                         std::map<int, std::map<std::pair<int, std::array<int, 3>>, Tensor<cplxdb>>> sigc_I_JR_local;
@@ -2055,7 +2085,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                             }
                         }
                         // for certain spin and frequency
-                        auto sigc_I_JR = comm_map2_first(blacs_ctxt_h.comm(), sigc_I_JR_local, s0_s1.first, s0_s1.second);
+                        auto sigc_I_JR = comm_map2_first(comm_h.comm, sigc_I_JR_local, s0_s1.first, s0_s1.second);
                         // NOTE: sigc_I_JR may be empty for some process. This is a corner case 
                         //       of very small basis and large MPI tasks. However, it must be stored
                         //       to preserve the [spin][spinor][spinor][freq] key structure,
@@ -2075,13 +2105,15 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                 sigc_new[IJ][R] = Matz{n_I, n_J, mat.data, MAJOR::ROW};
                             }
                         }
-                        if (sigc_orig == nullptr)
+                        auto sigc_dest =
+                            find_nested_int_map_3(sigc_is_f_IJ_R, isp, ispn_bra, ispn_ket);
+                        if (sigc_dest == nullptr)
                             sigc_is_f_IJ_R[isp][ispn_bra][ispn_ket][freq] = std::move(sigc_new);
                         else
                         {
-                            auto it_sp_f = sigc_orig->find(freq);
-                            if (it_sp_f == sigc_orig->cend())
-                                sigc_orig->emplace(freq, std::move(sigc_new));
+                            auto it_sp_f = sigc_dest->find(freq);
+                            if (it_sp_f == sigc_dest->cend())
+                                sigc_dest->emplace(freq, std::move(sigc_new));
                             else
                                 it_sp_f->second.swap(sigc_new);
                         }
@@ -2093,11 +2125,13 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
 
         is_rspace_redist_for_KS_ = true;
         is_rspace_redist_blacs_ = true;
+        sigc_rspace_blacs_routing_ = target_sigc_routing;
         global::profiler.stop("g0w0_build_sigc_KS_rspace_redist");
     }
     else
     {
-        if (!is_rspace_redist_blacs_)
+        if (!is_rspace_redist_blacs_ ||
+            sigc_rspace_blacs_routing_ == SigcRspaceBlacsRouting::None)
             throw LIBRPA_RUNTIME_ERROR("has redistributed for non-BLACS");
     }
 
@@ -2175,7 +2209,136 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                 }
                 global::profiler.stop("g0w0_build_sigc_KS_find_bvk");
 
-                if (is_mf_eigvec_k_distributed_)
+                if (use_klocal_rotation)
+                {
+                    global::profiler.start("g0w0_build_sigc_KS_rotate_kpara_klocal_blacs");
+                    auto temp_nband_nao_opt = init_local_mat<complex<double>>(desc_nband_nao_opt, MAJOR::COL);
+                    desc_nao_nband_fb.init(n_aos, n_bands, n_aos, n_bands, 0, 0);
+                    std::vector<complex<double>> dummy(1, complex<double>{0.0, 0.0});
+                    release_free_mem();
+                    for (const int ik: kblacs_ctxt.kpoints_local())
+                    {
+                        if (ik < 0 || ik >= n_target_kpoints)
+                            throw LIBRPA_RUNTIME_ERROR("k-point index out of range for k-local SigC rotation");
+                        const auto& kfrac = kfrac_target[ik];
+                        const std::function<complex<double>(const atom_t, const atom_t, const Vector3_Order<int> &)>
+                            fourier = [kfrac](const atom_t I, const atom_t J, const Vector3_Order<int> &R)
+                            {
+                                const auto ang = (kfrac * R) * TWO_PI;
+                                return complex<double>{std::cos(ang), std::sin(ang)};
+                            };
+                        for (const auto& freq: this->tfg.get_freq_nodes())
+                        {
+                            sigc_nao_nao.zero_out();
+                            collect_block_from_IJ_storage_matrix_transform(sigc_nao_nao, desc_nao_nao,
+                                    this->atbasis_wfc, this->atbasis_wfc, fourier, sigc_isp_local.at(freq));
+                            if (this->output_sigc_mat_kf)
+                            {
+                                const int ifreq = this->tfg.get_freq_index(freq);
+                                write_sigc_nao_kf_matrix(
+                                    sigc_nao_nao, desc_nao_nao, this->output_dir, source,
+                                    isp, ispn_bra, ispn_ket, n_spinor, ik, ifreq);
+                            }
+                            ScalapackConnector::pgemr2d_f(n_aos, n_aos, sigc_nao_nao.ptr(), 1, 1,
+                                                          desc_nao_nao.desc, sigc_nao_nao_opt.ptr(),
+                                                          1, 1, desc_nao_nao_opt.desc, desc_nao_nao.ictxt());
+                            if (desc_nao_nband_fb.is_src())
+                            {
+                                const auto &wfc_bra = wfc_target.at(isp).at(ispn_bra).at(ik);
+                                const auto &wfc_ket = wfc_target.at(isp).at(ispn_ket).at(ik);
+                                ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_bra.c, 1, 1,
+                                                              desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
+                                                              1, 1, desc_nao_nband_opt.desc, desc_nao_nband_fb.ictxt());
+                                ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_ket.c, 1, 1,
+                                                              desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
+                                                              1, 1, desc_nao_nband_opt.desc, desc_nao_nband_fb.ictxt());
+                            }
+                            else
+                            {
+                                ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1,
+                                                              desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
+                                                              1, 1, desc_nao_nband_opt.desc, desc_nao_nband_fb.ictxt());
+                                ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1,
+                                                              desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
+                                                              1, 1, desc_nao_nband_opt.desc, desc_nao_nband_fb.ictxt());
+                            }
+                            release_free_mem();
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+                            if (use_gpu_replace_scalapack)
+                            {
+                                DEVICE_CHECK(deviceMemcpyAsync(d_wfc_bra, wfc_bra_opt.ptr(), size_wfc * sizeof(std::complex<double>),
+                                                               deviceMemcpyHostToDevice, rotation_blacs_h.ddla_handle->stream));
+                                DEVICE_CHECK(deviceMemcpyAsync(d_wfc_ket, wfc_ket_opt.ptr(), size_wfc * sizeof(std::complex<double>),
+                                                               deviceMemcpyHostToDevice, rotation_blacs_h.ddla_handle->stream));
+                                DEVICE_CHECK(deviceMemcpyAsync(d_sigc_nao, sigc_nao_nao_opt.ptr(), size_sigc_nao * sizeof(std::complex<double>),
+                                                               deviceMemcpyHostToDevice, rotation_blacs_h.ddla_handle->stream));
+                                LaConnector::pgemm(
+                                    'C', 'N', n_bands, n_aos, n_aos, std::complex<double>{1.0, 0.0},
+                                    d_wfc_bra, 1, 1, desc_nao_nband_opt,
+                                    d_sigc_nao, 1, 1, desc_nao_nao_opt,
+                                    std::complex<double>{0.0, 0.0},
+                                    d_temp, 1, 1, desc_nband_nao_opt);
+                                LaConnector::pgemm(
+                                    'N', 'N', n_bands, n_bands, n_aos, std::complex<double>{1.0, 0.0},
+                                    d_temp, 1, 1, desc_nband_nao_opt,
+                                    d_wfc_ket, 1, 1, desc_nao_nband_opt,
+                                    std::complex<double>{0.0, 0.0},
+                                    d_sigc_nband, 1, 1, desc_nband_nband_opt);
+                                DEVICE_CHECK(deviceMemcpyAsync(sigc_nband_nband_opt.ptr(), d_sigc_nband,
+                                                               size_sigc_nband * sizeof(std::complex<double>),
+                                                               deviceMemcpyDeviceToHost, rotation_blacs_h.ddla_handle->stream));
+                                DEVICE_CHECK(deviceStreamSynchronize(rotation_blacs_h.ddla_handle->stream));
+                            }
+                            else
+#endif
+                            {
+                                ScalapackConnector::pgemm_f('C', 'N', n_bands, n_aos, n_aos, 1.0,
+                                                            wfc_bra_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
+                                                            sigc_nao_nao_opt.ptr(), 1, 1, desc_nao_nao_opt.desc,
+                                                            0.0,
+                                                            temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc);
+                                ScalapackConnector::pgemm_f('N', 'N', n_bands, n_bands, n_aos, 1.0,
+                                                            temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc,
+                                                            wfc_ket_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
+                                                            0.0,
+                                                            sigc_nband_nband_opt.ptr(), 1, 1, desc_nband_nband_opt.desc);
+                            }
+                            if (this->output_sigc_ks_mat_kf)
+                            {
+                                store_sigc_local(isp, ik, freq, sigc_nband_nband_opt);
+                            }
+                            std::vector<cplxdb> diag_send(n_bands, cplxdb{0.0, 0.0});
+                            for (int ib = 0; ib != n_bands; ++ib)
+                            {
+                                const int ilo = desc_nband_nband_opt.indx_g2l_r(ib);
+                                if (ilo < 0) continue;
+                                const int jlo = desc_nband_nband_opt.indx_g2l_c(ib);
+                                if (jlo < 0) continue;
+                                diag_send[ib] = sigc_nband_nband_opt.ptr()[ilo + desc_nband_nband_opt.lld() * jlo];
+                            }
+                            std::vector<cplxdb> diag_recv(n_bands);
+                            kblacs_ctxt.comm_blacs_h.reduce(diag_send.data(), diag_recv.data(),
+                                                            n_bands, 0, MPI_SUM);
+                            if (kblacs_ctxt.comm_blacs_h.is_root())
+                            {
+                                auto &diag_map = this->sigc_diag_is_ik_f_KS[isp][ik];
+                                auto it = diag_map.find(freq);
+                                if (it == diag_map.end())
+                                {
+                                    diag_map[freq] = std::move(diag_recv);
+                                }
+                                else
+                                {
+                                    for (int ib = 0; ib != n_bands; ++ib)
+                                        it->second[ib] += diag_recv[ib];
+                                }
+                            }
+                            release_free_mem();
+                        }
+                    }
+                    global::profiler.stop("g0w0_build_sigc_KS_rotate_kpara_klocal_blacs");
+                }
+                else if (is_mf_eigvec_k_distributed_)
                 {
                     global::profiler.start("g0w0_build_sigc_KS_rotate_kpara");
                     auto temp_nband_nao_opt = init_local_mat<complex<double>>(desc_nband_nao_opt, MAJOR::COL);
@@ -2479,15 +2642,16 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if (use_gpu_replace_scalapack)
     {
-        DEVICE_CHECK(deviceFreeAsync(d_wfc_bra, blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceFreeAsync(d_wfc_ket, blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceFreeAsync(d_sigc_nao, blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceFreeAsync(d_temp, blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceFreeAsync(d_sigc_nband, blacs_ctxt_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_wfc_bra, rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_wfc_ket, rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_sigc_nao, rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_temp, rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_sigc_nband, rotation_blacs_h.ddla_handle->stream));
     }
 #endif
 #endif
     this->is_kspace_built_ = true;
+    this->sigc_kspace_source_ = source;
     global::profiler.stop("g0w0_build_sigc_KS");
 }
 
@@ -2533,7 +2697,9 @@ void G0W0::build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h
 {
     comm_h.barrier();
     global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid with BLACS" << std::endl;
-    this->build_sigc_matrix_KS_blacs(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {}, blacs_ctxt_h, use_gpu_replace_scalapack, "kgrid");
+    this->build_sigc_matrix_KS_blacs(this->mf.get_eigenvectors(), this->pbc.kfrac_list,
+                                     {}, blacs_ctxt_h, use_gpu_replace_scalapack,
+                                     is_mf_eigvec_k_distributed_, "kgrid");
     if (this->output_sigc_ks_kf)
     {
         const auto fn = path_as_directory(this->output_dir) + "self_energy_omega.dat";
@@ -2557,7 +2723,7 @@ void G0W0::build_sigc_matrix_KS_band_blacs(
     }
     const int output_band_index = output_sigc_ks_kf_band_index_;
     this->build_sigc_matrix_KS_blacs(wfc, kfrac_band, bvk_remap, blacs_ctxt_h,
-                                     use_gpu_replace_scalapack,
+                                     use_gpu_replace_scalapack, false,
                                      "band_" + std::to_string(output_band_index));
     if (this->output_sigc_ks_kf)
     {
