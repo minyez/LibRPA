@@ -1,0 +1,13 @@
+# Driver paramters
+task = g0w0
+input_dir = ../dataset
+# API runtime
+nfreq = 6
+replace_w_head = f
+parallel_routing = libri
+# Reference output is generated with symmetry switches off for symmetry on/off comparison.
+use_symmetry_exx = t
+use_symmetry_gw = t
+use_symmetry_rpa = t
+# Reference output is generated without parallelizing eigenvectors among k
+use_kpara_scf_eigvec = t
