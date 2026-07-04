@@ -902,6 +902,48 @@ ComplexMatrix rotate_dense_operator_from_rotation_matrix(
     return transpose(rotation, false) * matrix * conj(rotation);
 }
 
+void test_dense_kspace_rotation_matrix_orders_atom_swap_blocks()
+{
+    SymmetryContext ctx;
+    ctx.rspace_operations.push_back(SpaceGroupSymOp::IDENTITY);
+
+    SymmetryKStarMember member;
+    member.spatial_isym = 0;
+    member.k_bz = {0.0, 0.0, 0.0};
+
+    SymmetryKAtomRotation rot_0;
+    rot_0.atom_from = 0;
+    rot_0.atom_to = 1;
+    rot_0.atom_type = 0;
+    rot_0.lmax = 0;
+    rot_0.bloch_rsh_rotations[0] = ComplexMatrix(1, 1);
+    rot_0.bloch_rsh_rotations[0](0, 0) = {2.0, 0.5};
+
+    SymmetryKAtomRotation rot_1;
+    rot_1.atom_from = 1;
+    rot_1.atom_to = 0;
+    rot_1.atom_type = 0;
+    rot_1.lmax = 0;
+    rot_1.bloch_rsh_rotations[0] = ComplexMatrix(1, 1);
+    rot_1.bloch_rsh_rotations[0](0, 0) = {3.0, -0.25};
+
+    member.atom_rotations = {rot_0, rot_1};
+
+    SpeciesBasisLayout layout;
+    layout.label = "X";
+    layout.set({0});
+    const std::map<atom_t, size_t> atom_nabf{{0, 1}, {1, 1}};
+
+    const auto rotation = build_symmetry_kspace_rotation_matrix(
+        ctx, {layout}, member, atom_nabf, {0.0, 0.0, 0.0});
+
+    ComplexMatrix expected(2, 2);
+    expected.zero_out();
+    expected(0, 1) = rot_0.bloch_rsh_rotations.at(0)(0, 0);
+    expected(1, 0) = rot_1.bloch_rsh_rotations.at(0)(0, 0);
+    assert_matrix_close(rotation, expected);
+}
+
 void test_mgo_dense_kspace_rotation_matches_atom_block_rotation()
 {
     PeriodicBoundaryData pbc;
@@ -1114,6 +1156,7 @@ int main()
     test_mgo_qpoint_view_reduces_time_reversal_q_list_to_crystal_qstars_for_full_input();
     test_mgo_keeps_all_kspace_operations_for_full_qstars();
     test_kstar_routes_prefer_improper_spatial_operation_over_time_reversal();
+    test_dense_kspace_rotation_matrix_orders_atom_swap_blocks();
     test_mgo_dense_kspace_rotation_matches_atom_block_rotation();
     test_mgo_k333_irreducible_sector_matches_single();
     test_mgo_k333_irreducible_sector_matches_both();

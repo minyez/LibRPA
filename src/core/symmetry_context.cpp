@@ -769,6 +769,10 @@ void SymmetryContext::build_kstar_member_rotations(const int lmax)
                 atom_rotation.atom_to = static_cast<int>(atom_to);
                 atom_rotation.atom_type = atom_type;
                 atom_rotation.lmax = lmax;
+                const auto k_target_spatial =
+                    member.time_reversal
+                        ? apply_space_group_rotation_to_kpoint(operation, star.k_ibz)
+                        : member.k_bz;
                 atom_rotation.bloch_rsh_rotations =
                     build_symmetry_kspace_shell_rotations(
                         operation,
@@ -776,7 +780,7 @@ void SymmetryContext::build_kstar_member_rotations(const int lmax)
                         lmax,
                         basis_convention,
                         star.k_ibz,
-                        member.k_bz,
+                        k_target_spatial,
                         coord_frac_vector(input_coord_frac, atom_from),
                         coord_frac_vector(input_coord_frac, atom_to),
                         return_lattice);
@@ -1722,11 +1726,11 @@ ComplexMatrix build_symmetry_kspace_rotation_matrix(const SymmetryContext& ctx,
             block *= phase;
         }
 
-        const int row_offset = offsets.at(static_cast<std::size_t>(atom_rotation->atom_to));
-        const int col_offset = offsets.at(atom);
-        const int nrows = offsets.at(static_cast<std::size_t>(atom_rotation->atom_to) + 1)
-                          - row_offset;
-        const int ncols = offsets.at(atom + 1) - col_offset;
+        const int row_offset = offsets.at(atom);
+        const int col_offset = offsets.at(static_cast<std::size_t>(atom_rotation->atom_to));
+        const int nrows = offsets.at(atom + 1) - row_offset;
+        const int ncols = offsets.at(static_cast<std::size_t>(atom_rotation->atom_to) + 1)
+                          - col_offset;
         if (block.nr != nrows || block.nc != ncols)
         {
             throw LIBRPA_RUNTIME_ERROR("K-space rotation matrix block dimension mismatch");
