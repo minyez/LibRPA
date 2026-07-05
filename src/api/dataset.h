@@ -42,6 +42,7 @@ public:
     MpiCommHandler comm_h;
     BlacsCtxtHandler blacs_h;
     KPointBlacsParallelContext scfk_blacs_ctxt;
+    KPointBlacsParallelContext bandk_blacs_ctxt;
     // Communicators for Coulomb matrices 2D input and re-distribution
     MpiCommHandler comm_coul_h;
     MpiCommHandler comm_coul_inter_q_h;
@@ -147,6 +148,7 @@ public:
     void finalize_comm_blacs_coul();
 
     void redistribute_eigvecs_kpara();
+    void redistribute_band_eigvecs_kpara();
 
     void invalidate_compute_objects();
 

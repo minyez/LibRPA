@@ -352,6 +352,67 @@ static void test_spinor_symmetry_speedup_rejected()
     }));
 }
 
+static void test_redistribute_band_eigvecs_kpara_np4()
+{
+    using namespace librpa_int;
+
+    constexpr int n_spins = 1;
+    constexpr int n_spinor = 1;
+    constexpr int n_kpoints = 4;
+    constexpr int n_states = 2;
+    constexpr int n_aos = 3;
+    const std::vector<int> initial_owner{3, 0, 1, 2};
+    const std::vector<int> expected_owner{0, 1, 2, 3};
+
+    Dataset ds(MPI_COMM_WORLD);
+    ds.mf_band.set(n_spins, n_kpoints, n_states, n_aos, n_spinor);
+
+    for (int ik = 0; ik != n_kpoints; ++ik)
+    {
+        if (ds.comm_h.myid != initial_owner[ik]) continue;
+        ComplexMatrix wfc(n_states, n_aos);
+        for (int i = 0; i != n_states; ++i)
+        {
+            for (int j = 0; j != n_aos; ++j)
+            {
+                const double value = 10.0 * ik + i + 0.1 * j;
+                wfc(i, j) = {value, -value};
+            }
+        }
+        ds.mf_band.get_eigenvectors()[0][0][ik] = std::move(wfc);
+    }
+
+    ds.redistribute_band_eigvecs_kpara();
+    ds.redistribute_band_eigvecs_kpara();
+
+    assert(ds.bandk_blacs_ctxt.is_initialized());
+    assert(ds.bandk_blacs_ctxt.n_kpoints() == n_kpoints);
+    for (int ik = 0; ik != n_kpoints; ++ik)
+    {
+        const auto *wfc = ds.mf_band.find_wfc(0, 0, ik);
+        if (ds.comm_h.myid == expected_owner[ik])
+        {
+            assert(wfc != nullptr);
+            assert(wfc->nr == n_states);
+            assert(wfc->nc == n_aos);
+            for (int i = 0; i != n_states; ++i)
+            {
+                for (int j = 0; j != n_aos; ++j)
+                {
+                    const double value = 10.0 * ik + i + 0.1 * j;
+                    assert(fequal((*wfc)(i, j), std::complex<double>(value, -value)));
+                }
+            }
+        }
+        else
+        {
+            assert(wfc == nullptr);
+        }
+    }
+
+    ds.free();
+}
+
 int main (int argc, char *argv[])
 {
     using namespace librpa_int;
@@ -370,6 +431,7 @@ int main (int argc, char *argv[])
     test_redistribute_blacs2ap_np4({2, 3});
     test_redistribute_blacs2ap_np4({10, 4, 5});
     test_redistribute_eigvecs_kpara_np4();
+    test_redistribute_band_eigvecs_kpara_np4();
     test_spinor_symmetry_speedup_rejected();
 
     finalize_global_io();

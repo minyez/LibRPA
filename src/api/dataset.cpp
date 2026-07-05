@@ -14,6 +14,150 @@
 namespace librpa_int
 {
 
+namespace
+{
+
+void redistribute_meanfield_eigvecs_kpara(MeanField &mf,
+                                          const MpiCommHandler &comm_h,
+                                          const KPointBlacsParallelContext &kblacs_ctxt,
+                                          const std::string &label,
+                                          const int wfc_tag)
+{
+    if (!kblacs_ctxt.is_initialized())
+    {
+        throw LIBRPA_RUNTIME_ERROR(label + " k-point BLACS context must be initialized before redistributing eigenvectors");
+    }
+
+    using global::ofs_myid;
+
+    const int n_spins = mf.get_n_spins();
+    const int n_spinor = mf.get_n_spinor();
+    const int n_kpoints = mf.get_n_kpoints();
+    const int n_states = mf.get_n_states();
+    const int n_aos = mf.get_n_aos();
+    if (n_spins <= 0 || n_spinor <= 0 || n_kpoints <= 0 || n_states <= 0 || n_aos <= 0)
+        throw LIBRPA_RUNTIME_ERROR(label + " mean-field dimensions must be set before redistributing eigenvectors");
+    if (kblacs_ctxt.n_kpoints() != n_kpoints)
+        throw LIBRPA_RUNTIME_ERROR(label + " k-point BLACS context has inconsistent number of k-points");
+
+    const size_t mat_size = static_cast<size_t>(n_states) * static_cast<size_t>(n_aos);
+
+    const auto erase_wfc = [&mf](int ispin, int ispinor, int ik)
+    {
+        auto &wfc = mf.get_eigenvectors();
+        auto it_spin = wfc.find(ispin);
+        if (it_spin == wfc.end()) return;
+
+        auto it_spinor = it_spin->second.find(ispinor);
+        if (it_spinor == it_spin->second.end()) return;
+
+        it_spinor->second.erase(ik);
+        if (it_spinor->second.empty()) it_spin->second.erase(it_spinor);
+        if (it_spin->second.empty()) wfc.erase(it_spin);
+    };
+
+    const auto wfc_label = [&label](int ispin, int ispinor, int ik)
+    {
+        return label + " eigenvector: ispin = " + std::to_string(ispin) +
+               " ispinor = " + std::to_string(ispinor) +
+               " ik = " + std::to_string(ik);
+    };
+
+    // Split wave function into 128 MiB chunks.
+    constexpr size_t wfc_chunk_bytes = 128ULL * 1024ULL * 1024ULL;
+    const size_t wfc_chunk_elems = std::max<size_t>(1, wfc_chunk_bytes / sizeof(cplxdb));
+    const auto send_wfc = [&](const cplxdb *buf, int dest)
+    {
+        for (size_t offset = 0; offset < mat_size; offset += wfc_chunk_elems)
+        {
+            const int count = static_cast<int>(std::min(wfc_chunk_elems, mat_size - offset));
+            MPI_Send(buf + offset, count, mpi_datatype<cplxdb>::value, dest, wfc_tag, comm_h.comm);
+        }
+    };
+    const auto recv_wfc = [&](cplxdb *buf, int source)
+    {
+        for (size_t offset = 0; offset < mat_size; offset += wfc_chunk_elems)
+        {
+            const int count = static_cast<int>(std::min(wfc_chunk_elems, mat_size - offset));
+            MPI_Recv(buf + offset, count, mpi_datatype<cplxdb>::value, source, wfc_tag, comm_h.comm,
+                     MPI_STATUS_IGNORE);
+        }
+    };
+
+    int n_moved_local = 0;
+    for (int ispin = 0; ispin != n_spins; ++ispin)
+    {
+        for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+        {
+            for (int ik = 0; ik != n_kpoints; ++ik)
+            {
+                auto *wfc_local = mf.find_wfc(ispin, ispinor, ik);
+                const int has_local = wfc_local == nullptr ? 0 : 1;
+
+                int n_owners = 0;
+                comm_h.allreduce(&has_local, &n_owners, 1, MPI_SUM);
+                if (n_owners == 0)
+                {
+                    throw LIBRPA_RUNTIME_ERROR("missing wave-function data for " + wfc_label(ispin, ispinor, ik));
+                }
+                if (n_owners > 1)
+                {
+                    throw LIBRPA_RUNTIME_ERROR("duplicated wave-function data for " + wfc_label(ispin, ispinor, ik));
+                }
+
+                const int bad_dim_local =
+                    has_local && (wfc_local->nr != n_states || wfc_local->nc != n_aos);
+                int bad_dim_any = 0;
+                comm_h.allreduce(&bad_dim_local, &bad_dim_any, 1, MPI_MAX);
+                if (bad_dim_any)
+                {
+                    int bad_rank_local = bad_dim_local ? comm_h.myid : -1;
+                    int bad_rank = -1;
+                    comm_h.allreduce(&bad_rank_local, &bad_rank, 1, MPI_MAX);
+                    throw LIBRPA_RUNTIME_ERROR(
+                        "wave-function matrix shape must be n_states x n_aos for " +
+                        wfc_label(ispin, ispinor, ik) + ", bad rank = " +
+                        std::to_string(bad_rank));
+                }
+
+                const int source_rank_local = has_local ? comm_h.myid : -1;
+                int source_rank = -1;
+                comm_h.allreduce(&source_rank_local, &source_rank, 1, MPI_MAX);
+
+                const int dest_rank = kblacs_ctxt.kpoint_blacs_root_global_rank(ik);
+                if (dest_rank < 0 || dest_rank >= comm_h.nprocs)
+                {
+                    throw LIBRPA_RUNTIME_ERROR("invalid destination rank for " +
+                                              wfc_label(ispin, ispinor, ik));
+                }
+
+                if (source_rank != dest_rank)
+                {
+                    if (comm_h.myid == source_rank)
+                    {
+                        send_wfc(wfc_local->c, dest_rank);
+                        erase_wfc(ispin, ispinor, ik);
+                        ++n_moved_local;
+                    }
+                    else if (comm_h.myid == dest_rank)
+                    {
+                        ComplexMatrix wfc_recv(n_states, n_aos, false);
+                        recv_wfc(wfc_recv.c, source_rank);
+                        mf.get_eigenvectors()[ispin][ispinor][ik] = std::move(wfc_recv);
+                    }
+                }
+            }
+        }
+    }
+
+    int n_moved_total = 0;
+    comm_h.allreduce(&n_moved_local, &n_moved_total, 1, MPI_SUM);
+    ofs_myid << "Redistributed " << n_moved_total << " " << label
+             << " eigenvector matrix blocks to k-point BLACS roots" << std::endl;
+}
+
+} // namespace
+
 Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
     : input_blacs_matloc_row_major_(input_blacs_matloc_row_major),
       comm_blacs_coul_initialized_(false),
@@ -22,6 +166,7 @@ Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
       comm_h(comm, true),
       blacs_h(comm),
       scfk_blacs_ctxt(),
+      bandk_blacs_ctxt(),
       comm_coul_h(),
       comm_coul_inter_q_h(),
       comm_coul_intra_q_h(),
@@ -76,6 +221,7 @@ void Dataset::free()
     finalize_comm_blacs_coul();
     desc_wfc_kb.reset_handler();
     desc_wfc_kb_full.reset_handler();
+    bandk_blacs_ctxt.finalize();
     scfk_blacs_ctxt.finalize();
 }
 
@@ -403,140 +549,31 @@ void Dataset::redistribute_coulomb_blacs2ap()
 void Dataset::redistribute_eigvecs_kpara()
 {
     if (eigvecs_kpara_redistributed_) return;
-    if (!scfk_blacs_ctxt.is_initialized())
-    {
-        throw LIBRPA_RUNTIME_ERROR("SCF k-point BLACS context must be initialized before redistributing eigenvectors");
-    }
-
-    using global::ofs_myid;
     using global::profiler;
     profiler.start(__FUNCTION__);
 
-    const int n_spins = mf.get_n_spins();
-    const int n_spinor = mf.get_n_spinor();
-    const int n_kpoints = mf.get_n_kpoints();
-    const int n_states = mf.get_n_states();
-    const int n_aos = mf.get_n_aos();
-    if (n_spins <= 0 || n_spinor <= 0 || n_kpoints <= 0 || n_states <= 0 || n_aos <= 0)
-        throw LIBRPA_RUNTIME_ERROR("mean-field dimensions must be set before redistributing eigenvectors");
+    redistribute_meanfield_eigvecs_kpara(mf, comm_h, scfk_blacs_ctxt, "SCF", 19317);
+    eigvecs_kpara_redistributed_ = true;
+    profiler.stop(__FUNCTION__);
+}
 
-    const size_t mat_size = static_cast<size_t>(n_states) * static_cast<size_t>(n_aos);
+void Dataset::redistribute_band_eigvecs_kpara()
+{
+    using global::profiler;
+    profiler.start(__FUNCTION__);
 
-    const auto erase_wfc = [this](int ispin, int ispinor, int ik)
+    const int n_kpoints = mf_band.get_n_kpoints();
+    if (n_kpoints <= 0)
+        throw LIBRPA_RUNTIME_ERROR("band-path mean-field dimensions must be set before redistributing eigenvectors");
+
+    if (!bandk_blacs_ctxt.is_initialized() || bandk_blacs_ctxt.n_kpoints() != n_kpoints)
     {
-        auto &wfc = mf.get_eigenvectors();
-        auto it_spin = wfc.find(ispin);
-        if (it_spin == wfc.end()) return;
-
-        auto it_spinor = it_spin->second.find(ispinor);
-        if (it_spinor == it_spin->second.end()) return;
-
-        it_spinor->second.erase(ik);
-        if (it_spinor->second.empty()) it_spin->second.erase(it_spinor);
-        if (it_spin->second.empty()) wfc.erase(it_spin);
-    };
-
-    const auto wfc_label = [](int ispin, int ispinor, int ik)
-    {
-        return "ispin = " + std::to_string(ispin) +
-               " ispinor = " + std::to_string(ispinor) +
-               " ik = " + std::to_string(ik);
-    };
-
-    // Split wave function into 128 MiB chunks
-    constexpr size_t wfc_chunk_bytes = 128ULL * 1024ULL * 1024ULL;
-    const size_t wfc_chunk_elems = std::max<size_t>(1, wfc_chunk_bytes / sizeof(cplxdb));
-    const auto send_wfc = [&](const cplxdb *buf, int dest, int tag)
-    {
-        for (size_t offset = 0; offset < mat_size; offset += wfc_chunk_elems)
-        {
-            const int count = static_cast<int>(std::min(wfc_chunk_elems, mat_size - offset));
-            MPI_Send(buf + offset, count, mpi_datatype<cplxdb>::value, dest, tag, comm_h.comm);
-        }
-    };
-    const auto recv_wfc = [&](cplxdb *buf, int source, int tag)
-    {
-        for (size_t offset = 0; offset < mat_size; offset += wfc_chunk_elems)
-        {
-            const int count = static_cast<int>(std::min(wfc_chunk_elems, mat_size - offset));
-            MPI_Recv(buf + offset, count, mpi_datatype<cplxdb>::value, source, tag, comm_h.comm,
-                     MPI_STATUS_IGNORE);
-        }
-    };
-
-    int n_moved_local = 0;
-    constexpr int wfc_tag = 19317;
-    for (int ispin = 0; ispin != n_spins; ++ispin)
-    {
-        for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
-        {
-            for (int ik = 0; ik != n_kpoints; ++ik)
-            {
-                auto *wfc_local = mf.find_wfc(ispin, ispinor, ik);
-                const int has_local = wfc_local == nullptr ? 0 : 1;
-
-                int n_owners = 0;
-                comm_h.allreduce(&has_local, &n_owners, 1, MPI_SUM);
-                if (n_owners == 0)
-                {
-                    throw LIBRPA_RUNTIME_ERROR("missing wave-function data for " + wfc_label(ispin, ispinor, ik));
-                }
-                if (n_owners > 1)
-                {
-                    throw LIBRPA_RUNTIME_ERROR("duplicated wave-function data for " + wfc_label(ispin, ispinor, ik));
-                }
-
-                const int bad_dim_local =
-                    has_local && (wfc_local->nr != n_states || wfc_local->nc != n_aos);
-                int bad_dim_any = 0;
-                comm_h.allreduce(&bad_dim_local, &bad_dim_any, 1, MPI_MAX);
-                if (bad_dim_any)
-                {
-                    int bad_rank_local = bad_dim_local ? comm_h.myid : -1;
-                    int bad_rank = -1;
-                    comm_h.allreduce(&bad_rank_local, &bad_rank, 1, MPI_MAX);
-                    throw LIBRPA_RUNTIME_ERROR(
-                        "wave-function matrix shape must be n_states x n_aos for " +
-                        wfc_label(ispin, ispinor, ik) + ", bad rank = " +
-                        std::to_string(bad_rank));
-                }
-
-                const int source_rank_local = has_local ? comm_h.myid : -1;
-                int source_rank = -1;
-                comm_h.allreduce(&source_rank_local, &source_rank, 1, MPI_MAX);
-
-                const int dest_rank = scfk_blacs_ctxt.kpoint_blacs_root_global_rank(ik);
-                if (dest_rank < 0 || dest_rank >= comm_h.nprocs)
-                {
-                    throw LIBRPA_RUNTIME_ERROR("invalid destination rank for " +
-                                              wfc_label(ispin, ispinor, ik));
-                }
-
-                if (source_rank != dest_rank)
-                {
-                    if (comm_h.myid == source_rank)
-                    {
-                        send_wfc(wfc_local->c, dest_rank, wfc_tag);
-                        erase_wfc(ispin, ispinor, ik);
-                        ++n_moved_local;
-                    }
-                    else if (comm_h.myid == dest_rank)
-                    {
-                        ComplexMatrix wfc_recv(n_states, n_aos, false);
-                        recv_wfc(wfc_recv.c, source_rank, wfc_tag);
-                        mf.get_eigenvectors()[ispin][ispinor][ik] = std::move(wfc_recv);
-                    }
-                }
-            }
-        }
+        KPointBlacsProcessShape bandk_blacs_shape;
+        bandk_blacs_shape.favor_square_blacs_grid = true;
+        bandk_blacs_ctxt.init(bandk_blacs_shape, comm_h.comm, n_kpoints);
     }
 
-    int n_moved_total = 0;
-    comm_h.allreduce(&n_moved_local, &n_moved_total, 1, MPI_SUM);
-    ofs_myid << "Redistributed " << n_moved_total
-             << " SCF eigenvector matrix blocks to k-point BLACS roots" << std::endl;
-
-    eigvecs_kpara_redistributed_ = true;
+    redistribute_meanfield_eigvecs_kpara(mf_band, comm_h, bandk_blacs_ctxt, "band-path", 19318);
     profiler.stop(__FUNCTION__);
 }
 

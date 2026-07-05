@@ -32,13 +32,18 @@ private:
     using SigcRspaceMap =
         std::map<int, std::map<int, std::map<int, std::map<double, ap_p_map<std::map<Vector3_Order<int>, Matz>>>>>>;
 
-    bool is_mf_eigvec_k_distributed_;
+    bool is_eigvec_k_distributed_;
     bool is_rspace_built_;
     bool is_kspace_built_;
     bool is_rspace_redist_for_KS_;
     bool is_rspace_redist_blacs_;
     bool has_sigc_is_f_IJ_R_unredist_;
     SigcRspaceBlacsRouting sigc_rspace_blacs_routing_;
+    int sigc_rspace_blacs_ictxt_;
+    int sigc_rspace_blacs_nprocs_;
+    int sigc_rspace_blacs_nprows_;
+    int sigc_rspace_blacs_npcols_;
+    CTXT_LAYOUT sigc_rspace_blacs_layout_;
     int output_sigc_ks_kf_band_index_;
     std::string sigc_kspace_source_;
 
@@ -56,7 +61,6 @@ private:
                                     const AtomPairBvKRemap<atom_t> &bvk_remap,
                                     const BlacsCtxtHandler &blacs_ctxt_h,
                                     bool use_gpu_replace_scalapack,
-                                    bool wfc_target_is_kblacs_distributed,
                                     const std::string &source);
 
 public:
@@ -71,6 +75,7 @@ public:
     const TFGrids &tfg;
     const MpiCommHandler &comm_h;
     const KPointBlacsParallelContext &kblacs_ctxt;
+    const KPointBlacsParallelContext &band_kblacs_ctxt;
 
     std::string output_dir;
 
@@ -107,8 +112,9 @@ public:
          const PeriodicBoundaryData &pbc_in,
          const SymmetryContext &symmetry_context_in,
          const TFGrids &tfg_in, const KPointBlacsParallelContext &kblacs_ctxt_in,
+         const KPointBlacsParallelContext &band_kblacs_ctxt_in,
          const ArrayDesc &desc_wfc_in,
-         bool is_mf_eigvec_k_distributed,
+         bool is_eigvec_k_distributed,
          bool use_symmetry_context_in = true);
     // // delete copy/move constructors
     // G0W0(const G0W0 &s_g0w0) = delete;

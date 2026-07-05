@@ -281,7 +281,8 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts)
     // global::ofs_myid << "is_eigvec_k_distributed " << is_eigvec_k_distributed << std::endl;
     ds.p_g0w0 = std::make_unique<librpa_int::G0W0>(ds.mf, ds.basis_wfc, ds.pbc,
                                                    ds.symmetry_context, ds.tfg,
-                                                   ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
+                                                   ds.scfk_blacs_ctxt, ds.bandk_blacs_ctxt,
+                                                   ds.desc_wfc_kb_full,
                                                    is_eigvec_k_distributed,
                                                    use_symmetry);
     ds.p_g0w0->libri_threshold_C = opts.libri_g0w0_threshold_C;

@@ -398,6 +398,11 @@ void ensure_band_sigc_ks_blacs(librpa_int::Dataset &ds, const LibrpaOptions &opt
     ds.p_g0w0->reset_kspace();
     const auto bvk_remap = librpa_int::api::build_band_bvk_remap(
         ds.atoms, ds.pbc, opts.option_bvk_remap);
+    const bool use_band_kblacs_wfc = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
+    if (use_band_kblacs_wfc)
+    {
+        ds.redistribute_band_eigvecs_kpara();
+    }
     ds.p_g0w0->build_sigc_matrix_KS_band_blacs(ds.mf_band.get_eigenvectors(),
                                                ds.kfrac_band_list,
                                                bvk_remap, ds.blacs_h,

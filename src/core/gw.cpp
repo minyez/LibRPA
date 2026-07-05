@@ -629,7 +629,8 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const SymmetryContext &symmetry_context_in,
            const TFGrids &tfg_in,
            const KPointBlacsParallelContext &kblacs_ctxt_in,
-           const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed,
+           const KPointBlacsParallelContext &band_kblacs_ctxt_in,
+           const ArrayDesc &desc_wfc_in, bool is_eigvec_k_distributed,
            const bool use_symmetry_context_in)
     : mf(mf_in),
       desc_wfc(desc_wfc_in),
@@ -640,17 +641,23 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
       qpoint_view(build_symmetry_qpoint_view(symmetry_context_in, pbc_in, use_symmetry_context_in)),
       tfg(tfg_in),
       comm_h(kblacs_ctxt_in.comm_global_h),
-      kblacs_ctxt(kblacs_ctxt_in)
+      kblacs_ctxt(kblacs_ctxt_in),
+      band_kblacs_ctxt(band_kblacs_ctxt_in)
 {
     comm_h.check_initialized();
 
-    is_mf_eigvec_k_distributed_ = is_mf_eigvec_k_distributed;
+    is_eigvec_k_distributed_ = is_eigvec_k_distributed;
     is_rspace_built_ = false;
     is_kspace_built_ = false;
     is_rspace_redist_for_KS_ = false;
     is_rspace_redist_blacs_ = false;
     has_sigc_is_f_IJ_R_unredist_ = false;
     sigc_rspace_blacs_routing_ = SigcRspaceBlacsRouting::None;
+    sigc_rspace_blacs_ictxt_ = -1;
+    sigc_rspace_blacs_nprocs_ = 0;
+    sigc_rspace_blacs_nprows_ = 0;
+    sigc_rspace_blacs_npcols_ = 0;
+    sigc_rspace_blacs_layout_ = CTXT_LAYOUT::R;
     output_sigc_ks_kf_band_index_ = 0;
     sigc_kspace_source_.clear();
 
@@ -678,6 +685,11 @@ void G0W0::reset_rspace()
     is_rspace_redist_blacs_ = false;
     has_sigc_is_f_IJ_R_unredist_ = false;
     sigc_rspace_blacs_routing_ = SigcRspaceBlacsRouting::None;
+    sigc_rspace_blacs_ictxt_ = -1;
+    sigc_rspace_blacs_nprocs_ = 0;
+    sigc_rspace_blacs_nprows_ = 0;
+    sigc_rspace_blacs_npcols_ = 0;
+    sigc_rspace_blacs_layout_ = CTXT_LAYOUT::R;
     sigc_is_f_IJ_R_unredist_.clear();
 }
 
@@ -1142,7 +1154,7 @@ void G0W0::build_spacetime(
                 "shrink Wc build_spacetime requires sinvS, compressed/full ABF bases, BLACS context, and WFC descriptor");
 
         Chi0 unfold_helper(mf, atbasis_wfc, *basis_aux_compressed, pbc, symmetry_context, tfg, kblacs_ctxt,
-                           *desc_wfc_in, is_mf_eigvec_k_distributed_, this->use_symmetry_context);
+                           *desc_wfc_in, is_eigvec_k_distributed_, this->use_symmetry_context);
 
         if (output_wc_rf)
         {
@@ -1445,7 +1457,7 @@ void G0W0::build_spacetime(
     ArrayDesc desc_gf;
     IndexScheduler sched_gf;
     std::vector<Vector3_Order<int>> Rs_gf;
-    if (this->is_mf_eigvec_k_distributed_)
+    if (this->is_eigvec_k_distributed_)
     {
         profiler.start("g0w0_build_spacetime_prepare_gf_index");
         const int n_basis_ao = mf.get_n_aos();
@@ -1514,7 +1526,7 @@ void G0W0::build_spacetime(
                     const std::vector<double> taus{tau, -tau};
                     if (use_complex_tensor)
                     {
-                        if (this->is_mf_eigvec_k_distributed_)
+                        if (this->is_eigvec_k_distributed_)
                         {
                             build_gf_libri_kblacs_para(
                                 mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, atbasis_wfc,
@@ -1532,7 +1544,7 @@ void G0W0::build_spacetime(
                     }
                     else
                     {
-                        if (this->is_mf_eigvec_k_distributed_)
+                        if (this->is_eigvec_k_distributed_)
                             build_gf_libri_kblacs_para(
                                 mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, atbasis_wfc,
                                 ispin, ispinor_bra, ispinor_ket, this->pbc.kfrac_list,
@@ -1929,7 +1941,6 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                       const AtomPairBvKRemap<atom_t> &bvk_remap,
                                       const BlacsCtxtHandler &blacs_ctxt_h,
                                       const bool use_gpu_replace_scalapack,
-                                      const bool wfc_target_is_kblacs_distributed,
                                       const std::string &source)
 {
     assert(blacs_ctxt_h.comm() == this->comm_h.comm);
@@ -1946,19 +1957,24 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     const int n_spins = mf.get_n_spins();
     const int n_spinor = mf.get_n_spinor();
     const int n_target_kpoints = static_cast<int>(kfrac_target.size());
-    const bool use_klocal_rotation = wfc_target_is_kblacs_distributed;
+    const bool use_klocal_rotation = is_eigvec_k_distributed_;
+    const bool source_is_band_path = source.rfind("band_", 0) == 0;
+    const KPointBlacsParallelContext &target_kblacs_ctxt =
+        source_is_band_path ? band_kblacs_ctxt : kblacs_ctxt;
+    const KPointBlacsParallelContext *rotation_kblacs_ctxt =
+        use_klocal_rotation ? &target_kblacs_ctxt : nullptr;
     if (use_klocal_rotation)
     {
-        if (!kblacs_ctxt.is_initialized())
+        if (rotation_kblacs_ctxt == nullptr || !rotation_kblacs_ctxt->is_initialized())
             throw LIBRPA_RUNTIME_ERROR("k-point BLACS context is not initialized");
-        if (kblacs_ctxt.n_kpoints() != n_target_kpoints)
+        if (rotation_kblacs_ctxt->n_kpoints() != n_target_kpoints)
             throw LIBRPA_RUNTIME_ERROR("k-point BLACS context has inconsistent number of target k-points");
     }
     const auto target_sigc_routing = use_klocal_rotation
                                          ? SigcRspaceBlacsRouting::KLocalBlacs
                                          : SigcRspaceBlacsRouting::GlobalBlacs;
     const BlacsCtxtHandler &rotation_blacs_h =
-        use_klocal_rotation ? kblacs_ctxt.blacs_h : blacs_ctxt_h;
+        use_klocal_rotation ? rotation_kblacs_ctxt->blacs_h : blacs_ctxt_h;
 
     global::profiler.start("g0w0_build_sigc_KS");
 
@@ -2042,8 +2058,15 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao);
 
     // Check Sigmac matrix distribution
+    const bool same_sigc_blacs_context =
+        sigc_rspace_blacs_ictxt_ == rotation_blacs_h.ictxt &&
+        sigc_rspace_blacs_nprocs_ == rotation_blacs_h.nprocs &&
+        sigc_rspace_blacs_nprows_ == rotation_blacs_h.nprows &&
+        sigc_rspace_blacs_npcols_ == rotation_blacs_h.npcols &&
+        sigc_rspace_blacs_layout_ == rotation_blacs_h.layout;
     const bool need_sigc_redist =
-        !is_rspace_redist_for_KS_ || sigc_rspace_blacs_routing_ != target_sigc_routing;
+        !is_rspace_redist_for_KS_ || sigc_rspace_blacs_routing_ != target_sigc_routing ||
+        !same_sigc_blacs_context;
     if (need_sigc_redist)
     {
         global::profiler.start("g0w0_build_sigc_KS_rspace_redist");
@@ -2126,6 +2149,11 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
         is_rspace_redist_for_KS_ = true;
         is_rspace_redist_blacs_ = true;
         sigc_rspace_blacs_routing_ = target_sigc_routing;
+        sigc_rspace_blacs_ictxt_ = rotation_blacs_h.ictxt;
+        sigc_rspace_blacs_nprocs_ = rotation_blacs_h.nprocs;
+        sigc_rspace_blacs_nprows_ = rotation_blacs_h.nprows;
+        sigc_rspace_blacs_npcols_ = rotation_blacs_h.npcols;
+        sigc_rspace_blacs_layout_ = rotation_blacs_h.layout;
         global::profiler.stop("g0w0_build_sigc_KS_rspace_redist");
     }
     else
@@ -2216,7 +2244,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                     desc_nao_nband_fb.init(n_aos, n_bands, n_aos, n_bands, 0, 0);
                     std::vector<complex<double>> dummy(1, complex<double>{0.0, 0.0});
                     release_free_mem();
-                    for (const int ik: kblacs_ctxt.kpoints_local())
+                    for (const int ik: rotation_kblacs_ctxt->kpoints_local())
                     {
                         if (ik < 0 || ik >= n_target_kpoints)
                             throw LIBRPA_RUNTIME_ERROR("k-point index out of range for k-local SigC rotation");
@@ -2317,9 +2345,9 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                 diag_send[ib] = sigc_nband_nband_opt.ptr()[ilo + desc_nband_nband_opt.lld() * jlo];
                             }
                             std::vector<cplxdb> diag_recv(n_bands);
-                            kblacs_ctxt.comm_blacs_h.reduce(diag_send.data(), diag_recv.data(),
-                                                            n_bands, 0, MPI_SUM);
-                            if (kblacs_ctxt.comm_blacs_h.is_root())
+                            rotation_kblacs_ctxt->comm_blacs_h.reduce(diag_send.data(), diag_recv.data(),
+                                                                       n_bands, 0, MPI_SUM);
+                            if (rotation_kblacs_ctxt->comm_blacs_h.is_root())
                             {
                                 auto &diag_map = this->sigc_diag_is_ik_f_KS[isp][ik];
                                 auto it = diag_map.find(freq);
@@ -2542,7 +2570,7 @@ void G0W0::build_sigc_matrix_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h
     global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid with BLACS" << std::endl;
     this->build_sigc_matrix_KS_blacs(this->mf.get_eigenvectors(), this->pbc.kfrac_list,
                                      {}, blacs_ctxt_h, use_gpu_replace_scalapack,
-                                     is_mf_eigvec_k_distributed_, "kgrid");
+                                     "kgrid");
     if (this->output_sigc_ks_kf)
     {
         const auto fn = path_as_directory(this->output_dir) + "self_energy_omega.dat";
@@ -2566,7 +2594,7 @@ void G0W0::build_sigc_matrix_KS_band_blacs(
     }
     const int output_band_index = output_sigc_ks_kf_band_index_;
     this->build_sigc_matrix_KS_blacs(wfc, kfrac_band, bvk_remap, blacs_ctxt_h,
-                                     use_gpu_replace_scalapack, false,
+                                     use_gpu_replace_scalapack,
                                      "band_" + std::to_string(output_band_index));
     if (this->output_sigc_ks_kf)
     {
