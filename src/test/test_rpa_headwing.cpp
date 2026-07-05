@@ -353,6 +353,12 @@ void test_rpa_headwing_gamma_cell_volume_uses_reciprocal_lattice()
     const double vol_2d = librpa_int::rpa_headwing_reciprocal_cell_volume(pbc, true);
     const double expected_2d = std::abs(pbc.G.e11 * pbc.G.e22 - pbc.G.e12 * pbc.G.e21);
     require_double_close(vol_2d, expected_2d, 1e-14);
+
+    pbc.set_period(4, 4, 4);
+    require_double_close(librpa_int::rpa_headwing_gamma_cell_volume(pbc, false),
+                         vol_3d / 64.0, 1e-14);
+    require_double_close(librpa_int::rpa_headwing_gamma_cell_volume(pbc, true),
+                         vol_2d / 64.0, 1e-14);
 }
 
 void test_rpa_chi0v_wing_desc_uses_global_rows(const BlacsCtxtHandler &blacs_h)

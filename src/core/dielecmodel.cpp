@@ -2198,13 +2198,7 @@ void diele_func::cal_eps(const int ifreq, ArrayDesc &desc_nabf_nabf_opt, ArrayDe
 
     profiler.start("cal_inverse_dielectric_matrix");
     this->chi0 = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
-    double k_volume;
-    if (use_2d_dielectric)
-        k_volume = std::abs(pbc_.G.e11 * pbc_.G.e22 - pbc_.G.e12 * pbc_.G.e21);
-    else
-        k_volume = std::abs(pbc_.G.Det());
-
-    this->vol_gamma = k_volume / nk;
+    this->vol_gamma = rpa_headwing_gamma_cell_volume(pbc_, use_2d_dielectric);
     double vol_gamma_numeric = 0.0;
     const int nleb = qw_leb.size();
 
@@ -2480,6 +2474,14 @@ double rpa_headwing_reciprocal_cell_volume(const PeriodicBoundaryData &pbc,
     return std::abs(pbc.G.Det());
 }
 
+double rpa_headwing_gamma_cell_volume(const PeriodicBoundaryData &pbc,
+                                      const bool use_2d_dielectric)
+{
+    const int n_full_bz = std::max(1, pbc.get_n_cells_bvk());
+    return rpa_headwing_reciprocal_cell_volume(pbc, use_2d_dielectric)
+           / static_cast<double>(n_full_bz);
+}
+
 ArrayDesc make_rpa_chi0v_wing_desc(const ArrayDesc &desc_body, const int wing_row_offset,
                                    const int wing_rows_loc, const int wing_cols_loc)
 {
@@ -2724,7 +2726,7 @@ std::complex<double> diele_func::compute_rpa_trace_log_average(
     invert_scalapack(this->body_inv, desc_body);
     construct_rpa_trace_log_schur(ifreq, desc_body, wing_row_offset);
 
-    this->vol_gamma = rpa_headwing_reciprocal_cell_volume(pbc_, settings.use_2d_dielectric) / nk;
+    this->vol_gamma = rpa_headwing_gamma_cell_volume(pbc_, settings.use_2d_dielectric);
 
     std::vector<double> weights(qw_leb.size());
     for (std::size_t ileb = 0; ileb != qw_leb.size(); ++ileb)

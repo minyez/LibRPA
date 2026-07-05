@@ -290,6 +290,7 @@ public:
 int rpa_headwing_regular_body_start_channel(const RpaHeadwingSettings &settings);
 
 double rpa_headwing_reciprocal_cell_volume(const PeriodicBoundaryData &pbc, bool use_2d_dielectric);
+double rpa_headwing_gamma_cell_volume(const PeriodicBoundaryData &pbc, bool use_2d_dielectric);
 
 ArrayDesc make_rpa_chi0v_wing_desc(const ArrayDesc &desc_body, const int wing_row_offset,
                                    const int wing_rows_loc, const int wing_cols_loc);
