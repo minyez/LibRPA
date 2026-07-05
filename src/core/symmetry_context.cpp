@@ -320,7 +320,7 @@ static atom_t find_symmetry_atom_target(const SymmetryContext &ctx,
         }
         const auto coord_to = coord_frac_vector(ctx.input_coord_frac, atom_to);
         const auto diff = transformed - coord_to;
-        if (!nearly_integer_vector(diff, 1e-5))
+        if (!nearly_integer_vector(diff, kSymmetryRSpaceAtomMapTol))
         {
             continue;
         }

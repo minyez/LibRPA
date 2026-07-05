@@ -129,6 +129,43 @@ void test_kstar_member_return_lattice_preserves_input_fractional_representative(
     assert(ctx.kspace_return_lattice.at({1, 0}) == Vector3_Order<int>(0, 0, 1));
 }
 
+void test_kstar_member_atom_mapping_tolerates_text_coordinate_noise()
+{
+    SymmetryContext ctx;
+    const Matrix3 lattice(1.0, 0.0, 0.0,
+                          0.0, 1.0, 0.0,
+                          0.0, 0.0, 1.0);
+    ctx.set_crystal_structure(lattice,
+                              lattice,
+                              {{0, 0}},
+                              {{0, {0.0, 0.0, 0.0}}});
+    ctx.basis_convention = {-1,
+                            0,
+                            LIBRPA_ANGULAR_ORDER_NATURAL,
+                            LIBRPA_RSH_COEFF_1_M,
+                            LIBRPA_RSH_COEFF_1_M};
+
+    SymmetryOperation op;
+    op.rotation = Matrix3(1.0, 0.0, 0.0,
+                          0.0, 1.0, 0.0,
+                          0.0, 0.0, 1.0);
+    op.translation = {1.0 + 1.1e-5, 0.0, 0.0};
+    op.use_row_convention = true;
+    ctx.rspace_operations.push_back(op);
+
+    SymmetryKStar star;
+    star.star_index = 0;
+    star.k_ibz = {0.0, 0.0, 0.0};
+    star.members.resize(1);
+    star.members[0].spatial_isym = 0;
+    star.members[0].k_bz = {0.0, 0.0, 0.0};
+    ctx.kstars.push_back(star);
+
+    ctx.build_kstar_member_rotations(0);
+    assert(ctx.kspace_return_lattice.at({0, 0}) == Vector3_Order<int>(1, 0, 0));
+    assert(ctx.kstars.at(0).members.at(0).atom_rotations.at(0).atom_to == 0);
+}
+
 void test_species_basis_layout_keeps_shell_order()
 {
     SpeciesBasisLayout layout;
@@ -1141,6 +1178,7 @@ int main()
     test_symmetry_context_saves_fractional_row_operations();
     test_kspace_shell_rotations_use_direct_rotation();
     test_kstar_member_return_lattice_preserves_input_fractional_representative();
+    test_kstar_member_atom_mapping_tolerates_text_coordinate_noise();
     test_species_basis_layout_keeps_shell_order();
     test_species_layouts_match_basis_dimensions();
     test_atomic_basis_builds_symmetry_species_layouts();
