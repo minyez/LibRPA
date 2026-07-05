@@ -463,7 +463,6 @@ void task_g0w0(std::map<Vector3_Order<double>, ComplexMatrix> &sinvS)
                 }
             }
         }
-        // for aims analytic continuation reader
     }
     write_self_energy_omega("self_energy_omega.dat", s_g0w0);
     Profiler::stop("g0w0_export_sigc_KS");

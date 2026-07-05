@@ -2186,7 +2186,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         : Chi0CollectPlan{};
     // LibRI's map collectors gather a sparse nested map according to requested
     // atom or exact (atom, R) keys.  A full one-shot collect can briefly
-    // duplicate every local chi0s tensor on every rank, so large ABACUS cases
+    // duplicate every local chi0s tensor on every rank, so large cases
     // split the global (I,J,R) key space into chunks capped by an estimated
     // tensor byte count.
     const bool use_byte_collect_chunks =
@@ -3061,7 +3061,7 @@ void Chi0::build_chi0_q_conventional(const Cs_LRI &Cs,
  *
  * @warning ZMY: Since Green's function are currently stored in a real matrix,
  *          the complex conjugate in the equations are in fact not taken.
- *          But the result seems okay for the test cases, compared to FHI-aims.
+ *          But the result seems okay for the reference test cases.
  *          Definitely should be resolved in the future.
  */
 static map<size_t, matrix> compute_chi0_munu_tau_LRI_saveN_noreshape(

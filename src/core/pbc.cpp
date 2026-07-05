@@ -359,7 +359,7 @@ void PeriodicBoundaryData::set_irreducible_kgrids_kvec(
     }
     if (full_kstars.size() != static_cast<std::size_t>(n_ibz))
     {
-        throw LIBRPA_RUNTIME_ERROR("ABACUS full-BZ k-star count does not match IBZ k-point count");
+        throw LIBRPA_RUNTIME_ERROR("Full-BZ k-star count does not match IBZ k-point count");
     }
 
     klist.clear();
@@ -432,7 +432,7 @@ void PeriodicBoundaryData::set_irreducible_kgrids_kvec(
     if (n_full_members != this->get_n_cells_bvk())
     {
         throw LIBRPA_RUNTIME_ERROR(
-            "ABACUS symmetry k-star members do not cover the full BZ grid: "
+            "Symmetry k-star members do not cover the full BZ grid: "
             + std::to_string(n_full_members) + " != " + std::to_string(this->get_n_cells_bvk()));
     }
     k_to_kfull.assign(klist.size(), -1);

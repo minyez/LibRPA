@@ -955,7 +955,7 @@ static int find_symmetry_kstar_index_for_kpoint(const std::vector<SymmetryKStar>
     int matched_index = -1;
 
     // Prefer the canonical IBZ representative when the incoming q-point already uses the same
-    // gauge as the generated ABACUS k-star.
+    // gauge as the generated symmetry k-star.
     for (std::size_t istar = 0; istar < kstars.size(); ++istar)
     {
         if (!same_fractional_kpoint(kstars[istar].k_ibz, k_point, kSymmetryCoordTol))
@@ -974,7 +974,7 @@ static int find_symmetry_kstar_index_for_kpoint(const std::vector<SymmetryKStar>
         return matched_index;
     }
 
-    // LibRPA may keep an equivalent full-star member, rather than the ABACUS representative, as
+    // LibRPA may keep an equivalent full-star member, rather than the canonical representative, as
     // the active q-point label. Fall back to a unique member match in that case.
     for (std::size_t istar = 0; istar < kstars.size(); ++istar)
     {
@@ -1091,7 +1091,7 @@ void SymmetryContext::generate_kstar_grid_mapping(const PeriodicBoundaryData& pb
                 convert_fractional_to_internal(star.members[imember].k_bz);
             entry.member_q_bz_keys[imember] = member_q_internal;
 
-            // The generated ABACUS k-star is the authoritative description of the members,
+            // The generated symmetry k-star is the authoritative description of the members,
             // including the exact representative chosen after symmetry and BZ folding.
             // LibRPA's `map_irk_ks` is only used here as an optional source of already
             // existing internal q keys. If a member cannot be matched back to that rebuilt

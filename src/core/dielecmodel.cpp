@@ -775,18 +775,10 @@ double diele_func::cal_factor(std::string name)
     // latvec.print();
     if (name == "head")
     {
-        // abacus
-        /*dielectric_unit = TWO_PI * hbar / h_divide_e2 / primitive_cell_volume /
-                          this->meanfield_df.get_n_kpoints() * 1.0e30 / epsilon0 / eV;*/
-        // aims
         dielectric_unit = 2 * TWO_PI / primitive_cell_volume;
     }
     else if (name == "wing")
     {
-        // abacus
-        /* dielectric_unit = TWO_PI * hbar / h_divide_e2 * sqrt(2 * TWO_PI / primitive_cell_volume)
-         * 1.0e15 / this->meanfield_df.get_n_kpoints() / epsilon0 / TWO_PI / eV; */
-        // aims
         dielectric_unit = 2 * sqrt(2 * TWO_PI / primitive_cell_volume);  // bohr
     }
     else

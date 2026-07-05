@@ -407,7 +407,7 @@ restore_symmetry_ao_rspace_tensor_map_gw(
             {
                 std::ostringstream oss;
                 oss << "Failed to match a symmetry-filtered GW self-energy block with the"
-                    << " ABACUS irreducible-sector restore map for I=" << ir_I
+                    << " irreducible-sector restore map for I=" << ir_I
                     << " J=" << ir_J << " R=(" << ir_R.x << "," << ir_R.y << ","
                     << ir_R.z << ")";
                 throw std::runtime_error(oss.str());
@@ -427,7 +427,7 @@ restore_symmetry_ao_rspace_tensor_map_gw(
                 if (!target.empty())
                 {
                     throw std::runtime_error(
-                        "Duplicate full-sector GW self-energy block appears during ABACUS symmetry restore");
+                        "Duplicate full-sector GW self-energy block appears during symmetry restore");
                 }
                 target = convert_complex_matrix_to_libri_tensor_gw<Tdata>(sigma_full);
             }
@@ -1406,7 +1406,7 @@ void G0W0::build_spacetime(
         if (use_complex_tensor)
         {
             global::lib_printf(
-                "Reducing GW real-space self-energy outputs with ABACUS irreducible sectors\n");
+                "Reducing GW real-space self-energy outputs with symmetry irreducible sectors\n");
             gw_libri_cplx.lri.filter_atom =
                 std::make_shared<OutputOnlyFilter_GW_Symmetry<int, std::array<int, 3>, cplxdb>>(
                     gw_libri_cplx.lri.period, libri_sigc_irreducible_sector);
@@ -1414,7 +1414,7 @@ void G0W0::build_spacetime(
         else
         {
             global::lib_printf(
-                "Reducing GW real-space self-energy outputs with ABACUS irreducible sectors\n");
+                "Reducing GW real-space self-energy outputs with symmetry irreducible sectors\n");
             gw_libri.lri.filter_atom =
                 std::make_shared<OutputOnlyFilter_GW_Symmetry<int, std::array<int, 3>, double>>(
                     gw_libri.lri.period, libri_sigc_irreducible_sector);

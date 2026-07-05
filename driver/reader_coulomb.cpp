@@ -70,7 +70,7 @@ void read_coulomb(const string &dir_path, const librpa::ParallelRouting routing,
 
 static int handle_Vq_full_file(const string &file_path, std::map<int, librpa_int::ComplexMatrix> &Vq_full, bool binary)
 {
-    // cout << "Begin to read aims vq_real from " << file_path << endl;
+    // cout << "Begin to read Vq from " << file_path << endl;
     librpa_int::require_readable_file(file_path);
     ifstream infile;
     int n_irk_points_local;
@@ -127,7 +127,7 @@ static int handle_Vq_full_file(const string &file_path, std::map<int, librpa_int
                 {
                     const auto i_mu = i + brow;
                     const auto i_nu = j + bcol;
-                    Vq_full[iq](i_mu, i_nu) = tmp[i * ncol + j]; // for abacus
+                    Vq_full[iq](i_mu, i_nu) = tmp[i * ncol + j];
                 }
             }
         }
@@ -165,8 +165,7 @@ static int handle_Vq_full_file(const string &file_path, std::map<int, librpa_int
                 for (int i_nu = bcol; i_nu <= ecol; i_nu++)
                 {
                     infile >> vq_r >> vq_i;
-                    //Vq_full[qvec](i_nu, i_mu) = complex<double>(stod(vq_r), stod(vq_i)); // for FHI-aims
-                    Vq_full[iq](i_mu, i_nu) = std::complex<double>(stod(vq_r), stod(vq_i)); // for abacus
+                    Vq_full[iq](i_mu, i_nu) = std::complex<double>(stod(vq_r), stod(vq_i));
                 }
             }
         }
@@ -1025,9 +1024,8 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
                     {
                         const auto ir = basis_aux.get_global_index(I, i_mu);
                         const auto ic = basis_aux.get_global_index(J, i_nu);
-                        //(*vq_ptr)(i_mu, i_nu) = vf_p.second(atom_mu_loc2glo(J, i_nu), atom_mu_loc2glo(I, i_mu)); ////for aims
-                        re(i_mu, i_nu) = vf_p.second(    ir, ic).real(); // for abacus
-                        im(i_mu, i_nu) = vf_p.second(    ir, ic).imag();
+                        re(i_mu, i_nu) = vf_p.second(ir, ic).real();
+                        im(i_mu, i_nu) = vf_p.second(ir, ic).imag();
                     }
                 }
 
@@ -1067,7 +1065,7 @@ size_t read_Vq_full(const string &dir_path, const string &vq_fprefix, bool is_cu
     // {
     //     cout << " irk_vec and weight: " << irk.first << "  " << irk.second << endl;
     // }
-    // cout << "Finish read aims vq" << endl;
+    // cout << "Finish reading Vq" << endl;
     return vq_discard;
 }
 
@@ -1078,7 +1076,7 @@ static int handle_Vq_row_file(const string &file_path, double threshold,
         const librpa_int::AtomicBasis &basis_aux)
 {
     using librpa_int::ComplexMatrix;
-    // cout << "Begin to read aims vq_real from " << file_path << endl;
+    // cout << "Begin to read Vq from " << file_path << endl;
     librpa_int::require_readable_file(file_path);
     ifstream infile;
     int n_irk_points_local;
@@ -1234,7 +1232,7 @@ static int handle_Vq_row_file(const string &file_path, double threshold,
                     infile >> vq_r >> vq_i;
                     if (!infile.good()) return 4;
 
-                    tmp_row[i_nu-bcol] = std::complex<double>(stod(vq_r), stod(vq_i)); // for abacus
+                    tmp_row[i_nu - bcol] = std::complex<double>(stod(vq_r), stod(vq_i));
 
                 }
                 if (coulomb_row_need.count(i_mu))

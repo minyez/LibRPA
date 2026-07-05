@@ -68,7 +68,7 @@ static void validate_symmetry_kstar_restore_metadata(
     {
         if (atom_nw.count(type_entry.first) == 0)
         {
-            throw std::runtime_error("ABACUS k-star restore atom_nw does not cover every atom");
+            throw std::runtime_error("k-star restore atom_nw does not cover every atom");
         }
     }
 }
@@ -132,7 +132,7 @@ static void validate_symmetry_kstar_member_kfrac_targets(
     if (member_kfrac_targets->size() != restore_entries.size())
     {
         throw std::runtime_error(
-            "ABACUS k-star restore target k-point list has inconsistent IBZ size");
+            "k-star restore target k-point list has inconsistent IBZ size");
     }
     for (std::size_t ientry = 0; ientry != restore_entries.size(); ++ientry)
     {
@@ -140,7 +140,7 @@ static void validate_symmetry_kstar_member_kfrac_targets(
         if (star == nullptr || (*member_kfrac_targets)[ientry].size() != star->members.size())
         {
             throw std::runtime_error(
-                "ABACUS k-star restore target k-point list has inconsistent star-member size");
+                "k-star restore target k-point list has inconsistent star-member size");
         }
     }
 }
@@ -164,7 +164,7 @@ static double symmetry_kstar_geometric_weight(const SymmetryContext& ctx,
     const double full_count = static_cast<double>(ctx.count_kstar_members());
     if (full_count <= 0.0)
     {
-        throw std::runtime_error("ABACUS k-star restore found zero full-k members");
+        throw std::runtime_error("k-star restore found zero full-k members");
     }
     return static_cast<double>(star.members.size()) / full_count;
 }
@@ -192,7 +192,7 @@ static std::vector<SymmetryKStarMeanFieldRestoreEntry> build_symmetry_kstar_rest
             const auto& star = ctx.kstars[istar];
             if (star.members.empty())
             {
-                throw std::runtime_error("ABACUS k-star member list is empty");
+                throw std::runtime_error("k-star member list is empty");
             }
             const int ik_mf = (*representative_k_indices)[istar];
             entries.push_back({&star, ik_mf, kfrac_list[static_cast<std::size_t>(ik_mf)],
@@ -209,7 +209,7 @@ static std::vector<SymmetryKStarMeanFieldRestoreEntry> build_symmetry_kstar_rest
         const auto& star = librpa_int::find_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
         if (star.members.empty())
         {
-            throw std::runtime_error("ABACUS k-star member list is empty");
+            throw std::runtime_error("k-star member list is empty");
         }
         entries.push_back({&star,
                            ik_ibz,
@@ -303,7 +303,7 @@ symmetry_kstar_member_kfrac_targets_t build_symmetry_kstar_member_kfrac_targets(
     {
         if (entry.iq_ibz < 0 || entry.iq_ibz >= static_cast<int>(targets.size()))
         {
-            throw std::runtime_error("ABACUS k-star restore mapping has an invalid IBZ index");
+            throw std::runtime_error("k-star restore mapping has an invalid IBZ index");
         }
         auto& star_targets = targets[static_cast<std::size_t>(entry.iq_ibz)];
         star_targets.reserve(entry.member_q_bz_keys.size());

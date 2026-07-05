@@ -290,7 +290,7 @@ void read_scf_occ_eigenvalues(const string &file_path)
     using librpa_int::global::size_global;
     using std::to_string;
 
-    // cout << "Begin to read aims-band_out" << endl;
+    // cout << "Begin to read band_out" << endl;
     librpa_int::require_readable_file(file_path);
     ifstream infile;
     infile.open(file_path);
@@ -372,7 +372,7 @@ void read_scf_occ_eigenvalues(const string &file_path)
                                            to_string(iline) + ", file: " + file_path);
                 }
                 iline++;
-                wskb[is * n_kb + k_index * n_states + i] = stod(ws);  // different with abacus!
+                wskb[is * n_kb + k_index * n_states + i] = stod(ws);
                 eskb[is * n_kb + k_index * n_states + i] = stod(es);
                 // cout<<" i_band: "<<i<<"    eskb: "<<eskb[is](k_index, i)<<endl;
             }
@@ -2165,7 +2165,7 @@ static int handle_sinvS_file(const std::string &file_path,
                 {
                     const auto i_mu = i + brow;
                     const auto i_nu = j + bcol;
-                    sinvS[qvec](i_mu, i_nu) = tmp[i * ncol + j];  // for abacus
+                    sinvS[qvec](i_mu, i_nu) = tmp[i * ncol + j];
                 }
             }
         }
@@ -2203,10 +2203,8 @@ static int handle_sinvS_file(const std::string &file_path,
                 for (int i_nu = bcol; i_nu <= ecol; i_nu++)
                 {
                     infile >> vq_r >> vq_i;
-                    // Vq_full[qvec](i_nu, i_mu) = complex<double>(stod(vq_r), stod(vq_i)); // for
-                    // FHI-aims
                     sinvS[qvec](i_mu, i_nu) =
-                        std::complex<double>(stod(vq_r), stod(vq_i));  // for abacus
+                        std::complex<double>(stod(vq_r), stod(vq_i));
                 }
             }
         }

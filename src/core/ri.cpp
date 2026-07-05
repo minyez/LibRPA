@@ -180,55 +180,6 @@ matrix reshape_mat_21(const size_t n1, const size_t n2, const size_t n3, const m
     return m_new;
 }
 
-// void init_N_all_mu()
-// {
-//     using global::mpi_comm_global;
-//     using global::mpi_comm_global_h;
-//     using global::lib_printf;
-//     
-//     lib_printf("begin init_N_all_mu   atom_mu.size: %d  myid: %d\n",atom_mu.size(), mpi_comm_global_h.myid);
-//     if(Params::DFT_software == "ABACUS")
-//     {
-//         mpi_comm_global_h.barrier();
-//         vector<size_t> loc_mu(natom);
-//         vector<size_t> loc_nw(natom);
-//         for(const auto &nw_p:atom_nw)
-//         {
-//             loc_nw[nw_p.first]=nw_p.second;
-//         }
-//         for(const auto &mu_p:atom_mu)
-//         {
-//             loc_mu[mu_p.first]=mu_p.second;
-//         }
-//         global::lib_printf(" mid init_N_all_mu\n");
-//         vector<size_t> glo_nw(natom);
-//         vector<size_t> glo_mu(natom);
-//         global::lib_printf(" mid init_N_all_mu myid: %d\n",mpi_comm_global_h.myid);
-//         MPI_Allreduce(loc_nw.data(),glo_nw.data(),natom,MPI_UNSIGNED_LONG_LONG,MPI_MAX,mpi_comm_global);
-//         MPI_Allreduce(loc_mu.data(),glo_mu.data(),natom,MPI_UNSIGNED_LONG_LONG,MPI_MAX,mpi_comm_global);
-// 
-//         atom_nw.clear();
-//         atom_mu.clear();
-//         for(int i =0; i!=natom;i++ )
-//         {
-//             global::lib_printf("I: %d ,  glo_nw: %d",i,glo_nw[i]);
-//             global::lib_printf("I: %d ,  glo_mu: %d",i,glo_mu[i]);
-//             atom_nw.insert(pair<atom_t,size_t>(i,glo_nw[i]));
-//             atom_mu.insert(pair<atom_t,size_t>(i,glo_mu[i]));
-//         }
-//         allreduce_atp_aux();
-//     }
-//     
-//     atom_mu_part_range.resize(atom_mu.size());
-//     atom_mu_part_range[0]=0;
-//     for(int I=1;I!=atom_mu.size();I++)
-//         atom_mu_part_range[I]=atom_mu.at(I-1)+atom_mu_part_range[I-1];
-//     
-//     N_all_mu=atom_mu_part_range[natom-1]+atom_mu[natom-1];
-//     // librpa_int::global::lib_printf("end init_N_all_mu, atom_mu.size: %d\n",atom_mu.size());
-//   //  MPI_Barrier(mpi_comm_global);
-// }
-
 // void allreduce_atp_aux()
 // {
 //     using global::mpi_comm_global;
@@ -335,8 +286,7 @@ matrix reshape_mat_21(const size_t n1, const size_t n2, const size_t n3, const m
 // 
 //                     for (int i_nu = 0; i_nu != atom_mu[J]; i_nu++)
 //                     {
-//                         //(*vq_ptr)(i_mu, i_nu) = vf_p.second(atom_mu_loc2glo(J, i_nu), atom_mu_loc2glo(I, i_mu)); ////for aims
-//                         (*vq_ptr)(i_mu, i_nu) = vf_p.second(atom_mu_loc2glo(I, i_mu), atom_mu_loc2glo(J, i_nu)); // for abacus
+//                         (*vq_ptr)(i_mu, i_nu) = vf_p.second(atom_mu_loc2glo(I, i_mu), atom_mu_loc2glo(J, i_nu));
 //                     }
 //                 }
 // 

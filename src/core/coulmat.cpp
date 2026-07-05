@@ -141,7 +141,7 @@ static ComplexMatrix build_dense_symmetry_hermitian_matrix_from_local_blocks(
             if (block.nr != expected_nrows || block.nc != expected_ncols)
             {
                 std::ostringstream oss;
-                oss << "ABACUS dense V(q) restore block dimension mismatch for atom pair ("
+                oss << "Dense V(q) symmetry restore block dimension mismatch for atom pair ("
                     << atom_i_pair.first << "," << atom_j_pair.first << "): block=" << block.nr
                     << "x" << block.nc << ", expected=" << expected_nrows << "x"
                     << expected_ncols;
@@ -305,7 +305,7 @@ static atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
         if (star.members.size() != star_mapping.member_q_bz_keys.size())
         {
             throw std::runtime_error(
-                "ABACUS q-star mapping is inconsistent with the loaded full-q keys");
+                "Symmetry q-star mapping is inconsistent with the loaded full-q keys");
         }
 
         for (std::size_t imember = 0; imember < star.members.size(); ++imember)
@@ -325,7 +325,7 @@ static atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
             catch (const std::exception& ex)
             {
                 std::ostringstream oss;
-                oss << "ABACUS irreducible-sector FT failed for star=" << star.star_index
+                oss << "Symmetry irreducible-sector FT failed for star=" << star.star_index
                     << ", member=" << imember << ", spatial_isym=" << member.spatial_isym
                     << ", time_reversal=" << (member.time_reversal ? "true" : "false") << ": "
                     << ex.what();
@@ -415,7 +415,7 @@ atpair_R_mat_t FT_Vq(const AtomicBasis &basis_abf,
         && can_use_symmetry_irreducible_sector_ft_vq(symmetry_context, basis_abf, coulmat_k, pbc))
     {
         global::lib_printf_root(
-            "ABACUS EXX symmetry accumulates irreducible-sector `V(R)` directly from IBZ q-stars\n");
+            "EXX symmetry accumulates irreducible-sector `V(R)` directly from IBZ q-stars\n");
         return accumulate_symmetry_abf_irreducible_sector_vr(symmetry_context, basis_abf, coulmat_k, pbc);
     }
 

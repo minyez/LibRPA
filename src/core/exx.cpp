@@ -625,7 +625,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     if (use_input_exx_coulomb_restore)
     {
         global::lib_printf(
-            "Restoring the ABACUS EXX auxiliary Coulomb blocks from the irreducible sector to the full real-space sector before LibRI contraction\n");
+            "Restoring EXX auxiliary Coulomb blocks from the irreducible sector to the full real-space sector before LibRI contraction\n");
         for (const auto& I_JRV : coul_mat)
         {
             const auto ir_I = I_JRV.first;
@@ -638,7 +638,7 @@ void Exx::build(const LibrpaParallelRouting routing,
                 if (pair_iter == symmetry_sector_stars.end())
                 {
                     throw std::runtime_error(
-                        "Failed to match an irreducible EXX Coulomb atom pair with the ABACUS restore map");
+                        "Failed to match an irreducible EXX Coulomb atom pair with the symmetry restore map");
                 }
                 for (const auto& R_V : J_RV.second)
                 {
@@ -647,7 +647,7 @@ void Exx::build(const LibrpaParallelRouting routing,
                     if (star_iter == pair_iter->second.end())
                     {
                         throw std::runtime_error(
-                            "Failed to match an irreducible EXX Coulomb real-space block with the ABACUS restore map");
+                            "Failed to match an irreducible EXX Coulomb real-space block with the symmetry restore map");
                     }
                     const ComplexMatrix v_ir(*R_V.second);
                     for (const auto& restore_member : star_iter->second)
@@ -664,7 +664,7 @@ void Exx::build(const LibrpaParallelRouting routing,
                         if (target_pair_map.count(restore_member.full_R) != 0)
                         {
                             throw std::runtime_error(
-                                "Duplicate full-sector EXX Coulomb block appears during ABACUS symmetry restore");
+                                "Duplicate full-sector EXX Coulomb block appears during symmetry restore");
                         }
                         target_pair_map[restore_member.full_R] =
                             std::make_shared<matrix>(v_full_real);
@@ -887,7 +887,7 @@ void Exx::build(const LibrpaParallelRouting routing,
 	                    if (block.nr != as_int(n_full_I) || block.nc != as_int(n_full_J))
 	                    {
 	                        throw std::runtime_error(
-	                            "ABACUS EXX real-space restore produced an AO block with an inconsistent dimension");
+	                            "EXX real-space symmetry restore produced an AO block with an inconsistent dimension");
 	                    }
 	                    if (use_complex_exx_r)
 	                    {
@@ -936,7 +936,7 @@ void Exx::build(const LibrpaParallelRouting routing,
 	                                {
 	                                    std::ostringstream oss;
 	                                    oss << "Failed to match a symmetry-filtered EXX real-space block"
-	                                        << " with the ABACUS irreducible-sector restore map for I="
+	                                        << " with the irreducible-sector restore map for I="
 	                                        << I << " J=" << J << " R=(" << R.x << ","
 	                                        << R.y << "," << R.z << ")";
 	                                    throw std::runtime_error(oss.str());

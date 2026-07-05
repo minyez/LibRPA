@@ -165,7 +165,7 @@ static void add_scaled_complex_matrix(ComplexMatrix& matrix_dst,
 {
     if (matrix_dst.nr != matrix_src.nr || matrix_dst.nc != matrix_src.nc)
     {
-        throw std::runtime_error("Inconsistent ABACUS W(R) block dimensions");
+        throw std::runtime_error("Inconsistent W(R) symmetry block dimensions");
     }
     for (int i = 0; i < matrix_dst.size; ++i)
     {
@@ -310,7 +310,7 @@ static ComplexMatrix build_dense_symmetry_hermitian_matrix_from_local_blocks(
             if (block.nr != expected_nrows || block.nc != expected_ncols)
             {
                 std::ostringstream oss;
-                oss << "ABACUS dense W(q) restore block dimension mismatch for atom pair ("
+                oss << "Dense W(q) symmetry restore block dimension mismatch for atom pair ("
                     << atom_i_pair.first << "," << atom_j_pair.first << "): block=" << block.nr
                     << "x" << block.nc << ", expected=" << expected_nrows << "x"
                     << expected_ncols;
@@ -532,7 +532,7 @@ static abf_rspace_dense_block_map_t restore_symmetry_abf_rspace_dense_blocks(
             if (pair_iter == sector_stars.end())
             {
                 throw std::runtime_error(
-                    "Failed to match an irreducible W(R) atom pair with the ABACUS restore map");
+                    "Failed to match an irreducible W(R) atom pair with the symmetry restore map");
             }
             for (const auto& R_matrix : jr_entry.second)
             {
@@ -541,7 +541,7 @@ static abf_rspace_dense_block_map_t restore_symmetry_abf_rspace_dense_blocks(
                 if (star_iter == pair_iter->second.end())
                 {
                     std::ostringstream oss;
-                    oss << "Failed to match an irreducible W(R) block with the ABACUS restore map"
+                    oss << "Failed to match an irreducible W(R) block with the symmetry restore map"
                         << " for I=" << ir_I << " J=" << ir_J << " R=(" << ir_R.x << ","
                         << ir_R.y << "," << ir_R.z << ")";
                     throw std::runtime_error(oss.str());
@@ -561,7 +561,7 @@ static abf_rspace_dense_block_map_t restore_symmetry_abf_rspace_dense_blocks(
                     else
                     {
                         throw std::runtime_error(
-                            "Duplicate full-sector W(R) block appears during ABACUS symmetry restore");
+                            "Duplicate full-sector W(R) block appears during symmetry restore");
                     }
                 }
             }
@@ -707,7 +707,7 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
         if (star.members.size() != star_mapping.member_q_bz_keys.size())
         {
             throw std::runtime_error(
-                "ABACUS q-star mapping is inconsistent with the loaded full-q keys");
+                "Symmetry q-star mapping is inconsistent with the loaded full-q keys");
         }
 
         for (std::size_t imember = 0; imember < star.members.size(); ++imember)
@@ -728,7 +728,7 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
             catch (const std::exception& ex)
             {
                 std::ostringstream oss;
-                oss << "ABACUS irreducible-sector W(q)->W(R) accumulation failed for star="
+                oss << "Symmetry irreducible-sector W(q)->W(R) accumulation failed for star="
                     << star.star_index << ", member=" << imember
                     << ", spatial_isym=" << member.spatial_isym
                     << ", time_reversal=" << member.time_reversal
@@ -4542,7 +4542,7 @@ atom_mapping<std::map<Vector3_Order<int>, matrix_m<complex<double>>>>::pair_t_ol
             symmetry_context, abf_layouts, atom_nabf, pbc))
     {
         lib_printf_root(
-            "ABACUS GW symmetry accumulates irreducible-sector `W(R)` directly from IBZ q-stars\n");
+            "GW symmetry accumulates irreducible-sector `W(R)` directly from IBZ q-stars\n");
         Wc_R = accumulate_symmetry_full_wr_from_ibz_q(
             symmetry_context, abf_layouts, Wc_q, pbc, Rlist, atom_nabf);
         comm_h.barrier();

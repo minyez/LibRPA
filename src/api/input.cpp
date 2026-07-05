@@ -220,7 +220,7 @@ void librpa_set_wg_ekb_efermi(LibrpaHandler* h, int nspins, int nkpts, int nstat
     {
         memcpy(eskb[is].c, ekb + length_kb * is, length_kb * sizeof(double));
         memcpy(swg[is].c, wg + length_kb * is, length_kb * sizeof(double));
-        // wg[is](k_index, i) = stod(ws) / n_kpoints; // different with abacus!
+        // Normalize occupations by the number of k points.
         swg[is] *= (1.0 / nkpts);
     }
 
@@ -1255,7 +1255,7 @@ void librpa_set_band_occ_eigval(LibrpaHandler* h, int n_spins, int n_kpts_band, 
     {
         memcpy(eskb[is].c, eig + length_kb * is, length_kb * sizeof(double));
         memcpy(swg[is].c, occ + length_kb * is, length_kb * sizeof(double));
-        // wg[is](k_index, i) = stod(ws) / n_kpoints; // different with abacus!
+        // Normalize occupations by the number of band k points.
         swg[is] *= (1.0 / n_kpts_band);
     }
 

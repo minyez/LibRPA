@@ -68,7 +68,7 @@ class diele_func
 private:
     // ( omega, alpha * beta  )
     std::vector<matrix_m<std::complex<double>>> head;
-    // ( omega, mu:n_abfs * alpha ) for comparison with FHI-aims
+    // ( omega, mu:n_abfs * alpha )
     std::vector<matrix_m<std::complex<double>>> wing_mu;
     // ( omega, lambda:n_lambda * alpha)
     std::vector<matrix_m<std::complex<double>>> wing;
