@@ -9,6 +9,7 @@
 #include <iostream>
 #include <memory>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -40,6 +41,7 @@
 #include "utils_atomic_basis_blacs.h"
 #ifdef LIBRPA_USE_LIBRI
 #include <RI/physics/RPA.h>
+#include <RI/physics/symmetry/Symmetry_Filter.h>
 #endif
 #include <array>
 #include <map>
@@ -440,6 +442,222 @@ static Chi0ExactCollectRequest make_padding_chi0_exact_collect_request(
     const std::array<int, 3> R{Rlist_gf.front().x, Rlist_gf.front().y, Rlist_gf.front().z};
     return {{0}, {{0, R}}};
 }
+
+#ifdef LIBRPA_USE_LIBRI
+static std::array<int, 3> canonicalize_chi0_symmetry_R(
+    const std::array<int, 3> &R,
+    const std::array<int, 3> &period)
+{
+    const auto centered_mod = [](const int value, const int cell_period) {
+        if (cell_period <= 0)
+            return value;
+        return (value % cell_period + 3 * cell_period / 2) % cell_period
+            - cell_period / 2;
+    };
+    return {centered_mod(R[0], period[0]),
+            centered_mod(R[1], period[1]),
+            centered_mod(R[2], period[2])};
+}
+
+static std::map<std::pair<int, int>, std::set<std::array<int, 3>>>
+convert_symmetry_irreducible_sector_to_libri_chi0(
+    const symmetry_irreducible_sector_t &irreducible_sector,
+    const std::array<int, 3> &period)
+{
+    std::map<std::pair<int, int>, std::set<std::array<int, 3>>> libri_sector;
+    for (const auto &pair_Rs : irreducible_sector)
+    {
+        const std::pair<int, int> atom_pair{
+            as_int(pair_Rs.first.first),
+            as_int(pair_Rs.first.second)};
+        for (const auto &R : pair_Rs.second)
+            libri_sector[atom_pair].insert(canonicalize_chi0_symmetry_R(R, period));
+    }
+    return libri_sector;
+}
+
+static Chi0ExactCollectRequest make_chi0_symmetry_collect_request(
+    const symmetry_rspace_sector_stars_t &sector_stars,
+    const std::vector<atpair_t> &target_atpairs,
+    std::vector<atpair_t> &irreducible_atpairs)
+{
+    const std::set<atpair_t> target_set(target_atpairs.begin(), target_atpairs.end());
+    std::set<atpair_t> irreducible_set;
+    Chi0ExactCollectRequest request;
+
+    for (const auto &pair_star : sector_stars)
+    {
+        const auto &ir_pair = pair_star.first;
+        for (const auto &R_star : pair_star.second)
+        {
+            const auto &ir_R = R_star.first;
+            const bool needed =
+                std::any_of(R_star.second.begin(), R_star.second.end(),
+                            [&target_set](const SymmetryRSpaceRestoreMember &member) {
+                                return target_set.count(member.full_atom_pair) != 0;
+                            });
+            if (!needed)
+                continue;
+            request.first.insert(as_int(ir_pair.first));
+            request.second.insert({as_int(ir_pair.second), {ir_R.x, ir_R.y, ir_R.z}});
+            irreducible_set.insert(ir_pair);
+        }
+    }
+
+    irreducible_atpairs.assign(irreducible_set.begin(), irreducible_set.end());
+    return request;
+}
+
+static bool can_use_chi0_rspace_symmetry(
+    const SymmetryContext &symmetry_ctx,
+    const AtomicBasis &abf_basis,
+    const std::vector<Vector3_Order<int>> &Rlist_gf,
+    const bool use_symmetry_context)
+{
+    if (!use_symmetry_context || !symmetry_ctx.available || Rlist_gf.empty())
+        return false;
+    if (!abf_basis.has_l_shells() || symmetry_ctx.rspace_operations.empty()
+        || symmetry_ctx.irreducible_sector.empty()
+        || symmetry_ctx.rspace_sector_stars.empty()
+        || symmetry_ctx.rsh_rotations.empty())
+    {
+        return false;
+    }
+    if (symmetry_ctx.atom_to_type.size() != static_cast<std::size_t>(abf_basis.n_atoms)
+        || symmetry_ctx.input_coord_frac.size() != static_cast<std::size_t>(abf_basis.n_atoms))
+    {
+        return false;
+    }
+    if (!symmetry_species_layouts_match_atom_counts(
+            abf_basis.build_species_basis_layouts(symmetry_ctx.atom_to_type),
+            symmetry_ctx.atom_to_type,
+            build_atom_nw_map(abf_basis)))
+    {
+        return false;
+    }
+    const auto n_full_blocks =
+        static_cast<std::size_t>(abf_basis.n_atoms) *
+        static_cast<std::size_t>(abf_basis.n_atoms) *
+        Rlist_gf.size();
+    return symmetry_ctx.count_irreducible_blocks() < n_full_blocks;
+}
+
+template <typename TA, typename TC, typename Tdata>
+class OutputOnlyFilter_Chi0_Symmetry : public RI::Filter_Atom<TA, std::pair<TA, TC>>
+{
+  public:
+    using TAC = std::pair<TA, TC>;
+
+    OutputOnlyFilter_Chi0_Symmetry(
+        const TC &period,
+        const std::map<std::pair<TA, TA>, std::set<TC>> &irreducible_sector)
+        : symmetry_(period, irreducible_sector)
+    {
+    }
+
+    bool filter_for2(const RI::Label::ab_ab &label,
+                     const TA &A1,
+                     const TAC &A2) const override
+    {
+        if (label == RI::Label::ab_ab::a1b2_a2b1)
+            return !this->symmetry_.in_irreducible_sector(A1, A2);
+        return false;
+    }
+
+    bool filter_for32(const RI::Label::ab_ab &label,
+                      const TA &A1,
+                      const TAC &,
+                      const TAC &A3) const override
+    {
+        if (label == RI::Label::ab_ab::a1b1_a2b2)
+            return !this->symmetry_.in_irreducible_sector(A1, A3);
+        return false;
+    }
+
+  private:
+    RI::Symmetry_Filter<TA, TC, Tdata> symmetry_;
+};
+
+template <typename Tdata>
+static RI::Tensor<Tdata> convert_complex_matrix_to_libri_tensor_chi0(
+    const ComplexMatrix &matrix)
+{
+    RI::Tensor<Tdata> tensor(
+        {static_cast<std::size_t>(matrix.nr), static_cast<std::size_t>(matrix.nc)});
+    for (int row = 0; row != matrix.nr; ++row)
+    {
+        for (int col = 0; col != matrix.nc; ++col)
+        {
+            if constexpr (std::is_same<Tdata, std::complex<double>>::value)
+                tensor(row, col) = matrix(row, col);
+            else
+                tensor(row, col) = matrix(row, col).real();
+        }
+    }
+    return tensor;
+}
+
+template <typename Tdata>
+static Chi0CollectMap<Tdata> restore_symmetry_abf_rspace_tensor_map_chi0(
+    const Chi0CollectMap<Tdata> &tensors_ir,
+    const SymmetryContext &symmetry_ctx,
+    const symmetry_rspace_sector_stars_t &sector_stars,
+    const AtomicBasis &abf_basis,
+    const std::array<int, 3> &period,
+    const std::vector<atpair_t> &target_atpairs)
+{
+    Chi0CollectMap<Tdata> tensors_full;
+    const std::set<atpair_t> target_set(target_atpairs.begin(), target_atpairs.end());
+    if (target_set.empty())
+        return tensors_full;
+
+    const auto abf_layouts = abf_basis.build_species_basis_layouts(symmetry_ctx.atom_to_type);
+    for (const auto &i_entry : tensors_ir)
+    {
+        const auto ir_I = static_cast<atom_t>(i_entry.first);
+        for (const auto &jr_entry : i_entry.second)
+        {
+            const auto ir_J = static_cast<atom_t>(jr_entry.first.first);
+            const auto ir_R_array =
+                canonicalize_chi0_symmetry_R(jr_entry.first.second, period);
+            const Vector3_Order<int> ir_R{
+                ir_R_array[0], ir_R_array[1], ir_R_array[2]};
+            const auto pair_iter = sector_stars.find({ir_I, ir_J});
+            if (pair_iter == sector_stars.end() || pair_iter->second.count(ir_R) == 0)
+            {
+                std::ostringstream oss;
+                oss << "Failed to match a symmetry-filtered chi0 block with the"
+                    << " irreducible-sector restore map for I=" << ir_I
+                    << " J=" << ir_J << " R=(" << ir_R.x << "," << ir_R.y
+                    << "," << ir_R.z << ")";
+                throw LIBRPA_RUNTIME_ERROR(oss.str());
+            }
+
+            const ComplexMatrix chi0_ir = convert_libri_tensor_to_complex_matrix(
+                jr_entry.second, abf_basis.get_atom_nb(ir_I), abf_basis.get_atom_nb(ir_J));
+            for (const auto &restore_member : pair_iter->second.at(ir_R))
+            {
+                if (target_set.count(restore_member.full_atom_pair) == 0)
+                    continue;
+                const ComplexMatrix chi0_full = rotate_symmetry_rspace_block(
+                    symmetry_ctx, abf_layouts, restore_member.isym, ir_I, ir_J, chi0_ir);
+                auto &target = tensors_full[as_int(restore_member.full_atom_pair.first)][{
+                    as_int(restore_member.full_atom_pair.second),
+                    {restore_member.full_R.x,
+                     restore_member.full_R.y,
+                     restore_member.full_R.z}}];
+                if (!target.empty())
+                {
+                    throw LIBRPA_RUNTIME_ERROR(
+                        "Duplicate full-sector chi0 block appears during symmetry restore");
+                }
+                target = convert_complex_matrix_to_libri_tensor_chi0<Tdata>(chi0_full);
+            }
+        }
+    }
+    return tensors_full;
+}
+#endif
 
 template <typename Tdata>
 static std::vector<Chi0CollectMap<Tdata>> split_chi0_map_by_collect_plan(
@@ -1755,8 +1973,12 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     const auto all_atpairs_ABF = generate_atom_pair_from_nat(atbasis_abf.n_atoms, false);
     const auto q_uhap_process_shape = resolve_chi0_q_uhap_process_shape(
         comm_h.nprocs, qlist.size(), all_atpairs_ABF.size());
+    const bool use_chi0_rspace_symmetry =
+        can_use_chi0_rspace_symmetry(
+            this->symmetry_context, abf_Cs, Rlist_gf, this->use_symmetry_context);
     const bool use_q_uhap_split =
         global::dev_opts.use_chi0_q_uhap_split && !use_shrink_chi &&
+        !use_chi0_rspace_symmetry &&
         comm_h.nprocs > 1 && q_uhap_process_shape.nprocs_outer > 1;
     TwoLevelParallelContext q_uhap_ctxt;
     std::vector<Vector3_Order<double>> qlist_chi0(qlist.begin(), qlist.end());
@@ -1790,6 +2012,11 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         for (const auto &R : Rlist_chi0_collect)
             global::ofs_myid << " (" << R.x << "," << R.y << "," << R.z << ")";
         global::ofs_myid << "\n";
+    }
+    else if (use_chi0_rspace_symmetry && global::dev_opts.use_chi0_q_uhap_split
+             && q_uhap_process_shape.nprocs_outer > 1)
+    {
+        global::ofs_myid << "chi0 q/uhap split disabled for symmetry chi0 path\n";
     }
     else if (use_shrink_chi && q_uhap_process_shape.nprocs_outer > 1)
     {
@@ -1851,15 +2078,39 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     global::profiler.start("chi0_libri_routing_set_parallel");
     rpa.set_parallel(comm_h.comm, atoms_pos, lat_array, period_array);
     global::profiler.stop("chi0_libri_routing_set_parallel");
+    const auto libri_chi0_irreducible_sector =
+        use_chi0_rspace_symmetry
+            ? convert_symmetry_irreducible_sector_to_libri_chi0(
+                  this->symmetry_context.irreducible_sector, period_array)
+            : std::map<std::pair<int, int>, std::set<std::array<int, 3>>>{};
+    if (use_chi0_rspace_symmetry)
+    {
+        if (comm_h.is_root())
+            global::lib_printf(
+                "Reducing chi0 real-space blocks with symmetry irreducible sectors\n");
+        rpa.lri.filter_atom =
+            std::make_shared<OutputOnlyFilter_Chi0_Symmetry<int, std::array<int, 3>, Tdata>>(
+                rpa.lri.period, libri_chi0_irreducible_sector);
+    }
     // rpa.chi0s is still produced on the global LibRI communicator.  The q/uhap
     // split narrows the requested atom pairs first; once Cs/Gs are scoped to the
     // two-level groups, this is the communicator boundary to switch.
     const MPI_Comm chi0_collect_comm = comm_h.comm;
 
     // local Rlist to collect after chi0s on each process
+    std::vector<atpair_t> symmetry_irreducible_atpairs;
+    const auto symmetry_exact_s0_s1 =
+        use_chi0_rspace_symmetry
+            ? make_chi0_symmetry_collect_request(
+                  this->symmetry_context.rspace_sector_stars,
+                  atpairs_chi0,
+                  symmetry_irreducible_atpairs)
+            : Chi0ExactCollectRequest{};
     const auto s0_s1 = get_s0_s1_for_comm_map2_first<atom_t, int>(atpairs_chi0);
     const auto exact_s0_s1 =
-        make_chi0_exact_collect_request(atpairs_chi0, Rlist_chi0_collect);
+        use_chi0_rspace_symmetry
+            ? symmetry_exact_s0_s1
+            : make_chi0_exact_collect_request(atpairs_chi0, Rlist_chi0_collect);
 
     global::profiler.start("chi0_libri_routing_set_cs", "Set Cs");
     // if (Params::debug)
@@ -1938,7 +2189,8 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     // duplicate every local chi0s tensor on every rank, so large ABACUS cases
     // split the global (I,J,R) key space into chunks capped by an estimated
     // tensor byte count.
-    const bool use_byte_collect_chunks = comm_h.nprocs > 1 && byte_collect_plan.nchunks() > 0;
+    const bool use_byte_collect_chunks =
+        comm_h.nprocs > 1 && !use_chi0_rspace_symmetry && byte_collect_plan.nchunks() > 0;
     // Each rank only requests the atoms that can contribute to its local atom-pair work after
     // collection.  This keeps communication bounded by the final ownership instead of the full
     // tensor map.
@@ -1949,7 +2201,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         ? static_cast<std::size_t>(libri_collect_s0_chunk)
         : 0;
     const bool use_s0_collect_chunks =
-        comm_h.nprocs > 1 && !use_byte_collect_chunks &&
+        comm_h.nprocs > 1 && !use_chi0_rspace_symmetry && !use_byte_collect_chunks &&
         s0_chunk > 0 && s0_chunk < atbasis_abf.n_atoms;
     if (use_byte_collect_chunks)
     {
@@ -2038,7 +2290,26 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                     global::profiler.start("chi0_libri_routing_collect_Rs", "Collect R blocks");
                     if (comm_h.nprocs > 1)
                     {
-                        if (use_q_uhap_split)
+                        if (use_chi0_rspace_symmetry)
+                        {
+                            auto request = exact_s0_s1;
+                            const bool padding_request =
+                                request.first.empty() || request.second.empty();
+                            if (padding_request)
+                                request = make_padding_chi0_exact_collect_request(
+                                    Rlist_gf, abf_Cs);
+                            global::ofs_myid << "chi0_libri_routing_collect_Rs symmetry exact "
+                                             << "request_s0 = " << request.first.size()
+                                             << ", request_s1 = " << request.second.size()
+                                             << ", padding_request = " << padding_request << "\n";
+                            const Chi0CollectMap<Tdata> tmp_chi0 =
+                                collect_chi0_map2<Tdata>(
+                                    chi0_collect_comm, rpa.chi0s, request);
+                            if (!padding_request)
+                                accumulate_chi0_collect_map(chi0s_IJR, tmp_chi0);
+                            rpa.chi0s.clear();
+                        }
+                        else if (use_q_uhap_split)
                         {
                             auto request = exact_s0_s1;
                             const bool padding_request =
@@ -2156,6 +2427,17 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
 
             std::clock_t cpu_clock_done_chi0s = clock();
 
+            if (use_chi0_rspace_symmetry && use_shrink_chi)
+            {
+                profiler.start("chi0_libri_routing_symmetry_restore_R",
+                               "Restore chi0 full real-space sector");
+                chi0s_IJR = restore_symmetry_abf_rspace_tensor_map_chi0<Tdata>(
+                    chi0s_IJR, this->symmetry_context,
+                    this->symmetry_context.rspace_sector_stars,
+                    abf_Cs, period_array, atpairs_chi0);
+                profiler.stop("chi0_libri_routing_symmetry_restore_R");
+            }
+
             // parse back to chi0
             if (use_shrink_chi && !use_delayed_ft_shrink)
             {
@@ -2188,8 +2470,12 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
             else
             {
                 profiler.start("chi0_libri_routing_ct_R", "Cosine transform to R-space");
+                const auto &atpairs_ct =
+                    use_chi0_rspace_symmetry && !use_shrink_chi
+                        ? symmetry_irreducible_atpairs
+                        : atpairs_chi0;
                 chi_libri_ct_accumulate_R<Tdata>(
-                    isp, mf.get_n_spins(), it, tfg, chi0s_IJR, atpairs_chi0, chi0_freq_R);
+                    isp, mf.get_n_spins(), it, tfg, chi0s_IJR, atpairs_ct, chi0_freq_R);
                 profiler.stop("chi0_libri_routing_ct_R");
                 chi0s_IJR.clear();
             }
@@ -2220,6 +2506,16 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         {
             const double freq = it_freq_R->first;
             const std::vector<double> freq_one{freq};
+            if (use_chi0_rspace_symmetry && !use_shrink_chi)
+            {
+                profiler.start("chi0_libri_routing_symmetry_restore_R",
+                               "Restore chi0 full real-space sector");
+                it_freq_R->second = restore_symmetry_abf_rspace_tensor_map_chi0<Tdata>(
+                    it_freq_R->second, this->symmetry_context,
+                    this->symmetry_context.rspace_sector_stars,
+                    abf_Cs, period_array, atpairs_chi0);
+                profiler.stop("chi0_libri_routing_symmetry_restore_R");
+            }
             if (use_delayed_ft_shrink)
             {
                 map<double, map<Vector3_Order<double>,
