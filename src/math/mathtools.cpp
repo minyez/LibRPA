@@ -72,8 +72,11 @@ void GaussLegendre_unit(size_t N, double *nodes, double *weights)
         }
         if ( ite == maxiter) throw std::logic_error("Legendre Newton-Raphson not converged");
         // apply symmetry
-        nodes[N - 1 - i] = -nodes[i];
-        weights[N - 1 - i] = -weights[i];
+        const double weight = 2.0 / ((1.0 - x * x) * dy * dy);
+        nodes[i] = -x;
+        weights[i] = weight;
+        nodes[N - 1 - i] = x;
+        weights[N - 1 - i] = weight;
     }
 }
 

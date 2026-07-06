@@ -255,6 +255,8 @@ LibrpaTimeFreqGrid get_tfgrid_type(const std::string& grid_str)
         return LIBRPA_TFGRID_UNSET;
     if (grid_str == "GL")
         return LIBRPA_TFGRID_GAUSS_LEGENDRE;
+    if (grid_str == "split-GL")
+        return LIBRPA_TFGRID_SPLIT_GAUSS_LEGENDRE;
     if (grid_str == "GC-I")
         return LIBRPA_TFGRID_GAUSS_CHEBYSHEV_I;
     if (grid_str == "GL-II")
@@ -272,6 +274,8 @@ std::string get_tfgrid_string(const LibrpaTimeFreqGrid& grid_type) noexcept
 {
     if (grid_type == LIBRPA_TFGRID_GAUSS_LEGENDRE)
         return "GL";
+    if (grid_type == LIBRPA_TFGRID_SPLIT_GAUSS_LEGENDRE)
+        return "split-GL";
     if (grid_type == LIBRPA_TFGRID_GAUSS_CHEBYSHEV_I)
         return "GC-I";
     if (grid_type == LIBRPA_TFGRID_GAUSS_CHEBYSHEV_II)

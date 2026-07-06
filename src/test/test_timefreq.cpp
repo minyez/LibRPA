@@ -8,6 +8,8 @@
 
 #include <iostream>
 #include <cassert>
+#include <cmath>
+#include <vector>
 
 using namespace std;
 using namespace librpa_int;
@@ -18,6 +20,66 @@ void check_initialize()
     // cout << source_dir << endl;
     // cout << minimax_grid_path << endl;
     TFGrids tfg(6);
+}
+
+void check_gauss_grids()
+{
+    TFGrids gl(4);
+    gl.generate(LIBRPA_TFGRID_GAUSS_LEGENDRE);
+    assert(gl.get_grid_type() == LIBRPA_TFGRID_GAUSS_LEGENDRE);
+    assert(!gl.has_time_grids());
+
+    const auto gl_freq = gl.get_freq_nodes();
+    const auto gl_weight = gl.get_freq_weights();
+    const vector<double> gl_ref_freq = {
+        0.037306157410633582,
+        0.24627921401387612,
+        1.0151079984602933,
+        6.7013066301151962,
+    };
+    const vector<double> gl_ref_weight = {
+        0.10042496565842267,
+        0.36320093923997282,
+        1.4970332756138096,
+        18.039340819487776,
+    };
+    const double tol = 1e-13;
+    for (size_t i = 0; i != gl.size(); ++i)
+    {
+        assert(std::isfinite(gl_freq[i]) && gl_freq[i] > 0.0);
+        assert(std::isfinite(gl_weight[i]) && gl_weight[i] > 0.0);
+        assert(std::fabs(gl_freq[i] - gl_ref_freq[i]) < tol);
+        assert(std::fabs(gl_weight[i] - gl_ref_weight[i]) < tol);
+        if (i > 0) assert(gl_freq[i - 1] < gl_freq[i]);
+    }
+
+    TFGrids split_gl(4);
+    split_gl.generate(LIBRPA_TFGRID_SPLIT_GAUSS_LEGENDRE, -1, -1, 2.0);
+    assert(split_gl.get_grid_type() == LIBRPA_TFGRID_SPLIT_GAUSS_LEGENDRE);
+    assert(!split_gl.has_time_grids());
+
+    const auto split_freq = split_gl.get_freq_nodes();
+    const auto split_weight = split_gl.get_freq_weights();
+    const vector<double> split_ref_freq = {
+        0.42264973081037427,
+        2.2540333075851664,
+        4.0,
+        17.745966692414836,
+    };
+    const vector<double> split_ref_weight = {
+        1.0,
+        0.70564807662546158,
+        3.5555555555555558,
+        43.738796367818985,
+    };
+    for (size_t i = 0; i != split_gl.size(); ++i)
+    {
+        assert(std::isfinite(split_freq[i]) && split_freq[i] > 0.0);
+        assert(std::isfinite(split_weight[i]) && split_weight[i] > 0.0);
+        assert(std::fabs(split_freq[i] - split_ref_freq[i]) < tol);
+        assert(std::fabs(split_weight[i] - split_ref_weight[i]) < tol);
+        if (i > 0) assert(split_freq[i - 1] < split_freq[i]);
+    }
 }
 
 void check_minimax_ng16_diamond_k222()
@@ -147,6 +209,7 @@ int main (int argc, char **argv)
     init_global_io();
 
     check_initialize();
+    check_gauss_grids();
     check_minimax_ng16_diamond_k222();
     check_minimax_ng6_HF_123();
     check_minimax_ng32_H2O();

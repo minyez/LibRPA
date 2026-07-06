@@ -26,10 +26,11 @@ const string TFGrids::GRID_TYPES_NOTES[LIBRPA_TFGRID_COUNT] =
         "Minimax time-frequency grids",
         "Even-spaced frequency grids",
         "Even-spaced time-frequency grids (debug use)",
+        "Split Gauss-Legendre grids",
     };
 
 const bool TFGrids::SUPPORT_TIME_GRIDS[LIBRPA_TFGRID_COUNT] =
-    { false, false, false, true, false, true };
+    { false, false, false, true, false, true, false };
 
 void TFGrids::set_freq()
 {
@@ -123,14 +124,17 @@ double TFGrids::generate(LibrpaTimeFreqGrid gtype, double emin, double eintveral
         case (LIBRPA_TFGRID_GAUSS_LEGENDRE):
         {
             this->generate_GaussLegendre();
+            break;
         }
         case (LIBRPA_TFGRID_GAUSS_CHEBYSHEV_I):
         {
             this->generate_GaussChebyshevI();
+            break;
         }
         case (LIBRPA_TFGRID_GAUSS_CHEBYSHEV_II):
         {
             this->generate_GaussChebyshevII();
+            break;
         }
         case (LIBRPA_TFGRID_MINIMAX):
         {
@@ -145,6 +149,11 @@ double TFGrids::generate(LibrpaTimeFreqGrid gtype, double emin, double eintveral
         case (LIBRPA_TFGRID_EVEN_SPACED_TF):
         {
             this->generate_evenspaced_tf(emin, eintveral, tmin, tinterval);
+            break;
+        }
+        case (LIBRPA_TFGRID_SPLIT_GAUSS_LEGENDRE):
+        {
+            this->generate_SplitGaussLegendre(emax);
             break;
         }
         default:
@@ -275,6 +284,40 @@ void TFGrids::generate_GaussLegendre()
         freq_nodes[i] = nodes[i];
         freq_weights[i] = weights[i];
     }
+}
+
+void TFGrids::generate_SplitGaussLegendre(double emax)
+{
+    if (n_grids < 2)
+        throw LIBRPA_RUNTIME_ERROR("grid size must be at least 2 for split-GL grids");
+    if (n_grids % 2 != 0)
+        throw LIBRPA_RUNTIME_ERROR("grid size must be even for split-GL grids");
+    if (emax <= 0)
+        throw LIBRPA_RUNTIME_ERROR("emax must be positive for split-GL grids");
+
+    const size_t n_finite = n_grids / 2;
+    const size_t n_tail_output = n_grids - n_finite + 1;
+
+    std::vector<double> finite_nodes(n_finite), finite_weights(n_finite);
+    GaussLegendre_unit(n_finite, finite_nodes.data(), finite_weights.data());
+    transform_GaussQuad_unit2x0x1(0.0, emax, n_finite, finite_nodes.data(), finite_weights.data());
+    for (size_t i = 0; i + 1 < n_finite; i++ )
+    {
+        freq_nodes[i] = finite_nodes[i];
+        freq_weights[i] = finite_weights[i];
+    }
+
+    // Match FHI-aims tf_ini: gauleg1 writes omega(ntau:nomega), replacing the last finite GL point.
+    std::vector<double> tail_nodes(n_tail_output), tail_weights(n_tail_output);
+    GaussLegendre_unit(n_tail_output, tail_nodes.data(), tail_weights.data());
+    for (size_t i = 0; i != n_tail_output; i++ )
+    {
+        const double denom = 1.0 - tail_nodes[i];
+        const size_t out = n_finite - 1 + i;
+        freq_nodes[out] = 2.0 * emax / denom;
+        freq_weights[out] = tail_weights[i] * 2.0 * emax / (denom * denom);
+    }
+    grid_type = LIBRPA_TFGRID_SPLIT_GAUSS_LEGENDRE;
 }
 
 int TFGrids::get_time_index(const double &time) const

@@ -106,6 +106,7 @@ typedef enum
     LIBRPA_TFGRID_MINIMAX = 3,             ///< Minimax grid
     LIBRPA_TFGRID_EVEN_SPACED = 4,         ///< Evenly spaced grid
     LIBRPA_TFGRID_EVEN_SPACED_TF = 5,      ///< Evenly spaced in time-frequency
+    LIBRPA_TFGRID_SPLIT_GAUSS_LEGENDRE = 6, ///< Finite GL interval plus transformed tail
 } LibrpaTimeFreqGrid;
 
 /**

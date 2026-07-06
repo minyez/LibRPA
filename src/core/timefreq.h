@@ -103,6 +103,7 @@ class TFGrids
         //! Generate Gauss-Chebyshev quadrature of second kind on [0, infty)
         void generate_GaussChebyshevII();
         void generate_GaussLegendre();
+        void generate_SplitGaussLegendre(double emax);
         bool has_time_grids() const { return time_nodes.size() > 0; }
         ~TFGrids();
 };
