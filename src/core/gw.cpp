@@ -51,6 +51,7 @@ using namespace ddla;
 #include <RI/physics/GW.h>
 #include <RI/physics/symmetry/Symmetry_Filter.h>
 using RI::Tensor;
+using RI::Communicate_Tensors_Map_Judge::comm_map2;
 using RI::Communicate_Tensors_Map_Judge::comm_map2_first;
 #endif
 
@@ -649,15 +650,6 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
     is_eigvec_k_distributed_ = is_eigvec_k_distributed;
     is_rspace_built_ = false;
     is_kspace_built_ = false;
-    is_rspace_redist_for_KS_ = false;
-    is_rspace_redist_blacs_ = false;
-    has_sigc_is_f_IJ_R_unredist_ = false;
-    sigc_rspace_blacs_routing_ = SigcRspaceBlacsRouting::None;
-    sigc_rspace_blacs_ictxt_ = -1;
-    sigc_rspace_blacs_nprocs_ = 0;
-    sigc_rspace_blacs_nprows_ = 0;
-    sigc_rspace_blacs_npcols_ = 0;
-    sigc_rspace_blacs_layout_ = CTXT_LAYOUT::R;
     output_sigc_ks_kf_band_index_ = 0;
     sigc_kspace_source_.clear();
 
@@ -681,16 +673,6 @@ void G0W0::reset_rspace()
 {
     sigc_is_f_IJ_R.clear();
     is_rspace_built_ = false;
-    is_rspace_redist_for_KS_ = false;
-    is_rspace_redist_blacs_ = false;
-    has_sigc_is_f_IJ_R_unredist_ = false;
-    sigc_rspace_blacs_routing_ = SigcRspaceBlacsRouting::None;
-    sigc_rspace_blacs_ictxt_ = -1;
-    sigc_rspace_blacs_nprocs_ = 0;
-    sigc_rspace_blacs_nprows_ = 0;
-    sigc_rspace_blacs_npcols_ = 0;
-    sigc_rspace_blacs_layout_ = CTXT_LAYOUT::R;
-    sigc_is_f_IJ_R_unredist_.clear();
 }
 
 void G0W0::reset_kspace()
@@ -1970,9 +1952,6 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
         if (rotation_kblacs_ctxt->n_kpoints() != n_target_kpoints)
             throw LIBRPA_RUNTIME_ERROR("k-point BLACS context has inconsistent number of target k-points");
     }
-    const auto target_sigc_routing = use_klocal_rotation
-                                         ? SigcRspaceBlacsRouting::KLocalBlacs
-                                         : SigcRspaceBlacsRouting::GlobalBlacs;
     const BlacsCtxtHandler &rotation_blacs_h =
         use_klocal_rotation ? rotation_kblacs_ctxt->blacs_h : blacs_ctxt_h;
 
@@ -2053,29 +2032,16 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     {
         desc_nao_nao_fb.init(n_aos, n_aos, n_aos, n_aos, 0, 0);
     }
-    const auto set_IJ_nao_nao = get_necessary_IJ_from_block_2D(
+    const auto set_IJ_nao_nao_rotation = get_necessary_IJ_from_block_2D(
         this->atbasis_wfc, this->atbasis_wfc, desc_nao_nao);
-    const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao);
 
-    // Check Sigmac matrix distribution
-    const bool same_sigc_blacs_context =
-        sigc_rspace_blacs_ictxt_ == rotation_blacs_h.ictxt &&
-        sigc_rspace_blacs_nprocs_ == rotation_blacs_h.nprocs &&
-        sigc_rspace_blacs_nprows_ == rotation_blacs_h.nprows &&
-        sigc_rspace_blacs_npcols_ == rotation_blacs_h.npcols &&
-        sigc_rspace_blacs_layout_ == rotation_blacs_h.layout;
-    const bool need_sigc_redist =
-        !is_rspace_redist_for_KS_ || sigc_rspace_blacs_routing_ != target_sigc_routing ||
-        !same_sigc_blacs_context;
-    if (need_sigc_redist)
+    const SigcRspaceMap *sigc_rotation_source = &sigc_is_f_IJ_R;
+    SigcRspaceMap sigc_is_f_IJ_R_redist;
+    if (!use_klocal_rotation)
     {
         global::profiler.start("g0w0_build_sigc_KS_rspace_redist");
-        if (!has_sigc_is_f_IJ_R_unredist_)
-        {
-            sigc_is_f_IJ_R_unredist_ = sigc_is_f_IJ_R;
-            has_sigc_is_f_IJ_R_unredist_ = true;
-        }
-        const auto &sigc_redist_source = sigc_is_f_IJ_R_unredist_;
+        const auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao_rotation);
+        const auto &sigc_redist_source = sigc_is_f_IJ_R;
         for (int isp = 0; isp < n_spins; isp++)
         {
             for (int ispn_bra = 0; ispn_bra < n_spinor; ispn_bra++)
@@ -2129,9 +2095,9 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                             }
                         }
                         auto sigc_dest =
-                            find_nested_int_map_3(sigc_is_f_IJ_R, isp, ispn_bra, ispn_ket);
+                            find_nested_int_map_3(sigc_is_f_IJ_R_redist, isp, ispn_bra, ispn_ket);
                         if (sigc_dest == nullptr)
-                            sigc_is_f_IJ_R[isp][ispn_bra][ispn_ket][freq] = std::move(sigc_new);
+                            sigc_is_f_IJ_R_redist[isp][ispn_bra][ispn_ket][freq] = std::move(sigc_new);
                         else
                         {
                             auto it_sp_f = sigc_dest->find(freq);
@@ -2146,21 +2112,8 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
             }
         }
 
-        is_rspace_redist_for_KS_ = true;
-        is_rspace_redist_blacs_ = true;
-        sigc_rspace_blacs_routing_ = target_sigc_routing;
-        sigc_rspace_blacs_ictxt_ = rotation_blacs_h.ictxt;
-        sigc_rspace_blacs_nprocs_ = rotation_blacs_h.nprocs;
-        sigc_rspace_blacs_nprows_ = rotation_blacs_h.nprows;
-        sigc_rspace_blacs_npcols_ = rotation_blacs_h.npcols;
-        sigc_rspace_blacs_layout_ = rotation_blacs_h.layout;
+        sigc_rotation_source = &sigc_is_f_IJ_R_redist;
         global::profiler.stop("g0w0_build_sigc_KS_rspace_redist");
-    }
-    else
-    {
-        if (!is_rspace_redist_blacs_ ||
-            sigc_rspace_blacs_routing_ == SigcRspaceBlacsRouting::None)
-            throw LIBRPA_RUNTIME_ERROR("has redistributed for non-BLACS");
     }
 
     sigc_is_ik_f_KS.clear(); sigc_diag_is_ik_f_KS.clear();
@@ -2173,6 +2126,33 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
             mat_map[freq] = sigc.copy();
         else
             it->second += sigc;
+    };
+    using SigcIJKKey = std::pair<int, int>; // (J, ik); J stays first for atom-pair routing.
+    std::set<int> sigc_ijk_s0;
+    std::set<SigcIJKKey> sigc_ijk_s1;
+    if (use_klocal_rotation)
+    {
+        for (const auto &IJ: set_IJ_nao_nao_rotation)
+        {
+            sigc_ijk_s0.insert(IJ.first);
+            for (const int ik: rotation_kblacs_ctxt->kpoints_local())
+                sigc_ijk_s1.insert({IJ.second, ik});
+        }
+    }
+    auto collect_sigc_nao_from_ijk =
+        [this, &desc_nao_nao](Matz &sigc_nao_nao,
+                              const std::map<int, std::map<int, Matz>> &sigc_ij)
+    {
+        sigc_nao_nao.zero_out();
+        for (const auto &[I, J_sigc]: sigc_ij)
+        {
+            for (const auto &[J, sigc]: J_sigc)
+            {
+                collect_block_from_IJ_storage(
+                    sigc_nao_nao, desc_nao_nao, this->atbasis_wfc, this->atbasis_wfc,
+                    I, J, complex<double>{1.0, 0.0}, sigc.ptr(), sigc.major());
+            }
+        }
     };
 
     // local 2D-block submatrices
@@ -2188,55 +2168,6 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
         {
             for (int ispn_ket = 0; ispn_ket < n_spinor; ispn_ket++)
             {
-                std::map<double, std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, Matz>>>> sigc_isp_local;
-                global::profiler.start("g0w0_build_sigc_KS_find_bvk");
-                for (const auto& freq: this->tfg.get_freq_nodes())
-                {
-                    const auto &sigc_IJ_R = sigc_is_f_IJ_R.at(isp).at(ispn_bra).at(ispn_ket).at(freq);
-                    sigc_isp_local[freq] = {};
-                    auto add_sigc = [](auto &R_sigc_shift, const Vector3_Order<int> &R_bvk,
-                                       const auto &sigc, const double weight)
-                    {
-                        auto sigc_weighted = sigc.copy();
-                        sigc_weighted *= weight;
-                        auto [it, inserted] = R_sigc_shift.emplace(R_bvk, sigc_weighted);
-                        if (!inserted) it->second += sigc_weighted;
-                    };
-
-                    // Convert each <I,<J, R>> pair to the configured BvK counterpart
-                    // to speed up later Fourier transform while keeping band interpolation accurate.
-                    // A missing remap entry means that R is already the desired counterpart.
-                    // NOTE: from redistribution, sigc_is_f_IJ_R is ensured to have all [spin][freq] keys,
-                    // but each value (atom-pair map) can be empty.
-                    for (const auto &[IJ, R_sigc]: sigc_IJ_R)
-                    {
-                        const auto &I = IJ.first;
-                        const auto &J = IJ.second;
-                        auto &R_sigc_shift = sigc_isp_local[freq][I][J];
-                        for (auto &[R, sigc]: R_sigc)
-                        {
-                            const auto *R_bvks = bvk_remap.find_R_bvk(IJ, R);
-                            if (R_bvks == nullptr || R_bvks->empty())
-                            {
-                                R_sigc_shift[R] = sigc;
-                            }
-                            else if (R_bvks->size() == 1)
-                            {
-                                R_sigc_shift[R_bvks->front()] = sigc;
-                            }
-                            else
-                            {
-                                const auto weight = 1.0 / static_cast<double>(R_bvks->size());
-                                for (const auto &R_bvk: *R_bvks)
-                                {
-                                    add_sigc(R_sigc_shift, R_bvk, sigc, weight);
-                                }
-                            }
-                        }
-                    }
-                }
-                global::profiler.stop("g0w0_build_sigc_KS_find_bvk");
-
                 if (use_klocal_rotation)
                 {
                     global::profiler.start("g0w0_build_sigc_KS_rotate_kpara_klocal_blacs");
@@ -2244,22 +2175,103 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                     desc_nao_nband_fb.init(n_aos, n_bands, n_aos, n_bands, 0, 0);
                     std::vector<complex<double>> dummy(1, complex<double>{0.0, 0.0});
                     release_free_mem();
-                    for (const int ik: rotation_kblacs_ctxt->kpoints_local())
+                    for (const auto& freq: this->tfg.get_freq_nodes())
                     {
-                        if (ik < 0 || ik >= n_target_kpoints)
-                            throw LIBRPA_RUNTIME_ERROR("k-point index out of range for k-local SigC rotation");
-                        const auto& kfrac = kfrac_target[ik];
-                        const std::function<complex<double>(const atom_t, const atom_t, const Vector3_Order<int> &)>
-                            fourier = [kfrac](const atom_t I, const atom_t J, const Vector3_Order<int> &R)
-                            {
-                                const auto ang = (kfrac * R) * TWO_PI;
-                                return complex<double>{std::cos(ang), std::sin(ang)};
-                            };
-                        for (const auto& freq: this->tfg.get_freq_nodes())
+                        std::map<int, std::map<SigcIJKKey, Matz>> sigc_I_Jik_mat;
+                        global::profiler.start("g0w0_build_sigc_KS_fourier_world");
+                        const auto sigc_orig =
+                            find_nested_int_map_3(sigc_is_f_IJ_R, isp, ispn_bra, ispn_ket);
+                        if (sigc_orig != nullptr)
                         {
-                            sigc_nao_nao.zero_out();
-                            collect_block_from_IJ_storage_matrix_transform(sigc_nao_nao, desc_nao_nao,
-                                    this->atbasis_wfc, this->atbasis_wfc, fourier, sigc_isp_local.at(freq));
+                            auto it_sp_f = sigc_orig->find(freq);
+                            if (it_sp_f != sigc_orig->cend())
+                            {
+                                for (const auto &[IJ, R_sigc]: it_sp_f->second)
+                                {
+                                    const int I = static_cast<int>(IJ.first);
+                                    const int J = static_cast<int>(IJ.second);
+                                    const int n_I = static_cast<int>(this->atbasis_wfc.get_atom_nb(IJ.first));
+                                    const int n_J = static_cast<int>(this->atbasis_wfc.get_atom_nb(IJ.second));
+                                    auto add_sigc_ijk =
+                                        [&](const Vector3_Order<int> &R_bvk, const Matz &sigc,
+                                            const double weight)
+                                    {
+                                        for (int ik = 0; ik != n_target_kpoints; ++ik)
+                                        {
+                                            const auto ang = (kfrac_target[ik] * R_bvk) * TWO_PI;
+                                            const complex<double> phase{weight * std::cos(ang),
+                                                                        weight * std::sin(ang)};
+                                            auto sigc_weighted = sigc.copy();
+                                            sigc_weighted *= phase;
+                                            auto &Jik_sigc = sigc_I_Jik_mat[I];
+                                            auto [it, inserted] =
+                                                Jik_sigc.try_emplace({J, ik}, n_I, n_J, MAJOR::ROW);
+                                            it->second += sigc_weighted;
+                                        }
+                                    };
+
+                                    for (const auto &[R, sigc]: R_sigc)
+                                    {
+                                        const auto *R_bvks = bvk_remap.find_R_bvk(IJ, R);
+                                        if (R_bvks == nullptr || R_bvks->empty())
+                                        {
+                                            add_sigc_ijk(R, sigc, 1.0);
+                                        }
+                                        else if (R_bvks->size() == 1)
+                                        {
+                                            add_sigc_ijk(R_bvks->front(), sigc, 1.0);
+                                        }
+                                        else
+                                        {
+                                            const auto weight = 1.0 / static_cast<double>(R_bvks->size());
+                                            for (const auto &R_bvk: *R_bvks)
+                                                add_sigc_ijk(R_bvk, sigc, weight);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        global::profiler.stop("g0w0_build_sigc_KS_fourier_world");
+
+                        global::profiler.start("g0w0_build_sigc_KS_ijk_redist");
+                        std::map<int, std::map<SigcIJKKey, Tensor<cplxdb>>> sigc_I_Jik_tensor;
+                        for (auto &[I, Jik_sigc]: sigc_I_Jik_mat)
+                        {
+                            const int n_I = static_cast<int>(this->atbasis_wfc.get_atom_nb(I));
+                            for (auto &[Jik, sigc]: Jik_sigc)
+                            {
+                                const int n_J = static_cast<int>(this->atbasis_wfc.get_atom_nb(Jik.first));
+                                sigc_I_Jik_tensor[I][Jik] = Tensor<cplxdb>({n_I, n_J}, sigc.sptr());
+                            }
+                        }
+                        auto sigc_I_Jik =
+                            comm_map2(comm_h.comm, sigc_I_Jik_tensor, sigc_ijk_s0, sigc_ijk_s1);
+                        sigc_I_Jik_tensor.clear();
+                        sigc_I_Jik_mat.clear();
+                        std::map<int, std::map<int, std::map<int, Matz>>> sigc_ijk_local;
+                        for (const auto &[I, Jik_sigc]: sigc_I_Jik)
+                        {
+                            const int n_I = static_cast<int>(this->atbasis_wfc.get_atom_nb(I));
+                            for (const auto &[Jik, mat]: Jik_sigc)
+                            {
+                                const int J = Jik.first;
+                                const int ik = Jik.second;
+                                const int n_J = static_cast<int>(this->atbasis_wfc.get_atom_nb(J));
+                                sigc_ijk_local[ik][I][J] = Matz{n_I, n_J, mat.data, MAJOR::ROW};
+                            }
+                        }
+                        sigc_I_Jik.clear();
+                        global::profiler.stop("g0w0_build_sigc_KS_ijk_redist");
+
+                        for (const int ik: rotation_kblacs_ctxt->kpoints_local())
+                        {
+                            if (ik < 0 || ik >= n_target_kpoints)
+                                throw LIBRPA_RUNTIME_ERROR("k-point index out of range for k-local SigC rotation");
+                            const auto it_sigc_ik = sigc_ijk_local.find(ik);
+                            if (it_sigc_ik == sigc_ijk_local.cend())
+                                sigc_nao_nao.zero_out();
+                            else
+                                collect_sigc_nao_from_ijk(sigc_nao_nao, it_sigc_ik->second);
                             if (this->output_sigc_mat_kf)
                             {
                                 const int ifreq = this->tfg.get_freq_index(freq);
@@ -2368,6 +2380,56 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                 }
                 else
                 {
+                    std::map<double, std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, Matz>>>> sigc_isp_local;
+                    global::profiler.start("g0w0_build_sigc_KS_find_bvk");
+                    for (const auto& freq: this->tfg.get_freq_nodes())
+                    {
+                        const auto &sigc_IJ_R =
+                            sigc_rotation_source->at(isp).at(ispn_bra).at(ispn_ket).at(freq);
+                        sigc_isp_local[freq] = {};
+                        auto add_sigc = [](auto &R_sigc_shift, const Vector3_Order<int> &R_bvk,
+                                           const auto &sigc, const double weight)
+                        {
+                            auto sigc_weighted = sigc.copy();
+                            sigc_weighted *= weight;
+                            auto [it, inserted] = R_sigc_shift.emplace(R_bvk, sigc_weighted);
+                            if (!inserted) it->second += sigc_weighted;
+                        };
+
+                        // Convert each <I,<J, R>> pair to the configured BvK counterpart
+                        // to speed up later Fourier transform while keeping band interpolation accurate.
+                        // A missing remap entry means that R is already the desired counterpart.
+                        // NOTE: from local redistribution, sigc_rotation_source has all [spin][freq] keys,
+                        // but each value (atom-pair map) can be empty.
+                        for (const auto &[IJ, R_sigc]: sigc_IJ_R)
+                        {
+                            const auto &I = IJ.first;
+                            const auto &J = IJ.second;
+                            auto &R_sigc_shift = sigc_isp_local[freq][I][J];
+                            for (auto &[R, sigc]: R_sigc)
+                            {
+                                const auto *R_bvks = bvk_remap.find_R_bvk(IJ, R);
+                                if (R_bvks == nullptr || R_bvks->empty())
+                                {
+                                    R_sigc_shift[R] = sigc;
+                                }
+                                else if (R_bvks->size() == 1)
+                                {
+                                    R_sigc_shift[R_bvks->front()] = sigc;
+                                }
+                                else
+                                {
+                                    const auto weight = 1.0 / static_cast<double>(R_bvks->size());
+                                    for (const auto &R_bvk: *R_bvks)
+                                    {
+                                        add_sigc(R_sigc_shift, R_bvk, sigc, weight);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    global::profiler.stop("g0w0_build_sigc_KS_find_bvk");
+
                     global::profiler.start("g0w0_build_sigc_KS_rotate_kserial");
                     desc_nband_nband_fb.init(n_bands, n_bands, n_bands, n_bands, 0, 0);
                     auto sigc_nband_nband_fb = init_local_mat<complex<double>>(desc_nband_nband_fb, MAJOR::COL);

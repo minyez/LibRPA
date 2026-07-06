@@ -22,35 +22,18 @@ namespace librpa_int
 class G0W0
 {
 private:
-    enum class SigcRspaceBlacsRouting
-    {
-        None,
-        GlobalBlacs,
-        KLocalBlacs
-    };
-
     using SigcRspaceMap =
         std::map<int, std::map<int, std::map<int, std::map<double, ap_p_map<std::map<Vector3_Order<int>, Matz>>>>>>;
 
     bool is_eigvec_k_distributed_;
     bool is_rspace_built_;
     bool is_kspace_built_;
-    bool is_rspace_redist_for_KS_;
-    bool is_rspace_redist_blacs_;
-    bool has_sigc_is_f_IJ_R_unredist_;
-    SigcRspaceBlacsRouting sigc_rspace_blacs_routing_;
-    int sigc_rspace_blacs_ictxt_;
-    int sigc_rspace_blacs_nprocs_;
-    int sigc_rspace_blacs_nprows_;
-    int sigc_rspace_blacs_npcols_;
-    CTXT_LAYOUT sigc_rspace_blacs_layout_;
     int output_sigc_ks_kf_band_index_;
     std::string sigc_kspace_source_;
 
     //! frequency-domain reciprocal-space correlation self-energy, indices [ispin][ispinor_bra][ispinor_ket][freq][R][I][J](n_I, n_J)
     // Sparse storage from LibRI calculation
     SigcRspaceMap sigc_is_f_IJ_R;
-    SigcRspaceMap sigc_is_f_IJ_R_unredist_;
 
     void build_sigc_matrix_KS(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
                               const std::vector<Vector3_Order<double>> &kfrac_target,
