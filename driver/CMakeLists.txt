@@ -44,3 +44,7 @@ if(BUILD_SHARED_LIBS)
 endif()
 
 install(TARGETS rpa_exe DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+if(LIBRPA_ENABLE_TEST AND LIBRPA_ENABLE_CPP_TEST)
+  add_subdirectory(test)
+endif()
