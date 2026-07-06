@@ -2127,8 +2127,9 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
         else
             it->second += sigc;
     };
-    using SigcIJKKey = std::pair<int, int>; // (J, ik); J stays first for atom-pair routing.
-    std::set<int> sigc_ijk_s0;
+    using SigcIJKAtomKey = std::size_t;
+    using SigcIJKKey = std::pair<SigcIJKAtomKey, int>; // (J, ik); J stays first for atom-pair routing.
+    std::set<SigcIJKAtomKey> sigc_ijk_s0;
     std::set<SigcIJKKey> sigc_ijk_s1;
     if (use_klocal_rotation)
     {
@@ -2177,7 +2178,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                     release_free_mem();
                     for (const auto& freq: this->tfg.get_freq_nodes())
                     {
-                        std::map<int, std::map<SigcIJKKey, Matz>> sigc_I_Jik_mat;
+                        std::map<SigcIJKAtomKey, std::map<SigcIJKKey, Matz>> sigc_I_Jik_mat;
                         global::profiler.start("g0w0_build_sigc_KS_fourier_world");
                         const auto sigc_orig =
                             find_nested_int_map_3(sigc_is_f_IJ_R, isp, ispn_bra, ispn_ket);
@@ -2188,10 +2189,12 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                             {
                                 for (const auto &[IJ, R_sigc]: it_sp_f->second)
                                 {
-                                    const int I = static_cast<int>(IJ.first);
-                                    const int J = static_cast<int>(IJ.second);
-                                    const int n_I = static_cast<int>(this->atbasis_wfc.get_atom_nb(IJ.first));
-                                    const int n_J = static_cast<int>(this->atbasis_wfc.get_atom_nb(IJ.second));
+                                    const SigcIJKAtomKey I = IJ.first;
+                                    const SigcIJKAtomKey J = IJ.second;
+                                    const int n_I = static_cast<int>(
+                                        this->atbasis_wfc.get_atom_nb(static_cast<int>(I)));
+                                    const int n_J = static_cast<int>(
+                                        this->atbasis_wfc.get_atom_nb(static_cast<int>(J)));
                                     auto add_sigc_ijk =
                                         [&](const Vector3_Order<int> &R_bvk, const Matz &sigc,
                                             const double weight)
@@ -2234,13 +2237,15 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                         global::profiler.stop("g0w0_build_sigc_KS_fourier_world");
 
                         global::profiler.start("g0w0_build_sigc_KS_ijk_redist");
-                        std::map<int, std::map<SigcIJKKey, Tensor<cplxdb>>> sigc_I_Jik_tensor;
+                        std::map<SigcIJKAtomKey, std::map<SigcIJKKey, Tensor<cplxdb>>> sigc_I_Jik_tensor;
                         for (auto &[I, Jik_sigc]: sigc_I_Jik_mat)
                         {
-                            const int n_I = static_cast<int>(this->atbasis_wfc.get_atom_nb(I));
+                            const std::size_t n_I =
+                                this->atbasis_wfc.get_atom_nb(static_cast<int>(I));
                             for (auto &[Jik, sigc]: Jik_sigc)
                             {
-                                const int n_J = static_cast<int>(this->atbasis_wfc.get_atom_nb(Jik.first));
+                                const std::size_t n_J =
+                                    this->atbasis_wfc.get_atom_nb(static_cast<int>(Jik.first));
                                 sigc_I_Jik_tensor[I][Jik] = Tensor<cplxdb>({n_I, n_J}, sigc.sptr());
                             }
                         }
@@ -2251,13 +2256,14 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                         std::map<int, std::map<int, std::map<int, Matz>>> sigc_ijk_local;
                         for (const auto &[I, Jik_sigc]: sigc_I_Jik)
                         {
-                            const int n_I = static_cast<int>(this->atbasis_wfc.get_atom_nb(I));
+                            const int I_int = static_cast<int>(I);
+                            const int n_I = static_cast<int>(this->atbasis_wfc.get_atom_nb(I_int));
                             for (const auto &[Jik, mat]: Jik_sigc)
                             {
-                                const int J = Jik.first;
+                                const int J = static_cast<int>(Jik.first);
                                 const int ik = Jik.second;
                                 const int n_J = static_cast<int>(this->atbasis_wfc.get_atom_nb(J));
-                                sigc_ijk_local[ik][I][J] = Matz{n_I, n_J, mat.data, MAJOR::ROW};
+                                sigc_ijk_local[ik][I_int][J] = Matz{n_I, n_J, mat.data, MAJOR::ROW};
                             }
                         }
                         sigc_I_Jik.clear();
