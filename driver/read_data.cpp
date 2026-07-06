@@ -275,6 +275,22 @@ static void normalize_qp_state_range_from_kgrid_mf(const librpa_int::MeanField &
            << ", i_state_high = " << params.i_state_high << ". The high state index is exclusive.";
         throw std::runtime_error(ss.str());
     }
+
+    if (params.output_gw_spec_func)
+    {
+        if (params.sf_state_start < 0) params.sf_state_start = params.i_state_low;
+        if (params.sf_state_end < 0) params.sf_state_end = params.i_state_high;
+        params.sf_state_start = std::max(params.i_state_low, params.sf_state_start);
+        params.sf_state_end = std::min(params.i_state_high, params.sf_state_end);
+        if (params.sf_state_end <= params.sf_state_start)
+        {
+            std::stringstream ss;
+            ss << "Empty spectral-function state range: sf_state_start = "
+               << params.sf_state_start << ", sf_state_end = " << params.sf_state_end
+               << ". The high state index is exclusive.";
+            throw std::runtime_error(ss.str());
+        }
+    }
 }
 
 void read_scf_occ_eigenvalues(const string &file_path)

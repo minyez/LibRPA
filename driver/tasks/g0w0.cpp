@@ -1,8 +1,12 @@
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <exception>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <string>
+#include <vector>
 
 #include <librpa_enums.h>
 
@@ -17,6 +21,143 @@
 #include "../read_data.h"
 #include "../task.h"
 #include "task_helper.h"
+
+static std::vector<double> make_spectral_omegas_ha()
+{
+    const double start = driver::driver_params.sf_omega_start;
+    const double end = driver::driver_params.sf_omega_end;
+    const double step = driver::driver_params.sf_omega_step;
+
+    std::vector<double> omegas;
+    const double guard = 1e-12 * std::max(1.0, std::max(std::abs(start), std::abs(end)));
+    for (double omega = start; omega <= end + guard; omega += step)
+        omegas.push_back(omega / librpa_int::HA2EV);
+    return omegas;
+}
+
+static std::vector<double> slice_state_window(
+    const std::vector<double> &src,
+    const int n_spins,
+    const int n_kpoints_local,
+    const int src_state_low,
+    const int src_state_high,
+    const int dst_state_low,
+    const int dst_state_high)
+{
+    if (dst_state_low < src_state_low || dst_state_high > src_state_high
+        || dst_state_high <= dst_state_low)
+    {
+        throw LIBRPA_RUNTIME_ERROR("invalid spectral-function state range");
+    }
+
+    const int n_states_src = src_state_high - src_state_low;
+    const int n_states_dst = dst_state_high - dst_state_low;
+    std::vector<double> dst(n_spins * n_kpoints_local * n_states_dst);
+    for (int isp = 0; isp != n_spins; ++isp)
+    {
+        for (int ik_local = 0; ik_local != n_kpoints_local; ++ik_local)
+        {
+            const int src0 = (isp * n_kpoints_local + ik_local) * n_states_src
+                + dst_state_low - src_state_low;
+            const int dst0 = (isp * n_kpoints_local + ik_local) * n_states_dst;
+            std::copy_n(src.data() + src0, n_states_dst, dst.data() + dst0);
+        }
+    }
+    return dst;
+}
+
+template <typename T>
+void write_binary_value(std::ofstream &ofs, const T &value)
+{
+    ofs.write(reinterpret_cast<const char *>(&value), sizeof(T));
+}
+
+static void write_binary_doubles(std::ofstream &ofs, const std::vector<double> &values)
+{
+    if (values.empty()) return;
+    ofs.write(reinterpret_cast<const char *>(values.data()),
+              static_cast<std::streamsize>(values.size() * sizeof(double)));
+}
+
+static void write_spectral_function_binary(
+    const std::string &output_dir,
+    const std::string &filename,
+    const std::vector<double> &omegas_ha,
+    const librpa::G0W0SpectralFunctionResult &sf,
+    const librpa_int::MeanField &mf,
+    const std::vector<double> &vxc,
+    const std::vector<double> &vexx,
+    const std::vector<int> &iks,
+    const int n_spins,
+    const int i_state_low,
+    const int i_state_high)
+{
+    librpa_int::create_directories(output_dir.c_str(), 0);
+    const auto path = librpa_int::join_path(output_dir, filename);
+    std::ofstream ofs(path, std::ios::out | std::ios::binary);
+    if (!ofs)
+        throw LIBRPA_RUNTIME_ERROR("Failed to open spectral-function output file " + path);
+
+    const int n_states = i_state_high - i_state_low;
+    const int n_omegas = static_cast<int>(omegas_ha.size());
+    const int n_kpoints_local = static_cast<int>(iks.size());
+    const auto n_values = static_cast<size_t>(n_spins) * n_kpoints_local * n_states;
+    const auto n_spectral_values = n_values * n_omegas;
+
+    write_binary_value(ofs, static_cast<std::int32_t>(n_spins));
+    write_binary_value(ofs, static_cast<std::int32_t>(n_kpoints_local));
+    write_binary_value(ofs, static_cast<std::int32_t>(i_state_low));
+    write_binary_value(ofs, static_cast<std::int32_t>(i_state_high));
+    const double efermi_ev = mf.get_efermi() * librpa_int::HA2EV;
+    write_binary_value(ofs, efermi_ev);
+    write_binary_value(ofs, static_cast<std::int32_t>(n_omegas));
+
+    std::vector<double> values(n_values);
+    for (int isp = 0; isp != n_spins; ++isp)
+    {
+        for (int ik_local = 0; ik_local != n_kpoints_local; ++ik_local)
+        {
+            const int ik = iks[ik_local];
+            for (int i = 0; i != n_states; ++i)
+            {
+                const int i_state = i_state_low + i;
+                const int state_idx = (isp * n_kpoints_local + ik_local) * n_states + i;
+                values[state_idx] =
+                    mf.get_eigenvals()[isp](ik, i_state) * librpa_int::HA2EV;
+            }
+        }
+    }
+    write_binary_doubles(ofs, values);
+
+    for (size_t i = 0; i != n_values; ++i)
+        values[i] = vxc[i] * librpa_int::HA2EV;
+    write_binary_doubles(ofs, values);
+
+    for (size_t i = 0; i != n_values; ++i)
+        values[i] = vexx[i] * librpa_int::HA2EV;
+    write_binary_doubles(ofs, values);
+
+    std::vector<double> omega_values(n_omegas);
+    for (int iomega = 0; iomega != n_omegas; ++iomega)
+        omega_values[iomega] = omegas_ha[iomega] * librpa_int::HA2EV;
+    write_binary_doubles(ofs, omega_values);
+
+    values.resize(n_spectral_values);
+    for (size_t i = 0; i != n_spectral_values; ++i)
+        values[i] = sf.spectral_function[i] / librpa_int::HA2EV;
+    write_binary_doubles(ofs, values);
+
+    for (size_t i = 0; i != n_spectral_values; ++i)
+        values[i] = sf.sigc[i].real() * librpa_int::HA2EV;
+    write_binary_doubles(ofs, values);
+
+    for (size_t i = 0; i != n_spectral_values; ++i)
+        values[i] = sf.sigc[i].imag() * librpa_int::HA2EV;
+    write_binary_doubles(ofs, values);
+
+    if (!ofs)
+        throw LIBRPA_RUNTIME_ERROR("Failed to write spectral-function output file " + path);
+}
 
 void driver::task_g0w0()
 {
@@ -88,6 +229,11 @@ void driver::task_g0w0()
     // Build the self-energy matrix (including exchange and correlation)
     h.build_g0w0_sigma(opts);
 
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    const std::string band_kpath_file =
+        driver_params.input_dir + driver_params.fn_band_kpath_info;
+    const bool has_band_kpath = librpa_int::path_exists(band_kpath_file.c_str());
+
     const int i_state_low = driver_params.i_state_low;
     const int i_state_high = driver_params.i_state_high;
     const int n_states_calc = i_state_high - i_state_low;
@@ -116,6 +262,30 @@ void driver::task_g0w0()
 
         const auto qpe = h.get_g0w0_qpe_kgrid(opts, n_spins, iks_eigvec_this,
                                               i_state_low, i_state_high, vxc_flat, vexx);
+
+        if (driver_params.output_gw_spec_func && !has_band_kpath)
+        {
+            const int sf_state_low = driver_params.sf_state_start;
+            const int sf_state_high = driver_params.sf_state_end;
+
+            const int n_kpoints_local = static_cast<int>(iks_eigvec_this.size());
+            const auto vxc_sf = slice_state_window(
+                vxc_flat, n_spins, n_kpoints_local, i_state_low, i_state_high,
+                sf_state_low, sf_state_high);
+            const auto vexx_sf = slice_state_window(
+                vexx, n_spins, n_kpoints_local, i_state_low, i_state_high,
+                sf_state_low, sf_state_high);
+
+            const auto omegas_sf = make_spectral_omegas_ha();
+            const auto sf = h.get_g0w0_spectral_function_with_sigc_kgrid(
+                opts, n_spins, iks_eigvec_this, sf_state_low, sf_state_high,
+                omegas_sf, vxc_sf, vexx_sf);
+            if (myid_global == 0)
+                write_spectral_function_binary(
+                    opts.output_dir, "spectral_function_kgrid.dat", omegas_sf, sf,
+                    pds->mf, vxc_sf, vexx_sf, iks_eigvec_this, n_spins,
+                    sf_state_low, sf_state_high);
+        }
 
         if (!opts.use_kpara_scf_eigvec)
         {
@@ -157,7 +327,6 @@ void driver::task_g0w0()
     }
 
     const std::string banner(124, '-');
-    auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &kfrac_list = pds->pbc.kfrac_list;
     const auto &mf = pds->mf;
     const auto &symmetry_context = pds->symmetry_context;
@@ -253,8 +422,7 @@ void driver::task_g0w0()
 
     /* Below we handle the band k-points data
      * First load the information of k-points along the k-path */
-    const std::string band_kpath_file = driver_params.input_dir + driver_params.fn_band_kpath_info;
-    if (!librpa_int::path_exists(band_kpath_file.c_str()))
+    if (!has_band_kpath)
     {
         lib_printf_root(LIBRPA_VERBOSE_WARN,
                         "Band k-path file %s is not found under %s, skip band calculation\n",
@@ -334,6 +502,30 @@ void driver::task_g0w0()
         const auto qpe_band =
             h.get_g0w0_qpe_band_k(opts, n_spins, iks_this, i_state_low_band,
                                   i_state_high_band, vxc_this, vexx_band);
+
+        if (driver_params.output_gw_spec_func)
+        {
+            const int sf_state_low = driver_params.sf_state_start;
+            const int sf_state_high = driver_params.sf_state_end;
+
+            const int n_kpoints_local = static_cast<int>(iks_this.size());
+            const auto vxc_sf = slice_state_window(
+                vxc_this, n_spins, n_kpoints_local, i_state_low_band, i_state_high_band,
+                sf_state_low, sf_state_high);
+            const auto vexx_sf = slice_state_window(
+                vexx_band, n_spins, n_kpoints_local, i_state_low_band, i_state_high_band,
+                sf_state_low, sf_state_high);
+
+            const auto omegas_sf = make_spectral_omegas_ha();
+            const auto sf = h.get_g0w0_spectral_function_with_sigc_band_k(
+                opts, n_spins, iks_this, sf_state_low, sf_state_high,
+                omegas_sf, vxc_sf, vexx_sf);
+            if (myid_global == 0)
+                write_spectral_function_binary(
+                    opts.output_dir, "spectral_function_band.dat", omegas_sf, sf,
+                    pds->mf_band, vxc_sf, vexx_sf, iks_this, n_spins,
+                    sf_state_low, sf_state_high);
+        }
 
         profiler.start("collect_exx_sigc_band");
         if (!opts.use_kpara_scf_eigvec)

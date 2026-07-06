@@ -235,15 +235,17 @@ struct DriverParams
     double sf_omega_step;
 
     //! First state index for spectral-function output, inclusive.
+    //! Negative values inherit i_state_low after QP state-range normalization.
     //! @par Default
-    //! 0
+    //! -1
     //! @par Status
     //! Experimental
     int sf_state_start;
 
     //! Last state index for spectral-function output, exclusive.
+    //! Negative values inherit i_state_high after QP state-range normalization.
     //! @par Default
-    //! 10000
+    //! -1
     //! @par Status
     //! Experimental
     int sf_state_end;

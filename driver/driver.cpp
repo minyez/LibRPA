@@ -44,8 +44,8 @@ DriverParams::DriverParams():
     sf_omega_start(0.0),
     sf_omega_end(1.0),
     sf_omega_step(0.1),
-    sf_state_start(0),
-    sf_state_end(10000)
+    sf_state_start(-1),
+    sf_state_end(-1)
 {
 }
 
@@ -102,6 +102,8 @@ std::string DriverParams::format()
         ss << "sf_omega_start = " << sf_omega_start << std::endl;
         ss << "sf_omega_end   = " << sf_omega_end << std::endl;
         ss << "sf_omega_step  = " << sf_omega_step << std::endl;
+        ss << "sf_state_start = " << sf_state_start << std::endl;
+        ss << "sf_state_end   = " << sf_state_end << std::endl;
     }
     return ss.str();
 }

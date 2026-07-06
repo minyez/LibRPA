@@ -178,6 +178,24 @@ static std::string check_dirpath(const std::string &dirpath)
 #define _parse_switch(obj, name) parser.parse_bool(#name, btmp, flag); if (flag == 0) obj.name = get_switch(btmp);
 #define _parse_string_post(obj, name, post) parser.parse_string(#name, stmp, flag); if (flag == 0) obj.name = post(stmp);
 
+static void validate_input_parameters()
+{
+    const auto &params = driver::driver_params;
+    if (params.output_gw_spec_func)
+    {
+        if (params.sf_omega_step <= 0.0)
+            throw std::runtime_error("sf_omega_step must be positive");
+        if (params.sf_omega_end < params.sf_omega_start)
+            throw std::runtime_error("sf_omega_end must be no smaller than sf_omega_start");
+        if (params.sf_state_start >= 0 && params.sf_state_end >= 0
+            && params.sf_state_end <= params.sf_state_start)
+            throw std::runtime_error("sf_state_end must be greater than sf_state_start");
+        if (driver::get_bool(driver::opts.use_kpara_scf_eigvec))
+            throw std::runtime_error(
+                "output_gw_spec_func does not yet support use_kpara_scf_eigvec");
+    }
+}
+
 void parse_inputfile_to_params(const std::string &fn)
 {
     using namespace driver;
@@ -415,6 +433,8 @@ void parse_inputfile_to_params(const std::string &fn)
     // Spectral function
     _parse_double(opts, sf_gf_omega_shift);
     _parse_double(opts, sf_sigc_omega_shift);
+
+    validate_input_parameters();
 }
 
 #undef _parse_int
