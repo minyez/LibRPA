@@ -27,8 +27,8 @@ static std::string get_last_matched(const std::string &s, const std::string &key
                                     const std::string &vregex, int igroup)
 {
     std::string sout = "";
-    // a leading group to get rid of keys in comments
-    std::regex r(key + SPACE_SEP + InputParser::KV_SEP + SPACE_SEP + vregex,
+    std::regex r("(^|[\r\n])" + SPACE_SEP + key + SPACE_SEP
+                 + InputParser::KV_SEP + SPACE_SEP + vregex,
                  std::regex_constants::ECMAScript | std::regex_constants::icase);
     std::sregex_iterator si(s.begin(), s.end(), r);
     auto ei = std::sregex_iterator();
@@ -36,7 +36,7 @@ static std::string get_last_matched(const std::string &s, const std::string &key
     {
         std::smatch match = *i;
         // std::cout << "whole matched string: " << match.str(0) << std::endl;
-        sout = match.str(igroup);
+        sout = match.str(igroup + 1);
     }
     return sout;
 }
