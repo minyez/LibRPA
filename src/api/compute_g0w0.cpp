@@ -23,6 +23,7 @@
 #include "../core/epsilon.h"
 #include "../core/meanfield.h"
 #include "../core/qpe_solver.h"
+#include "../core/timefreq.h"
 #include "../io/fs.h"
 #include "../io/global_io.h"
 #include "../math/complexmatrix.h"
@@ -43,6 +44,12 @@ using librpa_int::global::lib_printf;
 
 namespace
 {
+
+struct GwAnaconGrid
+{
+    std::vector<librpa_int::cplxdb> imagfreqs;
+    bool resample;
+};
 
 // Map a compact collected k-list back to its buffer position.
 std::map<int, int> make_ik_pos_map(const std::vector<int> &iks)
@@ -96,6 +103,77 @@ std::vector<librpa_int::cplxdb> make_real_omegas(const int n_omegas,
     return real_omegas;
 }
 
+GwAnaconGrid make_gw_anacon_grid(
+    const LibrpaOptions &opts, const librpa_int::MeanField &mf,
+    const librpa_int::TFGrids &source_tfg, const std::vector<double> &source_freq_nodes)
+{
+    if (opts.anacon_nfreq == 0)
+    {
+        throw LIBRPA_RUNTIME_ERROR("anacon_nfreq must not be zero");
+    }
+
+    const int source_nfreq = static_cast<int>(source_freq_nodes.size());
+    const auto source_grid_type = source_tfg.get_grid_type();
+    const bool use_new_nfreq = opts.anacon_nfreq > 0
+                                && opts.anacon_nfreq != source_nfreq;
+    const bool use_new_grid_type = opts.anacon_tfgrids_type != LIBRPA_TFGRID_UNSET
+                                   && opts.anacon_tfgrids_type != source_grid_type;
+    if (!use_new_nfreq && !use_new_grid_type)
+    {
+        return {make_imagfreqs(source_freq_nodes), false};
+    }
+
+    const int nfreq = use_new_nfreq ? opts.anacon_nfreq : source_nfreq;
+
+    const auto grid_type = use_new_grid_type
+                               ? opts.anacon_tfgrids_type
+                               : source_grid_type;
+    if (grid_type == LIBRPA_TFGRID_UNSET)
+    {
+        throw LIBRPA_RUNTIME_ERROR("anacon_tfgrids_type is unset and source grid type is unavailable");
+    }
+
+    librpa_int::TFGrids tfg(nfreq);
+    double emin = opts.tfgrids_freq_min;
+    double eintv = opts.tfgrids_freq_interval;
+    double emax = opts.tfgrids_freq_max;
+    const double tmin = opts.tfgrids_time_min;
+    const double tintv = opts.tfgrids_time_interval;
+    const double regulation = opts.minimax_regulation;
+    if (grid_type == LIBRPA_TFGRID_MINIMAX)
+    {
+        double emin_mf, emax_mf;
+        mf.get_E_min_max(emin_mf, emax_mf);
+        emax = opts.minimax_emax > 0 ? opts.minimax_emax : emax_mf;
+        emin = opts.minimax_emin > 0 ? opts.minimax_emin : emin_mf;
+    }
+    tfg.generate(grid_type, emin, eintv, emax, tmin, tintv, regulation);
+
+    const auto freq_nodes = tfg.get_freq_nodes();
+    return {make_imagfreqs(freq_nodes), true};
+}
+
+librpa_int::AnalyContPade make_gw_anacon_pade(
+    const int n_params_anacon,
+    const std::vector<librpa_int::cplxdb> &source_imagfreqs,
+    const std::vector<librpa_int::cplxdb> &source_data,
+    const GwAnaconGrid &anacon_grid)
+{
+    librpa_int::AnalyContPade pade(n_params_anacon, source_imagfreqs, source_data);
+    if (!anacon_grid.resample)
+    {
+        return pade;
+    }
+
+    std::vector<librpa_int::cplxdb> data;
+    data.reserve(anacon_grid.imagfreqs.size());
+    for (const auto &freq: anacon_grid.imagfreqs)
+    {
+        data.emplace_back(pade.get(freq));
+    }
+    return librpa_int::AnalyContPade(n_params_anacon, anacon_grid.imagfreqs, data);
+}
+
 std::vector<librpa_int::cplxdb> extract_sigc_state(
     const std::vector<librpa_int::cplxdb> &sigc_diag, const int isp,
     const int ik_collect, const int i_state, const int nk_collect, const int nfreq,
@@ -116,10 +194,10 @@ std::vector<double> compute_hedin_shifts(
     const LibrpaOptions &opts, const librpa_int::MeanField &mf,
     const std::vector<librpa_int::cplxdb> &sigc_diag,
     const std::vector<int> &iks_collect, const std::vector<double> &freq_nodes,
-    const std::vector<librpa_int::cplxdb> &imagfreqs, const int n_spins,
-    const int n_kpts_this, const int *iks_this, const int i_state_low,
-    const int n_states_calc, const double *vxc, const double *vexx,
-    const char *api_name)
+    const std::vector<librpa_int::cplxdb> &imagfreqs,
+    const GwAnaconGrid &anacon_grid, const int n_spins, const int n_kpts_this,
+    const int *iks_this, const int i_state_low, const int n_states_calc,
+    const double *vxc, const double *vexx, const char *api_name)
 {
     std::vector<double> shifts(n_spins * n_kpts_this * n_states_calc, 0.0);
     if (opts.use_hedin_shift != LIBRPA_SWITCH_ON) return shifts;
@@ -166,8 +244,8 @@ std::vector<double> compute_hedin_shifts(
                 const int ref_idx = start_k + i_ref;
                 const auto sigc_ref_state = extract_sigc_state(
                     sigc_diag, isp, ik_collect, i_ref, nk_collect, nfreq, n_states_calc);
-                const librpa_int::AnalyContPade pade(
-                    opts.n_params_anacon, imagfreqs, sigc_ref_state);
+                const auto pade = make_gw_anacon_pade(
+                    opts.n_params_anacon, imagfreqs, sigc_ref_state, anacon_grid);
                 const auto sigc_ref = pade.get(librpa_int::cplxdb{
                     mf.get_eigenvals()[isp](ik, state_ref) - mf.get_efermi(), 0.0});
                 return sigc_ref.real() + vexx[ref_idx] - vxc[ref_idx];
@@ -229,16 +307,16 @@ void evaluate_spectral_function_diagonal(
     const librpa_int::MeanField &mf, const int n_params_anacon,
     const std::vector<librpa_int::cplxdb> &sigc_diag,
     const std::vector<int> &iks_collect, const std::vector<double> &freq_nodes,
-    const int n_spins, const int n_kpts_this, const int *iks_this,
-    const int i_state_low, const int n_states_calc, const int n_omegas,
-    const double *omegas, const double *vxc, const double *vexx,
+    const std::vector<librpa_int::cplxdb> &imagfreqs,
+    const GwAnaconGrid &anacon_grid, const int n_spins, const int n_kpts_this,
+    const int *iks_this, const int i_state_low, const int n_states_calc,
+    const int n_omegas, const double *omegas, const double *vxc, const double *vexx,
     const double sigc_omega_imag_shift, const double gf_omega_imag_shift,
     double *spectral_function, double *sigc)
 {
     const auto ik_pos = make_ik_pos_map(iks_collect);
     const int nk_collect = static_cast<int>(iks_collect.size());
     const int nfreq = static_cast<int>(freq_nodes.size());
-    const auto imagfreqs = make_imagfreqs(freq_nodes);
     const auto real_omegas = make_real_omegas(n_omegas, omegas);
     const double efermi = mf.get_efermi();
 
@@ -258,7 +336,8 @@ void evaluate_spectral_function_diagonal(
                 const double exx_state = vexx[start_k + i];
                 const auto sigc_state = extract_sigc_state(
                     sigc_diag, isp, ik_collect, i, nk_collect, nfreq, n_states_calc);
-                const librpa_int::AnalyContPade pade(n_params_anacon, imagfreqs, sigc_state);
+                const auto pade = make_gw_anacon_pade(
+                    n_params_anacon, imagfreqs, sigc_state, anacon_grid);
                 for (int iomega = 0; iomega != n_omegas; ++iomega)
                 {
                     const auto omega_gf = real_omegas[iomega]
@@ -826,13 +905,10 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
 
     profiler.start("g0w0_solve_qpe", "Solve quasi-particle equation");
     const auto efermi = pds->mf.get_efermi();
-    std::vector<cplxdb> imagfreqs;
-    for (const auto &freq: freq_nodes)
-    {
-        imagfreqs.push_back(cplxdb{0.0, freq});
-    }
+    const auto imagfreqs = make_imagfreqs(freq_nodes);
+    const auto anacon_grid = make_gw_anacon_grid(opts, pds->mf, pds->tfg, freq_nodes);
     const auto hedin_shifts = compute_hedin_shifts(
-        opts, pds->mf, sigc_diag, iks_collect, freq_nodes, imagfreqs,
+        opts, pds->mf, sigc_diag, iks_collect, freq_nodes, imagfreqs, anacon_grid,
         n_spins, n_kpts_this, iks_this, i_state_low, n_states_calc, vxc, vexx,
         "librpa_get_g0w0_qpe_kgrid");
 
@@ -875,7 +951,8 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
                 sigc_re[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 sigc_im[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 eqp[start_k+i] = std::numeric_limits<double>::quiet_NaN();
-                librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
+                const auto pade = make_gw_anacon_pade(
+                    opts.n_params_anacon, imagfreqs, sigc_state, anacon_grid);
                 int flag_qpe_solver = solve_qpe_with_option(
                     option_qpe_solver, pade, eks_state, efermi + hedin_shifts[start_k+i],
                     vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
@@ -952,7 +1029,8 @@ void librpa_get_g0w0_spectral_function_kgrid(
     profiler.start("api_get_g0w0_spectral_function_kgrid");
 
     profiler.start("g0w0_sigc_rotate_KS", "Correlation self-energy in K-S space");
-    pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
+    pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h,
+                                                  opts.use_gpu_replace_scalapack);
     pds->is_band_calc_done = false;
     profiler.stop("g0w0_sigc_rotate_KS");
     if (opts.output_gw_sigc_ks_mat_kf == LIBRPA_SWITCH_ON)
@@ -966,10 +1044,13 @@ void librpa_get_g0w0_spectral_function_kgrid(
         pds->p_g0w0->sigc_diag_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
         n_spins, pds->mf.get_n_kpoints(), n_kpts_this, iks_this, i_state_low,
         n_states_calc, iks_collect);
+    const auto imagfreqs = make_imagfreqs(freq_nodes);
+    const auto anacon_grid = make_gw_anacon_grid(opts, pds->mf, pds->tfg, freq_nodes);
 
     profiler.start("g0w0_spectral_function", "Compute spectral function");
     evaluate_spectral_function_diagonal(
         pds->mf, opts.n_params_anacon, sigc_diag, iks_collect, freq_nodes,
+        imagfreqs, anacon_grid,
         n_spins, n_kpts_this, iks_this, i_state_low, n_states_calc, n_omegas,
         omegas, vxc, vexx, opts.sf_sigc_omega_shift, opts.sf_gf_omega_shift,
         spectral_function, sigc);
@@ -1038,13 +1119,10 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
 
     profiler.start("g0w0_solve_qpe", "Solve quasi-particle equation");
     const auto efermi = pds->mf_band.get_efermi();
-    std::vector<cplxdb> imagfreqs;
-    for (const auto &freq: freq_nodes)
-    {
-        imagfreqs.push_back(cplxdb{0.0, freq});
-    }
+    const auto imagfreqs = make_imagfreqs(freq_nodes);
+    const auto anacon_grid = make_gw_anacon_grid(opts, pds->mf_band, pds->tfg, freq_nodes);
     const auto hedin_shifts = compute_hedin_shifts(
-        opts, pds->mf_band, sigc_diag, iks_collect, freq_nodes, imagfreqs,
+        opts, pds->mf_band, sigc_diag, iks_collect, freq_nodes, imagfreqs, anacon_grid,
         n_spins, n_kpts_band_this, iks_band_this, i_state_low, n_states_calc,
         vxc_band, vexx_band, "librpa_get_g0w0_qpe_band_k");
 
@@ -1087,7 +1165,8 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                 sigc_band_re[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 sigc_band_im[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 eqp_band[start_k+i] = std::numeric_limits<double>::quiet_NaN();
-                librpa_int::AnalyContPade pade(opts.n_params_anacon, imagfreqs, sigc_state);
+                const auto pade = make_gw_anacon_pade(
+                    opts.n_params_anacon, imagfreqs, sigc_state, anacon_grid);
                 int flag_qpe_solver = solve_qpe_with_option(
                     option_qpe_solver, pade, eks_state, efermi + hedin_shifts[start_k+i],
                     vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
@@ -1189,10 +1268,13 @@ void librpa_get_g0w0_spectral_function_band_k(
         pds->p_g0w0->sigc_diag_is_ik_f_KS, freq_nodes, pds->comm_h, publish_local_values,
         n_spins, pds->mf_band.get_n_kpoints(), n_kpts_band_this, iks_band_this,
         i_state_low, n_states_calc, iks_collect);
+    const auto imagfreqs = make_imagfreqs(freq_nodes);
+    const auto anacon_grid = make_gw_anacon_grid(opts, pds->mf_band, pds->tfg, freq_nodes);
 
     profiler.start("g0w0_spectral_function", "Compute spectral function");
     evaluate_spectral_function_diagonal(
         pds->mf_band, opts.n_params_anacon, sigc_diag, iks_collect, freq_nodes,
+        imagfreqs, anacon_grid,
         n_spins, n_kpts_band_this, iks_band_this, i_state_low, n_states_calc,
         n_omegas, omegas, vxc_band, vexx_band, opts.sf_sigc_omega_shift,
         opts.sf_gf_omega_shift, spectral_function_band, sigc_band);

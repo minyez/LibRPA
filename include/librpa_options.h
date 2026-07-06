@@ -275,6 +275,32 @@ typedef struct
     //! -1 (uses all `nfreq` data)
     int n_params_anacon;
 
+    //! Type of optional frequency grid used for GW analytic continuation.
+    /*!
+     * When unset and `anacon_nfreq` does not request a different grid size,
+     * analytic continuation uses the original GW self-energy grid.
+     *
+     * @par Default
+     * LIBRPA_TFGRID_UNSET
+     * @par Status
+     * Experimental
+     */
+    LibrpaTimeFreqGrid anacon_tfgrids_type;
+
+    //! Number of points in the optional GW analytic-continuation frequency grid.
+    /*!
+     * Negative values use the source grid `nfreq` when the analytic-continuation
+     * grid is built. Zero is invalid. Positive values select that many points;
+     * if this equals the source `nfreq` and no new grid type is selected, the
+     * original grid is reused.
+     *
+     * @par Default
+     * -1
+     * @par Status
+     * Experimental
+     */
+    int anacon_nfreq;
+
     //! Quasi-particle equation solver option.
     /*!
      * Available values:

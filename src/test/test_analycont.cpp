@@ -109,9 +109,38 @@ void test_analycont_pade_source_data()
     }
 }
 
+void test_analycont_pade_resample_imag_grid()
+{
+    constexpr int n = 6;
+    const cplxdb x0 = {2.0, 2.0};
+    std::vector<cplxdb> xs;
+    std::vector<cplxdb> data;
+    initialize_1_over_x_minus_x0_data(n, x0, xs, data);
+
+    librpa_int::AnalyContPade original(n, xs, data);
+    std::vector<cplxdb> xs_resampled = {
+        {0.0, 0.5},
+        {0.0, 1.5},
+        {0.0, 3.0},
+        {0.0, 6.0},
+    };
+    std::vector<cplxdb> data_resampled;
+    data_resampled.reserve(xs_resampled.size());
+    for (const auto &x: xs_resampled)
+    {
+        data_resampled.emplace_back(original.get(x));
+    }
+
+    librpa_int::AnalyContPade resampled(xs_resampled.size(), xs_resampled, data_resampled);
+    const cplxdb test_x = {1.0, 1.0};
+    const cplxdb ref = -1.0 / (test_x - x0);
+    assert(fequal(ref, resampled.get(test_x)));
+}
+
 int main(int argc, char *argv[])
 {
     test_analycont_pade();
     test_get_spectfunc_acpade();
     test_analycont_pade_source_data();
+    test_analycont_pade_resample_imag_grid();
 }

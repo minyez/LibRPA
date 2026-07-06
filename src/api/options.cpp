@@ -85,6 +85,8 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->use_shrink_chi = LIBRPA_SWITCH_ON;
 
     opts->n_params_anacon = -1;
+    opts->anacon_tfgrids_type = LIBRPA_TFGRID_UNSET;
+    opts->anacon_nfreq = -1;
     opts->option_qpe_solver = 0;
     opts->qpe_solver_thres = 1.0e-6;
     opts->qpe_solver_n_iter_max = 10000;

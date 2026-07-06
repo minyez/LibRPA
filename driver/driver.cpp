@@ -179,6 +179,7 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             normal_pair(n_bands_chi0),
             normal_pair(n_bands_sigc),
             normal_pair(n_params_anacon),
+            normal_pair(anacon_nfreq),
             normal_pair(option_qpe_solver),
             normal_pair(option_dielect_func),
             normal_pair(option_bvk_remap),
@@ -195,6 +196,7 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             {"output_dir", opts.output_dir},
             {"restart_from_dir", opts.restart_from_dir[0] ? opts.restart_from_dir : "<output_dir>"},
             {"tfgrids_type", get_tfgrid_string(opts.tfgrids_type)},
+            {"anacon_tfgrids_type", get_tfgrid_string(opts.anacon_tfgrids_type)},
             {"parallel_routing", get_routing_string(opts.parallel_routing)},
             {"rpa_headwing_mode", opts.rpa_headwing_mode},
         };

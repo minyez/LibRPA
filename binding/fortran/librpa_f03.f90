@@ -189,6 +189,8 @@ module librpa_f03
 
       ! GW specific
       integer(c_int) :: n_params_anacon
+      integer(c_int) :: anacon_tfgrids_type
+      integer(c_int) :: anacon_nfreq
       integer(c_int) :: option_qpe_solver
       real(c_double) :: qpe_solver_thres
       integer(c_int) :: qpe_solver_n_iter_max
@@ -306,6 +308,10 @@ module librpa_f03
       logical :: use_shrink_chi
       !> Number of parameters for analytic continuation.
       integer :: n_params_anacon
+      !> Optional GW analytic-continuation frequency grid type; unset uses original grid.
+      integer :: anacon_tfgrids_type
+      !> Optional number of points for GW analytic-continuation frequency grid.
+      integer :: anacon_nfreq
       !> Quasi-particle equation solver: 0 damped residual-mixing, 1 quasi-Newton, 2 perturbative.
       integer :: option_qpe_solver
       !> Convergence threshold for the quasi-particle equation solver, in Hartree.
@@ -1140,6 +1146,8 @@ contains
       call sync_opt(opts%use_shrink_abfs,         opts%opts_c%use_shrink_abfs,         direction)
       call sync_opt(opts%use_shrink_chi,          opts%opts_c%use_shrink_chi,          direction)
       call sync_opt(opts%n_params_anacon,         opts%opts_c%n_params_anacon,         direction)
+      call sync_opt(opts%anacon_tfgrids_type,     opts%opts_c%anacon_tfgrids_type,     direction)
+      call sync_opt(opts%anacon_nfreq,            opts%opts_c%anacon_nfreq,            direction)
       call sync_opt(opts%option_qpe_solver,       opts%opts_c%option_qpe_solver,       direction)
       call sync_opt(opts%qpe_solver_thres,        opts%opts_c%qpe_solver_thres,        direction)
       call sync_opt(opts%qpe_solver_n_iter_max,   opts%opts_c%qpe_solver_n_iter_max,   direction)

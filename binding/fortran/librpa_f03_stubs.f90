@@ -192,6 +192,10 @@ module librpa_f03
       logical :: use_shrink_chi
       !> Number of parameters for analytic continuation.
       integer :: n_params_anacon
+      !> Optional GW analytic-continuation frequency grid type; unset uses original grid.
+      integer :: anacon_tfgrids_type
+      !> Optional number of points for GW analytic-continuation frequency grid.
+      integer :: anacon_nfreq
       !> Quasi-particle equation solver: 0 damped residual-mixing, 1 quasi-Newton, 2 perturbative.
       integer :: option_qpe_solver
       !> Convergence threshold for the quasi-particle equation solver, in Hartree.

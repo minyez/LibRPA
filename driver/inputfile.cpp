@@ -354,6 +354,10 @@ void parse_inputfile_to_params(const std::string &fn)
 
     // GW specific
     _parse_int(opts, n_params_anacon);
+    _parse_string_post(opts, anacon_tfgrids_type, get_tfgrid_type);
+    _parse_int(opts, anacon_nfreq);
+    if (opts.anacon_nfreq == 0)
+        throw std::runtime_error("anacon_nfreq must not be zero");
     _parse_double(opts, sqrt_coulomb_threshold);
     _parse_switch(opts, use_scalapack_gw_wc);
     _parse_switch(opts, read_sigc_mat_rf);
