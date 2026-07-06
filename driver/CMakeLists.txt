@@ -7,6 +7,7 @@ set_target_properties(rpa_exe PROPERTIES
 
 list(APPEND exe_sources
   driver.cpp
+  input_parser.cpp
   inputfile.cpp
   main.cpp
   read_data.cpp
