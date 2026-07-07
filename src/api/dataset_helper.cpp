@@ -338,8 +338,7 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
         const auto &headwing_cs =
             opts.use_shrink_abfs == LIBRPA_SWITCH_ON ? ds.cs_data_shrink : ds.cs_data;
         ds.p_headwing->cal_wing(headwing_cs, opts.sqrt_coulomb_threshold, ds.vq);
-        if (global::should_output(LIBRPA_VERBOSE_DEBUG))
-            ds.p_headwing->test_wing();
+        ds.p_headwing->test_wing();
         global::profiler.stop("initialize_ds_headwing");
         return;
     }
@@ -390,8 +389,7 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
         const auto &headwing_cs =
             opts.use_shrink_abfs == LIBRPA_SWITCH_ON ? ds.cs_data_shrink : ds.cs_data;
         ds.p_headwing->cal_wing(headwing_cs, opts.sqrt_coulomb_threshold, ds.vq);
-        if (global::should_output(LIBRPA_VERBOSE_DEBUG))
-            ds.p_headwing->test_wing();
+        ds.p_headwing->test_wing();
     }
 
     global::profiler.stop("initialize_ds_headwing");

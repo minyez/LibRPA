@@ -199,14 +199,18 @@ static std::array<ComplexMatrix, 3> rotate_headwing_velocity_by_shape(
     }
 
     const int spatial_isym = member.spatial_isym;
-    if (spatial_isym < 0 || spatial_isym >= static_cast<int>(ctx.rsh_rotations.size()))
+    if (spatial_isym < 0 || spatial_isym >= static_cast<int>(ctx.rspace_operations.size()))
         throw std::runtime_error("rotate_headwing_velocity: invalid symmetry index");
-    const auto rot_iter = ctx.rsh_rotations.at(spatial_isym).find(1);
-    if (rot_iter == ctx.rsh_rotations.at(spatial_isym).end())
-        throw std::runtime_error("rotate_headwing_velocity: missing l=1 Cartesian rotation");
-    const ComplexMatrix &rot_cm = rot_iter->second;
-    if (rot_cm.nr != 3 || rot_cm.nc != 3)
-        throw std::runtime_error("rotate_headwing_velocity: invalid l=1 Cartesian rotation");
+    const auto &operation = ctx.rspace_operations.at(spatial_isym);
+    const Matrix3 cartesian_rotation =
+        (preserves_lattice_metric(operation.rotation, ctx.lattice_vectors, 1e-6)
+             ? fractional_rotation_to_cartesian(operation, ctx.lattice_vectors)
+             : operation.rotation);
+    const std::array<std::array<double, 3>, 3> cartesian_rotation_values{{
+        {cartesian_rotation.e11, cartesian_rotation.e12, cartesian_rotation.e13},
+        {cartesian_rotation.e21, cartesian_rotation.e22, cartesian_rotation.e23},
+        {cartesian_rotation.e31, cartesian_rotation.e32, cartesian_rotation.e33},
+    }};
     const double trs_sign = use_time_reversal ? -1.0 : 1.0;
 
     std::array<ComplexMatrix, 3> v_band_bz;
@@ -215,7 +219,8 @@ static std::array<ComplexMatrix, 3> rotate_headwing_velocity_by_shape(
     {
         for (int alpha_in = 0; alpha_in < 3; ++alpha_in)
         {
-            const std::complex<double> coeff = trs_sign * rot_cm(alpha_out, alpha_in);
+            const std::complex<double> coeff =
+                trs_sign * cartesian_rotation_values.at(alpha_out).at(alpha_in);
             if (std::abs(coeff) < 1.e-15) continue;
             v_band_bz[alpha_out] += coeff * v_band_rot[alpha_in];
         }
@@ -514,6 +519,32 @@ void diele_func::cal_head()
         librpa_int::can_restore_symmetry_kstar_meanfield(
             *symmetry_context_, wfc_layouts, meanfield_df, kfrac_band, atom_nw);
 
+    if (debug && use_symmetry && comm_h.is_root())
+    {
+        std::string reason;
+        if (symmetry_context_ == nullptr)
+            reason = "symmetry context is not set";
+        else if (!atomic_basis_wfc_.has_l_shells())
+            reason = "wave-function basis has no l-shell metadata";
+        else if (wfc_layouts.empty())
+            reason = "wave-function species layouts are empty";
+        else if (!symmetry_context_->available)
+            reason = "symmetry context is not available";
+        else if (symmetry_context_->kstars.empty())
+            reason = "k-star table is empty";
+        else if (meanfield_df.get_n_kpoints() != static_cast<int>(kfrac_band.size()))
+            reason = "meanfield and active k-list sizes differ";
+        else if (symmetry_context_->kstars.size() != kfrac_band.size())
+            reason = "k-star count does not match active k-list";
+        else if (symmetry_context_->count_kstar_members() <= kfrac_band.size())
+            reason = "active k-list is already full BZ";
+        else
+            reason = "all symmetry restore checks passed";
+        std::cout << "Head symmetry restore for analytic head: "
+                  << (can_sym ? "active" : "fallback") << " (" << reason << ")."
+                  << std::endl;
+    }
+
     if (can_sym)
         cal_head_symmetric();
     else
@@ -618,12 +649,12 @@ void diele_func::cal_head_symmetric()
     const double bz_weight_scale = static_cast<double>(nk) / static_cast<double>(n_kpoints_bz);
     const bool use_kblacs = use_matching_kpoint_blacs(nk, kblacs_ctxt_);
 
-    // Self-verification accumulator: independently accumulate the head using the
-    // same per-BZ-k weight on the rotated velocities, then compare. The two
-    // traversals are identical, so they must agree to machine precision.
+    // Debug self-verification accumulator: independently accumulate the head
+    // using the same per-BZ-k weight on the rotated velocities, then compare.
     std::vector<std::array<std::array<std::complex<double>, 3>, 3>> head_check(this->omega.size());
-    for (auto &h : head_check)
-        for (auto &row : h) row.fill({0.0, 0.0});
+    if (debug)
+        for (auto &h : head_check)
+            for (auto &row : h) row.fill({0.0, 0.0});
 
     for (int ispin = 0; ispin != n_spin; ispin++)
     {
@@ -702,8 +733,7 @@ void diele_func::cal_head_symmetric()
                                         v_band_bz[beta](iocc, iunocc) /
                                         (egap * egap + omega_ev * omega_ev) / egap;
                                     this->head.at(iomega)(alpha, beta) -= tmp;
-                                    // Self-check: same formula, same per-BZ-k weight.
-                                    head_check[iomega][alpha][beta] -= tmp;
+                                    if (debug) head_check[iomega][alpha][beta] -= tmp;
                                 }
                             }
                         }
@@ -714,7 +744,7 @@ void diele_func::cal_head_symmetric()
     }
 
     allreduce_head_matrices(this->head, comm_h.comm);
-    allreduce_head_check(head_check, comm_h.comm);
+    if (debug) allreduce_head_check(head_check, comm_h.comm);
 
     // Self-verification: compare the symmetric-path head (this->head) against the
     // independent full-BZ-convention accumulation (head_check). The symmetric path
@@ -725,19 +755,19 @@ void diele_func::cal_head_symmetric()
     // (that happens in the cal_head dispatcher after this function returns), and
     // head_check was accumulated with the same unscaled formula, so the raw sums
     // are directly comparable.
-    double max_abs_diff = 0.0;
-    double max_abs_val = 0.0;
-    for (size_t iw = 0; iw < this->omega.size(); ++iw)
-        for (int a = 0; a < 3; ++a)
-            for (int b = 0; b < 3; ++b)
-            {
-                const auto dv = this->head.at(iw)(a, b) - head_check[iw][a][b];
-                max_abs_diff = std::max(max_abs_diff, std::abs(dv));
-                max_abs_val = std::max(max_abs_val, std::abs(this->head.at(iw)(a, b)));
-            }
-    const double rel_diff = (max_abs_val > 0) ? max_abs_diff / max_abs_val : 0.0;
-    if (global::mpi_comm_global_h.is_root())
+    if (debug && global::mpi_comm_global_h.is_root())
     {
+        double max_abs_diff = 0.0;
+        double max_abs_val = 0.0;
+        for (size_t iw = 0; iw < this->omega.size(); ++iw)
+            for (int a = 0; a < 3; ++a)
+                for (int b = 0; b < 3; ++b)
+                {
+                    const auto dv = this->head.at(iw)(a, b) - head_check[iw][a][b];
+                    max_abs_diff = std::max(max_abs_diff, std::abs(dv));
+                    max_abs_val = std::max(max_abs_val, std::abs(this->head.at(iw)(a, b)));
+                }
+        const double rel_diff = (max_abs_val > 0) ? max_abs_diff / max_abs_val : 0.0;
         std::cout << "[cal_head_symmetric self-check] head_sym vs head_fullbz_convention: "
                   << "max_abs_diff=" << max_abs_diff << ", max_abs_val=" << max_abs_val
                   << ", rel_diff=" << rel_diff << std::endl;
@@ -841,6 +871,32 @@ void diele_func::cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
         can_try_sym &&
         librpa_int::can_restore_symmetry_kstar_meanfield(
             *symmetry_context_, wfc_layouts, meanfield_df, kfrac_band, atom_nw);
+
+    if (debug && use_symmetry && comm_h.is_root())
+    {
+        std::string reason;
+        if (symmetry_context_ == nullptr)
+            reason = "symmetry context is not set";
+        else if (!atomic_basis_wfc_.has_l_shells())
+            reason = "wave-function basis has no l-shell metadata";
+        else if (wfc_layouts.empty())
+            reason = "wave-function species layouts are empty";
+        else if (!symmetry_context_->available)
+            reason = "symmetry context is not available";
+        else if (symmetry_context_->kstars.empty())
+            reason = "k-star table is empty";
+        else if (meanfield_df.get_n_kpoints() != static_cast<int>(kfrac_band.size()))
+            reason = "meanfield and active k-list sizes differ";
+        else if (symmetry_context_->kstars.size() != kfrac_band.size())
+            reason = "k-star count does not match active k-list";
+        else if (symmetry_context_->count_kstar_members() <= kfrac_band.size())
+            reason = "active k-list is already full BZ";
+        else
+            reason = "all symmetry restore checks passed";
+        std::cout << "Wing symmetry restore for analytic wing: "
+                  << (can_sym ? "active" : "fallback") << " (" << reason << ")."
+                  << std::endl;
+    }
 
     if (can_sym)
         cal_wing_symmetric(Cs_data, coulomb_eigen_threshold, Vq);
@@ -1485,6 +1541,63 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
                                     desc_wing_opt.desc);
     }
 
+    if (debug && !this->wing.empty())
+    {
+        double max_abs_real_local = 0.0;
+        double max_abs_imag_local = 0.0;
+        double max_abs_value_local = 0.0;
+        const auto &wing0 = this->wing.at(0);
+        for (int i = 0; i != wing0.nr(); ++i)
+        {
+            for (int j = 0; j != wing0.nc(); ++j)
+            {
+                const auto value = wing0(i, j);
+                max_abs_real_local = std::max(max_abs_real_local, std::abs(value.real()));
+                max_abs_imag_local = std::max(max_abs_imag_local, std::abs(value.imag()));
+                max_abs_value_local = std::max(max_abs_value_local, std::abs(value));
+            }
+        }
+        double max_abs_real = 0.0;
+        double max_abs_imag = 0.0;
+        double max_abs_value = 0.0;
+        MPI_Allreduce(&max_abs_real_local, &max_abs_real, 1, MPI_DOUBLE, MPI_MAX, comm_h.comm);
+        MPI_Allreduce(&max_abs_imag_local, &max_abs_imag, 1, MPI_DOUBLE, MPI_MAX, comm_h.comm);
+        MPI_Allreduce(&max_abs_value_local, &max_abs_value, 1, MPI_DOUBLE, MPI_MAX, comm_h.comm);
+        const double real_over_abs = max_abs_value > 0.0 ? max_abs_real / max_abs_value : 0.0;
+        if (comm_h.is_root())
+        {
+            global::lib_printf(
+                "Wing_lambda diagnostics (iomega=0): max_abs_real=%15.8e "
+                "max_abs_imag=%15.8e max_abs_value=%15.8e real_over_abs=%15.8e\n",
+                max_abs_real, max_abs_imag, max_abs_value, real_over_abs);
+            std::cout << "First wing_lambda rows at iomega=0 (lambda, x_re, x_im, y_re, y_im, "
+                         "z_re, z_im):"
+                      << std::endl;
+        }
+        const int n_sample = std::min(n_lambda, 8);
+        for (int ilambda = 0; ilambda != n_sample; ++ilambda)
+        {
+            std::array<std::complex<double>, 3> row{};
+            for (int alpha = 0; alpha != 3; ++alpha)
+            {
+                const int loc_lambda = desc_wing_opt.indx_g2l_r(ilambda);
+                const int loc_alpha = desc_wing_opt.indx_g2l_c(alpha);
+                std::complex<double> value = 0.0;
+                if (loc_lambda >= 0 && loc_alpha >= 0)
+                    value = wing0(loc_lambda, loc_alpha);
+                MPI_Allreduce(&value, &row[alpha], 1, MPI_CXX_DOUBLE_COMPLEX, MPI_SUM,
+                              comm_h.comm);
+            }
+            if (comm_h.is_root())
+            {
+                global::lib_printf(
+                    "%4d %15.8e %15.8e %15.8e %15.8e %15.8e %15.8e\n",
+                    ilambda, row[0].real(), row[0].imag(), row[1].real(), row[1].imag(),
+                    row[2].real(), row[2].imag());
+            }
+        }
+    }
+
     this->wing_mu.clear();
     profiler.stop("cal_wing");
 };
@@ -1697,6 +1810,8 @@ void diele_func::test_head()
 {
     using global::lib_printf;
 
+    if (!debug) return;
+
     const int n_omegas = this->omega.size();
     if (comm_h.is_root())
     {
@@ -1721,6 +1836,32 @@ void diele_func::test_head()
             lib_printf("(%8.4f, %8.4f)  (%8.4f, %8.4f)  (%8.4f, %8.4f)\n", c0.real(), c0.imag(),
                        c1.real(), c1.imag(), c2.real(), c2.imag());
         }
+        std::complex<double> trace = 0.0;
+        for (int alpha = 0; alpha != 3; alpha++)
+        {
+            trace += this->head.at(0)(alpha, alpha);
+        }
+        const auto trace_over_3 = trace / 3.0;
+        double max_abs_offdiag = 0.0;
+        double max_abs_diag_delta = 0.0;
+        double max_abs_imag = 0.0;
+        for (int alpha = 0; alpha != 3; alpha++)
+        {
+            for (int beta = 0; beta != 3; beta++)
+            {
+                const auto value = this->head.at(0)(alpha, beta);
+                max_abs_imag = std::max(max_abs_imag, std::abs(value.imag()));
+                if (alpha == beta)
+                    max_abs_diag_delta = std::max(max_abs_diag_delta, std::abs(value - trace_over_3));
+                else
+                    max_abs_offdiag = std::max(max_abs_offdiag, std::abs(value));
+            }
+        }
+        lib_printf(
+            "Head tensor diagnostics (iomega=0): trace_over_3=(%15.8f,%15.8f) "
+            "max_abs_diag_delta=%15.8e max_abs_offdiag=%15.8e max_abs_imag=%15.8e\n",
+            trace_over_3.real(), trace_over_3.imag(), max_abs_diag_delta, max_abs_offdiag,
+            max_abs_imag);
     }
     // std::exit(0);
 };
@@ -1728,17 +1869,41 @@ void diele_func::test_head()
 void diele_func::test_wing()
 {
     using global::lib_printf;
+    if (!debug) return;
     if (comm_h.is_root())
     {
-        std::cout << "Index of abfs & wing(iomega=0, z) of dielectric function(Re, Im): "
-                  << std::endl;
+        if (this->wing_mu.empty())
+        {
+            std::cout << "Wing_mu diagnostics unavailable: wing_mu is empty." << std::endl;
+            return;
+        }
+        double max_abs_real = 0.0;
+        double max_abs_imag = 0.0;
+        double max_abs_value = 0.0;
         for (int mu = 0; mu != n_abf; mu++)
         {
-            std::complex<double> df = 0;
-            // z direction
-            df = this->wing_mu.at(0)(mu, 2);
-
-            lib_printf("%2d %15.8f %15.8f\n", mu, df.real(), df.imag());
+            for (int alpha = 0; alpha != 3; alpha++)
+            {
+                const auto value = this->wing_mu.at(0)(mu, alpha);
+                max_abs_real = std::max(max_abs_real, std::abs(value.real()));
+                max_abs_imag = std::max(max_abs_imag, std::abs(value.imag()));
+                max_abs_value = std::max(max_abs_value, std::abs(value));
+            }
+        }
+        const double real_over_abs = max_abs_value > 0.0 ? max_abs_real / max_abs_value : 0.0;
+        lib_printf(
+            "Wing_mu diagnostics (iomega=0): max_abs_real=%15.8e max_abs_imag=%15.8e "
+            "max_abs_value=%15.8e real_over_abs=%15.8e\n",
+            max_abs_real, max_abs_imag, max_abs_value, real_over_abs);
+        if (debug)
+        {
+            std::cout << "Index of abfs & wing(iomega=0, z) of dielectric function(Re, Im): "
+                      << std::endl;
+            for (int mu = 0; mu != n_abf; mu++)
+            {
+                const auto df = this->wing_mu.at(0)(mu, 2);
+                lib_printf("%2d %15.8f %15.8f\n", mu, df.real(), df.imag());
+            }
         }
     }
     // if (mpi_comm_global_h.myid == 1)

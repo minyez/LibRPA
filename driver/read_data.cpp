@@ -6,6 +6,7 @@
 #include "reader_lri.h"
 #include "reader_coulomb.h"
 #include "reader_structure.h"
+#include "../src/api/dataset_helper.h"
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -1340,6 +1341,16 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         }
     }
 
+    const bool wants_headwing_symmetry =
+        driver::get_bool(driver::opts.use_symmetry_rpa) ||
+        driver::get_bool(driver::opts.use_symmetry_gw);
+    if (wants_headwing_symmetry &&
+        (!pds->symmetry_context.available || pds->symmetry_context.kstars.empty() ||
+         pds->symmetry_context.rsh_rotations.empty()))
+    {
+        librpa_int::initialize_symmetry_context(*pds, true);
+    }
+
     const auto &headwing_basis_aux =
         driver::get_bool(driver::opts.use_shrink_abfs) ? pds->basis_aux_shrink : pds->basis_aux;
     if (!headwing_basis_aux.initialized())
@@ -1402,8 +1413,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         const auto &headwing_cs =
             driver::get_bool(driver::opts.use_shrink_abfs) ? pds->cs_data_shrink : pds->cs_data;
         pds->p_headwing->cal_wing(headwing_cs, driver::opts.sqrt_coulomb_threshold, pds->vq);
-        if (librpa_int::global::should_output(LIBRPA_VERBOSE_DEBUG))
-            pds->p_headwing->test_wing();
+        pds->p_headwing->test_wing();
     }
 }
 
