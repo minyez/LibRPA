@@ -130,6 +130,21 @@ void initialize_ds_tfgrids(Dataset &ds, const LibrpaOptions &opts)
     global::profiler.stop("initialize_ds_tfgrids");
 }
 
+void initialize_ds_global_ddla(Dataset &ds, const LibrpaOptions &opts)
+{
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+    if (opts.use_gpu_replace_scalapack == LIBRPA_SWITCH_ON && ds.blacs_h.ddla_handle == nullptr)
+    {
+        global::profiler.start("initialize_ds_global_ddla");
+        ds.blacs_h.init_ddla_handle();
+        global::profiler.stop("initialize_ds_global_ddla");
+    }
+#else
+    (void)ds;
+    (void)opts;
+#endif
+}
+
 static void collect_atpairs_all(Dataset &ds)
 {
     const auto &comm_h = ds.comm_h;
@@ -220,7 +235,8 @@ void initialize_ds_exx(Dataset &ds, const LibrpaOptions &opts)
     }
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     ds.p_exx = std::make_unique<librpa_int::Exx>(ds.mf, ds.basis_wfc, ds.pbc, ds.symmetry_context,
-                                                 ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
+                                                 ds.scfk_blacs_ctxt, ds.bandk_blacs_ctxt,
+                                                 ds.desc_wfc_kb_full,
                                                  is_eigvec_k_distributed,
                                                  use_symmetry);
     ds.p_exx->libri_threshold_C = opts.libri_exx_threshold_C;

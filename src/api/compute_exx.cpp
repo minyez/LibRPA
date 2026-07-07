@@ -121,6 +121,7 @@ void librpa_build_exx(LibrpaHandler* h, const LibrpaOptions *p_opts)
     const auto &opts = *p_opts;
     // const bool debug = opts.output_level >= LIBRPA_VERBOSE_DEBUG;
     pds->is_band_calc_done = false;
+    initialize_ds_global_ddla(*pds, opts);
 
     profiler.start("api_build_exx");
 
@@ -173,6 +174,7 @@ void librpa_get_exx_pot_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, con
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts; // TODO: add a flag to control whether to use blacs or lapack
+    initialize_ds_global_ddla(*pds, opts);
     i_state_low = std::max(0, i_state_low);
     i_state_high = std::min(pds->mf.get_n_states(), i_state_high);
     if (n_spins != pds->mf.get_n_spins())
@@ -219,6 +221,7 @@ void librpa_get_exx_pot_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, co
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts; // TODO: add a flag to control whether to use blacs or lapack
+    initialize_ds_global_ddla(*pds, opts);
 
     if (!pds->is_band_data_set || pds->mf_band.get_n_spins() == 0)
         throw LIBRPA_RUNTIME_ERROR("Meanfield data for band calculation is not set");
@@ -255,6 +258,10 @@ void librpa_get_exx_pot_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, co
         pexx->reset_kspace();
         const auto bvk_remap = librpa_int::api::build_band_bvk_remap(
             pds->atoms, pds->pbc, opts.option_bvk_remap);
+        if (opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON)
+        {
+            pds->redistribute_band_eigvecs_kpara();
+        }
         pexx->build_KS_band_blacs(pds->mf_band.get_eigenvectors(), pds->kfrac_band_list,
                                   bvk_remap, pds->blacs_h, opts.use_gpu_replace_scalapack);
         pds->is_band_calc_done = true;

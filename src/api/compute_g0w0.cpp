@@ -675,6 +675,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     const auto &opts = *p_opts;
     const bool debug = global::should_output(LIBRPA_VERBOSE_DEBUG);
     pds->is_band_calc_done = false;
+    initialize_ds_global_ddla(*pds, opts);
 
     profiler.start("api_build_g0w0_sigma");
 
@@ -826,12 +827,6 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     if (opts.use_scalapack_gw_wc == LIBRPA_SWITCH_ON)
     {
         bool replace_w_head = opts.replace_w_head == LIBRPA_SWITCH_ON;
-#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-        if (opts.use_gpu_replace_scalapack)
-        {
-            pds->blacs_h.init_ddla_handle();
-        }
-#endif
         Wc_freq_q = compute_Wc_freq_q_blacs(chi0, coul_eps, coul_wc, opts.sqrt_coulomb_threshold,
                                             replace_w_head, opts.option_dielect_func,
                                             epsmac_LF_imagfreq, pds->p_headwing.get(), pds->blacs_h, wc_desc_abf,
@@ -900,6 +895,7 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
+    initialize_ds_global_ddla(*pds, opts);
     i_state_low = std::max(0, i_state_low);
     i_state_high = std::min(pds->mf.get_n_states(), i_state_high);
     if (n_spins != pds->mf.get_n_spins())
@@ -1046,6 +1042,7 @@ void librpa_get_g0w0_spectral_function_kgrid(
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
+    initialize_ds_global_ddla(*pds, opts);
     if (n_omegas < 0)
     {
         throw LIBRPA_RUNTIME_ERROR("n_omegas must be non-negative");
@@ -1108,6 +1105,7 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
+    initialize_ds_global_ddla(*pds, opts);
     if (!pds->is_band_data_set || pds->mf_band.get_n_spins() == 0)
         throw LIBRPA_RUNTIME_ERROR("Meanfield data for band calculation is not set");
     i_state_low = std::max(0, i_state_low);
@@ -1264,6 +1262,7 @@ void librpa_get_g0w0_spectral_function_band_k(
 
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
+    initialize_ds_global_ddla(*pds, opts);
     if (n_omegas < 0)
     {
         throw LIBRPA_RUNTIME_ERROR("n_omegas must be non-negative");

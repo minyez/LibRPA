@@ -214,6 +214,7 @@ class OutputOnlyFilter_Atom_Symmetry : public RI::Filter_Atom<TA, std::pair<TA, 
 Exx::Exx(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
          const PeriodicBoundaryData &pbc_in, const SymmetryContext &symmetry_context_in,
          const KPointBlacsParallelContext &kblacs_ctxt_in,
+         const KPointBlacsParallelContext &band_kblacs_ctxt_in,
          const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed,
          const bool use_symmetry_context_in)
     : mf(mf_in),
@@ -223,7 +224,8 @@ Exx::Exx(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
       symmetry_context(symmetry_context_in),
       use_symmetry_context(use_symmetry_context_in),
       comm_h(kblacs_ctxt_in.comm_global_h),
-      kblacs_ctxt(kblacs_ctxt_in)
+      kblacs_ctxt(kblacs_ctxt_in),
+      band_kblacs_ctxt(band_kblacs_ctxt_in)
 {
     is_mf_eigvec_k_distributed_ = is_mf_eigvec_k_distributed;
     is_rspace_built_ = false;
@@ -1025,8 +1027,10 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                          const std::vector<Vector3_Order<double>> &kfrac_target,
                          const AtomPairBvKRemap<atom_t> &bvk_remap,
                          const BlacsCtxtHandler &blacs_ctxt_h,
-                         bool use_gpu_replace_scalapack)
+                         bool use_gpu_replace_scalapack,
+                         bool target_is_band_path)
 {
+    using RI::Communicate_Tensors_Map_Judge::comm_map2;
     using RI::Communicate_Tensors_Map_Judge::comm_map2_first;
 
     // Ensure the communicator of BLACS context is the same as that parsed when constructed
@@ -1046,21 +1050,33 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
     const auto n_bands = this->mf.get_n_bands();
     const auto n_spinor = this->mf.get_n_spinor();
     const bool use_complex_exx_r = n_spinor > 1 ? true : false;
+    const int n_target_kpoints = static_cast<int>(kfrac_target.size());
+    const bool use_klocal_rotation = is_mf_eigvec_k_distributed_;
+    const KPointBlacsParallelContext &target_kblacs_ctxt =
+        target_is_band_path ? band_kblacs_ctxt : kblacs_ctxt;
+    if (use_klocal_rotation)
+    {
+        if (!target_kblacs_ctxt.is_initialized())
+            throw LIBRPA_RUNTIME_ERROR("k-point BLACS context is not initialized for EXX rotation");
+        if (target_kblacs_ctxt.n_kpoints() != n_target_kpoints)
+            throw LIBRPA_RUNTIME_ERROR("k-point BLACS context has inconsistent number of target EXX k-points");
+    }
+    const BlacsCtxtHandler &rotation_blacs_h =
+        use_klocal_rotation ? target_kblacs_ctxt.blacs_h : blacs_ctxt_h;
 
     // prepare scalapack array descriptors
-    ArrayDesc desc_nao_nao(blacs_ctxt_h);
-    ArrayDesc desc_nband_nao(blacs_ctxt_h);
-    ArrayDesc desc_nband_nband(blacs_ctxt_h);
+    ArrayDesc desc_nao_nao(rotation_blacs_h);
+    ArrayDesc desc_nband_nao(rotation_blacs_h);
+    ArrayDesc desc_nband_nband(rotation_blacs_h);
 
     // For communication of eigenvectors and final KS matrices
-    ArrayDesc desc_nao_nband_fb(blacs_ctxt_h);  // emulate ComplexMatrix storage
-    ArrayDesc desc_nao_nao_fb(blacs_ctxt_h);
-    ArrayDesc desc_nband_nband_fb(blacs_ctxt_h);
+    ArrayDesc desc_nao_nband_fb(rotation_blacs_h);  // emulate ComplexMatrix storage
+    ArrayDesc desc_nao_nao_fb(rotation_blacs_h);
+    ArrayDesc desc_nband_nband_fb(rotation_blacs_h);
 
     desc_nao_nao.init_1b1p(n_aos, n_aos, 0, 0);
     desc_nband_nao.init_1b1p(n_bands, n_aos, 0, 0);
     desc_nband_nband.init_1b1p(n_bands, n_bands, 0, 0);
-    const int n_target_kpoints = static_cast<int>(kfrac_target.size());
     const bool use_root_dense_projection =
         this->use_symmetry_context
         && use_symmetry_ibz_root_projection(this->symmetry_context,
@@ -1079,8 +1095,8 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
 
     // opt block-size descriptors for better pgemm performance
     int mb_opt = std::min(128, std::min(desc_nband_nao.mb(), desc_nband_nao.nb()));
-    ArrayDesc desc_nband_nao_opt(blacs_ctxt_h), desc_nao_nao_opt(blacs_ctxt_h);
-    ArrayDesc desc_nao_nband_opt(blacs_ctxt_h), desc_nband_nband_opt(blacs_ctxt_h);
+    ArrayDesc desc_nband_nao_opt(rotation_blacs_h), desc_nao_nao_opt(rotation_blacs_h);
+    ArrayDesc desc_nao_nband_opt(rotation_blacs_h), desc_nband_nband_opt(rotation_blacs_h);
     desc_nband_nao_opt.init(n_bands, n_aos, mb_opt, mb_opt, 0, 0);
     desc_nao_nao_opt.init(n_aos, n_aos, mb_opt, mb_opt, 0, 0);
     desc_nband_nband_opt.init(n_bands, n_bands, mb_opt, mb_opt, 0, 0);
@@ -1099,32 +1115,33 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
     size_t size_wfc = 0, size_hexx_nao = 0, size_temp = 0, size_hexx_nband = 0;
     if (use_gpu_replace_scalapack)
     {
-        auto &blacs_ctxt_h_nc = const_cast<BlacsCtxtHandler &>(blacs_ctxt_h);
-        if (blacs_ctxt_h_nc.ddla_handle == nullptr)
-            blacs_ctxt_h_nc.init_ddla_handle();
-        desc_nao_nband_opt.set_ddla_desc(blacs_ctxt_h.ddla_handle);
-        desc_nao_nao_opt.set_ddla_desc(blacs_ctxt_h.ddla_handle);
-        desc_nband_nao_opt.set_ddla_desc(blacs_ctxt_h.ddla_handle);
-        desc_nband_nband_opt.set_ddla_desc(blacs_ctxt_h.ddla_handle);
+        auto &rotation_blacs_h_nc = const_cast<BlacsCtxtHandler &>(rotation_blacs_h);
+        if (rotation_blacs_h_nc.ddla_handle == nullptr)
+            rotation_blacs_h_nc.init_ddla_handle();
+        desc_nao_nband_opt.set_ddla_desc(rotation_blacs_h.ddla_handle);
+        desc_nao_nao_opt.set_ddla_desc(rotation_blacs_h.ddla_handle);
+        desc_nband_nao_opt.set_ddla_desc(rotation_blacs_h.ddla_handle);
+        desc_nband_nband_opt.set_ddla_desc(rotation_blacs_h.ddla_handle);
 
         size_wfc = static_cast<size_t>(desc_nao_nband_opt.m_loc()) * desc_nao_nband_opt.n_loc();
         size_hexx_nao = static_cast<size_t>(desc_nao_nao_opt.m_loc()) * desc_nao_nao_opt.n_loc();
         size_temp = static_cast<size_t>(desc_nband_nao_opt.m_loc()) * desc_nband_nao_opt.n_loc();
         size_hexx_nband = static_cast<size_t>(desc_nband_nband_opt.m_loc()) * desc_nband_nband_opt.n_loc();
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_bra, size_wfc * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_ket, size_wfc * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_hexx_nao, size_hexx_nao * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_temp, size_temp * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_hexx_nband, size_hexx_nband * sizeof(std::complex<double>), blacs_ctxt_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_bra, size_wfc * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_ket, size_wfc * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_hexx_nao, size_hexx_nao * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_temp, size_temp * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_hexx_nband, size_hexx_nband * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
     }
 #endif
 
-    if (!is_rspace_redist_for_KS_)
+    const auto set_IJ_nao_nao_rotation = get_necessary_IJ_from_block_2D(
+        this->atbasis_wfc, this->atbasis_wfc, desc_nao_nao);
+
+    if (!use_klocal_rotation && !is_rspace_redist_for_KS_)
     {
         global::profiler.start("exx_build_KS_blacs_redist");
-        const auto set_IJ_naonao = get_necessary_IJ_from_block_2D(
-            this->atbasis_wfc, this->atbasis_wfc, desc_nao_nao);
-        const auto Iset_Jset = convert_IJset_to_Iset_Jset(set_IJ_naonao);
+        const auto Iset_Jset = convert_IJset_to_Iset_Jset(set_IJ_nao_nao_rotation);
 
         auto pack_real_exx_to_tensor = [&](const auto &exx_blocks)
         {
@@ -1241,7 +1258,7 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
         global::lib_printf("Task %4d: tensor communicate elapsed time: %f\n", comm_h.myid,
                            global::profiler.get_wall_time_last("exx_build_KS_blacs_redist"));
     }
-    else
+    else if (!use_klocal_rotation)
     {
         if (!is_rspace_redist_blacs_)
             throw LIBRPA_RUNTIME_ERROR("");
@@ -1293,6 +1310,19 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
         }
     };
 
+    using ExxIJKAtomKey = std::size_t;
+    using ExxIJKKey = std::pair<ExxIJKAtomKey, int>; // (J, ik); J stays first for atom-pair routing.
+    std::set<ExxIJKAtomKey> exx_ijk_s0;
+    std::set<ExxIJKKey> exx_ijk_s1;
+    if (use_klocal_rotation)
+    {
+        for (const auto &IJ: set_IJ_nao_nao_rotation)
+        {
+            exx_ijk_s0.insert(IJ.first);
+            for (const int ik: target_kblacs_ctxt.kpoints_local())
+                exx_ijk_s1.insert({IJ.second, ik});
+        }
+    }
     for (int isp = 0; isp < n_spins; isp++)
     {
         this->exx_KS[isp] = {};
@@ -1308,14 +1338,14 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                 // Reuse the cleared-up exx_I_JR_local object
                 auto orig = find_nested_int_map_3(exx_IJR, isp, ispn_bra, ispn_ket);
                 auto orig_cplx = find_nested_int_map_3(exx_IJR_cplx, isp, ispn_bra, ispn_ket);
-                if (use_complex_exx_r)
+                if (!use_klocal_rotation && use_complex_exx_r)
                 {
                     if (orig_cplx != nullptr)
                     {
                         shift_bvk(*orig_cplx , exx_is_local_cplx);
                     }
                 }
-                else
+                else if (!use_klocal_rotation)
                 {
                     if (orig != nullptr)
                     {
@@ -1323,168 +1353,254 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                     }
                 }
 
-                if (is_mf_eigvec_k_distributed_)
+                if (use_klocal_rotation)
                 {
-                    // collect parsed eigenvectors all all processes
-                    // global::ofs_myid << "isp " << isp << std::endl;
-                    std::vector<int> nks_all(comm_h.nprocs, 0);
-                    std::vector<int> iks_local;
-                    auto it = wfc_target.find(isp);
-                    if (it != wfc_target.cend())
+                    global::profiler.start("exx_build_KS_rotate_kpara_klocal_blacs");
+                    std::map<ExxIJKAtomKey, std::map<ExxIJKKey, Matz>> exx_I_Jik_mat;
+                    global::profiler.start("exx_build_KS_fourier_world");
+                    auto fourier_exx_to_ijk =
+                        [&](const auto &exx_blocks)
                     {
-                        const auto &wfc_sp = it->second.at(0);
-                        nks_all[comm_h.myid] = wfc_sp.size();
-                        for (const auto &[ik, _]: wfc_sp)
+                        using ExxBlocks = std::decay_t<decltype(exx_blocks)>;
+                        using JExxMap = typename ExxBlocks::mapped_type;
+                        using RExxMap = typename JExxMap::mapped_type;
+                        struct FourierExxTask
                         {
-                            iks_local.emplace_back(ik);
+                            ExxIJKAtomKey I;
+                            ExxIJKAtomKey J;
+                            int ik;
+                            int n_I;
+                            int n_J;
+                            const RExxMap *R_exx;
+                        };
+
+                        std::vector<FourierExxTask> fourier_tasks;
+                        for (const auto &[I_atom, J_Rexx] : exx_blocks)
+                        {
+                            const ExxIJKAtomKey I = I_atom;
+                            const int n_I = static_cast<int>(
+                                this->atbasis_wfc.get_atom_nb(static_cast<int>(I)));
+                            for (const auto &[J_atom, R_exx] : J_Rexx)
+                            {
+                                if (R_exx.empty()) continue;
+                                const ExxIJKAtomKey J = J_atom;
+                                const int n_J = static_cast<int>(
+                                    this->atbasis_wfc.get_atom_nb(static_cast<int>(J)));
+                                for (int ik = 0; ik != n_target_kpoints; ++ik)
+                                    fourier_tasks.push_back({I, J, ik, n_I, n_J, &R_exx});
+                            }
                         }
-                    }
-                    MPI_Allreduce(MPI_IN_PLACE, nks_all.data(), comm_h.nprocs, mpi_datatype<int>::value, MPI_SUM, comm_h.comm);
-                    const int nk_max = *std::max_element(nks_all.cbegin(), nks_all.cend());
-                    std::vector<int> iks_all(nk_max * comm_h.nprocs, 0);
-                    for (int i = 0; i < nks_all[comm_h.myid]; i++)
-                    {
-                        iks_all[comm_h.myid * nk_max + i] = iks_local[i];
-                    }
-                    MPI_Allreduce(MPI_IN_PLACE, iks_all.data(), comm_h.nprocs * nk_max, mpi_datatype<int>::value, MPI_SUM, comm_h.comm);
 
-                    for (int pid = 0; pid < comm_h.nprocs; pid++)
-                    {
-                        const int nk_this = nks_all[pid];
-                        if (nk_this == 0) continue;  // no eigenvector on this process
-                        auto [irsrc, icsrc] = blacs_ctxt_h.get_pcoord(pid);
-                        desc_nao_nband_fb.init(n_aos, n_bands, n_aos, n_bands, irsrc, icsrc);
-                        desc_nband_nband_fb.init(n_bands, n_bands, n_bands, n_bands, irsrc, icsrc);
-                        auto Hexx_nband_nband_fb = init_local_mat<complex<double>>(desc_nband_nband_fb, MAJOR::COL);
-                        for (int ik_this = 0; ik_this < nk_this; ik_this++)
+                        std::vector<Matz> fourier_results(fourier_tasks.size());
+                        const auto n_fourier_tasks =
+                            static_cast<std::ptrdiff_t>(fourier_tasks.size());
+                        #pragma omp parallel for schedule(dynamic)
+                        for (std::ptrdiff_t itask = 0; itask < n_fourier_tasks; ++itask)
                         {
-                            global::profiler.start("build_real_space_exx_6", "Hexx IJ -> 2D block");
-                            Hexx_nao_nao.zero_out();
-                            const int ik = iks_all[pid * nk_max + ik_this];
-                            // global::ofs_myid << "nk_this " << nk_this << " pid " << pid << " ik_this " << ik_this << " ik " << ik << std::endl;
-                            const auto& kfrac = kfrac_target[ik];
-                            const std::function<complex<double>(const atom_t, const atom_t, const Vector3_Order<int> &)>
-                                fourier = [kfrac](const atom_t I, const atom_t J, const Vector3_Order<int> &R)
+                            const auto &task = fourier_tasks[static_cast<std::size_t>(itask)];
+                            Matz exx_ijk(task.n_I, task.n_J, MAJOR::ROW);
+                            exx_ijk.zero_out();
+                            auto add_exx_ijk =
+                                [&](const Vector3_Order<int> &R_bvk, const auto &exx,
+                                    const double weight)
+                            {
+                                auto exx_cplx =
+                                    [&exx]()
                                 {
-                                    const auto ang = (kfrac * R) * TWO_PI;
-                                    return complex<double>{std::cos(ang), std::sin(ang)};
-                                };
-                            if (use_complex_exx_r)
-                                collect_block_from_IJ_storage_matrix_transform(
-                                    Hexx_nao_nao, desc_nao_nao, this->atbasis_wfc,
-                                    this->atbasis_wfc, fourier, exx_is_local_cplx);
-                            else
-                                collect_block_from_IJ_storage_matrix_transform(
-                                    Hexx_nao_nao, desc_nao_nao, this->atbasis_wfc,
-                                    this->atbasis_wfc, fourier, exx_is_local);
-                            global::profiler.stop("build_real_space_exx_6");
+                                    using ExxBlock = std::decay_t<decltype(exx)>;
+                                    if constexpr (ExxBlock::is_complex)
+                                        return exx.copy();
+                                    else
+                                        return exx.to_complex();
+                                }();
+                                exx_cplx.swap_major(MAJOR::ROW);
+                                const auto ang = (kfrac_target[task.ik] * R_bvk) * TWO_PI;
+                                const complex<double> phase{weight * std::cos(ang),
+                                                            weight * std::sin(ang)};
+                                auto exx_weighted = exx_cplx.copy();
+                                exx_weighted *= phase;
+                                exx_ijk += exx_weighted;
+                            };
 
-                            std::vector<complex<double>> dummy(1);
-                            global::profiler.start("build_real_space_exx_7", "Rotate Hexx ij -> KS");
-
-                            // Redistribute Hexx_nao_nao to opt block size
-                            ScalapackConnector::pgemr2d_f(n_aos, n_aos,
-                                                          Hexx_nao_nao.ptr(), 1, 1, desc_nao_nao.desc,
-                                                          Hexx_nao_nao_opt.ptr(), 1, 1, desc_nao_nao_opt.desc,
-                                                          blacs_ctxt_h.ictxt);
-
-                            // Redistribute wfc to opt descriptors
-                            if (pid == comm_h.myid)
+                            for (const auto &[R, exx]: *task.R_exx)
                             {
-                                const auto &wfc_bra = wfc_target.at(isp).at(ispn_bra).at(ik);
-                                const auto &wfc_ket = wfc_target.at(isp).at(ispn_ket).at(ik);
-                                ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_bra.c, 1, 1,
-                                                              desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
-                                                              1, 1, desc_nao_nband_opt.desc, blacs_ctxt_h.ictxt);
-                                ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_ket.c, 1, 1,
-                                                              desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
-                                                              1, 1, desc_nao_nband_opt.desc, blacs_ctxt_h.ictxt);
-                            }
-                            else
-                            {
-                                ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1,
-                                                              desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
-                                                              1, 1, desc_nao_nband_opt.desc, blacs_ctxt_h.ictxt);
-                                ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1,
-                                                              desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
-                                                              1, 1, desc_nao_nband_opt.desc, blacs_ctxt_h.ictxt);
-                            }
-                            release_free_mem();
-
-#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
-                            if (use_gpu_replace_scalapack)
-                            {
-                                DEVICE_CHECK(deviceMemcpyAsync(d_wfc_bra, wfc_bra_opt.ptr(), size_wfc * sizeof(std::complex<double>),
-                                                               deviceMemcpyHostToDevice, blacs_ctxt_h.ddla_handle->stream));
-                                DEVICE_CHECK(deviceMemcpyAsync(d_wfc_ket, wfc_ket_opt.ptr(), size_wfc * sizeof(std::complex<double>),
-                                                               deviceMemcpyHostToDevice, blacs_ctxt_h.ddla_handle->stream));
-                                DEVICE_CHECK(deviceMemcpyAsync(d_hexx_nao, Hexx_nao_nao_opt.ptr(), size_hexx_nao * sizeof(std::complex<double>),
-                                                               deviceMemcpyHostToDevice, blacs_ctxt_h.ddla_handle->stream));
-                                LaConnector::pgemm(
-                                    'C', 'N', n_bands, n_aos, n_aos, std::complex<double>{1.0, 0.0},
-                                    d_wfc_bra, 1, 1, desc_nao_nband_opt,
-                                    d_hexx_nao, 1, 1, desc_nao_nao_opt,
-                                    std::complex<double>{0.0, 0.0},
-                                    d_temp, 1, 1, desc_nband_nao_opt);
-                                LaConnector::pgemm(
-                                    'N', 'N', n_bands, n_bands, n_aos, std::complex<double>{-1.0, 0.0},
-                                    d_temp, 1, 1, desc_nband_nao_opt,
-                                    d_wfc_ket, 1, 1, desc_nao_nband_opt,
-                                    std::complex<double>{0.0, 0.0},
-                                    d_hexx_nband, 1, 1, desc_nband_nband_opt);
-                                DEVICE_CHECK(deviceMemcpyAsync(Hexx_nband_nband_opt.ptr(), d_hexx_nband,
-                                                               size_hexx_nband * sizeof(std::complex<double>),
-                                                               deviceMemcpyDeviceToHost, blacs_ctxt_h.ddla_handle->stream));
-                                DEVICE_CHECK(deviceStreamSynchronize(blacs_ctxt_h.ddla_handle->stream));
-                            }
-                            else
-#endif
-                            {
-                                ScalapackConnector::pgemm_f('C', 'N', n_bands, n_aos, n_aos, 1.0,
-                                                            wfc_bra_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
-                                                            Hexx_nao_nao_opt.ptr(), 1, 1, desc_nao_nao_opt.desc,
-                                                            0.0,
-                                                            temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc);
-                                ScalapackConnector::pgemm_f('N', 'N', n_bands, n_bands, n_aos, -1.0,
-                                                            temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc,
-                                                            wfc_ket_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
-                                                            0.0,
-                                                            Hexx_nband_nband_opt.ptr(), 1, 1, desc_nband_nband_opt.desc);
-                            }
-
-                            // Extract the diagonal of the distributed KS exchange matrix directly,
-                            // avoiding a full-matrix pgemr2d collect to one process.
-                            std::vector<double> eexx_diag_send(n_bands, 0.0);
-                            for (int ib = 0; ib != n_bands; ++ib)
-                            {
-                                const int ilo = desc_nband_nband_opt.indx_g2l_r(ib);
-                                if (ilo < 0) continue;
-                                const int jlo = desc_nband_nband_opt.indx_g2l_c(ib);
-                                if (jlo < 0) continue;
-                                eexx_diag_send[ib] = Hexx_nband_nband_opt.ptr()[ilo + desc_nband_nband_opt.lld() * jlo].real();
-                            }
-                            std::vector<double> eexx_diag_recv(n_bands);
-                            blacs_ctxt_h.comm_h().reduce(eexx_diag_send.data(), eexx_diag_recv.data(), n_bands, pid, MPI_SUM);
-                            if (this->exx_KS.count(isp) == 0 || this->exx_KS.at(isp).count(ik) == 0)
-                            {
-                                this->exx_KS[isp][ik] = Hexx_nband_nband_opt.copy();
-                                this->exx_KS[isp][ik] = C_ZERO;
-                                if (pid == comm_h.myid)
+                                const atpair_t IJ{task.I, task.J};
+                                const auto *R_bvks = bvk_remap.find_R_bvk(IJ, R);
+                                if (R_bvks == nullptr || R_bvks->empty())
                                 {
-                                    for (int ib = 0; ib != n_bands; ib++)
-                                        this->Eexx[isp][ik][ib] = 0.0;
+                                    add_exx_ijk(R, exx, 1.0);
+                                }
+                                else if (R_bvks->size() == 1)
+                                {
+                                    add_exx_ijk(R_bvks->front(), exx, 1.0);
+                                }
+                                else
+                                {
+                                    const auto weight = 1.0 / static_cast<double>(R_bvks->size());
+                                    for (const auto &R_bvk: *R_bvks)
+                                        add_exx_ijk(R_bvk, exx, weight);
                                 }
                             }
-                            this->exx_KS[isp][ik] += Hexx_nband_nband_opt;
-                            if (pid == comm_h.myid)
-                            {
-                                for (int ib = 0; ib != n_bands; ib++)
-                                    this->Eexx[isp][ik][ib] += eexx_diag_recv[ib];
-                            }
-                            global::profiler.stop("build_real_space_exx_7");
+                            fourier_results[static_cast<std::size_t>(itask)] = std::move(exx_ijk);
+                        }
+
+                        for (std::size_t itask = 0; itask != fourier_tasks.size(); ++itask)
+                        {
+                            const auto &task = fourier_tasks[itask];
+                            exx_I_Jik_mat[task.I][{task.J, task.ik}] =
+                                std::move(fourier_results[itask]);
+                        }
+                    };
+                    if (use_complex_exx_r)
+                    {
+                        if (orig_cplx != nullptr)
+                            fourier_exx_to_ijk(*orig_cplx);
+                    }
+                    else
+                    {
+                        if (orig != nullptr)
+                            fourier_exx_to_ijk(*orig);
+                    }
+                    global::profiler.stop("exx_build_KS_fourier_world");
+
+                    global::profiler.start("exx_build_KS_ijk_redist");
+                    std::map<ExxIJKAtomKey, std::map<ExxIJKKey, RI::Tensor<cplxdb>>> exx_I_Jik_tensor;
+                    for (auto &[I, Jik_exx]: exx_I_Jik_mat)
+                    {
+                        const std::size_t n_I =
+                            this->atbasis_wfc.get_atom_nb(static_cast<int>(I));
+                        for (auto &[Jik, exx]: Jik_exx)
+                        {
+                            const std::size_t n_J =
+                                this->atbasis_wfc.get_atom_nb(static_cast<int>(Jik.first));
+                            exx_I_Jik_tensor[I][Jik] = RI::Tensor<cplxdb>({n_I, n_J}, exx.sptr());
                         }
                     }
-                }
+                    auto exx_I_Jik =
+                        comm_map2(comm_h.comm, exx_I_Jik_tensor, exx_ijk_s0, exx_ijk_s1);
+                    exx_I_Jik_tensor.clear();
+                    exx_I_Jik_mat.clear();
+                    global::profiler.stop("exx_build_KS_ijk_redist");
+
+                    desc_nao_nband_fb.init(n_aos, n_bands, n_aos, n_bands, 0, 0);
+                    std::vector<complex<double>> dummy(1, complex<double>{0.0, 0.0});
+                    release_free_mem();
+                    for (const int ik: target_kblacs_ctxt.kpoints_local())
+                    {
+                        if (ik < 0 || ik >= n_target_kpoints)
+                            throw LIBRPA_RUNTIME_ERROR("k-point index out of range for k-local EXX rotation");
+                        global::profiler.start("build_real_space_exx_6", "Hexx IJ/K -> 2D block");
+                        collect_block_from_ordered_IJ_Tensor_sparse_zero_missing(
+                            Hexx_nao_nao, desc_nao_nao, this->atbasis_wfc, ik,
+                            complex<double>{1.0, 0.0}, exx_I_Jik);
+                        global::profiler.stop("build_real_space_exx_6");
+
+                        global::profiler.start("build_real_space_exx_7", "Rotate Hexx ij -> KS");
+                        ScalapackConnector::pgemr2d_f(n_aos, n_aos,
+                                                      Hexx_nao_nao.ptr(), 1, 1, desc_nao_nao.desc,
+                                                      Hexx_nao_nao_opt.ptr(), 1, 1, desc_nao_nao_opt.desc,
+                                                      desc_nao_nao.ictxt());
+                        if (desc_nao_nband_fb.is_src())
+                        {
+                            const auto &wfc_bra = wfc_target.at(isp).at(ispn_bra).at(ik);
+                            const auto &wfc_ket = wfc_target.at(isp).at(ispn_ket).at(ik);
+                            ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_bra.c, 1, 1,
+                                                          desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
+                                                          1, 1, desc_nao_nband_opt.desc,
+                                                          desc_nao_nband_fb.ictxt());
+                            ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_ket.c, 1, 1,
+                                                          desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
+                                                          1, 1, desc_nao_nband_opt.desc,
+                                                          desc_nao_nband_fb.ictxt());
+                        }
+                        else
+                        {
+                            ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1,
+                                                          desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
+                                                          1, 1, desc_nao_nband_opt.desc,
+                                                          desc_nao_nband_fb.ictxt());
+                            ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1,
+                                                          desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
+                                                          1, 1, desc_nao_nband_opt.desc,
+                                                          desc_nao_nband_fb.ictxt());
+                        }
+                        release_free_mem();
+
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+                        if (use_gpu_replace_scalapack)
+                        {
+                            DEVICE_CHECK(deviceMemcpyAsync(d_wfc_bra, wfc_bra_opt.ptr(), size_wfc * sizeof(std::complex<double>),
+                                                           deviceMemcpyHostToDevice, rotation_blacs_h.ddla_handle->stream));
+                            DEVICE_CHECK(deviceMemcpyAsync(d_wfc_ket, wfc_ket_opt.ptr(), size_wfc * sizeof(std::complex<double>),
+                                                           deviceMemcpyHostToDevice, rotation_blacs_h.ddla_handle->stream));
+                            DEVICE_CHECK(deviceMemcpyAsync(d_hexx_nao, Hexx_nao_nao_opt.ptr(), size_hexx_nao * sizeof(std::complex<double>),
+                                                           deviceMemcpyHostToDevice, rotation_blacs_h.ddla_handle->stream));
+                            LaConnector::pgemm(
+                                'C', 'N', n_bands, n_aos, n_aos, std::complex<double>{1.0, 0.0},
+                                d_wfc_bra, 1, 1, desc_nao_nband_opt,
+                                d_hexx_nao, 1, 1, desc_nao_nao_opt,
+                                std::complex<double>{0.0, 0.0},
+                                d_temp, 1, 1, desc_nband_nao_opt);
+                            LaConnector::pgemm(
+                                'N', 'N', n_bands, n_bands, n_aos, std::complex<double>{-1.0, 0.0},
+                                d_temp, 1, 1, desc_nband_nao_opt,
+                                d_wfc_ket, 1, 1, desc_nao_nband_opt,
+                                std::complex<double>{0.0, 0.0},
+                                d_hexx_nband, 1, 1, desc_nband_nband_opt);
+                            DEVICE_CHECK(deviceMemcpyAsync(Hexx_nband_nband_opt.ptr(), d_hexx_nband,
+                                                           size_hexx_nband * sizeof(std::complex<double>),
+                                                           deviceMemcpyDeviceToHost, rotation_blacs_h.ddla_handle->stream));
+                            DEVICE_CHECK(deviceStreamSynchronize(rotation_blacs_h.ddla_handle->stream));
+                        }
+                        else
+#endif
+                        {
+                            ScalapackConnector::pgemm_f('C', 'N', n_bands, n_aos, n_aos, 1.0,
+                                                        wfc_bra_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
+                                                        Hexx_nao_nao_opt.ptr(), 1, 1, desc_nao_nao_opt.desc,
+                                                        0.0,
+                                                        temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc);
+                            ScalapackConnector::pgemm_f('N', 'N', n_bands, n_bands, n_aos, -1.0,
+                                                        temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc,
+                                                        wfc_ket_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
+                                                        0.0,
+                                                        Hexx_nband_nband_opt.ptr(), 1, 1, desc_nband_nband_opt.desc);
+                        }
+
+                        std::vector<double> eexx_diag_send(n_bands, 0.0);
+                        for (int ib = 0; ib != n_bands; ++ib)
+                        {
+                            const int ilo = desc_nband_nband_opt.indx_g2l_r(ib);
+                            if (ilo < 0) continue;
+                            const int jlo = desc_nband_nband_opt.indx_g2l_c(ib);
+                            if (jlo < 0) continue;
+                            eexx_diag_send[ib] =
+                                Hexx_nband_nband_opt.ptr()[ilo + desc_nband_nband_opt.lld() * jlo].real();
+                        }
+                        std::vector<double> eexx_diag_recv(n_bands);
+                        target_kblacs_ctxt.comm_blacs_h.reduce(
+                            eexx_diag_send.data(), eexx_diag_recv.data(), n_bands, 0, MPI_SUM);
+                        if (this->exx_KS.count(isp) == 0 || this->exx_KS.at(isp).count(ik) == 0)
+                        {
+                            this->exx_KS[isp][ik] = Hexx_nband_nband_opt.copy();
+                            this->exx_KS[isp][ik] = C_ZERO;
+                            if (target_kblacs_ctxt.comm_blacs_h.is_root())
+                            {
+                                for (int ib = 0; ib != n_bands; ib++)
+                                    this->Eexx[isp][ik][ib] = 0.0;
+                            }
+                        }
+                        this->exx_KS[isp][ik] += Hexx_nband_nband_opt;
+                        if (target_kblacs_ctxt.comm_blacs_h.is_root())
+                        {
+                            for (int ib = 0; ib != n_bands; ib++)
+                                this->Eexx[isp][ik][ib] += eexx_diag_recv[ib];
+                        }
+	                        global::profiler.stop("build_real_space_exx_7");
+	                    }
+	                    exx_I_Jik.clear();
+	                    global::profiler.stop("exx_build_KS_rotate_kpara_klocal_blacs");
+	                }
                 else  // !is_mf_eigvec_k_distributed_
                 {
                     // Everything will be collected to rank 0
@@ -1641,11 +1757,11 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if (use_gpu_replace_scalapack)
     {
-        DEVICE_CHECK(deviceFreeAsync(d_wfc_bra, blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceFreeAsync(d_wfc_ket, blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceFreeAsync(d_hexx_nao, blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceFreeAsync(d_temp, blacs_ctxt_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceFreeAsync(d_hexx_nband, blacs_ctxt_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_wfc_bra, rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_wfc_ket, rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_hexx_nao, rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_temp, rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceFreeAsync(d_hexx_nband, rotation_blacs_h.ddla_handle->stream));
     }
 #endif
     global::ofs_myid << "Done Exx::build_KS_blacs" << std::endl;
@@ -1672,7 +1788,7 @@ void Exx::build_KS_kgrid_blacs(const BlacsCtxtHandler &blacs_ctxt_h,
                               bool use_gpu_replace_scalapack)
 {
     this->build_KS_blacs(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {}, blacs_ctxt_h,
-                         use_gpu_replace_scalapack);
+                         use_gpu_replace_scalapack, false);
 }
 
 // void Exx::build_KS0_kgrid_blacs()
@@ -1687,7 +1803,7 @@ void Exx::build_KS_band_blacs(const std::map<int, std::map<int, std::map<int, Co
                               bool use_gpu_replace_scalapack)
 {
     this->build_KS_blacs(wfc_band, kfrac_band, bvk_remap, blacs_ctxt_h,
-                         use_gpu_replace_scalapack);
+                         use_gpu_replace_scalapack, true);
 }
 
 void Exx::reset_rspace()

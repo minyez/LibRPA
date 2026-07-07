@@ -135,6 +135,15 @@ std::map<TA, std::map<TAC, Tensor<Tdata>>> comm_map2_first(
     return dummy;
 }
 
+template <typename TA, typename TAC, typename Tdata>
+std::map<TA, std::map<TAC, Tensor<Tdata>>> comm_map2(
+    const MPI_Comm &mpi_comm, const std::map<TA, std::map<TAC, Tensor<Tdata>>> &Ds_in,
+    const std::set<TA> &s0, const std::set<TAC> &s1)
+{
+    std::map<TA, std::map<TAC, Tensor<Tdata>>> dummy;
+    return dummy;
+}
+
 } /* end of namespace Communicate_Tensors_Map_Judge */
 
 } /* end of namespace RI */

@@ -32,7 +32,8 @@ class Exx
             const std::vector<Vector3_Order<double>> &kfrac_target,
             const AtomPairBvKRemap<atom_t> &bvk_remap,
             const BlacsCtxtHandler &blacs_ctxt_h,
-            bool use_gpu_replace_scalapack = false);
+            bool use_gpu_replace_scalapack = false,
+            bool target_is_band_path = false);
 
     public:
         //! refenrence to the MeanField object to compute density matrix
@@ -45,6 +46,7 @@ class Exx
         const bool use_symmetry_context;
         const MpiCommHandler &comm_h;
         const KPointBlacsParallelContext &kblacs_ctxt;
+        const KPointBlacsParallelContext &band_kblacs_ctxt;
 
         double libri_threshold_C;
         double libri_threshold_V;
@@ -63,6 +65,7 @@ class Exx
             const PeriodicBoundaryData &pbc_in,
             const SymmetryContext &symmetry_context_in,
             const KPointBlacsParallelContext &kblacs_ctxt_in,
+            const KPointBlacsParallelContext &band_kblacs_ctxt_in,
             const ArrayDesc &desc_wfc_in,
             bool is_mf_eigvec_k_distributed,
             bool use_symmetry_context_in = true);

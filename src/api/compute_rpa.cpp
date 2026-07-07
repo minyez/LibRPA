@@ -49,6 +49,7 @@ double librpa_get_rpa_correlation_energy(LibrpaHandler *h, const LibrpaOptions *
     profiler.start("api_get_rpa_correlation_energy");
     auto pds = librpa_int::api::get_dataset_instance(h);
     const auto &opts = *p_opts;
+    initialize_ds_global_ddla(*pds, opts);
 
     const auto ks_local = pds->mf.get_iks_local();
     const bool seems_k_para = as_int(ks_local.size()) < pds->mf.get_n_kpoints();
@@ -141,12 +142,6 @@ double librpa_get_rpa_correlation_energy(LibrpaHandler *h, const LibrpaOptions *
     CorrEnergy corr;
 
     const bool use_blacs = opts.use_scalapack_ecrpa && (routing == LIBRPA_ROUTING_ATOMPAIR || routing == LIBRPA_ROUTING_LIBRI);
-#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-    if (opts.use_gpu_replace_scalapack)
-    {
-        pds->blacs_h.init_ddla_handle();
-    }
-#endif
     const bool use_rpa_headwing =
         opts.replace_w_head == LIBRPA_SWITCH_ON && opts.option_dielect_func == 3 &&
         pds->p_headwing != nullptr;
