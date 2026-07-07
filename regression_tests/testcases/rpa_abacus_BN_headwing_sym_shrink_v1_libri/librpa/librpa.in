@@ -1,6 +1,6 @@
 task = rpa
 input_dir = ../dataset
-output_level = debug
+output_level = info
 prefix_coul_full = v1_coulomb_full_iq_
 prefix_coul_cut = v1_coulomb_cut_iq_
 prefix_lri_coeff = v1_Cs_data_

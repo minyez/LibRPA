@@ -1541,7 +1541,7 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
                                     desc_wing_opt.desc);
     }
 
-    if (debug && !this->wing.empty())
+    if (!this->wing.empty())
     {
         double max_abs_real_local = 0.0;
         double max_abs_imag_local = 0.0;
@@ -1570,30 +1570,36 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
                 "Wing_lambda diagnostics (iomega=0): max_abs_real=%15.8e "
                 "max_abs_imag=%15.8e max_abs_value=%15.8e real_over_abs=%15.8e\n",
                 max_abs_real, max_abs_imag, max_abs_value, real_over_abs);
-            std::cout << "First wing_lambda rows at iomega=0 (lambda, x_re, x_im, y_re, y_im, "
-                         "z_re, z_im):"
-                      << std::endl;
         }
-        const int n_sample = std::min(n_lambda, 8);
-        for (int ilambda = 0; ilambda != n_sample; ++ilambda)
+        if (debug)
         {
-            std::array<std::complex<double>, 3> row{};
-            for (int alpha = 0; alpha != 3; ++alpha)
-            {
-                const int loc_lambda = desc_wing_opt.indx_g2l_r(ilambda);
-                const int loc_alpha = desc_wing_opt.indx_g2l_c(alpha);
-                std::complex<double> value = 0.0;
-                if (loc_lambda >= 0 && loc_alpha >= 0)
-                    value = wing0(loc_lambda, loc_alpha);
-                MPI_Allreduce(&value, &row[alpha], 1, MPI_CXX_DOUBLE_COMPLEX, MPI_SUM,
-                              comm_h.comm);
-            }
             if (comm_h.is_root())
             {
-                global::lib_printf(
-                    "%4d %15.8e %15.8e %15.8e %15.8e %15.8e %15.8e\n",
-                    ilambda, row[0].real(), row[0].imag(), row[1].real(), row[1].imag(),
-                    row[2].real(), row[2].imag());
+                std::cout << "First wing_lambda rows at iomega=0 (lambda, x_re, x_im, y_re, "
+                             "y_im, z_re, z_im):"
+                          << std::endl;
+            }
+            const int n_sample = std::min(n_lambda, 8);
+            for (int ilambda = 0; ilambda != n_sample; ++ilambda)
+            {
+                std::array<std::complex<double>, 3> row{};
+                for (int alpha = 0; alpha != 3; ++alpha)
+                {
+                    const int loc_lambda = desc_wing_opt.indx_g2l_r(ilambda);
+                    const int loc_alpha = desc_wing_opt.indx_g2l_c(alpha);
+                    std::complex<double> value = 0.0;
+                    if (loc_lambda >= 0 && loc_alpha >= 0)
+                        value = wing0(loc_lambda, loc_alpha);
+                    MPI_Allreduce(&value, &row[alpha], 1, MPI_CXX_DOUBLE_COMPLEX, MPI_SUM,
+                                  comm_h.comm);
+                }
+                if (comm_h.is_root())
+                {
+                    global::lib_printf(
+                        "%4d %15.8e %15.8e %15.8e %15.8e %15.8e %15.8e\n",
+                        ilambda, row[0].real(), row[0].imag(), row[1].real(), row[1].imag(),
+                        row[2].real(), row[2].imag());
+                }
             }
         }
     }
@@ -1810,8 +1816,6 @@ void diele_func::test_head()
 {
     using global::lib_printf;
 
-    if (!debug) return;
-
     const int n_omegas = this->omega.size();
     if (comm_h.is_root())
     {
@@ -1869,12 +1873,11 @@ void diele_func::test_head()
 void diele_func::test_wing()
 {
     using global::lib_printf;
-    if (!debug) return;
     if (comm_h.is_root())
     {
         if (this->wing_mu.empty())
         {
-            std::cout << "Wing_mu diagnostics unavailable: wing_mu is empty." << std::endl;
+            if (debug) std::cout << "Wing_mu diagnostics unavailable: wing_mu is empty." << std::endl;
             return;
         }
         double max_abs_real = 0.0;
