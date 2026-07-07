@@ -40,6 +40,40 @@
                 comparison="cmp_float.abs_diff(1e-4)"
       />
     </testcase>
+
+    <testcase name="BN headwing symmetry shrink reader v1 (abacus input)" directory="rpa_abacus_BN_headwing_sym_shrink_v1_libri">
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <validate name="Head of dielectric function"
+                regex="Freq.?ency node .* Head of dielectric function"
+                headers="1"
+                rows="6"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="Analytic head tensor off-diagonal diagnostic"
+                regex="Head tensor diagnostics.*max_abs_offdiag=\s*([-+0-9.Ee]+)"
+                comparison="cmp_float.abs_diff(1e-8)"
+      />
+      <validate name="Analytic wing lambda pure-imaginary diagnostic"
+                regex="Wing_lambda diagnostics.*real_over_abs=\s*([-+0-9.Ee]+)"
+                comparison="cmp_float.abs_diff(1e-8)"
+      />
+      <validate name="Analytic wing lambda sample rows"
+                regex="First wing_lambda rows at iomega=0"
+                headers="1"
+                rows="8"
+                comparison="cmp_table.abs_diff(1e-6)"
+      />
+      <validate name="Correlation energy"
+                regex="Total EcRPA: \s+([-+]?\d*\.\d+)"
+                comparison="cmp_float.abs_diff(1e-4)"
+      />
+    </testcase>
   </group>
 
   <group name="Exact-exchange (EXX) potentials" prefix="EXX">

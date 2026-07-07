@@ -1,0 +1,497 @@
+Initialized LibRPA global environment at [2026-07-07 13:15:40.642]
+Total number of tasks    :     1
+Total number of nodes    :     1
+Maximal number of threads:   1
+MPI tasks information:
+| Proc    0 of Size    1: login09
+| Global ID of master process of node     0 :     0
+
+LibRPA CMake build info:
+| Build type               : RelWithDebInfo
+| Source code directory    : /work1/ghj/app/src/codex_regtest_librpa_9565514_20260707/src
+| Source code Git reference: GITDIR-NOTFOUND
+| Source code Git hash     : GITDIR-NOTFOUND
+| C++ compiler             : /public/software/mpi/intelmpi/2021.3.0/bin/mpiicpc
+| C++ compiler flags       :   -qopenmp
+| Fortran compiler         : /public/software/mpi/intelmpi/2021.3.0/bin/mpiifort
+| Fortran compiler flags   : 
+| GreenX commit hash       : c90d131
+| Use LibRI                : ON
+| LibRI include directory  : /public/home/ghj/app/src/master_ghj_ewald_20260608/src/LibRI_latest/include
+| LibComm include directory: /public/home/ghj/app/src/master_ghj_ewald_20260608/src/LibComm_fix_status/include
+
+===== Begin driver parameters  =====
+task = rpa
+constants_choice = internal
+input_dir = ../dataset/
+prefix_lri_coeff = v1_Cs_data_
+prefix_lri_coeff_shrink = v1_Cs_shrinked_data_
+prefix_shrink_sinvS = v1_shrink_sinvS_
+prefix_coul_full = v1_coulomb_full_iq_
+prefix_coul_cut = v1_coulomb_cut_iq_
+prefix_eigvecs_scf = KS_eigenvector
+fn_stru = stru_out
+fn_bz_sampling = bz_sampling_out
+fn_basis = basis_out
+fn_basis_wfc = basis_wfc_out
+fn_basis_aux = basis_aux_out
+fn_basis_aux_shrink = basis_aux_shrink_out
+fn_eigocc_scf = band_out
+fn_dielfunc = dielecfunc_out
+fn_vxc_scf = vxc_out
+fn_band_kpath_info = band_kpath_info
+output_level = debug
+use_spinor_wfc = false
+output_energy_qp = false
+output_gw_spec_func = false
+output_hamgnn = false
+use_pyatb = false
+version_coul_reader = 1
+version_lri_reader = 1
+cs_R_threshold = 1e-06
+i_state_low = 0
+i_state_high = 999999
+===== End driver parameters    =====
+
+===== Begin control parameters =====
+output_dir = librpa.d/
+restart_from_dir = <output_dir>
+tfgrids_type = minimax
+parallel_routing = libri
+rpa_headwing_mode = qavg
+nfreq = 6
+n_bands_chi0 = -1
+n_bands_sigc = -1
+n_params_anacon = -1
+option_qpe_solver = 0
+option_dielect_func = 3
+option_bvk_remap = 1
+rpa_headwing_body_start = 1
+qpe_solver_n_iter_max = 10000
+libri_chi0_collect_s0_chunk = 0
+istate_ref_hedin_shift = -1
+ifreq_output_wc_start = 0
+ifreq_output_wc_end = -1
+libri_chi0_collect_max_bytes = 0
+gf_R_threshold = 0
+vq_threshold = 0
+minimax_emin = -1
+minimax_emax = -1
+minimax_regulation = 0
+sqrt_coulomb_threshold = 0
+libri_chi0_threshold_C = 0
+libri_chi0_threshold_G = 0
+libri_exx_threshold_C = 0
+libri_exx_threshold_D = 0
+libri_exx_threshold_V = 0
+libri_g0w0_threshold_C = 0
+libri_g0w0_threshold_G = 0
+libri_g0w0_threshold_Wc = 0
+qpe_solver_thres = 1e-06
+qpe_solver_damp_factor = 0.1
+debug = true
+replace_w_head = true
+use_fullcoul_eps = true
+use_fullcoul_exx = false
+use_fullcoul_wc = false
+use_symmetry_exx = false
+use_symmetry_gw = false
+use_symmetry_rpa = true
+output_abacus_gw_gf = false
+use_shrink_abfs = true
+use_shrink_chi = true
+use_scalapack_ecrpa = true
+use_scalapack_gw_wc = true
+use_cholesky_gw_wc = false
+use_gpu_replace_scalapack = false
+use_elpa_sqrt_coulomb = false
+use_kpara_scf_eigvec = false
+read_sigc_mat_rf = false
+output_gw_sigc_ks_kf = false
+output_gw_sigc_ks_mat_kf = false
+output_gw_sigc_mat_kf = false
+output_gw_sigc_mat_rf = false
+output_gw_sigc_mat_rt = false
+output_wc_rf = false
+output_wc_rf_atom_pair = true
+use_qpe_adaptive_damp = false
+use_qpe_legacy_update = false
+override_qpe_solver_nan = false
+use_hedin_shift = false
+===== End control parameters   =====
+
+Mean-field dimensions set:
+| number of spins           : 1
+| number of k-points        : 3
+| number of bands           : 26
+| number of NAOs            : 26
+| number of spin components : 1
+Internal two-level (SCF k-points/matrix block) parallelization for eigenvectors set:
+| processes per k-point      : 1
+| processes per matrix block : 1
+Mean-field eigenvalues and occupation numbers set:
+| Minimal transition energy (Ha):       0.1590135061
+| Maximal transition energy (Ha):       7.6959091013
+| Fermi level               (Ha):       0.5210890000
+Reading structure file: ../dataset/stru_out
+Lattice vectors (Bohr): latt
+         3.41663         3.41663               0
+         3.41663               0         3.41663
+               0         3.41663         3.41663
+Reciprocal lattice vectors (2PI Bohr^-1): G
+        0.146343        0.146343       -0.146343
+        0.146343       -0.146343        0.146343
+       -0.146343        0.146343        0.146343
+Consistency check: latt * G.T
+               1               0               0
+               0               1               0
+               0               0               1
+Atom positions read (Cartesian in Bohr | fractional):
+ia    1:    0.0000000    0.0000000    0.0000000 |    0.0000000    0.0000000    0.0000000
+ia    2:    1.7083034    1.7083034    1.7083034 |    0.2499986    0.2499986    0.2499986
+
+Reading Brillouin zone sampling file: ../dataset/bz_sampling_out
+kgrids:   2   2   2
+k-points read (Cartesian in 2Pi Bohr^-1 | fractional):
+ik    1:    0.0000000    0.0000000    0.0000000 |    0.0000000    0.0000000    0.0000000
+ik    2:    0.0731716    0.0731716    0.0731716 |    0.5000000    0.5000000    0.5000000
+ik    3:    0.1463432    0.0000000    0.0000000 |    0.5000000    0.5000000    0.0000000
+Hint: full k-point list is generated from k-grid; parsed k-points are symmetry-reduced.
+R-points to compute: 8
+    1 -     5 : ( -1,  -1,  -1) ( -1,  -1,   0) ( -1,   0,  -1) ( -1,   0,   0) (  0,  -1,  -1)
+    6 -     8 : (  0,  -1,   0) (  0,   0,  -1) (  0,   0,   0)
+
+SCF k-point to Coulomb q-point mapping:
+  ik:          k_1          k_2          k_3      iq
+   1:    0.0000000    0.0000000    0.0000000
+   2:    0.5000000    0.5000000    0.5000000
+   3:    0.5000000    0.5000000    0.0000000
+
+Reading wave-function basis information file: ../dataset/basis_wfc_out
+Basis convention set:
+| Bloch phase      : -1
+| Bloch r_atom     : 0
+| angular order    : 1
+| RSH coeff m < 0  : 1
+| RSH coeff m > 0  : 0
+Wave-function basis functions set:
+| total number of basis: 26
+Reading auxiliary basis information file: ../dataset/basis_aux_out
+Auxiliary basis functions set:
+| total number of basis: 119
+
+KS eigenvector reader: binary v1
+Successfully read eigenvector files
+Loading RI file from directory: ../dataset/
+Evenly distributed Cs and V for LibRI
+LRI coefficient reader (v1_Cs_data_): binary v1
+Finished Cs filtering
+Finished Cs parsing
+Reading shrink auxiliary basis information file: ../dataset/basis_aux_shrink_out
+Shrink auxiliary basis functions set:
+| total number of basis: 34
+LRI coefficient reader (v1_Cs_shrinked_data_): binary v1
+Finished Cs filtering
+Finished Cs parsing
+sinvS: reader v1 binary files detected
+Auxiliary basis compression summary:
++------+----------------+----------------+
+| type | large ABF/atom | small ABF/atom |
++------+----------------+----------------+
+|    1 |             60 |             17 |
+|    2 |             59 |             17 |
++------+----------------+----------------+
+Coulomb reader (v1_coulomb_full_iq_): binary v1
+| Process     0: coulomb_mat read. Wall/CPU time [min]:       0.0515       0.0015
+| Process     0: Cs with             32 non-zero keys from local atpair size       3. Data memory:       2.57 MB. Wall/CPU time [min]:       0.1695       0.0125
+Actual parallel routing used: libri
+Initialization finished, Wall/CPU time [min]:       0.0000       0.0000
+Free memory on node     0 [GB]:  213.755
+Common data parsed, task rpa will begin
+rpa: RPA correlation energy
+Reading head/wing input from ../dataset/pyatb_librpa_df/
+KS eigenvector reader: legacy text
+* Success: read velocity from pyatb_librpa_df(ABACUS).
+Using PyATB head/wing input on the active LibRPA k-list with 3 k-points
+Head symmetry restore for analytic head: active (all symmetry restore checks passed).
+[cal_head_symmetric self-check] head_sym vs head_fullbz_convention: max_abs_diff=0, max_abs_val=25.4955, rel_diff=0
+[cal_head_symmetric self-check] PASSED: symmetric head == full-BZ head (rel_diff < 1e-10).
+Freqency node & Head of dielectric function(Re, Im): 
+ 0      0.05646138      9.03304807      0.00000000
+ 1      0.20424536      7.41080098      0.00000000
+ 2      0.49071024      4.29057929      0.00000000
+ 3      1.16414432      1.96946972      0.00000000
+ 4      2.95876611      1.18874984      0.00000000
+ 5      8.93964659      1.02268023      0.00000000
+The first freqency head tensor: 
+(  9.0330,   0.0000)  (  0.0000,   0.0000)  (  0.0000,  -0.0000)
+(  0.0000,  -0.0000)  (  9.0330,   0.0000)  (  0.0000,  -0.0000)
+(  0.0000,   0.0000)  (  0.0000,   0.0000)  (  9.0330,   0.0000)
+Head tensor diagnostics (iomega=0): trace_over_3=(     9.03304807,     0.00000000) max_abs_diag_delta= 6.26165786e-12 max_abs_offdiag= 6.53752689e-10 max_abs_imag= 4.02099543e-18
+Wing symmetry restore for analytic wing: active (all symmetry restore checks passed).
+* Success: initalize and calculate lebdev points and q_gamma.
+* Success: calculate wing term.
+Wing_mu diagnostics (iomega=0): max_abs_real= 7.72786515e-16 max_abs_imag= 7.05445869e-01 max_abs_value= 7.05445869e-01 real_over_abs= 1.09545828e-15
+Index of abfs & wing(iomega=0, z) of dielectric function(Re, Im): 
+ 0      0.00000000     -0.00000611
+ 1      0.00000000     -0.00000570
+ 2      0.00000000      0.34984850
+ 3      0.00000000      0.00000000
+ 4      0.00000000      0.00000000
+ 5      0.00000000     -0.00000122
+ 6      0.00000000      0.00000000
+ 7      0.00000000     -0.00000000
+ 8     -0.00000000      0.00000000
+ 9      0.00000000      0.70544587
+10     -0.00000000     -0.14690201
+11     -0.00000000     -0.00000000
+12      0.00000000     -0.00000000
+13      0.00000000     -0.00000000
+14      0.00000000     -0.00000091
+15     -0.00000000     -0.00000000
+16      0.00000000      0.00000000
+17     -0.00000000      0.00001144
+18     -0.00000000      0.00000439
+19      0.00000000      0.33876148
+20      0.00000000      0.00000000
+21      0.00000000      0.00000000
+22     -0.00000000      0.00000037
+23      0.00000000     -0.00000000
+24     -0.00000000     -0.00000000
+25     -0.00000000      0.00000000
+26      0.00000000     -0.63823881
+27      0.00000000     -0.03237808
+28      0.00000000     -0.00000000
+29      0.00000000     -0.00000000
+30     -0.00000000      0.00000000
+31     -0.00000000     -0.00000076
+32     -0.00000000     -0.00000000
+33      0.00000000      0.00000000
+Grid type: Minimax time-frequency grids
+Grid size: 6
+Frequency node & weight: 
+ 0      0.0564613751091468      0.1182358050337173
+ 1      0.2042453557437217      0.1931145871590052
+ 2      0.4907102447218977      0.4168339071614508
+ 3      1.1641443222262069      1.0351901860250672
+ 4      2.9587661077935143      2.9232742293669931
+ 5      8.9396465854900224     11.7321657839300659
+Time node & weight: 
+ 0      0.0447043589346274      0.1179935127263341
+ 1      0.2679833566217811      0.3543460640481131
+ 2      0.8441066220258485      0.8683926398986844
+ 3      2.2178015211159536      2.0322904382374825
+ 4      5.3643239299516656      4.5968895771732905
+ 5     12.5646192144662425     10.8766232022765283
+t->f transform: 
+
+ Cosine transform matrix (row: freq, col: time)
+nr = 6, nc = 6
+ 2.37477e-01 7.02584e-01 1.75092e+00 3.98966e+00 8.91574e+00 1.56920e+01
+ 2.31568e-01 7.24877e-01 1.66570e+00 3.78383e+00 3.68418e+00 -1.37688e+01
+ 2.41157e-01 6.80929e-01 1.65587e+00 1.62499e+00 -6.14788e+00 2.47297e+00
+ 2.29021e-01 7.04131e-01 8.42260e-01 -2.52943e+00 9.65242e-01 -3.15595e-01
+ 2.40319e-01 4.50874e-01 -9.39422e-01 3.17818e-01 -1.04385e-01 6.23493e-02
+ 2.01634e-01 -2.55484e-01 6.99404e-02 -2.50247e-02 1.60475e-02 -1.41961e-02
+
+ Sine transform matrix (row: freq, col: time)
+nr = 6, nc = 6
+ -3.40305e-02 1.44669e-01 -2.47883e-01 1.28038e+00 8.11119e-01 2.03692e+01
+ 3.97561e-02 -1.07113e-01 6.62021e-01 9.02057e-01 1.05184e+01 3.77321e+00
+ -3.60994e-02 2.54807e-01 2.80764e-01 4.69906e+00 1.15908e+00 -4.32269e+00
+ 5.83566e-02 3.26219e-02 1.96334e+00 5.96923e-01 -1.71193e+00 1.48393e+00
+ -2.13514e-02 7.32279e-01 3.14234e-01 -6.16824e-01 4.92303e-01 -4.52547e-01
+ 1.55845e-01 1.78040e-01 -1.83793e-01 1.31794e-01 -1.11712e-01 1.10404e-01
+f->t transform: 
+
+ Cosine transform matrix (row: time, col: freq)
+nr = 6, nc = 6
+ 3.78197e-02 6.07712e-02 1.34485e-01 3.23815e-01 9.43425e-01 3.19196e+00
+ 3.73654e-02 6.24076e-02 1.28644e-01 3.23307e-01 5.96431e-01 -1.34750e+00
+ 3.78664e-02 5.94265e-02 1.25282e-01 1.63514e-01 -5.09232e-01 1.58466e-01
+ 3.69791e-02 5.69531e-02 5.38085e-02 -2.07290e-01 7.66609e-02 -2.91978e-02
+ 3.65055e-02 2.47092e-02 -8.90515e-02 3.56397e-02 -1.23941e-02 9.38131e-03
+ 2.71120e-02 -3.88606e-02 1.51349e-02 -5.15529e-03 3.36846e-03 -3.52702e-03
+
+Total count of GFs IJR: 32
+| Number of GFs IJR on Proc    0: 32
+Use LibRI for chi0
+Reducing chi0 real-space blocks with symmetry irreducible sectors
+Green's Function sums over all states.
+chi0s for time point 0.044704, spin 0. CPU time: 0.590000 (tensor), 0.180000 (trans). Wall time 4.315847
+Green's Function sums over all states.
+chi0s for time point 0.267983, spin 0. CPU time: 0.470000 (tensor), 0.200000 (trans). Wall time 3.038622
+Green's Function sums over all states.
+chi0s for time point 0.844107, spin 0. CPU time: 0.440000 (tensor), 0.190000 (trans). Wall time 3.355377
+Green's Function sums over all states.
+chi0s for time point 2.217802, spin 0. CPU time: 0.560000 (tensor), 0.150000 (trans). Wall time 4.184058
+Green's Function sums over all states.
+chi0s for time point 5.364324, spin 0. CPU time: 0.520000 (tensor), 0.170000 (trans). Wall time 3.472016
+Green's Function sums over all states.
+chi0s for time point 12.564619, spin 0. CPU time: 0.510000 (tensor), 0.220000 (trans). Wall time 3.670969
+
+Begin to compute_RPA_correlation_blacs_2d  myid: 0
+Calculating EcRPA with BLACS/ScaLAPACK 2D
+Finish init RPA blacs 2d
+Vq Time  myid: 0  arr_time: 0.000259  comm_time: 0.073631   block_time: 0.000303   pair_size: 3
+ | Total vq time: 0.074391  lri_coul: 0.000261   comm_vq: 0.073639   block_vq: 0.000491
+Wing_lambda diagnostics (iomega=0): max_abs_real= 1.16661186e-15 max_abs_imag= 7.35829488e-01 max_abs_value= 7.35829488e-01 real_over_abs= 1.58543777e-15
+First wing_lambda rows at iomega=0 (lambda, x_re, x_im, y_re, y_im, z_re, z_im):
+   0  3.24480786e-16  8.95556395e-02  8.63005740e-16 -2.76942280e-03 -1.16661186e-15 -5.36110874e-01
+   1  4.36473167e-16  5.36117833e-01 -3.95445523e-16 -2.46553769e-08 -5.30977613e-17  8.95568021e-02
+   2  2.43740854e-16 -4.56325036e-04 -1.15109458e-15 -5.43539402e-01  9.26574796e-16  2.73156916e-03
+   3  1.94972157e-16 -3.45671928e-06  1.01211597e-16 -9.14601129e-06  1.01210500e-16 -9.14601127e-06
+   4 -8.20644768e-17  3.48241164e-01  1.64657346e-16  7.39495780e-04 -7.28691584e-17  9.74961001e-02
+   5 -1.39256131e-16  9.74963467e-02 -1.77972452e-16 -2.17835452e-05  6.76159105e-16 -3.48241879e-01
+   6  1.11855217e-16 -7.06241024e-04 -6.71170605e-16  3.61631576e-01  2.16191855e-16 -2.20345519e-04
+   7  2.85855652e-17 -2.46739373e-06  1.55087526e-17 -5.05761900e-06  1.55095124e-17 -5.05761900e-06
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 0.056461, q:( 0.000000, 0.000000, 0.000000 )
+RPA HW avg ifreq=0 trace_body=(-8.232453768407e+00,0.000000000000e+00) logdet_body=(6.363458223172e+00,0.000000000000e+00) weight_sum=1.000245735687e+00 averaged_body=(-1.869454824140e+00,0.000000000000e+00) averaged_head=(-8.035022071841e+00,4.351514836630e-37) averaged_schur_log=(2.048184941407e+00,1.008240041485e-32) total=(-7.856291954574e+00,1.008283556633e-32)
+| TIME of DET-freq-q:  0.056461,  q: ( 0.000000, 0.000000, 0.000000)  TOT: 0.228407  CHI_arr: 0.000378  CHI_comm: 0.075780, CHI_2d: 0.000212, Pi: 0.000370, Det: 0.151625
+| TIME of HW-proj-freq-q: 0.056461, q: ( 0.000000, 0.000000, 0.000000)  left_chi0U: 0.000196  right_Uchi0U: 0.000170  trace_log_or_avg: 0.151625
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 0.204245, q:( 0.000000, 0.000000, 0.000000 )
+RPA HW avg ifreq=1 trace_body=(-7.667444178479e+00,0.000000000000e+00) logdet_body=(6.020207826949e+00,0.000000000000e+00) weight_sum=1.000245735687e+00 averaged_body=(-1.647641136287e+00,0.000000000000e+00) averaged_head=(-6.412376337794e+00,-2.830636070507e-38) averaged_schur_log=(1.880947932604e+00,-1.510631444924e-32) total=(-6.179069541478e+00,-1.510634275560e-32)
+| TIME of DET-freq-q:  0.204245,  q: ( 0.000000, 0.000000, 0.000000)  TOT: 0.386135  CHI_arr: 0.000194  CHI_comm: 0.098880, CHI_2d: 0.000203, Pi: 0.000437, Det: 0.286389
+| TIME of HW-proj-freq-q: 0.204245, q: ( 0.000000, 0.000000, 0.000000)  left_chi0U: 0.000268  right_Uchi0U: 0.000157  trace_log_or_avg: 0.286389
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 0.490710, q:( 0.000000, 0.000000, 0.000000 )
+RPA HW avg ifreq=2 trace_body=(-6.166614651443e+00,0.000000000000e+00) logdet_body=(5.062802226147e+00,0.000000000000e+00) weight_sum=1.000245735687e+00 averaged_body=(-1.104083671401e+00,0.000000000000e+00) averaged_head=(-3.291387897996e+00,-8.121104386762e-37) averaged_schur_log=(1.398456902648e+00,-6.171275085375e-34) total=(-2.997014666749e+00,-6.179396189762e-34)
+| TIME of DET-freq-q:  0.490710,  q: ( 0.000000, 0.000000, 0.000000)  TOT: 0.875386  CHI_arr: 0.000180  CHI_comm: 0.397452, CHI_2d: 0.000143, Pi: 0.000261, Det: 0.477321
+| TIME of HW-proj-freq-q: 0.490710, q: ( 0.000000, 0.000000, 0.000000)  left_chi0U: 0.000138  right_Uchi0U: 0.000120  trace_log_or_avg: 0.477321
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 1.164144, q:( 0.000000, 0.000000, 0.000000 )
+RPA HW avg ifreq=3 trace_body=(-3.848601997879e+00,0.000000000000e+00) logdet_body=(3.405537351192e+00,0.000000000000e+00) weight_sum=1.000245735687e+00 averaged_body=(-4.431735234828e-01,0.000000000000e+00) averaged_head=(-9.697079488951e-01,2.115891710510e-37) averaged_schur_log=(6.654672084329e-01,-4.251949029487e-34) total=(-7.474142639449e-01,-4.249833137777e-34)
+| TIME of DET-freq-q:  1.164144,  q: ( 0.000000, 0.000000, 0.000000)  TOT: 0.279616  CHI_arr: 0.000189  CHI_comm: 0.104535, CHI_2d: 0.000169, Pi: 0.000375, Det: 0.174320
+| TIME of HW-proj-freq-q: 1.164144, q: ( 0.000000, 0.000000, 0.000000)  left_chi0U: 0.000181  right_Uchi0U: 0.000190  trace_log_or_avg: 0.174320
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 2.958766, q:( 0.000000, 0.000000, 0.000000 )
+RPA HW avg ifreq=4 trace_body=(-1.570589303801e+00,0.000000000000e+00) logdet_body=(1.495187183440e+00,0.000000000000e+00) weight_sum=1.000245735687e+00 averaged_body=(-7.542064935339e-02,0.000000000000e+00) averaged_head=(-1.887962179287e-01,8.775122318009e-38) averaged_schur_log=(1.707462145310e-01,-2.511641808117e-35) total=(-9.347065275104e-02,-2.502866685799e-35)
+| TIME of DET-freq-q:  2.958766,  q: ( 0.000000, 0.000000, 0.000000)  TOT: 0.308792  CHI_arr: 0.000193  CHI_comm: 0.100619, CHI_2d: 0.000169, Pi: 0.000352, Det: 0.207432
+| TIME of HW-proj-freq-q: 2.958766, q: ( 0.000000, 0.000000, 0.000000)  left_chi0U: 0.000182  right_Uchi0U: 0.000166  trace_log_or_avg: 0.207431
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 8.939647, q:( 0.000000, 0.000000, 0.000000 )
+RPA HW avg ifreq=5 trace_body=(-2.911862172433e-01,0.000000000000e+00) logdet_body=(2.884974898753e-01,0.000000000000e+00) weight_sum=1.000245735687e+00 averaged_body=(-2.689388084194e-03,0.000000000000e+00) averaged_head=(-2.268579960026e-02,-1.095606030702e-38) averaged_schur_log=(2.230913144719e-02,-5.736879852042e-36) total=(-3.066056237266e-03,-5.747835912349e-36)
+| TIME of DET-freq-q:  8.939647,  q: ( 0.000000, 0.000000, 0.000000)  TOT: 0.296810  CHI_arr: 0.000157  CHI_comm: 0.109629, CHI_2d: 0.000164, Pi: 0.000326, Det: 0.186508
+| TIME of HW-proj-freq-q: 8.939647, q: ( 0.000000, 0.000000, 0.000000)  left_chi0U: 0.000171  right_Uchi0U: 0.000152  trace_log_or_avg: 0.186507
+Vq Time  myid: 0  arr_time: 0.000140  comm_time: 0.110048   block_time: 0.000134   pair_size: 3
+ | Total vq time: 0.110504  lri_coul: 0.000142   comm_vq: 0.110058   block_vq: 0.000304
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 0.056461, q:( 0.073172, 0.073172, 0.073172 )
+| TIME of DET-freq-q:  0.056461,  q: ( 0.073172, 0.073172, 0.073172)  TOT: 0.108704  CHI_arr: 0.000409  CHI_comm: 0.107438, CHI_2d: 0.000189, Pi: 0.000203, Det: 0.000452
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 0.204245, q:( 0.073172, 0.073172, 0.073172 )
+| TIME of DET-freq-q:  0.204245,  q: ( 0.073172, 0.073172, 0.073172)  TOT: 0.254034  CHI_arr: 0.000173  CHI_comm: 0.253062, CHI_2d: 0.000198, Pi: 0.000187, Det: 0.000403
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 0.490710, q:( 0.073172, 0.073172, 0.073172 )
+| TIME of DET-freq-q:  0.490710,  q: ( 0.073172, 0.073172, 0.073172)  TOT: 0.296045  CHI_arr: 0.000193  CHI_comm: 0.295036, CHI_2d: 0.000184, Pi: 0.000186, Det: 0.000416
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 1.164144, q:( 0.073172, 0.073172, 0.073172 )
+| TIME of DET-freq-q:  1.164144,  q: ( 0.073172, 0.073172, 0.073172)  TOT: 0.073428  CHI_arr: 0.000176  CHI_comm: 0.072455, CHI_2d: 0.000210, Pi: 0.000185, Det: 0.000393
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 2.958766, q:( 0.073172, 0.073172, 0.073172 )
+| TIME of DET-freq-q:  2.958766,  q: ( 0.073172, 0.073172, 0.073172)  TOT: 0.073686  CHI_arr: 0.000208  CHI_comm: 0.072680, CHI_2d: 0.000186, Pi: 0.000208, Det: 0.000394
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 8.939647, q:( 0.073172, 0.073172, 0.073172 )
+| TIME of DET-freq-q:  8.939647,  q: ( 0.073172, 0.073172, 0.073172)  TOT: 0.073744  CHI_arr: 0.000176  CHI_comm: 0.072708, CHI_2d: 0.000181, Pi: 0.000187, Det: 0.000481
+Vq Time  myid: 0  arr_time: 0.000191  comm_time: 0.109870   block_time: 0.000133   pair_size: 3
+ | Total vq time: 0.110404  lri_coul: 0.000192   comm_vq: 0.109879   block_vq: 0.000333
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 0.056461, q:( 0.146343, 0.000000, 0.000000 )
+| TIME of DET-freq-q:  0.056461,  q: ( 0.146343, 0.000000, 0.000000)  TOT: 0.112253  CHI_arr: 0.000188  CHI_comm: 0.111331, CHI_2d: 0.000173, Pi: 0.000171, Det: 0.000381
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 0.204245, q:( 0.146343, 0.000000, 0.000000 )
+| TIME of DET-freq-q:  0.204245,  q: ( 0.146343, 0.000000, 0.000000)  TOT: 0.110791  CHI_arr: 0.000160  CHI_comm: 0.109902, CHI_2d: 0.000170, Pi: 0.000169, Det: 0.000379
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 0.490710, q:( 0.146343, 0.000000, 0.000000 )
+| TIME of DET-freq-q:  0.490710,  q: ( 0.146343, 0.000000, 0.000000)  TOT: 0.146577  CHI_arr: 0.000157  CHI_comm: 0.145623, CHI_2d: 0.000189, Pi: 0.000186, Det: 0.000410
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 1.164144, q:( 0.146343, 0.000000, 0.000000 )
+| TIME of DET-freq-q:  1.164144,  q: ( 0.146343, 0.000000, 0.000000)  TOT: 0.149437  CHI_arr: 0.000170  CHI_comm: 0.148469, CHI_2d: 0.000202, Pi: 0.000186, Det: 0.000398
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 2.958766, q:( 0.146343, 0.000000, 0.000000 )
+| TIME of DET-freq-q:  2.958766,  q: ( 0.146343, 0.000000, 0.000000)  TOT: 0.145547  CHI_arr: 0.000186  CHI_comm: 0.144763, CHI_2d: 0.000143, Pi: 0.000146, Det: 0.000299
+Begin to clean chi0 !!! 
+chi0_freq_q size: 2,  freq: 8.939647, q:( 0.146343, 0.000000, 0.000000 )
+| TIME of DET-freq-q:  8.939647,  q: ( 0.146343, 0.000000, 0.000000)  TOT: 0.068782  CHI_arr: 0.000127  CHI_comm: 0.067874, CHI_2d: 0.000177, Pi: 0.000188, Det: 0.000406
+RPA correlation energy (Hartree)
+| Weighted contribution from each k:
+| (         0,         0,         0): (-0.0886164,-5.09936e-35)
+| (  0.459751,  0.459751,  0.459751): (-0.163253,-1.80353e-16)
+| (  0.919501,         0,         0): (-0.124065,-3.43474e-16)
+| Total EcRPA:       -0.375934151
+Finalizing LibRPA global environment at [2026-07-07 13:16:52.010]
+Entry                                             #calls       CPU time (s)       Wall time (s)     
+----------------------------------------------------------------------------------------------------
+Total for driver                                  1            7.8200             71.2732           
+ Driver Read Input Parameters                     1             0.0100             0.1481           
+ Driver Read Task-Common Input Data               1             2.1600             33.0236          
+  DFT SCF eigenvalues/occupations                 1              0.0300             0.8121          
+   api_set_scf_dimension                          1               0.0000             0.1481         
+   api_set_wg_ekb_efermi                          1               0.0000             0.1845         
+  Structure                                       1              0.0800             1.3337          
+   api_set_latvec_and_G                           1               0.0200             0.2229         
+   api_set_atoms                                  1               0.0200             0.1846         
+   api_set_symmetry_operations                    1               0.0000             0.2588         
+  BZ sampling                                     1              0.0600             1.0418          
+   api_set_kgrids_kvec                            1               0.0100             0.2624         
+   api_set_kq_mapping                             1               0.0100             0.1849         
+  Basis (wave-function and auxiliary)             1              0.0900             1.1792          
+   api_set_basis_convention                       1               0.0000             0.2224         
+   api_set_ao_basis_wfc                           1               0.0100             0.1478         
+   api_set_ao_basis_aux                           1               0.0200             0.1141         
+  SCF eigenvectors                                1              0.1000             1.6013          
+   api_set_wfc_packed                             3               0.0200             0.7101         
+  driver_read_ri                                  1              1.7400             25.9441         
+   driver_read_Cs                                 1               0.7500             10.1675        
+    handle_Cs_file_dry                            1                0.0100             0.1491        
+    handle_Cs_file                                1                0.7300             9.6527        
+     api_set_lri_coeff                            32                0.4100             4.8010       
+   api_set_ao_basis_aux_shrink                    1               0.0000             0.2202         
+   read_Cs_shrink                                 1               0.7400             11.3723        
+    handle_Cs_file_dry                            1                0.0200             0.1697        
+    handle_Cs_file                                1                0.6900             10.7336       
+     api_set_lri_coeff_shrink                     32                0.3400             5.2694       
+   Load shrink transformation                     1               0.0500             0.2950         
+    handle_sinvS_file                             1                0.0300             0.0740        
+   driver_read_Vq                                 1               0.0900             3.0900         
+    read_Vq_row_v1                                1                0.0800             2.8300        
+     api_set_aux_bare_coulomb_k_atom_pair_packed  9                 0.0300             1.3657       
+ api_get_imaginary_freq_grids                     1             0.0900             0.8502           
+  initialize_ds_tfgrids                           1              0.0900             0.6654          
+ cal_head                                         1             0.0100             0.0748           
+ cal_wing_mu                                      1             0.1600             0.4976           
+  Comm_wing                                       1              0.0000             0.0693          
+ api_get_rpa_correlation_energy                   1             5.2100             35.6226          
+  initialize_ds_tfgrids                           1              0.0400             0.2386          
+  initialize_ds_atpairs_local                     1              0.0300             0.1519          
+  redistribute_coulomb_blacs2ap                   1              0.0200             0.0754          
+  initialize_ds_headwing                          1              0.0000             0.0749          
+  initialize_ds_chi0                              1              0.0500             0.0747          
+  Build response function chi0                    1              4.3000             23.0393         
+   Loop over LibRI                                1               4.2800             22.8566        
+    create_chi0_q_blocks                          1                0.0100             0.1491        
+    chi0_libri_routing_set_parallel               1                0.0000             0.1115        
+    Set Cs                                        1                0.0200             0.1124        
+    build_gf_Rt_libri_serial                      12               0.1500             1.6832        
+    chi0_set_Gs                                   6                0.0300             0.7320        
+    Call cal_chi0s                                6                2.4900             2.9010        
+    chi0_libri_routing_free_gf                    6                0.0400             0.5648        
+    Collect R blocks                              6                0.0500             0.5678        
+    Restore chi0 full real-space sector           6                0.2300             0.8872        
+    chi0_libri_routing_ft_Rq                      6                0.0500             0.7532        
+    Do shrink transformation                      6                0.5700             6.6530        
+    chi0_libri_routing_ft_tw                      6                0.0700             0.6249        
+  Export chi0 matrices                            1              0.1100             4.1549          
+  chi0_release_free                               1              0.0100             0.1083          
+  Compute RPA correlation Energy                  1              0.5900             6.3946          
+   compute_RPA_correlation_blacs_2d               1               0.5800             6.1383         
+    power_hemat_blacs_real                        1                0.1200             1.4826        
+     power_hemat_blacs_1                          1                 0.0100             0.1117       
+     power_hemat_blacs_2                          1                 0.0600             0.7036       
+     power_hemat_blacs_3                          1                 0.0100             0.1108       
+     power_hemat_blacs_4                          1                 0.0000             0.0742       
+    cal_wing                                      1                0.0200             0.0746        
+    cal_rpa_chi0v_schur                           6                0.0500             0.6874        
+libRPA finished successfully
