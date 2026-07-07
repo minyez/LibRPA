@@ -7,4 +7,4 @@ parallel_routing = libri
 vq_threshold = 0
 sqrt_coulomb_threshold = 0
 
-# output_level = debug
+output_level = debug
