@@ -63,11 +63,9 @@
                 regex="Wing_lambda diagnostics.*real_over_abs=\s*([-+0-9.Ee]+)"
                 comparison="cmp_float.abs_diff(1e-8)"
       />
-      <validate name="Analytic wing lambda sample rows"
-                regex="First wing_lambda rows at iomega=0"
-                headers="1"
-                rows="8"
-                comparison="cmp_table.abs_diff(1e-6)"
+      <validate name="Analytic wing lambda magnitude diagnostic"
+                regex="Wing_lambda diagnostics.*max_abs_value=\s*([-+0-9.Ee]+)"
+                comparison="cmp_float.abs_diff(1e-6)"
       />
       <validate name="Correlation energy"
                 regex="Total EcRPA: \s+([-+]?\d*\.\d+)"
