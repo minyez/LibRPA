@@ -14,6 +14,7 @@
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 #include "../io/fs.h"
@@ -2187,34 +2188,56 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                             auto it_sp_f = sigc_orig->find(freq);
                             if (it_sp_f != sigc_orig->cend())
                             {
+                                using SigcFreqBlocks = std::decay_t<decltype(it_sp_f->second)>;
+                                using RSigcMap = typename SigcFreqBlocks::mapped_type;
+                                struct FourierSigcTask
+                                {
+                                    SigcIJKAtomKey I;
+                                    SigcIJKAtomKey J;
+                                    int ik;
+                                    int n_I;
+                                    int n_J;
+                                    const RSigcMap *R_sigc;
+                                };
+
+                                std::vector<FourierSigcTask> fourier_tasks;
                                 for (const auto &[IJ, R_sigc]: it_sp_f->second)
                                 {
+                                    if (R_sigc.empty()) continue;
                                     const SigcIJKAtomKey I = IJ.first;
                                     const SigcIJKAtomKey J = IJ.second;
                                     const int n_I = static_cast<int>(
                                         this->atbasis_wfc.get_atom_nb(static_cast<int>(I)));
                                     const int n_J = static_cast<int>(
                                         this->atbasis_wfc.get_atom_nb(static_cast<int>(J)));
+                                    for (int ik = 0; ik != n_target_kpoints; ++ik)
+                                        fourier_tasks.push_back({I, J, ik, n_I, n_J, &R_sigc});
+                                }
+
+                                std::vector<Matz> fourier_results(fourier_tasks.size());
+                                const auto n_fourier_tasks =
+                                    static_cast<std::ptrdiff_t>(fourier_tasks.size());
+                                #pragma omp parallel for schedule(dynamic)
+                                for (std::ptrdiff_t itask = 0; itask < n_fourier_tasks; ++itask)
+                                {
+                                    const auto &task = fourier_tasks[static_cast<std::size_t>(itask)];
+                                    Matz sigc_ijk(task.n_I, task.n_J, MAJOR::ROW);
+                                    sigc_ijk.zero_out();
                                     auto add_sigc_ijk =
                                         [&](const Vector3_Order<int> &R_bvk, const Matz &sigc,
                                             const double weight)
                                     {
-                                        for (int ik = 0; ik != n_target_kpoints; ++ik)
-                                        {
-                                            const auto ang = (kfrac_target[ik] * R_bvk) * TWO_PI;
-                                            const complex<double> phase{weight * std::cos(ang),
-                                                                        weight * std::sin(ang)};
-                                            auto sigc_weighted = sigc.copy();
-                                            sigc_weighted *= phase;
-                                            auto &Jik_sigc = sigc_I_Jik_mat[I];
-                                            auto [it, inserted] =
-                                                Jik_sigc.try_emplace({J, ik}, n_I, n_J, MAJOR::ROW);
-                                            it->second += sigc_weighted;
-                                        }
+                                        const auto ang = (kfrac_target[task.ik] * R_bvk) * TWO_PI;
+                                        const complex<double> phase{weight * std::cos(ang),
+                                                                    weight * std::sin(ang)};
+                                        auto sigc_weighted = sigc.copy();
+                                        sigc_weighted *= phase;
+                                        sigc_ijk += sigc_weighted;
                                     };
 
-                                    for (const auto &[R, sigc]: R_sigc)
+                                    for (const auto &[R, sigc]: *task.R_sigc)
                                     {
+                                        const atpair_t IJ{task.I, task.J};
                                         const auto *R_bvks = bvk_remap.find_R_bvk(IJ, R);
                                         if (R_bvks == nullptr || R_bvks->empty())
                                         {
@@ -2231,6 +2254,14 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                                 add_sigc_ijk(R_bvk, sigc, weight);
                                         }
                                     }
+                                    fourier_results[static_cast<std::size_t>(itask)] = std::move(sigc_ijk);
+                                }
+
+                                for (std::size_t itask = 0; itask != fourier_tasks.size(); ++itask)
+                                {
+                                    const auto &task = fourier_tasks[itask];
+                                    sigc_I_Jik_mat[task.I][{task.J, task.ik}] =
+                                        std::move(fourier_results[itask]);
                                 }
                             }
                         }
