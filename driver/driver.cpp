@@ -45,7 +45,15 @@ DriverParams::DriverParams():
     sf_omega_end(1.0),
     sf_omega_step(0.1),
     sf_state_start(0),
-    sf_state_end(10000)
+    sf_state_end(10000),
+    qsgw_mixer("linear"),
+    qsgw_mixing_beta(0.25),
+    qsgw_mixing_history(12),
+    qsgw_linear_mixing_steps(3),
+    qsgw_min_iter(1),
+    qsgw_max_iter(1),
+    qsgw_dump_iter1(false),
+    qsgw_dump_dir("")
 {
 }
 
@@ -75,6 +83,8 @@ std::string DriverParams::format()
             normal_pair(fn_dielfunc),
             normal_pair(fn_vxc_scf),
             normal_pair(fn_band_kpath_info),
+            normal_pair(qsgw_mixer),
+            normal_pair(qsgw_dump_dir),
         };
     for (const auto &[k, v]: str_params)
         ss << k << " = " << v << std::endl;
@@ -87,6 +97,7 @@ std::string DriverParams::format()
             normal_pair(output_gw_spec_func),
             normal_pair(output_hamgnn),
             normal_pair(use_pyatb),
+            normal_pair(qsgw_dump_iter1),
         };
     for (const auto &[k, v]: bool_params)
         ss << k << " = " << std::boolalpha << v << std::endl;
@@ -97,6 +108,11 @@ std::string DriverParams::format()
     ss << "cs_R_threshold = " << cs_threshold << std::endl;
     ss << "i_state_low = " << i_state_low << std::endl;
     ss << "i_state_high = " << i_state_high << std::endl;
+    ss << "qsgw_mixing_beta = " << qsgw_mixing_beta << std::endl;
+    ss << "qsgw_mixing_history = " << qsgw_mixing_history << std::endl;
+    ss << "qsgw_linear_mixing_steps = " << qsgw_linear_mixing_steps << std::endl;
+    ss << "qsgw_min_iter = " << qsgw_min_iter << std::endl;
+    ss << "qsgw_max_iter = " << qsgw_max_iter << std::endl;
     if (output_gw_spec_func)
     {
         ss << "sf_omega_start = " << sf_omega_start << std::endl;

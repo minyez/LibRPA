@@ -36,7 +36,7 @@
 #include "../core/atom.h"                     // atom_t
 #include "../core/atomic_basis.h"             // AtomicBasis
 #include "../core/geometry.h"                 // Vector3<double>
-#include "../core/input_symmetry.h"           // SymmetryContext (input_coord_frac for nearest_R)
+#include "../core/symmetry_context.h"        // SymmetryContext (input_coord_frac for nearest_R)
 #include "../core/meanfield.h"                // MeanField
 #include "../core/pbc.h"                      // PeriodicBoundaryData
 #include "../core/ri.h"                       // Cs_LRI, atpair_R_mat_t, libri_types, RI::Tensor

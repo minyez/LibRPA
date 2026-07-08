@@ -193,7 +193,7 @@ std::array<int, 3> Hartree::nearest_R(atom_t I, atom_t J,
     // find_nearest_bvk_cell (pbc.h:120, impl pbc.cpp:581), which maps a direct
     // lattice vector R to the nearest BvK image for the atom pair (I,J). The
     // per-atom fractional coordinates come from SymmetryContext::input_coord_frac
-    // (input_symmetry.h:132). NOTE: only needed if the build() kernel path
+    // (symmetry_context.h). NOTE: only needed if the build() kernel path
     // returns k-space and requires a manual k->R Fourier (as the legacy
     // cal_cvcd_k_hartree path did); the A1 cal_loop3 path returns real-space Hs
     // and may not call this.

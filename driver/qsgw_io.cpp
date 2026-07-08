@@ -158,7 +158,7 @@ std::string export_qsgw_hamiltonian_bundle(
 // ---- Stubs: blocked on QSGW driver (Task D) / pyatb-export subsystem. ----------
 // These wrap export_qsgw_hamiltonian_bundle with pyatb-state writing +
 // optional rebuild-command orchestration. They need write_pyatb_bundle,
-// Params::qsgw_export_hamiltonian_for_pyatb / qsgw_pyatb_rebuild_command,
+// future driver-level QSGW pyatb export/rebuild controls,
 // get_iterative_pyatb_headwing_bundle_dir and maybe_run_pyatb_rebuild_command,
 // none of which exist on the new arch yet. Implemented when that lands.
 
@@ -170,8 +170,8 @@ void export_pyatb_state_bundle(
 {
     throw std::runtime_error(
         "export_pyatb_state_bundle not yet ported to the new arch: blocked on "
-        "write_pyatb_bundle + Params::qsgw_export_hamiltonian_for_pyatb / "
-        "qsgw_pyatb_rebuild_command + pyatb headwing bundle-dir helpers "
+        "write_pyatb_bundle + driver-level QSGW pyatb export/rebuild controls "
+        "+ pyatb headwing bundle-dir helpers "
         "(QSGW driver Task D / pyatb-export subsystem).");
 }
 

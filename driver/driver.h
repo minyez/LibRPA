@@ -248,6 +248,62 @@ struct DriverParams
     //! Experimental
     int sf_state_end;
 
+    //! QSGW Hamiltonian mixer: linear or pulay/diis.
+    //! @par Default
+    //! linear
+    //! @par Status
+    //! Experimental
+    std::string qsgw_mixer;
+
+    //! QSGW Hamiltonian mixing beta.
+    //! @par Default
+    //! 0.25
+    //! @par Status
+    //! Experimental
+    double qsgw_mixing_beta;
+
+    //! QSGW Pulay/DIIS history length.
+    //! @par Default
+    //! 12
+    //! @par Status
+    //! Experimental
+    int qsgw_mixing_history;
+
+    //! Number of initial QSGW linear-mixing steps before Pulay/DIIS.
+    //! @par Default
+    //! 3
+    //! @par Status
+    //! Experimental
+    int qsgw_linear_mixing_steps;
+
+    //! Minimum QSGW iterations.
+    //! @par Default
+    //! 1
+    //! @par Status
+    //! Experimental
+    int qsgw_min_iter;
+
+    //! Maximum QSGW iterations.
+    //! @par Default
+    //! 1
+    //! @par Status
+    //! Experimental
+    int qsgw_max_iter;
+
+    //! Write the iter-1 QSGW matrix dump used by regression tests.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Diagnostic
+    bool qsgw_dump_iter1;
+
+    //! Optional QSGW dump directory; empty means output_dir/qsgw_dump.
+    //! @par Default
+    //! empty
+    //! @par Status
+    //! Diagnostic
+    std::string qsgw_dump_dir;
+
     std::string format();
 
     DriverParams();

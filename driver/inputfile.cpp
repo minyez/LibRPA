@@ -218,6 +218,7 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_string(driver_params, prefix_shrink_sinvS);
     _parse_string(driver_params, prefix_coul_full);
     _parse_string(driver_params, prefix_coul_cut);
+    _parse_string(driver_params, legacy_coulomb_layout);
     _parse_string(driver_params, prefix_eigvecs_scf);
     _parse_string(driver_params, fn_stru);
     _parse_string(driver_params, fn_basis);
@@ -402,6 +403,23 @@ void parse_inputfile_to_params(const std::string &fn)
     if (opts.ifreq_output_wc_end >= 0 &&
         opts.ifreq_output_wc_end <= opts.ifreq_output_wc_start)
         throw std::runtime_error("ifreq_output_wc_end must be negative or greater than ifreq_output_wc_start");
+
+    // QSGW driver-specific controls.  They live in DriverParams rather than
+    // the public LibrpaOptions C ABI because the current QSGW task is driver-only.
+    parser.parse_int("max_iter", driver_params.qsgw_max_iter, flag);
+    parser.parse_int("qsgw_max_iter", driver_params.qsgw_max_iter, flag);
+    parser.parse_int("qsgw_min_iter", driver_params.qsgw_min_iter, flag);
+    parser.parse_string("qsgw_mixer", driver_params.qsgw_mixer, flag);
+    if (flag != 0)
+        parser.parse_string("qsgw_mixer_mode", driver_params.qsgw_mixer, flag);
+    parser.parse_double("mixing_beta", driver_params.qsgw_mixing_beta, flag);
+    parser.parse_double("qsgw_mixing_beta", driver_params.qsgw_mixing_beta, flag);
+    parser.parse_int("mixing_history", driver_params.qsgw_mixing_history, flag);
+    parser.parse_int("qsgw_mixing_history", driver_params.qsgw_mixing_history, flag);
+    parser.parse_int("linear_mixing_steps", driver_params.qsgw_linear_mixing_steps, flag);
+    parser.parse_int("qsgw_linear_mixing_steps", driver_params.qsgw_linear_mixing_steps, flag);
+    parser.parse_bool("qsgw_dump_iter1", driver_params.qsgw_dump_iter1, flag);
+    parser.parse_string("qsgw_dump_dir", driver_params.qsgw_dump_dir, flag);
 
     // QPE solver
     _parse_int(opts, option_qpe_solver);

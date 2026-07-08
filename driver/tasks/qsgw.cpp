@@ -14,11 +14,14 @@
 //
 // Legacy reference: driver/task_qsgw.cpp @ 7a7ff17f (line refs in design note).
 
+#include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <sstream>
 #include <stdexcept>
@@ -29,7 +32,6 @@
 
 #include "../../src/api/instance_manager.h" // get_dataset_instance
 #include "../../src/api/dataset_helper.h"  // initialize_ds_exx
-#include "../../src/core/input_symmetry.h"
 #include "../../src/core/coulmat.h"      // FT_Vq (Hartree Coulomb, H3)
 #include "../../src/io/fs.h"
 #include "../../src/io/global_io.h"
@@ -46,7 +48,7 @@
 #include "../../src/qsgw/fermi_energy_occupation.h"    // calculate_fermi_energy / update / calculate_total_weight
 #include "../../src/qsgw/hamiltonian_qsgw.h"           // construct_H0_GW / diagonalize_and_store_fixed_basis / apply_qsgw_hround
 #include "../../src/qsgw/correlation_potential.h"      // build_correlation_potential_spin_k
-#include "../../src/qsgw/hartree.h"                    // Hartree (H3)
+#include "../../src/qsgw/mixing.h"                     // PulayMixer
 #include "../qsgw_io.h"                                // export_qsgw_hamiltonian_bundle (Task F)
 
 namespace
@@ -131,6 +133,18 @@ double read_env_double(const char *name, const double default_value)
     }
 }
 
+int read_env_int(const char *name, const int default_value)
+{
+    const char *env = std::getenv(name);
+    if (env == nullptr)
+        return default_value;
+    try {
+        return std::stoi(std::string(env));
+    } catch (...) {
+        return default_value;
+    }
+}
+
 Matz scaled_matz(const Matz &m, const double scale)
 {
     Matz out = m.copy();
@@ -159,6 +173,130 @@ void scale_spin_k_map_inplace(librpa_int::qsgw::SpinKMatrixMap &in, const double
             kp.second = scaled_matz(kp.second, scale);
 }
 
+void apply_active_band_window(
+    librpa_int::qsgw::SpinKMatrixMap &H0_GW_all,
+    const librpa_int::qsgw::SpinKMatrixMap &H_KS0,
+    const int n_spins,
+    const int n_kpoints,
+    const int n_bands,
+    const int active_band_min,
+    const int active_band_max)
+{
+    if (active_band_min <= 0 && active_band_max >= n_bands - 1)
+        return;
+
+    for (int ispin = 0; ispin < n_spins; ++ispin)
+        for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
+        {
+            Matz &H0 = H0_GW_all.at(ispin).at(ikpt);
+            const Matz &H_KS = H_KS0.at(ispin).at(ikpt);
+            for (int i = 0; i < n_bands; ++i)
+                for (int j = 0; j < n_bands; ++j)
+                {
+                    const bool active_i = (i >= active_band_min && i <= active_band_max);
+                    const bool active_j = (j >= active_band_min && j <= active_band_max);
+                    if (active_i && active_j)
+                        continue;
+                    H0(i, j) = (i == j) ? H_KS(i, i) : librpa_int::cplxdb(0.0, 0.0);
+                }
+        }
+}
+
+std::string normalized_qsgw_mixer(std::string mode)
+{
+    std::transform(mode.begin(), mode.end(), mode.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (mode == "diis")
+        mode = "pulay";
+    if (mode != "linear" && mode != "pulay")
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "Unknown qsgw_mixer (" + mode + "). Available values: linear, pulay/diis.");
+    }
+    return mode;
+}
+
+librpa_int::matrix pack_h0_gw_for_mixing(
+    const librpa_int::qsgw::SpinKMatrixMap &H0_GW_all,
+    const int n_spins,
+    const int n_kpoints,
+    const int n_bands)
+{
+    librpa_int::matrix mixed_input(n_spins * n_kpoints * n_bands,
+                                   2 * n_bands, true);
+    int row_offset = 0;
+    for (int ispin = 0; ispin < n_spins; ++ispin)
+    {
+        for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
+        {
+            const Matz &mat = H0_GW_all.at(ispin).at(ikpt);
+            for (int i = 0; i < n_bands; ++i)
+                for (int j = 0; j < n_bands; ++j)
+                {
+                    const auto value = mat(i, j);
+                    mixed_input(row_offset + i, j) = value.real();
+                    mixed_input(row_offset + i, j + n_bands) = value.imag();
+                }
+            row_offset += n_bands;
+        }
+    }
+    return mixed_input;
+}
+
+void unpack_h0_gw_from_mixing(
+    const librpa_int::matrix &mixed_output,
+    librpa_int::qsgw::SpinKMatrixMap &H0_GW_all,
+    const int n_spins,
+    const int n_kpoints,
+    const int n_bands)
+{
+    int row_offset = 0;
+    for (int ispin = 0; ispin < n_spins; ++ispin)
+    {
+        for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
+        {
+            Matz &mat = H0_GW_all.at(ispin).at(ikpt);
+            for (int i = 0; i < n_bands; ++i)
+                for (int j = 0; j < n_bands; ++j)
+                    mat(i, j) = librpa_int::cplxdb(
+                        mixed_output(row_offset + i, j),
+                        mixed_output(row_offset + i, j + n_bands));
+            row_offset += n_bands;
+        }
+    }
+}
+
+librpa_int::matrix linear_mix_h0(
+    const librpa_int::matrix &previous_input,
+    const librpa_int::matrix &current_output,
+    const double beta)
+{
+    if (previous_input.nr != current_output.nr ||
+        previous_input.nc != current_output.nc)
+        throw LIBRPA_RUNTIME_ERROR("QSGW linear mixing matrix dimensions mismatch");
+
+    librpa_int::matrix mixed_output(current_output.nr, current_output.nc, true);
+    for (int i = 0; i < current_output.nr; ++i)
+        for (int j = 0; j < current_output.nc; ++j)
+            mixed_output(i, j) =
+                (1.0 - beta) * previous_input(i, j) + beta * current_output(i, j);
+    return mixed_output;
+}
+
+double max_abs_matrix_delta(
+    const librpa_int::matrix &a,
+    const librpa_int::matrix &b)
+{
+    if (a.nr != b.nr || a.nc != b.nc)
+        throw LIBRPA_RUNTIME_ERROR("QSGW mixing delta matrix dimensions mismatch");
+
+    double max_abs_delta = 0.0;
+    for (int i = 0; i < a.nr; ++i)
+        for (int j = 0; j < a.nc; ++j)
+            max_abs_delta = std::max(max_abs_delta, std::abs(a(i, j) - b(i, j)));
+    return max_abs_delta;
+}
+
 } // unnamed namespace
 
 void driver::task_qsgw()
@@ -181,6 +319,18 @@ void driver::task_qsgw()
     const int n_kpoints = mf.get_n_kpoints();
     const int n_bands = mf.get_n_bands();
     const int n_spinor = mf.get_n_spinor(); // H8: n_soc -> n_spinor
+    const bool qsgw_serial_blacs =
+        (mpi_comm_global_h.nprocs == 1) &&
+        (pds->blacs_h.nprocs == 1) &&
+        (pds->blacs_h.nprows == 1) &&
+        (pds->blacs_h.npcols == 1);
+    if (!qsgw_serial_blacs)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "QSGW driver currently requires serial / 1x1 BLACS execution. "
+            "The Vc/H0 path consumes full KS matrices, while parallel "
+            "SigC gather/broadcast is not implemented yet.");
+    }
 
     // ========================================================================
     // ONE-TIME SETUP (legacy task_qsgw.cpp L595-L1140)
@@ -212,22 +362,41 @@ void driver::task_qsgw()
     qsgw_state.snapshot_wg0(mf);
     // velocity0 snapshot deferred until velocity source is wired (TODO(D)).
 
-    // --- QSGW knobs (legacy read them via local parser, NOT Params;
-    //     Params lacks these — qsgw_driver_design.md §6) ---
-    // TODO(D): wire InputParser (driver/inputfile.h) for: max_iter, mixing_history,
-    //          mixing_beta, linear_mixing_steps, eigenvalue_diff_tolerance,
-    //          temperature, eigdiff_focus_nbands, hamiltonian_cut_above_fermi,
-    //          hamiltonian_cut_diag_shift_ev, qsgw_checkpoint_every, qsgw_restart_dir.
-    const int max_iterations = 500;
-    const double mixing_beta = 0.2;
+    // --- QSGW knobs parsed from librpa.in into DriverParams; env overrides below are
+    //     retained only for ad-hoc diagnostics. ---
+    std::string qsgw_mixer_mode = normalized_qsgw_mixer(driver_params.qsgw_mixer);
+    double mixing_beta = driver_params.qsgw_mixing_beta;
+    int mixing_history = driver_params.qsgw_mixing_history;
+    int linear_mixing_steps = driver_params.qsgw_linear_mixing_steps;
     const double temperature = 0.0;            // TODO(D): knob
     const int eigdiff_focus_nbands = 10;       // convergence focus window
     const double eigenvalue_diff_tolerance = 1e-5;
     const int hamiltonian_cut_above_fermi = -1; // <0 disables fermi_window variant
     const double hamiltonian_cut_diag_shift_ev = 0.0;
 
+    // Environment overrides are retained only for ad-hoc diagnostics.  CI and
+    // regression tests should set these in librpa.in.
+    if (const char *env_mixer = std::getenv("LIBRPA_QSGW_MIXER"))
+        qsgw_mixer_mode = normalized_qsgw_mixer(env_mixer);
+    mixing_beta = read_env_double("LIBRPA_QSGW_MIXING_BETA", mixing_beta);
+    mixing_history = read_env_int("LIBRPA_QSGW_MIXING_HISTORY", mixing_history);
+    linear_mixing_steps =
+        read_env_int("LIBRPA_QSGW_LINEAR_MIXING_STEPS", linear_mixing_steps);
+
+    if (!(mixing_beta > 0.0))
+        throw LIBRPA_RUNTIME_ERROR("qsgw_mixing_beta must be positive");
+    if (mixing_history < 1)
+        throw LIBRPA_RUNTIME_ERROR("qsgw_mixing_history must be at least 1");
+    if (linear_mixing_steps < 0)
+        throw LIBRPA_RUNTIME_ERROR("qsgw_linear_mixing_steps must be non-negative");
+    if (mpi_comm_global_h.is_root())
+        std::cout << "[QSGW] mixer=" << qsgw_mixer_mode
+                  << " history=" << mixing_history
+                  << " beta=" << mixing_beta
+                  << " linear_warmup_steps=" << linear_mixing_steps << std::endl;
+
     // --- minimal env knob to force >1 iterations for molecule diagnostics ---
-    int qsgw_min_iterations = 1;
+    int qsgw_min_iterations = driver_params.qsgw_min_iter;
     {
         const char *env_min_iter = std::getenv("QSGW_MIN_ITERATIONS");
         if (env_min_iter != nullptr)
@@ -237,7 +406,8 @@ void driver::task_qsgw()
             } catch (...) {
                 if (mpi_comm_global_h.is_root())
                     std::cerr << "[QSGW] Warning: invalid QSGW_MIN_ITERATIONS='"
-                              << env_min_iter << "', keep default 1" << std::endl;
+                              << env_min_iter << "', keep "
+                              << qsgw_min_iterations << std::endl;
             }
         }
         if (qsgw_min_iterations <= 1)
@@ -245,27 +415,38 @@ void driver::task_qsgw()
         if (mpi_comm_global_h.is_root())
             std::cout << "[QSGW] min_iterations=" << qsgw_min_iterations << std::endl;
     }
+    int qsgw_max_iterations = driver_params.qsgw_max_iter;
+    qsgw_max_iterations = read_env_int("QSGW_MAX_ITERATIONS", qsgw_max_iterations);
+    if (qsgw_max_iterations < qsgw_min_iterations)
+    {
+        if (mpi_comm_global_h.is_root())
+            std::cerr << "[QSGW] Warning: QSGW_MAX_ITERATIONS="
+                      << qsgw_max_iterations
+                      << " is smaller than min_iterations; raising to "
+                      << qsgw_min_iterations << std::endl;
+        qsgw_max_iterations = qsgw_min_iterations;
+    }
+    if (mpi_comm_global_h.is_root())
+        std::cout << "[QSGW] max_iterations=" << qsgw_max_iterations << std::endl;
 
-    // --- env-gated iter-1 diagnostic dump (default off) ---
-    bool qsgw_dump_iter1 = false;
+    // --- iter-1 diagnostic dump, used by QSGW regression tests ---
+    bool qsgw_dump_iter1 = driver_params.qsgw_dump_iter1;
     std::string qsgw_dump_dir;
     {
         const char *env_dump = std::getenv("QSGW_DUMP_ITER1");
-        qsgw_dump_iter1 = (env_dump != nullptr && std::string(env_dump) == "1");
+        if (env_dump != nullptr)
+            qsgw_dump_iter1 = (std::string(env_dump) == "1");
         const char *env_dir = std::getenv("QSGW_DUMP_DIR");
         if (env_dir != nullptr)
             qsgw_dump_dir = librpa_int::path_as_directory(std::string(env_dir));
+        else if (!driver_params.qsgw_dump_dir.empty())
+            qsgw_dump_dir = librpa_int::path_as_directory(driver_params.qsgw_dump_dir);
         else
             qsgw_dump_dir = librpa_int::path_as_directory(std::string(opts.output_dir)) +
                             "qsgw_dump/";
         if (qsgw_dump_iter1)
         {
-            const bool is_serial_blacs =
-                (mpi_comm_global_h.nprocs == 1) &&
-                (pds->blacs_h.nprocs == 1) &&
-                (pds->blacs_h.nprows == 1) &&
-                (pds->blacs_h.npcols == 1);
-            if (!is_serial_blacs)
+            if (!qsgw_serial_blacs)
                 throw LIBRPA_RUNTIME_ERROR(
                     "QSGW_DUMP_ITER1 requires serial / 1x1 BLACS execution; "
                     "parallel SigC gather is not yet implemented.");
@@ -277,76 +458,17 @@ void driver::task_qsgw()
         }
     }
 
-    // --- env-gated Hartree-only diagnostic harness (default off) ---
-    // Motivation: FHI-aims only writes IBZ xc_matr files, but Hartree only needs
-    // the density matrix and fitted Coulomb vertices.  This path builds the new
-    // qsgw::Hartree kernel for all full-BZ kpts and dumps Hartree_is_ik_KS
-    // without reading xc_matr / SigC / Exx or entering the SCF loop.
+    // --- Hartree-only diagnostic harness disabled on this branch ---
     bool qsgw_hartree_only = false;
-    std::string qsgw_hartree_only_dir;
     {
         const char *env_ho = std::getenv("QSGW_HARTREE_ONLY");
         qsgw_hartree_only = (env_ho != nullptr && std::string(env_ho) == "1");
-        const char *env_ho_dir = std::getenv("QSGW_HARTREE_ONLY_DUMP_DIR");
-        if (env_ho_dir != nullptr)
-            qsgw_hartree_only_dir = librpa_int::path_as_directory(std::string(env_ho_dir));
-        else
-            qsgw_hartree_only_dir =
-                librpa_int::path_as_directory(std::string(opts.output_dir)) +
-                "hartree_only_dump/";
         if (qsgw_hartree_only)
         {
-            const bool is_serial_blacs =
-                (mpi_comm_global_h.nprocs == 1) &&
-                (pds->blacs_h.nprocs == 1) &&
-                (pds->blacs_h.nprows == 1) &&
-                (pds->blacs_h.npcols == 1);
-            if (!is_serial_blacs)
-                throw LIBRPA_RUNTIME_ERROR(
-                    "QSGW_HARTREE_ONLY requires serial / 1x1 BLACS execution.");
-            if (mpi_comm_global_h.is_root())
-            {
-                std::cout << "[QSGW] Hartree-only harness enabled: "
-                          << qsgw_hartree_only_dir << std::endl;
-                librpa_int::create_directories(qsgw_hartree_only_dir.c_str(), 0);
-            }
+            throw LIBRPA_RUNTIME_ERROR(
+                "QSGW_HARTREE_ONLY is disabled while the QSGW driver is testing the "
+                "non-Hartree path.");
         }
-    }
-    if (qsgw_hartree_only)
-    {
-        const bool use_shrink_h = opts.use_shrink_abfs == LIBRPA_SWITCH_ON;
-        const auto &basis_aux_h = use_shrink_h ? pds->basis_aux_shrink : pds->basis_aux;
-        const auto &cs_h = use_shrink_h ? pds->cs_data_shrink : pds->cs_data;
-        const auto &coul_h = pds->vq_cut;
-        profiler.start("hartree_ft_vq", "Fourier transform Coulomb for Hartree");
-        const auto VR_h = librpa_int::FT_Vq(basis_aux_h, pds->symmetry_context, coul_h,
-                                            pds->pbc, true,
-                                            opts.use_symmetry_exx == LIBRPA_SWITCH_ON);
-        profiler.stop("hartree_ft_vq");
-        qsgw::Hartree hartree(pds->mf, pds->basis_wfc, pds->pbc, pds->symmetry_context,
-                              pds->scfk_blacs_ctxt, pds->desc_wfc_kb_full);
-        profiler.start("hartree_build", "Build Hartree kernel + KS projection");
-        hartree.build(basis_aux_h, cs_h, VR_h);
-        hartree.build_KS_kgrid0(qsgw_state);
-        profiler.stop("hartree_build");
-
-        const SpinKMatrixMap &Hartree_i = hartree.Hartree_is_ik_KS;
-        if (mpi_comm_global_h.is_root())
-        {
-            for (int ispin = 0; ispin < n_spins; ++ispin)
-                for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
-                {
-                    std::ostringstream oss;
-                    oss << qsgw_hartree_only_dir << "hartree_only_spin" << ispin
-                        << "_kpt" << std::setw(6) << std::setfill('0') << (ikpt + 1);
-                    dump_matz(Hartree_i.at(ispin).at(ikpt), oss.str(),
-                              "Hartree_only spin=" + std::to_string(ispin) +
-                              " kpt=" + std::to_string(ikpt));
-                }
-        }
-        profiler.stop("qsgw_setup");
-        profiler.stop("qsgw");
-        return;
     }
 
     double efermi = mf.get_efermi();
@@ -436,21 +558,17 @@ void driver::task_qsgw()
     // the updated density. Recipe from hartree, mirroring Exx (compute_g0w0.cpp:
     // 628-645). basis/Cs/VR are iteration-invariant; coul uses vq_cut for spike
     // ground-truth alignment (final parity may switch to pds->vq, coremath review).
-    const bool use_shrink_h = opts.use_shrink_abfs == LIBRPA_SWITCH_ON;
-    const auto &basis_aux_h = use_shrink_h ? pds->basis_aux_shrink : pds->basis_aux;
-    const auto &cs_h = use_shrink_h ? pds->cs_data_shrink : pds->cs_data;
-    const auto &coul_h = pds->vq_cut;
-    profiler.start("hartree_ft_vq", "Fourier transform Coulomb for Hartree");
-    const auto VR_h = librpa_int::FT_Vq(basis_aux_h, pds->symmetry_context, coul_h,
-                                        pds->pbc, true,
-                                        opts.use_symmetry_exx == LIBRPA_SWITCH_ON);
-    profiler.stop("hartree_ft_vq");
-    qsgw::Hartree hartree(pds->mf, pds->basis_wfc, pds->pbc, pds->symmetry_context,
-                          pds->scfk_blacs_ctxt, pds->desc_wfc_kb_full);
-    SpinKMatrixMap Hartree_0; // iter-1 anchor (legacy task_qsgw.cpp:416-428)
+    if (mpi_comm_global_h.is_root())
+    {
+        std::cout << "[QSGW] Hartree update disabled; testing H_KS0 - vxc0 + Hexx + Vc"
+                  << std::endl;
+    }
 
-    // --- mixing (Task A): owning copy of previous mixed H0_GW for linear mix ---
-    SpinKMatrixMap prev_H0_GW_all;
+    // --- mixing (Task A): owning copy of previous mixed H0_GW ---
+    librpa_int::matrix previous_mixed_h0;
+    bool previous_mixed_h0_initialized = false;
+    librpa_int::PulayMixer mixer(mixing_history, mixing_beta);
+    bool mixer_initialized = false;
 
     // --- checkpoint restart (legacy L1069-L1093) ---
     int iteration = 0;
@@ -470,13 +588,38 @@ void driver::task_qsgw()
     }
     const double qsgw_exx_scale = read_env_double("QSGW_EXX_SCALE", 1.0);
     const double qsgw_vc_scale = read_env_double("QSGW_VC_SCALE", 1.0);
+    const int active_band_min_1b = read_env_int("QSGW_ACTIVE_BAND_MIN", 1);
+    const int active_band_max_1b = read_env_int("QSGW_ACTIVE_BAND_MAX", n_bands);
+    if (active_band_min_1b < 1 || active_band_max_1b > n_bands ||
+        active_band_min_1b > active_band_max_1b)
+    {
+        std::ostringstream oss;
+        oss << "Invalid QSGW active band window: QSGW_ACTIVE_BAND_MIN="
+            << active_band_min_1b << " QSGW_ACTIVE_BAND_MAX=" << active_band_max_1b
+            << ", valid range is 1.." << n_bands;
+        throw LIBRPA_RUNTIME_ERROR(oss.str());
+    }
+    const int active_band_min = active_band_min_1b - 1;
+    const int active_band_max = active_band_max_1b - 1;
+    const bool qsgw_uses_band_window =
+        (active_band_min != 0 || active_band_max != n_bands - 1);
+    if (qsgw_uses_band_window && !use_fixed_basis_iter_gt1)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "QSGW active band window requires QSGW_USE_FIXED_BASIS_ITER_GT1=1 "
+            "because the window is applied in the fixed KS0 band basis");
+    }
     if (mpi_comm_global_h.is_root())
     {
         std::cout << "[QSGW] Vc mode=" << qsgw_vc_mode << std::endl;
         std::cout << "[QSGW] exx_scale=" << qsgw_exx_scale
                   << " vc_scale=" << qsgw_vc_scale << std::endl;
+        if (qsgw_uses_band_window)
+            std::cout << "[QSGW] active_band_window=" << active_band_min_1b
+                      << ".." << active_band_max_1b
+                      << " (bands outside this range stay at KS0 diagonal)" << std::endl;
     }
-    // TODO(D): if (Params::qsgw_restart) load_qsgw_checkpoint(...) -> restore
+    // TODO(D): if (qsgw_restart) load_qsgw_checkpoint(...) -> restore
     //          H0_GW_all/Hartree_0/efermi/mixer + diagonalize_and_store_fixed_basis.
 
     profiler.stop("qsgw_setup");
@@ -484,7 +627,7 @@ void driver::task_qsgw()
     // ========================================================================
     // SCF LOOP (legacy task_qsgw.cpp L1141 `while(!converged && iteration<max)`)
     // ========================================================================
-    while (!converged && iteration < max_iterations)
+    while (!converged && iteration < qsgw_max_iterations)
     {
         iteration++;
         profiler.start("qsgw_iter", "QSGW SCF iteration", true);
@@ -553,34 +696,9 @@ void driver::task_qsgw()
         // (hartree.cpp:217); without reset, iter>1 build() returns early and
         // Hartree_i goes stale -> Hartree_i_delta silently 0. Reset both spaces
         // each step so build() + build_KS_kgrid0 recompute from the live density.
-        hartree.reset_rspace();
-        hartree.reset_kspace();
-        profiler.start("hartree_build", "Build Hartree kernel + KS projection");
-        hartree.build(basis_aux_h, cs_h, VR_h);              // 3 params, no routing
-        hartree.build_KS_kgrid0(qsgw_state);                 // H2 wfc0 anchor
-        profiler.stop("hartree_build");
-        const SpinKMatrixMap &Hartree_i = hartree.Hartree_is_ik_KS;
-        if (qsgw_dump_iter1 && iteration == 1 && mpi_comm_global_h.is_root())
-        {
-            dump_matz(Hartree_i.at(0).at(0), qsgw_dump_dir + "Hartree_i_spin0_kpt0",
-                      "Hartree_i spin=0 kpt=0");
-        }
-        SpinKMatrixMap Hartree_i_delta;
-        for (int ispin = 0; ispin < n_spins; ++ispin)
-            for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
-            {
-                if (iteration == 1)
-                    Hartree_0[ispin][ikpt] = Hartree_i.at(ispin).at(ikpt); // iter-1 anchor
-                else
-                    Hartree_i_delta[ispin][ikpt] =
-                        Hartree_i.at(ispin).at(ikpt) - Hartree_0.at(ispin).at(ikpt); // legacy L430
-            }
-
-        // iter>1: Vc includes the Hartree delta (legacy task_qsgw.cpp:725-728)
-        if (iteration > 1)
-            for (int ispin = 0; ispin < n_spins; ++ispin)
-                for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
-                    Vc_all[ispin][ikpt] = Vc_all[ispin][ikpt] + Hartree_i_delta[ispin][ikpt];
+        // Hartree update intentionally disabled for this diagnostic branch.
+        // Vc_all is left as the correlation potential only; no Hartree_i_delta
+        // is added for iter>1.
 
         // ---- Hexx (exchange) from the rebuilt p_exx (Exx::exx_KS, exx.h:56) ----
         const SpinKMatrixMap &Hexx_all = pds->p_exx->exx_KS;
@@ -605,40 +723,68 @@ void driver::task_qsgw()
         else
             H0_GW_all = construct_H0_GW(H_KS0, vxc0, Hexx_for_h0, Vc_all,
                                         n_spins, n_kpoints, n_bands);
+        if (qsgw_uses_band_window)
+            apply_active_band_window(H0_GW_all, H_KS0, n_spins, n_kpoints, n_bands,
+                                     active_band_min, active_band_max);
         if (qsgw_dump_iter1 && iteration == 1 && mpi_comm_global_h.is_root())
         {
             dump_matz(H0_GW_all.at(0).at(0), qsgw_dump_dir + "H0_GW_all_spin0_kpt0",
                       "H0_GW_all spin=0 kpt=0");
         }
 
-        // ---- Linear mixing (Task A): H_new = H_old + beta * (H_current - H_old) ----
+        // ---- QSGW H0 mixing ----
         double max_abs_delta = 0.0;
-        if (iteration == 1)
+        const matrix mixed_input = pack_h0_gw_for_mixing(
+            H0_GW_all, n_spins, n_kpoints, n_bands);
+        if (!previous_mixed_h0_initialized)
         {
             // iter-1: store current H0_GW_all as the mixing anchor, no modification.
-            for (int ispin = 0; ispin < n_spins; ++ispin)
-                for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
-                    prev_H0_GW_all[ispin][ikpt] = H0_GW_all[ispin][ikpt].copy();
+            previous_mixed_h0 = mixed_input;
+            previous_mixed_h0_initialized = true;
         }
         else
         {
-            for (int ispin = 0; ispin < n_spins; ++ispin)
-                for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
+            matrix mixed_output;
+            max_abs_delta = max_abs_matrix_delta(mixed_input, previous_mixed_h0);
+            const bool use_manual_linear =
+                (qsgw_mixer_mode == "linear") ||
+                (qsgw_mixer_mode == "pulay" && iteration <= linear_mixing_steps);
+
+            if (use_manual_linear)
+            {
+                mixed_output = linear_mix_h0(previous_mixed_h0, mixed_input, mixing_beta);
+                mixer_initialized = false;
+                if (mpi_comm_global_h.is_root() && should_output())
                 {
-                    Matz &H = H0_GW_all[ispin][ikpt];
-                    const Matz &H_prev = prev_H0_GW_all[ispin][ikpt];
-                    for (int i = 0; i < n_bands; ++i)
-                        for (int j = 0; j < n_bands; ++j)
-                        {
-                            const cplxdb delta = H(i, j) - H_prev(i, j);
-                            max_abs_delta = std::max(max_abs_delta, std::abs(delta));
-                            H(i, j) = H_prev(i, j) + mixing_beta * delta;
-                        }
-                    prev_H0_GW_all[ispin][ikpt] = H.copy();
+                    cout << "QSGW iter " << iteration << " linear mix beta="
+                         << mixing_beta << " max_abs_delta_H=" << max_abs_delta;
+                    if (qsgw_mixer_mode == "pulay")
+                        cout << " pulay_warmup_until=" << linear_mixing_steps;
+                    cout << endl;
                 }
-            if (mpi_comm_global_h.is_root() && should_output())
-                cout << "QSGW iter " << iteration << " linear mix beta=" << mixing_beta
-                     << " max_abs_delta_H=" << max_abs_delta << endl;
+            }
+            else
+            {
+                if (!mixer_initialized)
+                {
+                    mixer.initialize(previous_mixed_h0);
+                    mixer_initialized = true;
+                    if (mpi_comm_global_h.is_root() && should_output())
+                        cout << "QSGW Pulay mixer initialized history="
+                             << mixing_history << " beta=" << mixer.get_mixing_beta()
+                             << endl;
+                }
+                mixed_output = mixer.mix(mixed_input);
+                if (mpi_comm_global_h.is_root() && should_output())
+                    cout << "QSGW iter " << iteration << " pulay mix beta="
+                         << mixer.get_mixing_beta()
+                         << " max_abs_delta_H=" << max_abs_delta << endl;
+            }
+
+            unpack_h0_gw_from_mixing(
+                mixed_output, H0_GW_all, n_spins, n_kpoints, n_bands);
+            previous_mixed_h0 = mixed_output;
+            previous_mixed_h0_initialized = true;
         }
 
         // ---- H2: diagonalize using the fixed wfc0 anchor (Task B) ----
@@ -650,12 +796,16 @@ void driver::task_qsgw()
         update_fermi_energy_and_occupations(mf, temperature, efermi);
 
         // ---- convergence: focus-window sorted eigenvalue diff (legacy L1872-L1988) ----
-        double eigdiff_for_conv = 0.0; // TODO(D): compute (focus window if eigdiff_focus_nbands>0)
-        converged = (iteration >= qsgw_min_iterations) && (eigdiff_for_conv < eigenvalue_diff_tolerance);
+        const double h0diff_for_conv =
+            (iteration > 1) ? max_abs_delta * HA2EV : std::numeric_limits<double>::infinity();
+        converged = (iteration >= qsgw_min_iterations) && (iteration > 1) &&
+                    (h0diff_for_conv < eigenvalue_diff_tolerance);
         if (mpi_comm_global_h.is_root() && should_output())
             cout << "QSGW iter " << iteration << " min_iter=" << qsgw_min_iterations
-                 << " eigdiff_for_conv = " << eigdiff_for_conv
-                 << " eV" << (converged ? "  CONVERGED" : "") << endl;
+                 << " h0diff_for_conv = " << h0diff_for_conv
+                 << " eV" << (converged ? "  CONVERGED" : "")
+                 << " (H0 proxy; eigdiff TODO, focus_nbands="
+                 << eigdiff_focus_nbands << ")" << endl;
 
         // ---- checkpoint save (legacy L2006) ----
         // TODO(D): if ((iter % qsgw_checkpoint_every == 0) || converged || iter==max)
@@ -673,7 +823,13 @@ void driver::task_qsgw()
         mpi_comm_global_h.barrier();
         // TODO(D): broadcast updated mf across ranks (legacy meanfield.broadcast(...))
         mpi_comm_global_h.barrier();
-        if (converged || iteration == max_iterations) break;
+        if (converged || iteration == qsgw_max_iterations) break;
+    }
+    if (!converged && mpi_comm_global_h.is_root() && should_output())
+    {
+        cout << "QSGW stopped at max_iterations=" << qsgw_max_iterations
+             << " without convergence; this is a diagnostic stop, not a converged QSGW result"
+             << endl;
     }
 
     // ---- optional HR bundle export (Task F, pure output) ----

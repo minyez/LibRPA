@@ -11,7 +11,7 @@
     latest-iteration marker, and manifest.json). Pure output, no read-back.
   - export_pyatb_state_bundle / refresh_pyatb_headwing_bundle : DECLARED but
     NOT YET IMPLEMENTED. They depend on write_pyatb_bundle,
-    Params::qsgw_export_hamiltonian_for_pyatb / qsgw_pyatb_rebuild_command,
+    future driver-level QSGW pyatb export/rebuild controls,
     get_iterative_pyatb_headwing_bundle_dir and maybe_run_pyatb_rebuild_command,
     none of which exist on the new arch yet (QSGW driver Task D / pyatb-export
     subsystem). They throw std::runtime_error if called. To be filled when that

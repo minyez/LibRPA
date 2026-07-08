@@ -146,6 +146,20 @@ blocks:
       - api.sqrt_coulomb_threshold
       - api.n_bands_sigc
 
+  - heading: QSGW Driver Controls
+    text: |
+      These parameters are currently available only through the standalone driver QSGW task.
+      They are kept out of the public API option struct until QSGW is promoted from a driver-only workflow.
+    fields:
+      - driver.qsgw_mixer
+      - driver.qsgw_mixing_beta
+      - driver.qsgw_mixing_history
+      - driver.qsgw_linear_mixing_steps
+      - driver.qsgw_min_iter
+      - driver.qsgw_max_iter
+      - driver.qsgw_dump_iter1
+      - driver.qsgw_dump_dir
+
   - heading: LibRI Filtering
     text: |
       These parameters are active for LibRI-enabled builds and LibRI routing.
@@ -184,6 +198,11 @@ blocks:
       | `output_gw_sigc_ks_if` | [`output_gw_sigc_ks_kf`](#output-gw-sigc-ks-kf) | Old spelling |
       | `output_gw_sigc_mat` | [`output_gw_sigc_ks_mat_kf`](#output-gw-sigc-ks-mat-kf) | Old spelling |
       | `option_output_Wc_Rf_mat` | [`output_wc_rf`](#output-wc-rf), [`ifreq_output_wc_start`](#ifreq-output-wc-start), [`ifreq_output_wc_end`](#ifreq-output-wc-end) | `0` disables output, `1` maps to `[0,1)`, `2` maps to `[0,all)` |
+      | `max_iter` | [`qsgw_max_iter`](#qsgw-max-iter) | QSGW task alias |
+      | `qsgw_mixer_mode` | [`qsgw_mixer`](#qsgw-mixer) | QSGW task alias |
+      | `mixing_beta` | [`qsgw_mixing_beta`](#qsgw-mixing-beta) | QSGW task alias |
+      | `mixing_history` | [`qsgw_mixing_history`](#qsgw-mixing-history) | QSGW task alias |
+      | `linear_mixing_steps` | [`qsgw_linear_mixing_steps`](#qsgw-linear-mixing-steps) | QSGW task alias |
 
       `g0w0_band` is accepted as a deprecated alias of `g0w0`.
 

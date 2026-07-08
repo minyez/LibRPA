@@ -462,4 +462,34 @@
     </testcase>
   </group>
 
+  <group name="QSGW one-iteration official adapted benchmarks" prefix="QSGW">
+    <testcase name="Bulk silicon official G0W0 input adapted to QSGW (aims input)" directory="qsgw_aims_Si_libri">
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="1"
+           nthreads_enable="none"
+      />
+      <validate name="QSGW mixer configuration"
+                regex="\[QSGW\] mixer=linear history=(\d+) beta=([-+]?\d*\.?\d+) linear_warmup_steps=(\d+)"
+                comparison="cmp_table.abs_diff(1e-12)"
+      />
+      <validate name="QSGW Hamiltonian gap"
+                regex="Hamiltonian_gap:\s+([-+]?\d*\.\d+) eV"
+                comparison="cmp_float.abs_diff(1e-5)"
+      />
+      <validate name="QSGW Vc iter-1 matrix"
+                file="Vc_all_spin0_kpt0.mm"
+                headers="5"
+                comparison="cmp_table.abs_diff(1e-7)"
+      />
+      <validate name="QSGW H0 iter-1 matrix"
+                file="H0_GW_all_spin0_kpt0.mm"
+                headers="5"
+                comparison="cmp_table.abs_diff(1e-7)"
+      />
+    </testcase>
+  </group>
+
 </regressionsuite>
