@@ -256,6 +256,85 @@ static std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
     return atom_nw;
 }
 
+static bool dump_sigc_r_summary_enabled()
+{
+    const char *env_value = std::getenv("LIBRPA_SIGC_R_SUMMARY_DUMP");
+    return env_value != nullptr && env_value[0] != '\0' && env_value[0] != '0';
+}
+
+static bool enable_kgrid0_actual_R_nearest_bvk()
+{
+    const char *env_value = std::getenv("LIBRPA_QSGW_KGRID0_ACTUAL_R_BVK");
+    return env_value != nullptr && env_value[0] != '\0' && env_value[0] != '0';
+}
+
+static void append_sigc_r_summary(
+    const std::string &output_dir,
+    const std::string &label,
+    const int isp,
+    const int ispn_bra,
+    const int ispn_ket,
+    const int ifreq,
+    const double freq,
+    const std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, Matz>>> &sigc_ijr)
+{
+    if (!dump_sigc_r_summary_enabled() || !global::mpi_comm_global_h.is_root())
+        return;
+
+    const std::string file_name =
+        path_as_directory(output_dir) + "sigc_r_summary_" + label + ".dat";
+    const bool write_header = !std::ifstream(file_name).good();
+    std::ofstream out(file_name, std::ios::app);
+    if (write_header)
+    {
+        out << "# isp ispn_bra ispn_ket ifreq freq I J Rx Ry Rz rows cols values"
+            << " sum_re sum_im trace_re trace_im max_abs max_row max_col max_re max_im\n";
+    }
+
+    for (const auto &[I, J_R_sigc] : sigc_ijr)
+    {
+        for (const auto &[J, R_sigc] : J_R_sigc)
+        {
+            for (const auto &[R, sigc] : R_sigc)
+            {
+                std::complex<double> sum{0.0, 0.0};
+                std::complex<double> trace{0.0, 0.0};
+                double max_abs = -1.0;
+                int max_row = -1;
+                int max_col = -1;
+                std::complex<double> max_value{0.0, 0.0};
+                for (int row = 0; row != sigc.nr(); ++row)
+                {
+                    for (int col = 0; col != sigc.nc(); ++col)
+                    {
+                        const auto value = sigc(row, col);
+                        sum += value;
+                        if (row == col)
+                            trace += value;
+                        const double abs_value = std::abs(value);
+                        if (abs_value > max_abs)
+                        {
+                            max_abs = abs_value;
+                            max_row = row;
+                            max_col = col;
+                            max_value = value;
+                        }
+                    }
+                }
+                out << isp << ' ' << ispn_bra << ' ' << ispn_ket << ' '
+                    << ifreq << ' ' << std::setprecision(17) << freq << ' '
+                    << I << ' ' << J << ' '
+                    << R.x << ' ' << R.y << ' ' << R.z << ' '
+                    << sigc.nr() << ' ' << sigc.nc() << ' ' << sigc.size() << ' '
+                    << sum.real() << ' ' << sum.imag() << ' '
+                    << trace.real() << ' ' << trace.imag() << ' '
+                    << max_abs << ' ' << max_row << ' ' << max_col << ' '
+                    << max_value.real() << ' ' << max_value.imag() << '\n';
+            }
+        }
+    }
+}
+
 static bool use_symmetry_ibz_root_projection(
     const SymmetryContext& ctx,
     const PeriodicBoundaryData& pbc,
@@ -1938,6 +2017,19 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     const int n_bands = mf.get_n_bands();
     const int n_spins = mf.get_n_spins();
     const int n_spinor = mf.get_n_spinor();
+    const bool use_actual_R_nearest_bvk =
+        source == "kgrid0" &&
+        enable_kgrid0_actual_R_nearest_bvk() &&
+        this->pbc.is_latt_set() &&
+        !this->symmetry_context.input_coord_frac.empty();
+    std::map<atom_t, Vector3<double>> actual_R_coord_frac;
+    if (use_actual_R_nearest_bvk)
+    {
+        for (const auto &[atom, coord] : this->symmetry_context.input_coord_frac)
+            actual_R_coord_frac[atom] = Vector3<double>(coord[0], coord[1], coord[2]);
+        global::ofs_myid << "build_sigc_matrix_KS_blacs(" << source
+                         << "): using actual-R nearest BvK fallback" << std::endl;
+    }
 
     global::profiler.start("g0w0_build_sigc_KS");
 
@@ -2154,14 +2246,40 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                         auto &R_sigc_shift = sigc_isp_local[freq][I][J];
                         for (auto &[R, sigc]: R_sigc)
                         {
+                            if (use_actual_R_nearest_bvk)
+                            {
+                                const auto it_I = actual_R_coord_frac.find(I);
+                                const auto it_J = actual_R_coord_frac.find(J);
+                                if (it_I != actual_R_coord_frac.end() &&
+                                    it_J != actual_R_coord_frac.end())
+                                {
+                                    auto R_target = find_nearest_bvk_cell(
+                                        it_I->second, it_J->second, R,
+                                        this->pbc.period, this->pbc.latvec);
+                                    const Vector3_Order<int> positive_corner{
+                                        (this->pbc.period.x - 1) / 2,
+                                        (this->pbc.period.y - 1) / 2,
+                                        (this->pbc.period.z - 1) / 2};
+                                    const auto &coord_I = it_I->second;
+                                    if (I == J && R == positive_corner
+                                        && (std::abs(coord_I.x) + std::abs(coord_I.y) +
+                                            std::abs(coord_I.z) > 1.0e-12))
+                                    {
+                                        R_target = R;
+                                    }
+                                    add_sigc(R_sigc_shift, R_target, sigc, 1.0);
+                                    continue;
+                                }
+                            }
+
                             const auto *R_bvks = bvk_remap.find_R_bvk(IJ, R);
                             if (R_bvks == nullptr || R_bvks->empty())
                             {
-                                R_sigc_shift[R] = sigc;
+                                add_sigc(R_sigc_shift, R, sigc, 1.0);
                             }
                             else if (R_bvks->size() == 1)
                             {
-                                R_sigc_shift[R_bvks->front()] = sigc;
+                                add_sigc(R_sigc_shift, R_bvks->front(), sigc, 1.0);
                             }
                             else
                             {
@@ -2175,6 +2293,17 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                     }
                 }
                 global::profiler.stop("g0w0_build_sigc_KS_find_bvk");
+
+                if (dump_sigc_r_summary_enabled() && isp == 0 && ispn_bra == 0 && ispn_ket == 0)
+                {
+                    for (const auto &freq : this->tfg.get_freq_nodes())
+                    {
+                        const int ifreq = this->tfg.get_freq_index(freq);
+                        append_sigc_r_summary(
+                            this->output_dir, source, isp, ispn_bra, ispn_ket,
+                            ifreq, freq, sigc_isp_local.at(freq));
+                    }
+                }
 
                 if (is_mf_eigvec_k_distributed_)
                 {
@@ -2399,12 +2528,14 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                     sigc_nband_nband_dense, 0, comm_h.comm);
                                 if (this->output_sigc_ks_mat_kf)
                                 {
+                                    // QSGW consumes sigc_is_ik_f_KS as full KS matrices.
+                                    // ComplexMatrix stores row-major data; convert to a
+                                    // column-major Matz without redistributing the dense
+                                    // root result again.
                                     const Matz sigc_dense(n_bands, n_bands,
                                                           sigc_nband_nband_dense.c,
-                                                          MAJOR::ROW);
-                                    const auto sigc_dense_opt =
-                                        get_local_mat(sigc_dense, desc_sigc_is_ik_f_KS, MAJOR::COL);
-                                    store_sigc_local(isp, ik, freq, sigc_dense_opt);
+                                                          MAJOR::ROW, MAJOR::COL);
+                                    store_sigc_local(isp, ik, freq, sigc_dense);
                                 }
                                 if (comm_h.is_root())
                                 {

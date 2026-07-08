@@ -120,6 +120,7 @@ void librpa_init_options(LibrpaOptions *opts)
     opts->rpa_headwing_mode[0] = '\0';
     std::strncpy(opts->rpa_headwing_mode, "qavg", LIBRPA_MAX_STRLEN);
     opts->rpa_headwing_mode[LIBRPA_MAX_STRLEN - 1] = '\0';
+    opts->rpa_headwing_lebedev_grid = 5810;
     opts->sqrt_coulomb_threshold = 0.0e0;
     opts->read_sigc_mat_rf = LIBRPA_SWITCH_OFF;
 

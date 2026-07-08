@@ -1199,11 +1199,6 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     auto &mf = pds->mf;
     auto &velocity_matrix = pds->velocity_matrix;
     velocity_matrix.clear();
-    const int scf_nk = mf.get_n_kpoints();
-    if (static_cast<int>(pds->pbc.kfrac_list.size()) != scf_nk)
-    {
-        throw std::runtime_error("SCF k-point list is inconsistent with meanfield");
-    }
     struct MfRestore
     {
         MeanField &mf;
@@ -1230,6 +1225,16 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     const string pyatb_velocity = pyatb_dir + "velocity_matrix";
 
     const auto &active_kfrac_list = pds->pbc.kfrac_list;
+    const bool use_pyatb_headwing = path_exists(pyatb_velocity.c_str());
+    const bool use_legacy_pyatb_headwing =
+        use_pyatb_headwing && lowercase_token(driver::driver_params.task) == "qsgw" &&
+        driver::driver_params.qsgw_legacy_pyatb_headwing;
+    if (!use_legacy_pyatb_headwing &&
+        static_cast<int>(active_kfrac_list.size()) != mf.get_n_kpoints())
+    {
+        throw std::runtime_error("SCF k-point list is inconsistent with meanfield");
+    }
+    std::vector<Vector3_Order<double>> kfrac_headwing;
     int n_basis = 0;
     int n_states = 0;
     int n_spin = 0;
@@ -1238,66 +1243,94 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     driver::h.get_imaginary_frequency_grids(driver::opts, pds->omegas_imagfreq, freq_weights);
     const auto &freqs = pds->tfg.get_freq_nodes();
 
-    if (path_exists(pyatb_velocity.c_str()))
+    if (use_pyatb_headwing)
     {
-        // PyATB may write a full-BZ k grid even when LibRPA runs with symmetry
-        // and the active mean-field grid is IBZ.  Treat k_path_info as the
-        // source-coordinate table, then read only the active LibRPA k-list.
-        if (mpi_comm_global_h.is_root())
+        if (use_legacy_pyatb_headwing)
         {
-            std::cout << "Reading head/wing input from " << pyatb_dir << std::endl;
-        }
-        std::vector<Vector3_Order<double>> kfrac_pyatb =
-            read_headwing_k_path_info(pyatb_dir + "k_path_info", n_basis, n_states, n_spin);
-        if (use_spinor_wfc)
-        {
-            if (n_basis % 2 != 0)
-                throw std::runtime_error("Head/wing spinor basis size is not even");
-            n_basis /= 2;
-        }
-        const auto target_to_source_ik =
-            map_kpoints_by_coordinates(active_kfrac_list, kfrac_pyatb,
-                                       kSymmetryKpointMatchTol);
-        std::vector<int> source_to_target_ik(kfrac_pyatb.size(), -1);
-        for (int ik_target = 0; ik_target != static_cast<int>(target_to_source_ik.size());
-             ++ik_target)
-        {
-            source_to_target_ik.at(target_to_source_ik[ik_target]) = ik_target;
-        }
-
-        restore_mf.capture();
-        read_scf_occ_eigenvalues(pyatb_dir + "band_out", mf, use_spinor_wfc,
-                                  target_to_source_ik, static_cast<int>(kfrac_pyatb.size()));
-        std::vector<int> iks_headwing_eigvec_this;
-        if (pds->scfk_blacs_ctxt.is_initialized())
-        {
-            if (pds->scfk_blacs_ctxt.n_kpoints() != mf.get_n_kpoints())
-                throw std::runtime_error(
-                    "SCF k-point parallel context is inconsistent with head/wing meanfield");
-            if (pds->scfk_blacs_ctxt.comm_blacs_h.myid == 0)
+            if (mpi_comm_global_h.is_root())
             {
-                for (const int ik_target : pds->scfk_blacs_ctxt.kpoints_local())
-                    iks_headwing_eigvec_this.emplace_back(target_to_source_ik.at(ik_target));
+                std::cout << "Reading head/wing velocity input from " << pyatb_dir
+                          << " (legacy QSGW PyATB mode)" << std::endl;
+            }
+            read_velocity(pyatb_velocity, mf, velocity_matrix);
+            kfrac_headwing =
+                read_headwing_k_path_info(pyatb_dir + "k_path_info", n_basis, n_states, n_spin);
+            if (use_spinor_wfc)
+            {
+                if (n_basis % 2 != 0)
+                    throw std::runtime_error("Head/wing spinor basis size is not even");
+                n_basis /= 2;
+            }
+            if (n_basis != mf.get_n_aos() || n_states != mf.get_n_states() ||
+                n_spin != mf.get_n_spins())
+            {
+                throw std::runtime_error(
+                    "Head/wing k_path_info dimensions are inconsistent with band_out");
             }
         }
-        const std::vector<int> *source_iks_headwing_eigvec_selected =
-            pds->scfk_blacs_ctxt.is_initialized() ? &iks_headwing_eigvec_this : nullptr;
-        const int ret_eigenvec =
-            read_eigenvector(pyatb_dir, mf, use_spinor_wfc, source_to_target_ik,
-                             source_iks_headwing_eigvec_selected,
-                             LegacyTextWfcOrder::SpinBasisBand);
-        if (ret_eigenvec != 0)
+        else
         {
-            throw std::runtime_error("Failed to read pyatb head/wing eigenvectors from " +
-                                     pyatb_dir);
-        }
-        read_velocity(pyatb_velocity, mf, velocity_matrix, source_to_target_ik,
-                      static_cast<int>(kfrac_pyatb.size()));
-        if (n_basis != mf.get_n_aos() || n_states != mf.get_n_states() ||
-            n_spin != mf.get_n_spins())
-        {
-            throw std::runtime_error(
-                "Head/wing k_path_info dimensions are inconsistent with band_out");
+            // PyATB may write a full-BZ k grid even when LibRPA runs with symmetry
+            // and the active mean-field grid is IBZ.  Treat k_path_info as the
+            // source-coordinate table, then read only the active LibRPA k-list.
+            if (mpi_comm_global_h.is_root())
+            {
+                std::cout << "Reading head/wing input from " << pyatb_dir << std::endl;
+            }
+            std::vector<Vector3_Order<double>> kfrac_pyatb =
+                read_headwing_k_path_info(pyatb_dir + "k_path_info", n_basis, n_states, n_spin);
+            if (use_spinor_wfc)
+            {
+                if (n_basis % 2 != 0)
+                    throw std::runtime_error("Head/wing spinor basis size is not even");
+                n_basis /= 2;
+            }
+            const auto target_to_source_ik =
+                map_kpoints_by_coordinates(active_kfrac_list, kfrac_pyatb,
+                                           kSymmetryKpointMatchTol);
+            std::vector<int> source_to_target_ik(kfrac_pyatb.size(), -1);
+            for (int ik_target = 0; ik_target != static_cast<int>(target_to_source_ik.size());
+                 ++ik_target)
+            {
+                source_to_target_ik.at(target_to_source_ik[ik_target]) = ik_target;
+            }
+
+            restore_mf.capture();
+            read_scf_occ_eigenvalues(pyatb_dir + "band_out", mf, use_spinor_wfc,
+                                      target_to_source_ik,
+                                      static_cast<int>(kfrac_pyatb.size()));
+            std::vector<int> iks_headwing_eigvec_this;
+            if (pds->scfk_blacs_ctxt.is_initialized())
+            {
+                if (pds->scfk_blacs_ctxt.n_kpoints() != mf.get_n_kpoints())
+                    throw std::runtime_error(
+                        "SCF k-point parallel context is inconsistent with head/wing meanfield");
+                if (pds->scfk_blacs_ctxt.comm_blacs_h.myid == 0)
+                {
+                    for (const int ik_target : pds->scfk_blacs_ctxt.kpoints_local())
+                        iks_headwing_eigvec_this.emplace_back(target_to_source_ik.at(ik_target));
+                }
+            }
+            const std::vector<int> *source_iks_headwing_eigvec_selected =
+                pds->scfk_blacs_ctxt.is_initialized() ? &iks_headwing_eigvec_this : nullptr;
+            const int ret_eigenvec =
+                read_eigenvector(pyatb_dir, mf, use_spinor_wfc, source_to_target_ik,
+                                 source_iks_headwing_eigvec_selected,
+                                 LegacyTextWfcOrder::SpinBasisBand);
+            if (ret_eigenvec != 0)
+            {
+                throw std::runtime_error("Failed to read pyatb head/wing eigenvectors from " +
+                                         pyatb_dir);
+            }
+            read_velocity(pyatb_velocity, mf, velocity_matrix, source_to_target_ik,
+                          static_cast<int>(kfrac_pyatb.size()));
+            if (n_basis != mf.get_n_aos() || n_states != mf.get_n_states() ||
+                n_spin != mf.get_n_spins())
+            {
+                throw std::runtime_error(
+                    "Head/wing k_path_info dimensions are inconsistent with band_out");
+            }
+            kfrac_headwing = active_kfrac_list;
         }
     }
     else
@@ -1307,6 +1340,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         n_basis = mf.get_n_aos();
         n_states = mf.get_n_states();
         n_spin = mf.get_n_spins();
+        kfrac_headwing = active_kfrac_list;
 
         const string file_abacus = path_as_directory(dir_path) + "velocity_matrix";
         const string file_aims = path_as_directory(dir_path) + "mommat_ks_kpt_000001.dat";
@@ -1324,20 +1358,47 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         }
     }
 
+    if (static_cast<int>(kfrac_headwing.size()) != mf.get_n_kpoints())
+    {
+        throw std::runtime_error("Head/wing k-point count is inconsistent with meanfield");
+    }
+    if (!use_pyatb_headwing)
+    {
+        if (static_cast<int>(pds->pbc.kfrac_list.size()) != mf.get_n_kpoints())
+        {
+            throw std::runtime_error("SCF k-point list is inconsistent with meanfield");
+        }
+        for (int ik = 0; ik != mf.get_n_kpoints(); ++ik)
+        {
+            if (!nearly_same_kpoint(kfrac_headwing[ik], pds->pbc.kfrac_list[ik]))
+            {
+                std::ostringstream oss;
+                oss << "Head/wing k-point " << ik
+                    << " is inconsistent with the SCF meanfield k grid";
+                throw std::runtime_error(oss.str());
+            }
+        }
+    }
+
     const auto &headwing_basis_aux =
         driver::get_bool(driver::opts.use_shrink_abfs) ? pds->basis_aux_shrink : pds->basis_aux;
     if (!headwing_basis_aux.initialized())
         throw std::runtime_error("Head/wing auxiliary basis is not initialized");
+    const KPointBlacsParallelContext *headwing_kblacs_ctxt =
+        use_legacy_pyatb_headwing ? nullptr : &pds->scfk_blacs_ctxt;
     pds->p_headwing = std::make_unique<diele_func>(
-        mf, velocity_matrix, pds->pbc.kfrac_list, pds->basis_wfc, headwing_basis_aux, freqs,
+        mf, velocity_matrix, kfrac_headwing, pds->basis_wfc, headwing_basis_aux, freqs,
         n_basis, n_states, n_spin, headwing_basis_aux.nb_total, pds->pbc, pds->comm_h,
-        pds->blacs_h, &pds->scfk_blacs_ctxt);
+        pds->blacs_h, headwing_kblacs_ctxt);
     pds->p_headwing->use_2d_dielectric = driver::get_bool(driver::opts.use_2d_dielectric);
     pds->p_headwing->use_soc = mf.get_n_spinor() > 1;
     pds->p_headwing->debug = librpa_int::global::should_output(LIBRPA_VERBOSE_DEBUG);
+    pds->p_headwing->lebedev_grid_order = driver::opts.rpa_headwing_lebedev_grid;
+    pds->p_headwing->use_legacy_qsgw_headwing = use_legacy_pyatb_headwing;
     // Symmetry-aware head/wing uses the same active k-list as the main LibRPA
     // path: full BZ without symmetry, IBZ with input k-star metadata.
-    if (pds->symmetry_context.available && !pds->symmetry_context.kstars.empty())
+    if (!use_legacy_pyatb_headwing && pds->symmetry_context.available &&
+        !pds->symmetry_context.kstars.empty())
     {
         pds->p_headwing->set_symmetry_context(pds->symmetry_context);
         pds->p_headwing->use_symmetry = true;
@@ -1376,7 +1437,9 @@ void read_headwing_input(const string &dir_path, bool need_wing)
             std::cout << "Using PyATB head/wing input on the active LibRPA k-list with "
                       << mf.get_n_kpoints() << " k-points" << std::endl;
     }
-    pds->p_headwing->init(driver::opts.sqrt_coulomb_threshold, pds->vq);
+    const auto &headwing_coulomb =
+        use_legacy_pyatb_headwing ? pds->vq_cut : pds->vq;
+    pds->p_headwing->init(driver::opts.sqrt_coulomb_threshold, headwing_coulomb);
     pds->p_headwing->cal_head();
     pds->epsmacs_imagfreq = pds->p_headwing->get_head_vec();
     pds->omegas_imagfreq = freqs;
@@ -1385,7 +1448,8 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     {
         const auto &headwing_cs =
             driver::get_bool(driver::opts.use_shrink_abfs) ? pds->cs_data_shrink : pds->cs_data;
-        pds->p_headwing->cal_wing(headwing_cs, driver::opts.sqrt_coulomb_threshold, pds->vq);
+        pds->p_headwing->cal_wing(headwing_cs, driver::opts.sqrt_coulomb_threshold,
+                                  headwing_coulomb);
         if (librpa_int::global::should_output(LIBRPA_VERBOSE_DEBUG))
             pds->p_headwing->test_wing();
     }

@@ -435,6 +435,11 @@ typedef struct
     //! "head_only" replaces only the analytic head before the ordinary trace-log.
     char rpa_headwing_mode[LIBRPA_MAX_STRLEN];
 
+    //! Lebedev-Laikov angular grid order for qavg head/wing Gamma correction.
+    //! @par Default
+    //! 5810
+    int rpa_headwing_lebedev_grid;
+
     //! Threshold of eigenvalues to perform square root of Coulomb matrices.
     //! @par Default
     //! 0.0

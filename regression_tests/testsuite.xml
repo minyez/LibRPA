@@ -488,6 +488,52 @@
                 comparison="cmp_mtx.abs_diff(1e-7)"
       />
     </testcase>
+
+    <testcase name="MnO2 nspin2 shrink wing iter-1 old-QSGW reference (abacus input)" directory="qsgw_abacus_MnO2_nspin2_shrink_wing_libri">
+      <build require_libri="true"
+      />
+      <run ntasks_disable="none"
+           nthreads_disable="none"
+           ntasks_enable="1"
+           nthreads_enable="none"
+      />
+      <validate name="QSGW ABACUS homo/lumo iter trace"
+                file="librpa/homo_lumo_vs_iterations.dat"
+                comparison="cmp_table.abs_diff(1e-8)"
+      />
+      <validate name="QSGW ABACUS fixed wfc0 basis"
+                file="qsgw_dump/wfc0_spin0_kpt0.mm"
+                comparison="cmp_mtx.abs_diff(1e-7)"
+      />
+      <validate name="QSGW ABACUS H_KS0 iter-1 matrix"
+                file="qsgw_dump/H_KS0_spin0_kpt0.mm"
+                comparison="cmp_mtx.abs_diff(1e-7)"
+      />
+      <validate name="QSGW ABACUS raw Vxc matrix"
+                file="qsgw_dump/xc_matr_raw_spin0_kpt0.mm"
+                comparison="cmp_mtx.abs_diff(1e-7)"
+      />
+      <validate name="QSGW ABACUS vxc0 iter-1 matrix"
+                file="qsgw_dump/vxc0_spin0_kpt0.mm"
+                comparison="cmp_mtx.abs_diff(1e-7)"
+      />
+      <validate name="QSGW ABACUS hf0 KS matrix"
+                file="qsgw_dump/hf0_ks_spin0_kpt0.mm"
+                comparison="cmp_mtx.abs_diff(1e-7)"
+      />
+      <validate name="QSGW ABACUS Hexx iter-1 matrix"
+                file="qsgw_dump/Hexx_iter_spin0_kpt0.mm"
+                comparison="cmp_mtx.abs_diff(1e-7)"
+      />
+      <validate name="QSGW ABACUS Vc iter-1 matrix"
+                file="qsgw_dump/Vc_all_spin0_kpt0.mm"
+                comparison="cmp_mtx.abs_diff(1e-7)"
+      />
+      <validate name="QSGW ABACUS H0 iter-1 matrix"
+                file="qsgw_dump/H0_GW_all_spin0_kpt0.mm"
+                comparison="cmp_mtx.abs_diff(1e-7)"
+      />
+    </testcase>
   </group>
 
 </regressionsuite>

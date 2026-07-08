@@ -290,6 +290,20 @@ struct DriverParams
     //! Experimental
     int qsgw_max_iter;
 
+    //! Include the fixed DFT HF exchange in vxc0 during QSGW H0 construction.
+    //! @par Default
+    //! true
+    //! @par Status
+    //! Experimental
+    bool qsgw_vxc0_with_hf;
+
+    //! Use the pre-newarch PyATB head/wing reader path for QSGW benchmarks.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Compatibility
+    bool qsgw_legacy_pyatb_headwing;
+
     //! Write the iter-1 QSGW matrix dump used by regression tests.
     //! @par Default
     //! false

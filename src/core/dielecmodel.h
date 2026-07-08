@@ -123,6 +123,8 @@ public:
     bool use_2d_dielectric = false;
     bool use_soc = false;
     bool debug = false;
+    int lebedev_grid_order = 5810;
+    bool use_legacy_qsgw_headwing = false;
 
     // Symmetry-aware head/wing switches. When use_symmetry is true and the
     // input symmetry context can restore the BZ from the IBZ k-grid, cal_head
@@ -186,6 +188,7 @@ private:
     // Full-BZ head summation (the historical path, now also used as the fallback
     // when symmetry restoration is unavailable). Expects wg indexed as wg(ik, ib).
     void cal_head_full_bz();
+    void cal_head_legacy_qsgw_full_bz();
     // Symmetry-aware head: IBZ outer loop + k-star member inner loop. Uses
     // rotate_headwing_velocity to reconstruct the BZ velocity for every member.
     void cal_head_symmetric();
@@ -205,6 +208,8 @@ private:
     // wing_mu. The IBZ mean-field is not expanded or broadcast globally.
     void cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
                             const atpair_k_cplx_mat_t &Vq);
+    void cal_wing_legacy_qsgw_full_bz(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
+                                      const atpair_k_cplx_mat_t &Vq);
     // The historical full-BZ wing summation, also used as the fallback when
     // symmetry restoration is unavailable.
     void cal_wing_full_bz(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
@@ -220,6 +225,10 @@ public:
     std::complex<double> compute_wing(const int alpha, const int iomega, const int mu, const int ik,
                                       const int ispin, const ArrayDesc &desc_nband_nband,
                                       const matrix_m<complex<double>> &C_nband_nband);
+    std::complex<double> compute_wing_legacy_qsgw(
+        const int alpha, const int iomega, const int mu, const int ik, const int ispin,
+        const ArrayDesc &desc_nband_nband,
+        const matrix_m<complex<double>> &C_nband_nband);
     // std::complex<double> compute_Cs_ij2mn(int mu, int m, int n, int ik);
     // std::complex<double> compute_Cijk(const librpa_int::Cs_LRI &Cs_data, int mu, int I, int i,
     // int J, int j, int ik); transform wing from ABF to Coulomb representation

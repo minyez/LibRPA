@@ -3038,13 +3038,27 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         matrix_m<std::complex<double>> sqrtveig_blacs;
         if (is_gamma_point(q))
         {
-            // choice of power_hemat_blacs_real/power_hemat_blacs_desc
-            // leads to sub-meV difference
-            sqrtveig_blacs = LaConnector::power_hemat_la_real(
-                coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
-                n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold,
-                use_gpu_replace_scalapack, use_elpa_sqrt_coulomb, (double*)chi0_block_ptr + chi0_block.size(), 
-                (double*)chi0_block_ptr, (double*)coul_chi0_block_ptr);
+            const bool legacy_qsgw_headwing =
+                replace_w_head && option_dielect_func == 3 && df_headwing != nullptr &&
+                df_headwing->use_legacy_qsgw_headwing;
+            if (legacy_qsgw_headwing)
+            {
+                // Match the legacy QSGW head-wing couleps Gamma path exactly.
+                sqrtveig_blacs = power_hemat_blacs_desc(
+                    coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
+                    n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold);
+            }
+            else
+            {
+                // choice of power_hemat_blacs_real/power_hemat_blacs_desc
+                // leads to sub-meV difference
+                sqrtveig_blacs = LaConnector::power_hemat_la_real(
+                    coul_block, desc_nabf_nabf_opt, coul_eigen_block, desc_nabf_nabf_opt,
+                    n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold,
+                    use_gpu_replace_scalapack, use_elpa_sqrt_coulomb,
+                    (double *)chi0_block_ptr + chi0_block.size(), (double *)chi0_block_ptr,
+                    (double *)coul_chi0_block_ptr);
+            }
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
             if(use_gpu_replace_scalapack)
                 DEVICE_CHECK(deviceMallocAsync((void**)&coul_block_ptr, coul_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));

@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <complex>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
@@ -36,6 +37,7 @@
 #include "../../src/io/fs.h"
 #include "../../src/io/global_io.h"
 #include "../../src/io/input_elsi.h"   // load_matrix_cplx (full xc_matr CSC reader, H4)
+#include "../../src/io/stl_io_helper.h"
 #include "../../src/utils/constants.h" // HA2EV
 #include "../../src/utils/profiler.h"
 #include "../driver.h"
@@ -107,6 +109,17 @@ void write_checksum_file(const MatrixChecksum &c, const std::string &fn,
 void dump_matz(const Matz &m, const std::string &fn_base, const std::string &label)
 {
     librpa_int::print_matrix_mm_file(m, fn_base + ".mm", label, 1e-15, true);
+}
+
+void dump_complex_matrix(const librpa_int::ComplexMatrix &m,
+                         const std::string &fn_base,
+                         const std::string &label)
+{
+    Matz out(m.nr, m.nc, librpa_int::MAJOR::COL);
+    for (int ir = 0; ir < m.nr; ++ir)
+        for (int ic = 0; ic < m.nc; ++ic)
+            out(ir, ic) = m(ir, ic);
+    dump_matz(out, fn_base, label);
 }
 
 bool read_env_bool(const char *name, const bool default_value)
@@ -297,6 +310,201 @@ double max_abs_matrix_delta(
     return max_abs_delta;
 }
 
+bool load_abacus_vxck_nao_matrix(
+    const std::string &file_path,
+    const int n_spins,
+    Matz &matrix)
+{
+    if (!librpa_int::file_exists(file_path))
+        return false;
+
+    std::ifstream input(file_path);
+    if (!input)
+        throw LIBRPA_RUNTIME_ERROR("Cannot open ABACUS Vxc matrix " + file_path);
+
+    int rows = -1;
+    int cols = -1;
+    int current_row = -1;
+    int current_col = -1;
+    std::vector<int> entry_rows;
+    std::vector<int> entry_cols;
+    std::vector<librpa_int::cplxdb> entry_values;
+    std::vector<librpa_int::cplxdb> dense_values;
+    std::string line;
+    while (std::getline(input, line))
+    {
+        const auto first = line.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos)
+            continue;
+        const std::string content = line.substr(first);
+
+        if (content.rfind("# rows", 0) == 0)
+        {
+            std::istringstream iss(content);
+            std::string hash;
+            std::string key;
+            iss >> hash >> key >> rows;
+            continue;
+        }
+        if (content.rfind("# columns", 0) == 0)
+        {
+            std::istringstream iss(content);
+            std::string hash;
+            std::string key;
+            iss >> hash >> key >> cols;
+            continue;
+        }
+        if (content[0] == '#')
+            continue;
+        if (content.rfind("Row ", 0) == 0)
+        {
+            std::istringstream iss(content);
+            std::string row_label;
+            int row = 0;
+            iss >> row_label >> row;
+            current_row = row - 1;
+            current_col = current_row;
+            continue;
+        }
+
+        size_t pos = 0;
+        while (true)
+        {
+            const auto lb = content.find('(', pos);
+            if (lb == std::string::npos)
+                break;
+            const auto comma = content.find(',', lb + 1);
+            const auto rb = content.find(')', comma == std::string::npos ? lb + 1 : comma + 1);
+            if (comma == std::string::npos || rb == std::string::npos)
+                throw LIBRPA_RUNTIME_ERROR("Malformed ABACUS complex value in " + file_path);
+
+            const double real = std::stod(content.substr(lb + 1, comma - lb - 1));
+            const double imag = std::stod(content.substr(comma + 1, rb - comma - 1));
+            if (current_row >= 0)
+            {
+                entry_rows.emplace_back(current_row);
+                entry_cols.emplace_back(current_col);
+                entry_values.emplace_back(real, imag);
+                ++current_col;
+            }
+            else
+            {
+                dense_values.emplace_back(real, imag);
+            }
+            pos = rb + 1;
+        }
+    }
+
+    if (rows <= 0 || cols <= 0)
+        throw LIBRPA_RUNTIME_ERROR("ABACUS Vxc matrix header is incomplete in " + file_path);
+
+    matrix = Matz(rows, cols, librpa_int::MAJOR::COL);
+    const double scale = 1.0 / static_cast<double>(std::max(1, n_spins));
+    if (!entry_values.empty())
+    {
+        const size_t expected_triangular =
+            rows == cols ? static_cast<size_t>(rows) * static_cast<size_t>(rows + 1) / 2 : 0;
+        if (entry_values.size() != expected_triangular)
+        {
+            std::ostringstream oss;
+            oss << "ABACUS triangular Vxc matrix entry count mismatch in " << file_path
+                << ": got " << entry_values.size() << " values, expected "
+                << expected_triangular;
+            throw LIBRPA_RUNTIME_ERROR(oss.str());
+        }
+        for (size_t i = 0; i < entry_values.size(); ++i)
+        {
+            const int ir = entry_rows[i];
+            const int ic = entry_cols[i];
+            if (ir < 0 || ir >= rows || ic < 0 || ic >= cols)
+            {
+                std::ostringstream oss;
+                oss << "ABACUS Vxc triangular index out of range in " << file_path
+                    << ": (" << (ir + 1) << ", " << (ic + 1) << ") for "
+                    << rows << "x" << cols;
+                throw LIBRPA_RUNTIME_ERROR(oss.str());
+            }
+            const auto value = entry_values[i] * scale;
+            matrix(ir, ic) = value;
+            if (ir != ic)
+                matrix(ic, ir) = std::conj(value);
+        }
+    }
+    else if (dense_values.size() == static_cast<size_t>(rows) * static_cast<size_t>(cols))
+    {
+        for (int ir = 0; ir < rows; ++ir)
+            for (int ic = 0; ic < cols; ++ic)
+                matrix(ir, ic) = dense_values[static_cast<size_t>(ir) * cols + ic] * scale;
+    }
+    else
+    {
+        std::ostringstream oss;
+        oss << "ABACUS Vxc matrix entry count mismatch in " << file_path
+            << ": got " << dense_values.size() << " dense values for "
+            << rows << "x" << cols;
+        throw LIBRPA_RUNTIME_ERROR(oss.str());
+    }
+
+    return true;
+}
+
+void write_homo_lumo_iteration(
+    const librpa_int::MeanField &mf,
+    const double efermi,
+    const int iteration)
+{
+    double homo = -std::numeric_limits<double>::infinity();
+    double lumo = std::numeric_limits<double>::infinity();
+    const double occupied_threshold =
+        1.0 / static_cast<double>(mf.get_n_spins() * mf.get_n_kpoints());
+
+    for (int ispin = 0; ispin < mf.get_n_spins(); ++ispin)
+    {
+        for (int ikpt = 0; ikpt < mf.get_n_kpoints(); ++ikpt)
+        {
+            int homo_level = -1;
+            for (int ib = 0; ib < mf.get_n_bands(); ++ib)
+            {
+                if (mf.get_weight()[ispin](ikpt, ib) >= occupied_threshold)
+                    homo_level = ib;
+            }
+
+            if (homo_level < 0)
+                continue;
+
+            homo = std::max(homo, mf.get_eigenvals()[ispin](ikpt, homo_level));
+            if (homo_level + 1 < mf.get_n_bands())
+            {
+                lumo = std::min(
+                    lumo,
+                    mf.get_eigenvals()[ispin](ikpt, homo_level + 1));
+            }
+        }
+    }
+
+    if (!std::isfinite(homo) || !std::isfinite(lumo))
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "QSGW failed to locate finite HOMO/LUMO levels for iteration output");
+    }
+
+    std::ofstream file(
+        "homo_lumo_vs_iterations.dat",
+        iteration == 0 ? std::ios::trunc : std::ios::app);
+    file << std::setprecision(12)
+         << iteration << " "
+         << homo * librpa_int::HA2EV << " "
+         << lumo * librpa_int::HA2EV << " "
+         << efermi * librpa_int::HA2EV << std::endl;
+
+    std::cout << (iteration == 0 ? "Initial" : "Iteration")
+              << " " << iteration
+              << ": HOMO = " << homo * librpa_int::HA2EV << " eV, "
+              << "LUMO = " << lumo * librpa_int::HA2EV << " eV, "
+              << "Efermi = " << efermi * librpa_int::HA2EV << " eV"
+              << std::endl;
+}
+
 } // unnamed namespace
 
 void driver::task_qsgw()
@@ -352,6 +560,27 @@ void driver::task_qsgw()
                     driver::get_bool(driver::opts.use_shrink_abfs));
     profiler.stop("read_vq_cut");
 
+    const auto file_df = driver_params.input_dir + driver_params.fn_dielfunc;
+    const bool compute_headwing =
+        driver::get_bool(opts.replace_w_head) &&
+        (opts.option_dielect_func == 3 || opts.option_dielect_func == 4);
+    if (compute_headwing)
+    {
+        read_headwing_input(driver_params.input_dir, opts.option_dielect_func == 3);
+    }
+    else if (driver::get_bool(opts.replace_w_head) && librpa_int::path_exists(file_df.c_str()))
+    {
+        if (mpi_comm_global_h.is_root() && should_output())
+            std::cout << "Reading dielectric function for head correction" << std::endl;
+        std::vector<double> omegas_dielect;
+        std::vector<double> dielect_func;
+        read_dielec_func(file_df, omegas_dielect, dielect_func);
+        ofs_myid << "Dielectric functions read:" << std::endl;
+        ofs_myid << "omegas_dielect: " << omegas_dielect << std::endl;
+        ofs_myid << "dielect_func:   " << dielect_func << std::endl;
+        h.set_dielect_func_imagfreq(omegas_dielect, dielect_func);
+    }
+
     // --- DFT xc: loaded per (spin,kpt) as the FULL xc_matr CSC below (H4 #4 fix,
     //     coremath review: H0_GW is a full matrix, off-diagonal xc must be kept;
     //     the diagonal read_vxc path drops off-diag). hf added in the same loop. ---
@@ -360,7 +589,8 @@ void driver::task_qsgw()
     QsgwState qsgw_state;
     qsgw_state.snapshot_wfc0(mf);
     qsgw_state.snapshot_wg0(mf);
-    // velocity0 snapshot deferred until velocity source is wired (TODO(D)).
+    if (!pds->velocity_matrix.empty())
+        qsgw_state.snapshot_velocity0(pds->velocity_matrix);
 
     // --- QSGW knobs parsed from librpa.in into DriverParams; env overrides below are
     //     retained only for ad-hoc diagnostics. ---
@@ -431,11 +661,13 @@ void driver::task_qsgw()
 
     // --- iter-1 diagnostic dump, used by QSGW regression tests ---
     bool qsgw_dump_iter1 = driver_params.qsgw_dump_iter1;
+    bool qsgw_dump_sigc_ks = false;
     std::string qsgw_dump_dir;
     {
         const char *env_dump = std::getenv("QSGW_DUMP_ITER1");
         if (env_dump != nullptr)
             qsgw_dump_iter1 = (std::string(env_dump) == "1");
+        qsgw_dump_sigc_ks = read_env_bool("QSGW_SIGC_KS_DUMP", false);
         const char *env_dir = std::getenv("QSGW_DUMP_DIR");
         if (env_dir != nullptr)
             qsgw_dump_dir = librpa_int::path_as_directory(std::string(env_dir));
@@ -455,6 +687,9 @@ void driver::task_qsgw()
         {
             std::cout << "[QSGW] iter-1 diagnostic dump enabled: " << qsgw_dump_dir << std::endl;
             librpa_int::create_directories(qsgw_dump_dir.c_str(), 0);
+            if (const auto *wfc0 = qsgw_state.find_wfc0(0, 0, 0))
+                dump_complex_matrix(*wfc0, qsgw_dump_dir + "wfc0_spin0_kpt0",
+                                    "wfc0 spin=0 spinor=0 kpt=0");
         }
     }
 
@@ -473,6 +708,8 @@ void driver::task_qsgw()
 
     double efermi = mf.get_efermi();
     const double total_electrons = calculate_total_weight(mf); // replaces get_total_weight
+    if (mpi_comm_global_h.is_root())
+        write_homo_lumo_iteration(mf, efermi, 0);
 
     // --- (B)-fixed H4: DFT HF exchange from the kernel (no hf_exchange file) ---
     // coremath APPROVED with guardrails. Si G0W0 testcase has no hf_exchange_*.csc,
@@ -503,9 +740,37 @@ void driver::task_qsgw()
         dump_matz(hf0_ks.at(0).at(0), base, "hf0_ks spin=0 kpt=0");
     }
 
-    const bool qsgw_vxc0_with_hf = read_env_bool("QSGW_VXC0_WITH_HF", true);
+    bool qsgw_vxc0_with_hf = driver_params.qsgw_vxc0_with_hf;
+    qsgw_vxc0_with_hf = read_env_bool("QSGW_VXC0_WITH_HF", qsgw_vxc0_with_hf);
     if (mpi_comm_global_h.is_root())
         std::cout << "[QSGW] vxc0_with_hf=" << (qsgw_vxc0_with_hf ? 1 : 0) << std::endl;
+
+    std::vector<matrix> diag_vxc_scf;
+    const std::string diag_vxc_scf_path = driver_params.input_dir + driver_params.fn_vxc_scf;
+    const int flag_read_diag_vxc_scf = read_vxc(diag_vxc_scf_path, diag_vxc_scf);
+    bool diag_vxc_scf_available = (flag_read_diag_vxc_scf == 0) &&
+                                  (static_cast<int>(diag_vxc_scf.size()) >= n_spins);
+    if (diag_vxc_scf_available)
+    {
+        for (int ispin = 0; ispin < n_spins; ++ispin)
+        {
+            if (diag_vxc_scf[ispin].nr < n_kpoints || diag_vxc_scf[ispin].nc < n_bands)
+            {
+                diag_vxc_scf_available = false;
+                break;
+            }
+        }
+    }
+    if (flag_read_diag_vxc_scf == 0 && !diag_vxc_scf_available &&
+        mpi_comm_global_h.is_root())
+    {
+        std::cerr << "[QSGW] Warning: diagonal Vxc fallback file "
+                  << diag_vxc_scf_path
+                  << " has dimensions incompatible with QSGW matrix shape; "
+                  << "full xc_matr_spin_* input will still be required." << std::endl;
+    }
+    bool diag_vxc_scf_used = false;
+    bool abacus_vxck_nao_used = false;
 
     // --- H_KS0 + vxc0 assembly (legacy task_qsgw.cpp L882-L905) ---
     // H_KS0[ispin][ikpt] = diag(eigvals) (KS band space). vxc0 = xc + hf0_ks (fixed
@@ -526,7 +791,47 @@ void driver::task_qsgw()
             oss_xc << driver_params.input_dir << "xc_matr_spin_" << (ispin + 1)
                    << "_kpt_" << std::setw(6) << std::setfill('0') << (ikpt + 1) << ".csc";
             // (B)-fixed: vxc0 = xc + hf0_ks (fixed DFT HF from kernel, deep-copied).
-            Matz xc_matr = load_matrix_cplx(oss_xc.str());
+            Matz xc_matr;
+            if (librpa_int::file_exists(oss_xc.str()))
+            {
+                xc_matr = load_matrix_cplx(oss_xc.str());
+            }
+            else
+            {
+                std::ostringstream oss_abacus_vxc;
+                oss_abacus_vxc << driver_params.input_dir << "OUT.ABACUS/vxck"
+                               << (ikpt + 1) << "s" << (ispin + 1) << "_nao.txt";
+                if (load_abacus_vxck_nao_matrix(oss_abacus_vxc.str(), n_spins, xc_matr))
+                {
+                    if (!abacus_vxck_nao_used && mpi_comm_global_h.is_root())
+                    {
+                        std::cout << "[QSGW] using ABACUS full Vxc matrices from "
+                                  << driver_params.input_dir
+                                  << "OUT.ABACUS/vxck{k}s{s}_nao.txt" << std::endl;
+                    }
+                    abacus_vxck_nao_used = true;
+                }
+            }
+            if (xc_matr.size() == 0 && diag_vxc_scf_available)
+            {
+                xc_matr = Matz(n_bands, n_bands, MAJOR::COL);
+                for (int ib = 0; ib < n_bands; ++ib)
+                    xc_matr(ib, ib) = librpa_int::cplxdb(diag_vxc_scf[ispin](ikpt, ib), 0.0);
+                if (!diag_vxc_scf_used && mpi_comm_global_h.is_root())
+                {
+                    std::cout << "[QSGW] Warning: using diagonal Vxc fallback from "
+                              << diag_vxc_scf_path
+                              << "; full QSGW matrix input is preferred." << std::endl;
+                }
+                diag_vxc_scf_used = true;
+            }
+            if (xc_matr.size() == 0)
+            {
+                throw LIBRPA_RUNTIME_ERROR(
+                    "QSGW Vxc input not found: missing " + oss_xc.str() +
+                    ", no ABACUS full Vxc matrix, and no compatible diagonal fallback " +
+                    diag_vxc_scf_path);
+            }
             if (xc_matr.nr() != n_bands || xc_matr.nc() != n_bands)
             {
                 std::ostringstream oss;
@@ -573,11 +878,11 @@ void driver::task_qsgw()
     // --- checkpoint restart (legacy L1069-L1093) ---
     int iteration = 0;
     bool converged = false;
-    bool use_fixed_basis_iter_gt1 = true;
+    bool use_fixed_basis_qsgw = true;
     if (const char *env_fb = std::getenv("QSGW_USE_FIXED_BASIS_ITER_GT1"))
     {
         if (std::string(env_fb) == "0")
-            use_fixed_basis_iter_gt1 = false;
+            use_fixed_basis_qsgw = false;
     }
     std::string qsgw_vc_mode = "B";
     if (const char *env_vc_mode = std::getenv("QSGW_VC_MODE"))
@@ -603,7 +908,7 @@ void driver::task_qsgw()
     const int active_band_max = active_band_max_1b - 1;
     const bool qsgw_uses_band_window =
         (active_band_min != 0 || active_band_max != n_bands - 1);
-    if (qsgw_uses_band_window && !use_fixed_basis_iter_gt1)
+    if (qsgw_uses_band_window && !use_fixed_basis_qsgw)
     {
         throw LIBRPA_RUNTIME_ERROR(
             "QSGW active band window requires QSGW_USE_FIXED_BASIS_ITER_GT1=1 "
@@ -636,7 +941,16 @@ void driver::task_qsgw()
         // p_exx has a real guard (compute_g0w0.cpp:628); p_headwing caches an mf
         // copy. p_chi0/p_g0w0 rebuild unconditionally. (LEADER_AUDIT §3 H1)
         pds->p_exx.reset();
-        pds->p_headwing.reset();
+        if (compute_headwing)
+        {
+            read_headwing_input(driver_params.input_dir, opts.option_dielect_func == 3);
+        }
+        else
+        {
+            pds->p_headwing.reset();
+            pds->epsmacs_imagfreq.clear();
+            pds->omegas_imagfreq.clear();
+        }
 
         // ---- recompute G0W0 self-energy with updated mf (g0w0.cpp pattern) ----
         h.build_g0w0_sigma(opts);
@@ -645,21 +959,24 @@ void driver::task_qsgw()
         // NOT fill sigc_is_ik_f_KS. Enable the KS-matrix storage flag (#2, gated default
         // off at gw.cpp:1798) then run the KS rotation (#1) which populates it.
         pds->p_g0w0->output_sigc_ks_mat_kf = true;
-        if (iteration == 1 || !use_fixed_basis_iter_gt1)
-            pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
-        else
+        pds->p_g0w0->output_sigc_mat_kf =
+            read_env_bool("QSGW_SIGC_AO_DUMP", false);
+        if (use_fixed_basis_qsgw)
             pds->p_g0w0->build_sigc_matrix_KS_kgrid0_blacs(qsgw_state, pds->blacs_h);
+        else
+            pds->p_g0w0->build_sigc_matrix_KS_kgrid_blacs(pds->blacs_h);
 
         // Exx KS rotation (parallel to the sigc #1 fix; coremath final review):
         // build_g0w0_sigma builds Exx real-space only — compute_g0w0.cpp:644
         // build_KS_kgrid_blacs is commented out, so p_exx->exx_KS stays empty and
         // construct_H0_GW's Hexx_all (= p_exx->exx_KS) would be empty/out_of_range.
-        // Project to KS here. iter-1 current=wfc0, so the current-basis call is right.
-        // For iter>1, keep Hexx_iter in the fixed KS0 basis used by H_KS0/vxc0.
-        if (iteration == 1 || !use_fixed_basis_iter_gt1)
-            pds->p_exx->build_KS_kgrid_blacs(pds->blacs_h);
-        else
+        // Project to the same fixed KS0 basis used by H_KS0/vxc0. Legacy
+        // qsgw_band0 used build_KS_kgrid0() starting at iteration 1, so do not
+        // special-case iter-1 through the live-basis BLACS path.
+        if (use_fixed_basis_qsgw)
             pds->p_exx->build_KS_kgrid0_blacs(qsgw_state, pds->blacs_h);
+        else
+            pds->p_exx->build_KS_kgrid_blacs(pds->blacs_h);
 
         // ---- H5 + Vc: full non-diagonal sigc -> correlation potential (mode B) ----
         // sigc_is_ik_f_KS : [ispin][ikpt][freq] -> Matz (gw.h:80). For each (spin,kpt)
@@ -676,6 +993,21 @@ void driver::task_qsgw()
             for (int ikpt = 0; ikpt < n_kpoints; ++ikpt)
             {
                 const auto &sigc_spin_k = pds->p_g0w0->sigc_is_ik_f_KS.at(ispin).at(ikpt);
+                if (qsgw_dump_iter1 && qsgw_dump_sigc_ks &&
+                    iteration == 1 && ispin == 0 && ikpt == 0 &&
+                    mpi_comm_global_h.is_root())
+                {
+                    for (const auto &freq : freq_nodes)
+                    {
+                        const int ifreq = pds->tfg.get_freq_index(freq);
+                        std::ostringstream stem;
+                        stem << qsgw_dump_dir << "SigcKS_spin0_kpt0_ifreq_"
+                             << std::setw(3) << std::setfill('0') << ifreq;
+                        std::ostringstream label;
+                        label << "SigcKS spin=0 kpt=0 ifreq=" << ifreq;
+                        dump_matz(sigc_spin_k.at(freq), stem.str(), label.str());
+                    }
+                }
                 const auto sigc_blocks = build_sigma_real_axis_blocks_qsgw(
                     mf, freq_nodes, sigc_spin_k, ispin, ikpt, n_bands, opts.n_params_anacon);
                 Vc_all[ispin][ikpt] =
@@ -794,6 +1126,8 @@ void driver::task_qsgw()
         // ---- fermi / occupations (Task A) ----
         efermi = calculate_fermi_energy(mf, temperature, total_electrons);
         update_fermi_energy_and_occupations(mf, temperature, efermi);
+        if (mpi_comm_global_h.is_root())
+            write_homo_lumo_iteration(mf, efermi, iteration);
 
         // ---- convergence: focus-window sorted eigenvalue diff (legacy L1872-L1988) ----
         const double h0diff_for_conv =

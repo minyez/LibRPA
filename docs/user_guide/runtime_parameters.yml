@@ -142,6 +142,7 @@ blocks:
       - api.use_2d_dielectric
       - api.rpa_headwing_body_start
       - api.rpa_headwing_mode
+      - api.rpa_headwing_lebedev_grid
       - api.read_sigc_mat_rf
       - api.sqrt_coulomb_threshold
       - api.n_bands_sigc
@@ -157,6 +158,8 @@ blocks:
       - driver.qsgw_linear_mixing_steps
       - driver.qsgw_min_iter
       - driver.qsgw_max_iter
+      - driver.qsgw_vxc0_with_hf
+      - driver.qsgw_legacy_pyatb_headwing
       - driver.qsgw_dump_iter1
       - driver.qsgw_dump_dir
 

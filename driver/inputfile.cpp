@@ -372,6 +372,9 @@ void parse_inputfile_to_params(const std::string &fn)
         std::strncpy(opts.rpa_headwing_mode, stmp.c_str(), LIBRPA_MAX_STRLEN);
         opts.rpa_headwing_mode[LIBRPA_MAX_STRLEN - 1] = '\0';
     }
+    parser.parse_int("rpa_headwing_lebedev_grid", opts.rpa_headwing_lebedev_grid, 5810, flag);
+    if (opts.rpa_headwing_lebedev_grid <= 0)
+        throw std::runtime_error("rpa_headwing_lebedev_grid must be positive");
     _parse_switch(opts, output_gw_sigc_ks_mat_kf);
     if (flag != 0)  // backward-compatible
     {
@@ -417,6 +420,8 @@ void parse_inputfile_to_params(const std::string &fn)
     parser.parse_int("qsgw_mixing_history", driver_params.qsgw_mixing_history, flag);
     parser.parse_int("linear_mixing_steps", driver_params.qsgw_linear_mixing_steps, flag);
     parser.parse_int("qsgw_linear_mixing_steps", driver_params.qsgw_linear_mixing_steps, flag);
+    parser.parse_bool("qsgw_vxc0_with_hf", driver_params.qsgw_vxc0_with_hf, flag);
+    parser.parse_bool("qsgw_legacy_pyatb_headwing", driver_params.qsgw_legacy_pyatb_headwing, flag);
     parser.parse_bool("qsgw_dump_iter1", driver_params.qsgw_dump_iter1, flag);
     parser.parse_string("qsgw_dump_dir", driver_params.qsgw_dump_dir, flag);
 

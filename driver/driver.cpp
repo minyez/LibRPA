@@ -52,6 +52,8 @@ DriverParams::DriverParams():
     qsgw_linear_mixing_steps(3),
     qsgw_min_iter(1),
     qsgw_max_iter(1),
+    qsgw_vxc0_with_hf(true),
+    qsgw_legacy_pyatb_headwing(false),
     qsgw_dump_iter1(false),
     qsgw_dump_dir("")
 {
@@ -97,6 +99,8 @@ std::string DriverParams::format()
             normal_pair(output_gw_spec_func),
             normal_pair(output_hamgnn),
             normal_pair(use_pyatb),
+            normal_pair(qsgw_vxc0_with_hf),
+            normal_pair(qsgw_legacy_pyatb_headwing),
             normal_pair(qsgw_dump_iter1),
         };
     for (const auto &[k, v]: bool_params)
@@ -197,6 +201,7 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             normal_pair(option_dielect_func),
             normal_pair(option_bvk_remap),
             normal_pair(rpa_headwing_body_start),
+            normal_pair(rpa_headwing_lebedev_grid),
             normal_pair(qpe_solver_n_iter_max),
             normal_pair(libri_chi0_collect_s0_chunk),
             normal_pair(istate_ref_hedin_shift),

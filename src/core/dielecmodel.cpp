@@ -6,6 +6,7 @@
 #include <cmath>
 #include <limits>
 #include <sstream>
+#include <string>
 #include <utility>
 
 #include "../math/fitting.h"
@@ -504,6 +505,14 @@ void diele_func::cal_head()
 
     profiler.start("cal_head");
 
+    if (use_legacy_qsgw_headwing)
+    {
+        cal_head_legacy_qsgw_full_bz();
+        global::ofs_myid << "* Success: calculate head term." << std::endl;
+        profiler.stop("cal_head");
+        return;
+    }
+
     const bool can_try_sym =
         use_symmetry && symmetry_context_ != nullptr && atomic_basis_wfc_.has_l_shells();
     const auto wfc_layouts =
@@ -540,6 +549,77 @@ void diele_func::cal_head()
     global::ofs_myid << "* Success: calculate head term." << std::endl;
     profiler.stop("cal_head");
 };
+
+void diele_func::cal_head_legacy_qsgw_full_bz()
+{
+    std::complex<double> tmp;
+    int nocc = 0;
+    double dielectric_unit = cal_factor("head");
+
+    const int legacy_spin = n_spin - 1;
+    auto &wg = this->meanfield_df.get_weight()[legacy_spin];
+    auto &eigenvalues = this->meanfield_df.get_eigenvals()[legacy_spin];
+    const auto &velocity = this->velocity_[legacy_spin];
+
+    for (int i = 0; i != wg.size; i++)
+    {
+        if (wg.c[i] == 0.)
+        {
+            nocc = i;
+            break;
+        }
+    }
+
+    for (int ik = 0; ik != nk; ik++)
+    {
+        for (int iocc = 0; iocc != nocc; iocc++)
+        {
+            for (int iunocc = nocc; iunocc != n_states; iunocc++)
+            {
+                double egap = (eigenvalues(ik, iocc) - eigenvalues(ik, iunocc));
+                for (int alpha = 0; alpha != 3; alpha++)
+                {
+                    for (int beta = 0; beta != 3; beta++)
+                    {
+                        for (size_t iomega = 0; iomega != this->omega.size(); iomega++)
+                        {
+                            double omega_ev = this->omega[iomega];
+                            tmp = 2.0 * velocity[ik][alpha](iunocc, iocc) *
+                                  velocity[ik][beta](iocc, iunocc) /
+                                  (egap * egap + omega_ev * omega_ev) / egap;
+                            this->head.at(iomega)(alpha, beta) -= tmp;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for (int alpha = 0; alpha != 3; alpha++)
+    {
+        for (int beta = 0; beta != 3; beta++)
+        {
+            for (size_t iomega = 0; iomega != this->omega.size(); iomega++)
+            {
+                if (n_spin == 1)
+                {
+                    if (use_soc)
+                        this->head.at(iomega)(alpha, beta) *= dielectric_unit;
+                    else
+                        this->head.at(iomega)(alpha, beta) *= dielectric_unit * 2.0;
+                }
+                else if (n_spin == 4)
+                {
+                    this->head.at(iomega)(alpha, beta) *= dielectric_unit;
+                }
+                if (alpha == beta)
+                {
+                    this->head.at(iomega)(alpha, beta) += std::complex<double>(1.0, 0.0);
+                }
+            }
+        }
+    }
+}
 
 void diele_func::cal_head_full_bz()
 {
@@ -832,6 +912,12 @@ matrix_m<std::complex<double>> diele_func::get_rpa_chi0v_wing(const int ifreq) c
 void diele_func::cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
                           const atpair_k_cplx_mat_t &Vq)
 {
+    if (use_legacy_qsgw_headwing)
+    {
+        cal_wing_legacy_qsgw_full_bz(Cs_data, coulomb_eigen_threshold, Vq);
+        return;
+    }
+
     const bool can_try_sym =
         use_symmetry && symmetry_context_ != nullptr && atomic_basis_wfc_.has_l_shells();
     const auto wfc_layouts =
@@ -846,6 +932,86 @@ void diele_func::cal_wing(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
         cal_wing_symmetric(Cs_data, coulomb_eigen_threshold, Vq);
     else
         cal_wing_full_bz(Cs_data, coulomb_eigen_threshold, Vq);
+}
+
+void diele_func::cal_wing_legacy_qsgw_full_bz(const Cs_LRI &Cs_data,
+                                              double coulomb_eigen_threshold,
+                                              const atpair_k_cplx_mat_t &Vq)
+{
+    using global::profiler;
+
+    profiler.start("cal_wing_mu");
+    init_wing(coulomb_eigen_threshold, Vq);
+    std::vector<std::complex<double>> local_wing_mu;
+    local_wing_mu.resize(this->omega.size() * 3 * n_abf, 0.0);
+
+    ArrayDesc desc_nao_nao(blacs_h);
+    desc_nao_nao.init_1b1p(n_basis, n_basis, 0, 0);
+    const auto set_IJ_nao_nao =
+        get_necessary_IJ_from_block_2D(atomic_basis_wfc_, atomic_basis_wfc_, desc_nao_nao);
+    auto s0_s1 = get_s0_s1_for_comm_map2_first(set_IJ_nao_nao);
+    std::map<int, std::map<libri_types<int, int>::TAC, RI::Tensor<double>>> Cs_IJ;
+    Cs_IJ = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
+        comm_h.comm, Cs_data.data_libri, s0_s1.first, s0_s1.second);
+
+    for (int mu = 0; mu < n_abf; ++mu)
+    {
+        for (int ik = 0; ik != nk; ik++)
+        {
+            auto desc_C_mnk = transform_Cs2mnk(ik, mu, Cs_IJ);
+            auto &desc_nband_nband = desc_C_mnk.first;
+            auto &C_mnk = desc_C_mnk.second;
+            for (std::size_t iomega = 0; iomega != this->omega.size(); iomega++)
+            {
+                for (int alpha = 0; alpha != 3; alpha++)
+                {
+                    for (int isp = 0; isp != n_spin; isp++)
+                    {
+                        std::complex<double> tmp = compute_wing_legacy_qsgw(
+                            alpha, static_cast<int>(iomega), mu, ik, isp, desc_nband_nband,
+                            C_mnk);
+                        const std::size_t index =
+                            as_size(mu) * this->omega.size() * 3 + iomega * 3 +
+                            as_size(alpha);
+                        local_wing_mu[index] += tmp;
+                    }
+                }
+            }
+        }
+    }
+    profiler.start("Comm_wing");
+    MPI_Allreduce(MPI_IN_PLACE, local_wing_mu.data(), static_cast<int>(local_wing_mu.size()),
+                  MPI_CXX_DOUBLE_COMPLEX, MPI_SUM, MPI_COMM_WORLD);
+    profiler.stop("Comm_wing");
+    double dielectric_unit = cal_factor("wing");
+
+    for (int alpha = 0; alpha != 3; alpha++)
+    {
+        for (int mu = 0; mu != n_abf; mu++)
+        {
+            for (std::size_t iomega = 0; iomega != this->omega.size(); iomega++)
+            {
+                const std::size_t index =
+                    as_size(mu) * this->omega.size() * 3 + iomega * 3 + as_size(alpha);
+                this->wing_mu.at(iomega)(mu, alpha) = local_wing_mu[index];
+                if (n_spin == 1)
+                {
+                    if (use_soc)
+                        this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit;
+                    else
+                        this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit * 2.0;
+                }
+                else if (n_spin == 4)
+                {
+                    this->wing_mu.at(iomega)(mu, alpha) *= -dielectric_unit;
+                }
+            }
+        }
+    }
+
+    if (comm_h.is_root()) std::cout << "* Success: calculate wing term." << std::endl;
+    release_free_mem();
+    profiler.stop("cal_wing_mu");
 }
 
 void diele_func::cal_wing_full_bz(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
@@ -1435,6 +1601,50 @@ std::complex<double> diele_func::compute_wing(const int alpha, const int iomega,
     return wing_term;
 };
 
+std::complex<double> diele_func::compute_wing_legacy_qsgw(
+    const int alpha, const int iomega, const int mu, const int ik, const int ispin,
+    const ArrayDesc &desc_nband_nband,
+    const matrix_m<complex<double>> &C_nband_nband)
+{
+    (void)mu;
+    const auto &velocity = this->velocity_;
+    auto &eigenvalues = this->meanfield_df.get_eigenvals();
+    auto &wg_ref = this->meanfield_df.get_weight()[n_spin - 1];
+
+    int nocc = 0;
+    for (int i = 0; i != wg_ref.size; i++)
+    {
+        if (wg_ref.c[i] == 0.)
+        {
+            nocc = i;
+            break;
+        }
+    }
+
+    double omega_ev = this->omega[static_cast<std::size_t>(iomega)];
+    std::complex<double> wing_term = 0.0;
+
+    for (int iocc = 0; iocc != n_states; iocc++)
+    {
+        for (int iunocc = iocc; iunocc != n_states; iunocc++)
+        {
+            double egap =
+                (eigenvalues[ispin](ik, iunocc) - eigenvalues[ispin](ik, iocc));
+            if (iocc < nocc && iunocc >= nocc)
+            {
+                auto loc_m = desc_nband_nband.indx_g2l_r(iocc);
+                auto loc_n = desc_nband_nband.indx_g2l_c(iunocc);
+                if (loc_m < 0 || loc_n < 0) continue;
+                auto tmp = C_nband_nband(loc_m, loc_n);
+                wing_term += conj(tmp * velocity[ispin][ik][alpha](iunocc, iocc)) /
+                             (omega_ev * omega_ev + egap * egap);
+            }
+        }
+    }
+
+    return wing_term;
+}
+
 void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blacs,
                                    ArrayDesc &desc_nabf_nabf_opt,
                                    const std::size_t n_nonsingular_in)
@@ -1476,12 +1686,12 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
                 wing_mu_tmp(loc_mu, loc_alpha) = this->wing_mu.at(iomega)(mu, alpha);
             }
         }
-        // this->wing.at(iomega)(lambda, alpha) +=
-        // conj(sqrtveig_blacs(mu, lambda)) * this->wing_mu.at(iomega)(mu, alpha);
-        // drop the first column of sqrtveig_blacs, the largest eigenvalue
-        ScalapackConnector::pgemm_f('C', 'N', n_lambda, 3, n_abf, 1.0, sqrtveig_blacs.ptr(), 1, 2,
-                                    desc_nabf_nabf_opt.desc, wing_mu_tmp.ptr(), 1, 1,
-                                    desc_wing_mu.desc, 0.0, wing_tmp.ptr(), 1, 1,
+        // Legacy QSGW used the first Coulomb eigenvector column directly.  The
+        // default newarch path drops the leading singular/head channel.
+        const int sqrt_col_start = use_legacy_qsgw_headwing ? 1 : 2;
+        ScalapackConnector::pgemm_f('C', 'N', n_lambda, 3, n_abf, 1.0, sqrtveig_blacs.ptr(), 1,
+                                    sqrt_col_start, desc_nabf_nabf_opt.desc, wing_mu_tmp.ptr(), 1,
+                                    1, desc_wing_mu.desc, 0.0, wing_tmp.ptr(), 1, 1,
                                     desc_wing_opt.desc);
     }
 
@@ -1981,8 +2191,13 @@ void diele_func::get_Leb_points()
     }
     else
     {
-        // TODO: check convergence issue and change 5810 to argument
-        auto quad_points = lebedev_laikov::grid(5810);
+        if (!lebedev_laikov::is_available_order(lebedev_grid_order))
+        {
+            throw LIBRPA_RUNTIME_ERROR(
+                "Unsupported rpa_headwing_lebedev_grid: " +
+                std::to_string(lebedev_grid_order));
+        }
+        auto quad_points = lebedev_laikov::grid(lebedev_grid_order);
         qx_leb = std::move(quad_points.x);
         qy_leb = std::move(quad_points.y);
         qz_leb = std::move(quad_points.z);

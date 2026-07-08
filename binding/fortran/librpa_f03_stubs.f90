@@ -236,6 +236,8 @@ module librpa_f03
       logical :: read_sigc_mat_rf
       !> RPA Gamma correction mode: "qavg" or "head_only".
       character(len=LIBRPA_MAX_STRLEN) :: rpa_headwing_mode
+      !> Lebedev-Laikov angular grid order for qavg head/wing Gamma correction.
+      integer :: rpa_headwing_lebedev_grid
       !> Threshold for eigenvalues when taking the square root of Coulomb matrices.
       real(dp) :: sqrt_coulomb_threshold
       !> LibRI threshold of LRI triple coefficients for response function.
