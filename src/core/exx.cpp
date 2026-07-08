@@ -1398,6 +1398,7 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                         for (std::ptrdiff_t itask = 0; itask < n_fourier_tasks; ++itask)
                         {
                             const auto &task = fourier_tasks[static_cast<std::size_t>(itask)];
+                            const auto kfrac_ik = kfrac_target[task.ik];
                             Matz exx_ijk(task.n_I, task.n_J, MAJOR::ROW);
                             exx_ijk.zero_out();
                             auto add_exx_ijk =
@@ -1414,7 +1415,7 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                                         return exx.to_complex();
                                 }();
                                 exx_cplx.swap_major(MAJOR::ROW);
-                                const auto ang = (kfrac_target[task.ik] * R_bvk) * TWO_PI;
+                                const auto ang = (kfrac_ik * R_bvk) * TWO_PI;
                                 const complex<double> phase{weight * std::cos(ang),
                                                             weight * std::sin(ang)};
                                 auto exx_weighted = exx_cplx.copy();
@@ -1769,6 +1770,9 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
 
 void Exx::build_KS_kgrid()
 {
+    if (is_mf_eigvec_k_distributed_)
+        throw LIBRPA_RUNTIME_ERROR(
+            "Exx::build_KS_kgrid cannot consume k-distributed eigenvectors; use build_KS_kgrid_blacs");
     this->build_KS(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {});
 }
 
@@ -1781,6 +1785,9 @@ void Exx::build_KS_band(const std::map<int, std::map<int, std::map<int, ComplexM
                         const std::vector<Vector3_Order<double>> &kfrac_band,
                         const AtomPairBvKRemap<atom_t> &bvk_remap)
 {
+    if (is_mf_eigvec_k_distributed_)
+        throw LIBRPA_RUNTIME_ERROR(
+            "Exx::build_KS_band cannot consume k-distributed eigenvectors; use build_KS_band_blacs");
     this->build_KS(wfc_band, kfrac_band, bvk_remap);
 }
 

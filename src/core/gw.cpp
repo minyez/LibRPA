@@ -2221,13 +2221,14 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                 for (std::ptrdiff_t itask = 0; itask < n_fourier_tasks; ++itask)
                                 {
                                     const auto &task = fourier_tasks[static_cast<std::size_t>(itask)];
+                                    const auto kfrac_ik = kfrac_target[task.ik];
                                     Matz sigc_ijk(task.n_I, task.n_J, MAJOR::ROW);
                                     sigc_ijk.zero_out();
                                     auto add_sigc_ijk =
                                         [&](const Vector3_Order<int> &R_bvk, const Matz &sigc,
                                             const double weight)
                                     {
-                                        const auto ang = (kfrac_target[task.ik] * R_bvk) * TWO_PI;
+                                        const auto ang = (kfrac_ik * R_bvk) * TWO_PI;
                                         const complex<double> phase{weight * std::cos(ang),
                                                                     weight * std::sin(ang)};
                                         auto sigc_weighted = sigc.copy();
@@ -2629,6 +2630,9 @@ void G0W0::build_sigc_matrix_KS_kgrid(const Atoms &geometry)
 {
     comm_h.barrier();
     global::ofs_myid << "build_sigc_matrix_KS_kgrid: constructing self-energy matrix for SCF k-grid" << std::endl;
+    if (is_eigvec_k_distributed_)
+        throw LIBRPA_RUNTIME_ERROR(
+            "G0W0::build_sigc_matrix_KS_kgrid cannot consume k-distributed eigenvectors; use build_sigc_matrix_KS_kgrid_blacs");
     this->build_sigc_matrix_KS(this->mf.get_eigenvectors(), this->pbc.kfrac_list, {});
     if (this->output_sigc_ks_kf)
     {
@@ -2648,6 +2652,9 @@ void G0W0::build_sigc_matrix_KS_band(const std::map<int, std::map<int, std::map<
     {
         global::lib_printf("build_sigc_matrix_KS_kgrid: constructing self-energy matrix for band k-path\n");
     }
+    if (is_eigvec_k_distributed_)
+        throw LIBRPA_RUNTIME_ERROR(
+            "G0W0::build_sigc_matrix_KS_band cannot consume k-distributed eigenvectors; use build_sigc_matrix_KS_band_blacs");
     this->build_sigc_matrix_KS(wfc, kfrac_band, bvk_remap);
     if (this->output_sigc_ks_kf)
     {
