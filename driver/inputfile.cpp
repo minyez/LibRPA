@@ -79,9 +79,6 @@ static void validate_input_parameters()
         if (params.sf_state_start >= 0 && params.sf_state_end >= 0
             && params.sf_state_end <= params.sf_state_start)
             throw std::runtime_error("sf_state_end must be greater than sf_state_start");
-        if (driver::get_bool(driver::opts.use_kpara_scf_eigvec))
-            throw std::runtime_error(
-                "output_gw_spec_func does not yet support use_kpara_scf_eigvec");
     }
 }
 

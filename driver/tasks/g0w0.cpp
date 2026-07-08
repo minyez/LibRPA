@@ -4,6 +4,7 @@
 #include <exception>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -159,6 +160,386 @@ static void write_spectral_function_binary(
         throw LIBRPA_RUNTIME_ERROR("Failed to write spectral-function output file " + path);
 }
 
+static std::size_t checked_mul_size(const std::size_t a,
+                                    const std::size_t b,
+                                    const std::string &label)
+{
+    if (a != 0 && b > std::numeric_limits<std::size_t>::max() / a)
+        throw LIBRPA_RUNTIME_ERROR("spectral-function output size overflow: " + label);
+    return a * b;
+}
+
+static MPI_Offset checked_add_offset(const MPI_Offset offset,
+                                     const std::size_t bytes,
+                                     const std::string &label)
+{
+    const auto max_delta =
+        static_cast<std::size_t>(std::numeric_limits<MPI_Offset>::max() - offset);
+    if (bytes > max_delta)
+        throw LIBRPA_RUNTIME_ERROR("spectral-function MPI file offset overflow: " + label);
+    return offset + static_cast<MPI_Offset>(bytes);
+}
+
+static MPI_Offset values_offset(const MPI_Offset section_offset,
+                                const std::size_t value_index,
+                                const std::string &label)
+{
+    const auto bytes = checked_mul_size(value_index, sizeof(double), label);
+    return checked_add_offset(section_offset, bytes, label);
+}
+
+struct SpectralFunctionBinaryLayout
+{
+    MPI_Offset eigenvalues = 0;
+    MPI_Offset vxc = 0;
+    MPI_Offset vexx = 0;
+    MPI_Offset omegas = 0;
+    MPI_Offset spectral = 0;
+    MPI_Offset sigc_re = 0;
+    MPI_Offset sigc_im = 0;
+    MPI_Offset file_size = 0;
+};
+
+static SpectralFunctionBinaryLayout make_spectral_binary_layout(
+    const int n_spins,
+    const int n_kpoints,
+    const int n_states,
+    const int n_omegas)
+{
+    if (n_spins <= 0 || n_kpoints <= 0 || n_states <= 0 || n_omegas <= 0)
+        throw LIBRPA_RUNTIME_ERROR("invalid spectral-function output dimensions");
+
+    SpectralFunctionBinaryLayout layout;
+
+    const auto nk_spin = checked_mul_size(
+        static_cast<std::size_t>(n_spins), static_cast<std::size_t>(n_kpoints),
+        "spin-k section");
+    const auto n_state_values = checked_mul_size(
+        nk_spin, static_cast<std::size_t>(n_states), "state section");
+    const auto n_spectral_values = checked_mul_size(
+        n_state_values, static_cast<std::size_t>(n_omegas), "spectral section");
+
+    const auto state_bytes =
+        checked_mul_size(n_state_values, sizeof(double), "state bytes");
+    const auto omega_bytes =
+        checked_mul_size(static_cast<std::size_t>(n_omegas), sizeof(double),
+                         "omega bytes");
+    const auto spectral_bytes =
+        checked_mul_size(n_spectral_values, sizeof(double), "spectral bytes");
+
+    MPI_Offset offset = 5 * static_cast<MPI_Offset>(sizeof(std::int32_t))
+        + static_cast<MPI_Offset>(sizeof(double));
+    layout.eigenvalues = offset;
+    offset = checked_add_offset(offset, state_bytes, "eigenvalue section");
+    layout.vxc = offset;
+    offset = checked_add_offset(offset, state_bytes, "vxc section");
+    layout.vexx = offset;
+    offset = checked_add_offset(offset, state_bytes, "vexx section");
+    layout.omegas = offset;
+    offset = checked_add_offset(offset, omega_bytes, "omega section");
+    layout.spectral = offset;
+    offset = checked_add_offset(offset, spectral_bytes, "spectral section");
+    layout.sigc_re = offset;
+    offset = checked_add_offset(offset, spectral_bytes, "ReSigc section");
+    layout.sigc_im = offset;
+    offset = checked_add_offset(offset, spectral_bytes, "ImSigc section");
+    layout.file_size = offset;
+    return layout;
+}
+
+static void mpi_file_write_exact(MPI_File file,
+                                 MPI_Offset offset,
+                                 const void *buffer,
+                                 std::size_t nbytes,
+                                 const std::string &label)
+{
+    constexpr std::size_t chunk_bytes = 64ULL * 1024ULL * 1024ULL;
+    const char *ptr = static_cast<const char *>(buffer);
+    while (nbytes > 0)
+    {
+        const int chunk =
+            static_cast<int>(std::min(chunk_bytes, nbytes));
+        const int ierr = MPI_File_write_at(file, offset, const_cast<char *>(ptr),
+                                           chunk, MPI_BYTE, MPI_STATUS_IGNORE);
+        if (ierr != MPI_SUCCESS)
+            throw LIBRPA_RUNTIME_ERROR("MPI write failed for spectral-function " + label);
+        offset += static_cast<MPI_Offset>(chunk);
+        ptr += chunk;
+        nbytes -= static_cast<std::size_t>(chunk);
+    }
+}
+
+template <typename T>
+static void mpi_file_write_value(MPI_File file,
+                                 MPI_Offset &offset,
+                                 const T &value,
+                                 const std::string &label)
+{
+    mpi_file_write_exact(file, offset, &value, sizeof(T), label);
+    offset += static_cast<MPI_Offset>(sizeof(T));
+}
+
+static void validate_spectral_local_buffers(
+    const librpa::G0W0SpectralFunctionResult &sf,
+    const std::vector<double> &vxc,
+    const std::vector<double> &vexx,
+    const std::vector<int> &iks,
+    const int n_spins,
+    const int n_kpoints_global,
+    const int n_states,
+    const int n_omegas)
+{
+    const int n_kpoints_local = static_cast<int>(iks.size());
+    const auto n_local_expected =
+        checked_mul_size(
+            checked_mul_size(
+                checked_mul_size(static_cast<std::size_t>(n_spins),
+                                 static_cast<std::size_t>(n_kpoints_local),
+                                 "local spin-k section"),
+                static_cast<std::size_t>(n_states), "local state section"),
+            static_cast<std::size_t>(n_omegas), "local spectral section");
+    const auto n_state_expected =
+        checked_mul_size(
+            checked_mul_size(static_cast<std::size_t>(n_spins),
+                             static_cast<std::size_t>(n_kpoints_local),
+                             "local spin-k state section"),
+            static_cast<std::size_t>(n_states), "local state values");
+
+    if (vxc.size() != n_state_expected || vexx.size() != n_state_expected)
+        throw LIBRPA_RUNTIME_ERROR("invalid local spectral state-value buffer size");
+    if (sf.spectral_function.size() != n_local_expected
+        || sf.sigc.size() != n_local_expected)
+        throw LIBRPA_RUNTIME_ERROR("invalid local spectral-function buffer size");
+    for (const int ik : iks)
+        if (ik < 0 || ik >= n_kpoints_global)
+            throw LIBRPA_RUNTIME_ERROR("spectral-function k-point index out of range");
+}
+
+template <typename LocalValue>
+static void write_mpi_state_section(MPI_File file,
+                                    const MPI_Offset section_offset,
+                                    const std::vector<int> &iks,
+                                    const int n_spins,
+                                    const int n_kpoints_global,
+                                    const int n_states,
+                                    LocalValue local_value,
+                                    const std::string &label)
+{
+    const int n_kpoints_local = static_cast<int>(iks.size());
+    std::vector<double> row(n_states);
+    for (int isp = 0; isp != n_spins; ++isp)
+    {
+        for (int ik_local = 0; ik_local != n_kpoints_local; ++ik_local)
+        {
+            const int ik = iks[ik_local];
+            for (int ist = 0; ist != n_states; ++ist)
+            {
+                const auto idx_local =
+                    (static_cast<std::size_t>(isp) * n_kpoints_local + ik_local)
+                    * n_states + ist;
+                row[ist] = local_value(idx_local, isp, ik, ist);
+            }
+
+            const auto idx_global =
+                (static_cast<std::size_t>(isp) * n_kpoints_global + ik) * n_states;
+            mpi_file_write_exact(
+                file, values_offset(section_offset, idx_global, label),
+                row.data(), row.size() * sizeof(double), label);
+        }
+    }
+}
+
+template <typename LocalValue>
+static void write_mpi_spectral_section(MPI_File file,
+                                       const MPI_Offset section_offset,
+                                       const std::vector<int> &iks,
+                                       const int n_spins,
+                                       const int n_kpoints_global,
+                                       const int n_states,
+                                       const int n_omegas,
+                                       LocalValue local_value,
+                                       const std::string &label)
+{
+    const int n_kpoints_local = static_cast<int>(iks.size());
+    std::vector<double> row(n_omegas);
+    for (int isp = 0; isp != n_spins; ++isp)
+    {
+        for (int ik_local = 0; ik_local != n_kpoints_local; ++ik_local)
+        {
+            const int ik = iks[ik_local];
+            for (int ist = 0; ist != n_states; ++ist)
+            {
+                const auto row_local =
+                    ((static_cast<std::size_t>(isp) * n_kpoints_local + ik_local)
+                     * n_states + ist) * n_omegas;
+                for (int iomega = 0; iomega != n_omegas; ++iomega)
+                    row[iomega] = local_value(row_local + iomega);
+
+                const auto row_global =
+                    ((static_cast<std::size_t>(isp) * n_kpoints_global + ik)
+                     * n_states + ist) * n_omegas;
+                mpi_file_write_exact(
+                    file, values_offset(section_offset, row_global, label),
+                    row.data(), row.size() * sizeof(double), label);
+            }
+        }
+    }
+}
+
+static void write_spectral_function_binary_kdistributed(
+    const std::string &output_dir,
+    const std::string &filename,
+    const std::vector<double> &omegas_ha,
+    const librpa::G0W0SpectralFunctionResult &sf,
+    const librpa_int::MeanField &mf,
+    const std::vector<double> &vxc,
+    const std::vector<double> &vexx,
+    const std::vector<int> &iks,
+    const int n_spins,
+    const int n_kpoints_global,
+    const int i_state_low,
+    const int i_state_high)
+{
+    const int n_states = i_state_high - i_state_low;
+    if (omegas_ha.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        throw LIBRPA_RUNTIME_ERROR("too many spectral-function frequency points");
+    const int n_omegas = static_cast<int>(omegas_ha.size());
+
+    std::string local_error;
+    int input_ok_local = 1;
+    try
+    {
+        make_spectral_binary_layout(n_spins, n_kpoints_global, n_states, n_omegas);
+        validate_spectral_local_buffers(
+            sf, vxc, vexx, iks, n_spins, n_kpoints_global, n_states, n_omegas);
+    }
+    catch (const std::exception &err)
+    {
+        input_ok_local = 0;
+        local_error = err.what();
+    }
+    int input_ok = 0;
+    librpa_int::global::mpi_comm_global_h.allreduce(
+        &input_ok_local, &input_ok, 1, MPI_MIN);
+    if (!input_ok)
+    {
+        if (local_error.empty())
+            local_error = "invalid spectral-function MPI output input on another rank";
+        throw LIBRPA_RUNTIME_ERROR(local_error);
+    }
+
+    const auto layout =
+        make_spectral_binary_layout(n_spins, n_kpoints_global, n_states, n_omegas);
+    const auto path = librpa_int::join_path(output_dir, filename);
+
+    std::string mkdir_error;
+    int output_ready_local = 1;
+    if (librpa_int::global::myid_global == 0)
+    {
+        try
+        {
+            librpa_int::create_directories(output_dir.c_str(), 0);
+        }
+        catch (const std::exception &err)
+        {
+            output_ready_local = 0;
+            mkdir_error = err.what();
+        }
+    }
+    int output_ready = 0;
+    librpa_int::global::mpi_comm_global_h.allreduce(
+        &output_ready_local, &output_ready, 1, MPI_MIN);
+    if (!output_ready)
+    {
+        if (librpa_int::global::myid_global == 0)
+            throw LIBRPA_RUNTIME_ERROR(mkdir_error);
+        throw LIBRPA_RUNTIME_ERROR("Failed to prepare spectral-function output directory");
+    }
+    librpa_int::global::mpi_comm_global_h.barrier();
+
+    MPI_File file = MPI_FILE_NULL;
+    int ierr = MPI_File_open(
+        librpa_int::global::mpi_comm_global_h.comm, path.c_str(),
+        MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
+    if (ierr != MPI_SUCCESS)
+        throw LIBRPA_RUNTIME_ERROR("Failed to open spectral-function MPI output file " + path);
+
+    ierr = MPI_File_set_size(file, layout.file_size);
+    if (ierr != MPI_SUCCESS)
+        throw LIBRPA_RUNTIME_ERROR("Failed to size spectral-function MPI output file " + path);
+
+    if (librpa_int::global::myid_global == 0)
+    {
+        MPI_Offset header_offset = 0;
+        mpi_file_write_value(file, header_offset,
+                             static_cast<std::int32_t>(n_spins), "n_spins");
+        mpi_file_write_value(file, header_offset,
+                             static_cast<std::int32_t>(n_kpoints_global), "n_kpoints");
+        mpi_file_write_value(file, header_offset,
+                             static_cast<std::int32_t>(i_state_low), "i_state_low");
+        mpi_file_write_value(file, header_offset,
+                             static_cast<std::int32_t>(i_state_high), "i_state_high");
+        const double efermi_ev = mf.get_efermi() * librpa_int::HA2EV;
+        mpi_file_write_value(file, header_offset, efermi_ev, "efermi");
+        mpi_file_write_value(file, header_offset,
+                             static_cast<std::int32_t>(n_omegas), "n_omegas");
+
+        std::vector<double> omega_values(n_omegas);
+        for (int iomega = 0; iomega != n_omegas; ++iomega)
+            omega_values[iomega] = omegas_ha[iomega] * librpa_int::HA2EV;
+        mpi_file_write_exact(file, layout.omegas, omega_values.data(),
+                             omega_values.size() * sizeof(double), "omega grid");
+    }
+
+    write_mpi_state_section(
+        file, layout.eigenvalues, iks, n_spins, n_kpoints_global, n_states,
+        [&](const std::size_t, const int isp, const int ik, const int ist)
+        {
+            const int i_state = i_state_low + ist;
+            return mf.get_eigenvals()[isp](ik, i_state) * librpa_int::HA2EV;
+        },
+        "eigenvalue section");
+    write_mpi_state_section(
+        file, layout.vxc, iks, n_spins, n_kpoints_global, n_states,
+        [&](const std::size_t idx_local, const int, const int, const int)
+        {
+            return vxc[idx_local] * librpa_int::HA2EV;
+        },
+        "vxc section");
+    write_mpi_state_section(
+        file, layout.vexx, iks, n_spins, n_kpoints_global, n_states,
+        [&](const std::size_t idx_local, const int, const int, const int)
+        {
+            return vexx[idx_local] * librpa_int::HA2EV;
+        },
+        "vexx section");
+    write_mpi_spectral_section(
+        file, layout.spectral, iks, n_spins, n_kpoints_global, n_states, n_omegas,
+        [&](const std::size_t idx)
+        {
+            return sf.spectral_function[idx] / librpa_int::HA2EV;
+        },
+        "spectral section");
+    write_mpi_spectral_section(
+        file, layout.sigc_re, iks, n_spins, n_kpoints_global, n_states, n_omegas,
+        [&](const std::size_t idx)
+        {
+            return sf.sigc[idx].real() * librpa_int::HA2EV;
+        },
+        "ReSigc section");
+    write_mpi_spectral_section(
+        file, layout.sigc_im, iks, n_spins, n_kpoints_global, n_states, n_omegas,
+        [&](const std::size_t idx)
+        {
+            return sf.sigc[idx].imag() * librpa_int::HA2EV;
+        },
+        "ImSigc section");
+
+    ierr = MPI_File_close(&file);
+    if (ierr != MPI_SUCCESS)
+        throw LIBRPA_RUNTIME_ERROR("Failed to close spectral-function MPI output file " + path);
+}
+
 void driver::task_g0w0()
 {
     using std::cout;
@@ -280,11 +661,20 @@ void driver::task_g0w0()
             const auto sf = h.get_g0w0_spectral_function_with_sigc_kgrid(
                 opts, n_spins, iks_eigvec_this, sf_state_low, sf_state_high,
                 omegas_sf, vxc_sf, vexx_sf);
-            if (myid_global == 0)
+            if (driver::get_bool(opts.use_kpara_scf_eigvec))
+            {
+                write_spectral_function_binary_kdistributed(
+                    opts.output_dir, "spectral_function_kgrid.dat", omegas_sf, sf,
+                    pds->mf, vxc_sf, vexx_sf, iks_eigvec_this, n_spins,
+                    n_kpoints, sf_state_low, sf_state_high);
+            }
+            else if (myid_global == 0)
+            {
                 write_spectral_function_binary(
                     opts.output_dir, "spectral_function_kgrid.dat", omegas_sf, sf,
                     pds->mf, vxc_sf, vexx_sf, iks_eigvec_this, n_spins,
                     sf_state_low, sf_state_high);
+            }
         }
 
         if (!opts.use_kpara_scf_eigvec)
@@ -520,11 +910,20 @@ void driver::task_g0w0()
             const auto sf = h.get_g0w0_spectral_function_with_sigc_band_k(
                 opts, n_spins, iks_this, sf_state_low, sf_state_high,
                 omegas_sf, vxc_sf, vexx_sf);
-            if (myid_global == 0)
+            if (driver::get_bool(opts.use_kpara_scf_eigvec))
+            {
+                write_spectral_function_binary_kdistributed(
+                    opts.output_dir, "spectral_function_band.dat", omegas_sf, sf,
+                    pds->mf_band, vxc_sf, vexx_sf, iks_this, n_spins,
+                    n_kpoints_band, sf_state_low, sf_state_high);
+            }
+            else if (myid_global == 0)
+            {
                 write_spectral_function_binary(
                     opts.output_dir, "spectral_function_band.dat", omegas_sf, sf,
                     pds->mf_band, vxc_sf, vexx_sf, iks_this, n_spins,
                     sf_state_low, sf_state_high);
+            }
         }
 
         profiler.start("collect_exx_sigc_band");
