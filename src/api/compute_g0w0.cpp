@@ -653,6 +653,17 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
 
     // Prepare time-frequency grids
     initialize_ds_tfgrids(*pds, opts);
+    if (opts.replace_w_head == LIBRPA_SWITCH_ON && opts.option_dielect_func == 0
+        && !pds->epsmacs_imagfreq.empty()
+        && pds->epsmacs_imagfreq.size() != pds->tfg.get_freq_nodes().size())
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "option_dielect_func=0 requires dielectric function data on the current "
+            "frequency grid: got " + std::to_string(pds->epsmacs_imagfreq.size()) +
+            " input points for " + std::to_string(pds->tfg.get_freq_nodes().size()) +
+            " target points. Regenerate dielecfunc_out for this grid or set "
+            "option_dielect_func to an interpolation/fitting mode.");
+    }
 
     // Decide actual routing
     LibrpaParallelRouting routing = opts.parallel_routing;
