@@ -218,7 +218,6 @@ void parse_inputfile_to_params(const std::string &fn)
     _parse_string(driver_params, prefix_shrink_sinvS);
     _parse_string(driver_params, prefix_coul_full);
     _parse_string(driver_params, prefix_coul_cut);
-    _parse_string(driver_params, legacy_coulomb_layout);
     _parse_string(driver_params, prefix_eigvecs_scf);
     _parse_string(driver_params, fn_stru);
     _parse_string(driver_params, fn_basis);
