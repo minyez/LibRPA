@@ -480,14 +480,12 @@
                 comparison="cmp_float.abs_diff(1e-5)"
       />
       <validate name="QSGW Vc iter-1 matrix"
-                file="Vc_all_spin0_kpt0.mm"
-                headers="5"
-                comparison="cmp_table.abs_diff(1e-7)"
+                file="librpa/librpa.d/qsgw_dump/Vc_all_spin0_kpt0.mm"
+                comparison="cmp_mtx.abs_diff(1e-7)"
       />
       <validate name="QSGW H0 iter-1 matrix"
-                file="H0_GW_all_spin0_kpt0.mm"
-                headers="5"
-                comparison="cmp_table.abs_diff(1e-7)"
+                file="librpa/librpa.d/qsgw_dump/H0_GW_all_spin0_kpt0.mm"
+                comparison="cmp_mtx.abs_diff(1e-7)"
       />
     </testcase>
   </group>
