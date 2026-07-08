@@ -192,6 +192,8 @@ module librpa_f03
       logical :: use_shrink_chi
       !> Number of parameters for analytic continuation.
       integer :: n_params_anacon
+      !> Parameters for the source-grid Pade used to resample GW analytic continuation.
+      integer :: n_params_anacon_resample
       !> Optional GW analytic-continuation frequency grid type; unset uses original grid.
       integer :: anacon_tfgrids_type
       !> Optional number of points for GW analytic-continuation frequency grid.

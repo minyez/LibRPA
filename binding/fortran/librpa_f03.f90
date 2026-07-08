@@ -189,6 +189,7 @@ module librpa_f03
 
       ! GW specific
       integer(c_int) :: n_params_anacon
+      integer(c_int) :: n_params_anacon_resample
       integer(c_int) :: anacon_tfgrids_type
       integer(c_int) :: anacon_nfreq
       integer(c_int) :: option_qpe_solver
@@ -308,6 +309,8 @@ module librpa_f03
       logical :: use_shrink_chi
       !> Number of parameters for analytic continuation.
       integer :: n_params_anacon
+      !> Parameters for the source-grid Pade used to resample GW analytic continuation.
+      integer :: n_params_anacon_resample
       !> Optional GW analytic-continuation frequency grid type; unset uses original grid.
       integer :: anacon_tfgrids_type
       !> Optional number of points for GW analytic-continuation frequency grid.
@@ -1146,6 +1149,7 @@ contains
       call sync_opt(opts%use_shrink_abfs,         opts%opts_c%use_shrink_abfs,         direction)
       call sync_opt(opts%use_shrink_chi,          opts%opts_c%use_shrink_chi,          direction)
       call sync_opt(opts%n_params_anacon,         opts%opts_c%n_params_anacon,         direction)
+      call sync_opt(opts%n_params_anacon_resample, opts%opts_c%n_params_anacon_resample, direction)
       call sync_opt(opts%anacon_tfgrids_type,     opts%opts_c%anacon_tfgrids_type,     direction)
       call sync_opt(opts%anacon_nfreq,            opts%opts_c%anacon_nfreq,            direction)
       call sync_opt(opts%option_qpe_solver,       opts%opts_c%option_qpe_solver,       direction)

@@ -243,6 +243,11 @@ void parse_inputfile_to_params(const std::string &fn)
 
     // GW specific
     _parse_int(opts, n_params_anacon);
+    _parse_int(opts, n_params_anacon_resample);
+    if (opts.n_params_anacon == 0)
+        throw std::runtime_error("n_params_anacon must not be zero");
+    if (opts.n_params_anacon_resample == 0)
+        throw std::runtime_error("n_params_anacon_resample must not be zero");
     _parse_string_post(opts, anacon_tfgrids_type, get_tfgrid_type);
     _parse_int(opts, anacon_nfreq);
     if (opts.anacon_nfreq == 0)

@@ -275,6 +275,17 @@ typedef struct
     //! -1 (uses all `nfreq` data)
     int n_params_anacon;
 
+    //! Number of parameters for the source-grid Pade used to resample GW analytic continuation.
+    //! Negative values use `n_params_anacon`.
+    //! This parameter only works when resampling imaginary-frequency grids is enabled via
+    //! a different frequency grids type (`anacon_tfgrids_type`) or number of grids points (`anacon_nfreq`)
+    //! from the direct evaluation of \f$\Sigma_c(i\omega)\f$.
+    //! @par Default
+    //! -1
+    //! @par Status
+    //! Experimental
+    int n_params_anacon_resample;
+
     //! Type of optional frequency grid used for GW analytic continuation.
     /*!
      * When unset and `anacon_nfreq` does not request a different grid size,

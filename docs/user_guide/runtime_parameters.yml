@@ -122,6 +122,7 @@ blocks:
   - heading: GW
     fields:
       - api.n_params_anacon
+      - api.n_params_anacon_resample
       - api.anacon_tfgrids_type
       - api.anacon_nfreq
       - api.option_qpe_solver

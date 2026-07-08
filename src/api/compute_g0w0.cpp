@@ -153,23 +153,40 @@ GwAnaconGrid make_gw_anacon_grid(
     return {make_imagfreqs(freq_nodes), true};
 }
 
+int gw_anacon_resample_n_params(const LibrpaOptions &opts)
+{
+    return opts.n_params_anacon_resample < 0
+               ? opts.n_params_anacon
+               : opts.n_params_anacon_resample;
+}
+
 librpa_int::AnalyContPade make_gw_anacon_pade(
     const int n_params_anacon,
+    const int n_params_anacon_resample,
     const std::vector<librpa_int::cplxdb> &source_imagfreqs,
     const std::vector<librpa_int::cplxdb> &source_data,
     const GwAnaconGrid &anacon_grid)
 {
-    librpa_int::AnalyContPade pade(n_params_anacon, source_imagfreqs, source_data);
+    if (n_params_anacon == 0)
+    {
+        throw LIBRPA_RUNTIME_ERROR("n_params_anacon must not be zero");
+    }
     if (!anacon_grid.resample)
     {
-        return pade;
+        return librpa_int::AnalyContPade(n_params_anacon, source_imagfreqs, source_data);
+    }
+    if (n_params_anacon_resample == 0)
+    {
+        throw LIBRPA_RUNTIME_ERROR("n_params_anacon_resample must not be zero");
     }
 
+    librpa_int::AnalyContPade source_pade(
+        n_params_anacon_resample, source_imagfreqs, source_data);
     std::vector<librpa_int::cplxdb> data;
     data.reserve(anacon_grid.imagfreqs.size());
     for (const auto &freq: anacon_grid.imagfreqs)
     {
-        data.emplace_back(pade.get(freq));
+        data.emplace_back(source_pade.get(freq));
     }
     return librpa_int::AnalyContPade(n_params_anacon, anacon_grid.imagfreqs, data);
 }
@@ -245,7 +262,8 @@ std::vector<double> compute_hedin_shifts(
                 const auto sigc_ref_state = extract_sigc_state(
                     sigc_diag, isp, ik_collect, i_ref, nk_collect, nfreq, n_states_calc);
                 const auto pade = make_gw_anacon_pade(
-                    opts.n_params_anacon, imagfreqs, sigc_ref_state, anacon_grid);
+                    opts.n_params_anacon, gw_anacon_resample_n_params(opts),
+                    imagfreqs, sigc_ref_state, anacon_grid);
                 const auto sigc_ref = pade.get(librpa_int::cplxdb{
                     mf.get_eigenvals()[isp](ik, state_ref) - mf.get_efermi(), 0.0});
                 return sigc_ref.real() + vexx[ref_idx] - vxc[ref_idx];
@@ -305,6 +323,7 @@ void validate_spectral_function_inputs(const int n_omegas, const double *omegas,
 
 void evaluate_spectral_function_diagonal(
     const librpa_int::MeanField &mf, const int n_params_anacon,
+    const int n_params_anacon_resample,
     const std::vector<librpa_int::cplxdb> &sigc_diag,
     const std::vector<int> &iks_collect, const std::vector<double> &freq_nodes,
     const std::vector<librpa_int::cplxdb> &imagfreqs,
@@ -337,7 +356,8 @@ void evaluate_spectral_function_diagonal(
                 const auto sigc_state = extract_sigc_state(
                     sigc_diag, isp, ik_collect, i, nk_collect, nfreq, n_states_calc);
                 const auto pade = make_gw_anacon_pade(
-                    n_params_anacon, imagfreqs, sigc_state, anacon_grid);
+                    n_params_anacon, n_params_anacon_resample,
+                    imagfreqs, sigc_state, anacon_grid);
                 for (int iomega = 0; iomega != n_omegas; ++iomega)
                 {
                     const auto omega_gf = real_omegas[iomega]
@@ -963,7 +983,8 @@ void librpa_get_g0w0_qpe_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, co
                 sigc_im[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 eqp[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 const auto pade = make_gw_anacon_pade(
-                    opts.n_params_anacon, imagfreqs, sigc_state, anacon_grid);
+                    opts.n_params_anacon, gw_anacon_resample_n_params(opts),
+                    imagfreqs, sigc_state, anacon_grid);
                 int flag_qpe_solver = solve_qpe_with_option(
                     option_qpe_solver, pade, eks_state, efermi + hedin_shifts[start_k+i],
                     vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
@@ -1060,8 +1081,8 @@ void librpa_get_g0w0_spectral_function_kgrid(
 
     profiler.start("g0w0_spectral_function", "Compute spectral function");
     evaluate_spectral_function_diagonal(
-        pds->mf, opts.n_params_anacon, sigc_diag, iks_collect, freq_nodes,
-        imagfreqs, anacon_grid,
+        pds->mf, opts.n_params_anacon, gw_anacon_resample_n_params(opts),
+        sigc_diag, iks_collect, freq_nodes, imagfreqs, anacon_grid,
         n_spins, n_kpts_this, iks_this, i_state_low, n_states_calc, n_omegas,
         omegas, vxc, vexx, opts.sf_sigc_omega_shift, opts.sf_gf_omega_shift,
         spectral_function, sigc);
@@ -1177,7 +1198,8 @@ void librpa_get_g0w0_qpe_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, c
                 sigc_band_im[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 eqp_band[start_k+i] = std::numeric_limits<double>::quiet_NaN();
                 const auto pade = make_gw_anacon_pade(
-                    opts.n_params_anacon, imagfreqs, sigc_state, anacon_grid);
+                    opts.n_params_anacon, gw_anacon_resample_n_params(opts),
+                    imagfreqs, sigc_state, anacon_grid);
                 int flag_qpe_solver = solve_qpe_with_option(
                     option_qpe_solver, pade, eks_state, efermi + hedin_shifts[start_k+i],
                     vxc_state, exx_state, e_qp, sigc, diff_init, thres_qpe,
@@ -1284,8 +1306,8 @@ void librpa_get_g0w0_spectral_function_band_k(
 
     profiler.start("g0w0_spectral_function", "Compute spectral function");
     evaluate_spectral_function_diagonal(
-        pds->mf_band, opts.n_params_anacon, sigc_diag, iks_collect, freq_nodes,
-        imagfreqs, anacon_grid,
+        pds->mf_band, opts.n_params_anacon, gw_anacon_resample_n_params(opts),
+        sigc_diag, iks_collect, freq_nodes, imagfreqs, anacon_grid,
         n_spins, n_kpts_band_this, iks_band_this, i_state_low, n_states_calc,
         n_omegas, omegas, vxc_band, vexx_band, opts.sf_sigc_omega_shift,
         opts.sf_gf_omega_shift, spectral_function_band, sigc_band);
