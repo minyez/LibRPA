@@ -9,6 +9,12 @@ class TestCmpFloat(unittest.TestCase):
         compare = cmp_float.abs_diff(1e-4, **kwargs)
         return compare({"librpa.out": values1}, {"librpa.out": values2})
 
+    def test_no_extracted_files_fails(self):
+        compare = cmp_float.abs_diff(1e-4)
+        passed, msg = compare({}, {})
+        self.assertFalse(passed)
+        self.assertIn("no files found", msg)
+
     def test_values_within_tolerance_pass(self):
         passed, _ = self._compare(["1.00001"], ["1.00002"])
         self.assertTrue(passed)

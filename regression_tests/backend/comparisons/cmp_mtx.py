@@ -18,6 +18,9 @@ def abs_diff(tolerance, precision=3, comments=False):
         nentries = 0
 
         fns = set([*fnobj1.keys(), *fnobj2.keys()])
+        if not fns:
+            return False, "no files found"
+
         for fn in fns:
             try:
                 matrices1 = _as_matrices(fnobj1[fn])
@@ -25,6 +28,8 @@ def abs_diff(tolerance, precision=3, comments=False):
             except KeyError:
                 return False, "missing file {}".format(fn)
 
+            if len(matrices1) == 0 and len(matrices2) == 0:
+                return False, "no matrices found in {}".format(fn)
             if len(matrices1) != len(matrices2):
                 return False, "matrix count mismatch in {}: {} != {}".format(
                     fn, len(matrices1), len(matrices2)

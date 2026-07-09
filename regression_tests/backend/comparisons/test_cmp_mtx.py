@@ -10,12 +10,32 @@ REAL_MTX = """%%MatrixMarket matrix coordinate real general
 1 2 1.0
 """
 
+ZERO_MTX = """%%MatrixMarket matrix coordinate real general
+2 3 0
+"""
+
 
 class TestCmpMtx(unittest.TestCase):
 
     def _compare(self, matrix1, matrix2, **kwargs):
         compare = cmp_mtx.abs_diff(1e-4, **kwargs)
         return compare({"matrix.mtx": matrix1}, {"matrix.mtx": matrix2})
+
+    def test_no_extracted_files_fails(self):
+        compare = cmp_mtx.abs_diff(1e-4)
+        passed, msg = compare({}, {})
+        self.assertFalse(passed)
+        self.assertIn("no files found", msg)
+
+    def test_no_extracted_matrices_fails(self):
+        compare = cmp_mtx.abs_diff(1e-4)
+        passed, msg = compare({"matrix.mtx": []}, {"matrix.mtx": []})
+        self.assertFalse(passed)
+        self.assertIn("no matrices found", msg)
+
+    def test_zero_entry_matrix_passes(self):
+        passed, _ = self._compare(ZERO_MTX, ZERO_MTX)
+        self.assertTrue(passed)
 
     def test_coordinate_order_does_not_matter(self):
         reordered = """%%MatrixMarket matrix coordinate real general

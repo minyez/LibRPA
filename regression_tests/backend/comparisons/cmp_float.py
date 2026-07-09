@@ -19,6 +19,9 @@ def abs_diff(tolerance, precision=3):
         diff = 0.0
         diff_loc = None
         fns = set([*fnobj1.keys(), *fnobj2.keys()])
+        if not fns:
+            return False, "no files found"
+
         for fn in fns:
             try:
                 objs1 = _as_objects(fnobj1[fn])

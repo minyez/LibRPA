@@ -26,6 +26,9 @@ def abs_diff(tolerance, precision=3, columns="all"):
         nrows = 0
 
         fns = set([*fnobj1.keys(), *fnobj2.keys()])
+        if not fns:
+            return False, "no files found"
+
         for fn in fns:
             try:
                 tables1 = _as_tables(fnobj1[fn])
@@ -33,6 +36,8 @@ def abs_diff(tolerance, precision=3, columns="all"):
             except KeyError:
                 return False, "missing file {}".format(fn)
 
+            if len(tables1) == 0 and len(tables2) == 0:
+                return False, "no tables found in {}".format(fn)
             if len(tables1) != len(tables2):
                 return False, "table count mismatch in {}: {} != {}".format(
                     fn, len(tables1), len(tables2)
@@ -43,7 +48,12 @@ def abs_diff(tolerance, precision=3, columns="all"):
                     return False, "row count mismatch in {} table {}: {} != {}".format(
                         fn, itable, len(table1), len(table2)
                     )
+                if len(table1) == 0:
+                    return False, "no table rows found in {} table {}".format(
+                        fn, itable
+                    )
 
+                ncells = 0
                 for irow, (row1, row2) in enumerate(zip(table1, table2), 1):
                     if len(row1) != len(row2):
                         return False, (
@@ -65,7 +75,12 @@ def abs_diff(tolerance, precision=3, columns="all"):
                         if d > diff:
                             diff = d
                             diff_loc = (fn, itable, irow, icol + 1)
+                        ncells += 1
                     nrows += 1
+                if ncells == 0:
+                    return False, "no table cells compared in {} table {}".format(
+                        fn, itable
+                    )
 
         msg = msg.format(diff, tolerance, nrows)
         if diff_loc is not None:
