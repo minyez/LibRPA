@@ -2891,6 +2891,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         }
         librpa_int::global::lib_printf_root("Computing Wc(q), %d / %d, q=(%f, %f, %f)\n", iq + 1,
                                             qpts.size(), qf.x, qf.y, qf.z);
+        const bool debug_output = global::should_output(LIBRPA_VERBOSE_DEBUG);
         coul_block.zero_out();
         coulwc_block.zero_out();
         // lib_printf("coul_block\n%s", str(coul_block).c_str());
@@ -2972,7 +2973,6 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         librpa_int::global::lib_printf_root("Time to prepare sqrt root of Coulomb for Wc(q) (seconds, Wall/CPU): %f %f\n",
                 global::profiler.get_wall_time_last("epsilon_prepare_coulwc_sqrt"),
                 global::profiler.get_cpu_time_last("epsilon_prepare_coulwc_sqrt"));
-        ofs_myid << get_timestamp() << " Done coulwc sqrt" << endl;
 
         global::profiler.start("epsilon_prepare_couleps_sqrt", "Prepare sqrt of bare Coulomb");
         // collect the block elements of coulomb matrices
@@ -2981,7 +2981,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             std::map<int,
                      std::map<std::pair<int, std::array<double, 3>>, RI::Tensor<complex<double>>>>
                 couleps_libri;
-            ofs_myid << get_timestamp() << " Start build couleps_libri" << endl;
+            if (debug_output) ofs_myid << get_timestamp() << " Start build couleps_libri" << endl;
 
             for (const auto& Mu_coulmat: coulmat_eps)
             {
@@ -2999,13 +2999,14 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 }
             }
 
-            ofs_myid << get_timestamp() << " Done build couleps_libri" << endl;
+            if (debug_output) ofs_myid << get_timestamp() << " Done build couleps_libri" << endl;
             // ofs_myid << "Couleps_libri" << endl << couleps_libri;
             // if (couleps_libri.size() == 0)
             //     throw std::logic_error("data at q-point not found in coulmat_eps");
 
             // perform communication
-            ofs_myid << get_timestamp() << " Start collect couleps_libri, targets" << endl;
+            if (debug_output)
+                ofs_myid << get_timestamp() << " Start collect couleps_libri, targets" << endl;
 #ifdef LIBRPA_DEBUG
             ofs_myid << set_IJ_nabf_nabf << endl;
             ofs_myid << "Extended blocks" << endl;
@@ -3016,16 +3017,20 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             // print_keys(ofs_myid, couleps_libri);
             // comm_h.barrier();
             const auto IJq_coul = RI::Communicate_Tensors_Map_Judge::comm_map2_first(comm_h.comm, couleps_libri, s0_s1.first, s0_s1.second);
-            ofs_myid << get_timestamp() << " Done collect couleps_libri, collected blocks" << endl;
+            if (debug_output)
+                ofs_myid << get_timestamp() << " Done collect couleps_libri, collected blocks"
+                         << endl;
 
-            ofs_myid << get_timestamp() << " Start construct couleps 2D block" << endl;
+            if (debug_output)
+                ofs_myid << get_timestamp() << " Start construct couleps 2D block" << endl;
             collect_block_from_ALL_IJ_Tensor_sparse_zero_missing(
                 temp_block, desc_nabf_nabf, chi0.atbasis_abf, qa, true, C_ONE, IJq_coul,
                 MAJOR::ROW);
             ScalapackConnector::pgemr2d_f(n_abf, n_abf, temp_block.ptr(), 1, 1, desc_nabf_nabf.desc,
                                           coul_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
                                           blacs_h.ictxt);
-            ofs_myid << get_timestamp() << " Done construct couleps 2D block" << endl;
+            if (debug_output)
+                ofs_myid << get_timestamp() << " Done construct couleps 2D block" << endl;
         }
         // char fn[100];
         // sprintf(fn, "couleps_iq_%d.mtx", iq);
@@ -3034,7 +3039,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         // lib_printf("coul_block\n%s", str(coul_block).c_str());
 
         size_t n_singular;
-        ofs_myid << get_timestamp() << " Start power hemat couleps\n";
+        if (debug_output) ofs_myid << get_timestamp() << " Start power hemat couleps\n";
         matrix_m<std::complex<double>> sqrtveig_blacs;
         if (is_gamma_point(q))
         {
@@ -3064,7 +3069,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold, use_gpu_replace_scalapack,
                 use_elpa_sqrt_coulomb, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
         }
-        ofs_myid << get_timestamp() << " Done power hemat couleps\n";
+        if (debug_output) ofs_myid << get_timestamp() << " Done power hemat couleps\n";
         // release sqrtv when the q-point is not Gamma, or macroscopic dielectric constant at
         // imaginary frequency is not prepared
         if (epsmac_LF_imagfreq.empty() || !is_gamma_point(q)) sqrtveig_blacs.clear();
@@ -3073,7 +3078,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         librpa_int::global::lib_printf_root("Time to prepare sqrt root of Coulomb for Epsilon(q) (seconds, Wall/CPU): %f %f\n",
                 global::profiler.get_wall_time_last("epsilon_prepare_couleps_sqrt"),
                 global::profiler.get_cpu_time_last("epsilon_prepare_couleps_sqrt"));
-        ofs_myid << get_timestamp() << " Done couleps sqrt\n";
+        if (debug_output) ofs_myid << get_timestamp() << " Done couleps sqrt\n";
         std::flush(ofs_myid);
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
         if(use_gpu_replace_scalapack)
@@ -3144,7 +3149,8 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                         }
                     }
                     // ofs_myid << "chi0_libri" << endl << chi0_libri;
-                    global::profiler.start("epsilon_prepare_chi0_2d_comm_map2");
+                    global::profiler.start("epsilon_prepare_chi0_2d_comm_map2",
+                                           LIBRPA_VERBOSE_DEBUG);
                     const auto IJq_chi0 = RI::Communicate_Tensors_Map_Judge::comm_map2_first(
                         comm_h.comm, chi0_libri, s0_s1.first, s0_s1.second);
                     global::profiler.stop("epsilon_prepare_chi0_2d_comm_map2");
@@ -3157,7 +3163,8 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     //         chi0_block, desc_nabf_nabf, chi0.atbasis_abf, IJ.first,
                     //         IJ.second, true, CONE, IJq_chi0.at(I).at({J, qa}).ptr(), MAJOR::ROW);
                     // }
-                    global::profiler.start("epsilon_prepare_chi0_2d_collect_block");
+                    global::profiler.start("epsilon_prepare_chi0_2d_collect_block",
+                                           LIBRPA_VERBOSE_DEBUG);
                     collect_block_from_ALL_IJ_Tensor_sparse_zero_missing(
                         temp_block, desc_nabf_nabf, chi0.atbasis_abf, qa, true, C_ONE,
                         IJq_chi0, MAJOR::ROW);
@@ -3206,7 +3213,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 }
                 ofs_myid << get_timestamp() << " Entering dielectric matrix head overwrite" << endl;
 
-                global::profiler.start("epsilon_compute_eps_pgemm_1");
+                global::profiler.start("epsilon_compute_eps_pgemm_1", LIBRPA_VERBOSE_DEBUG);
                 // rotate to Coulomb-eigenvector basis
                 // descending order
                 LaConnector::pgemm(
@@ -3283,7 +3290,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     DEVICE_CHECK(deviceMemcpyAsync(coul_eigen_block_ptr, coul_eigen_block.ptr(), coul_eigen_block.size() * sizeof(complex<double>), deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
                 }
 #endif
-                global::profiler.start("epsilon_compute_eps_pgemm_2");
+                global::profiler.start("epsilon_compute_eps_pgemm_2", LIBRPA_VERBOSE_DEBUG);
                 LaConnector::pgemm('N', 'N', n_abf, n_nonsingular, n_nonsingular, {1.0, 0.0},
                         coul_eigen_block_ptr, 1, 1, desc_nabf_nabf_opt,
                         chi0_block_ptr, 1, 1, desc_nabf_nabf_opt, {0.0, 0.0},
@@ -3311,12 +3318,12 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 }
 #endif
                 profiler.start("epsilon_compute_eps", "Compute dielectric matrix");
-                profiler.start("epsilon_compute_eps_pgemm_1");
+                profiler.start("epsilon_compute_eps_pgemm_1", LIBRPA_VERBOSE_DEBUG);
                 LaConnector::pgemm('N', 'N', n_abf, n_abf, n_abf, {1.0, 0.0}, coul_block_ptr, 1, 1,
                                    desc_nabf_nabf_opt, chi0_block_ptr, 1, 1, desc_nabf_nabf_opt,
                                    {0.0, 0.0}, coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
                 profiler.stop("epsilon_compute_eps_pgemm_1");
-                profiler.start("epsilon_compute_eps_pgemm_2");
+                profiler.start("epsilon_compute_eps_pgemm_2", LIBRPA_VERBOSE_DEBUG);
                 LaConnector::pgemm('N', 'N', n_abf, n_abf, n_abf, {-1.0, 0.0}, coul_chi0_block_ptr,
                                    1, 1, desc_nabf_nabf_opt, coul_block_ptr, 1, 1,
                                    desc_nabf_nabf_opt, {0.0, 0.0}, chi0_block_ptr, 1, 1,
@@ -3365,6 +3372,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             dump_blacs_debug_matrix(debug, output_dir, epsinv_debug_name.str(), chi0_block,
                                     desc_nabf_nabf_opt, "", 1e-10);
 
+            global::profiler.start("epsilon_to_wc");
             if (epsmac_LF_imagfreq.size() > 0 && is_gamma_point(q) && option_dielect_func == 3)
             {
                 // Dielectric matrix is already inverted, only multiply by square root coulwc from both sides
@@ -3376,7 +3384,8 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 }
 #endif
                 LaConnector::pdam(-1.0, chi0_block_ptr, desc_nabf_nabf_opt);
-                global::profiler.start("epsilon_multiply_coulwc", "Multiply truncated Coulomb");
+                global::profiler.start("epsilon_multiply_coulwc_1", "Multiply truncated Coulomb",
+                                      LIBRPA_VERBOSE_DEBUG);
                 LaConnector::pgemm('N', 'N', n_abf, n_abf, n_abf, {1.0, 0.0},
                         coulwc_block_ptr, 1, 1, desc_nabf_nabf_opt,
                         chi0_block_ptr, 1, 1, desc_nabf_nabf_opt, {0.0, 0.0},
@@ -3385,12 +3394,13 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                         coul_chi0_block_ptr, 1, 1, desc_nabf_nabf_opt,
                         coulwc_block_ptr, 1, 1, desc_nabf_nabf_opt, {0.0, 0.0},
                         chi0_block_ptr, 1, 1, desc_nabf_nabf_opt);
-                global::profiler.stop("epsilon_multiply_coulwc");
+                global::profiler.stop("epsilon_multiply_coulwc_1");
             }
             else
             {
                 // Solve epsilon * X = sqrt(Vc), then form sqrt(Vc) * (X - sqrt(Vc)).
-                global::profiler.start("epsilon_solver_coulwc_1", "epsilon_solver_coulwc");
+                global::profiler.start("epsilon_solver_coulwc_1", "epsilon_solver_coulwc",
+                                       LIBRPA_VERBOSE_DEBUG);
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
                 if (use_gpu_replace_scalapack)
                 {
@@ -3418,13 +3428,15 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 LaConnector::axpy(coulwc_block.size(), {-1.0, 0.0}, coulwc_block_ptr, 1, coul_chi0_block_ptr, 1, blacs_h);
                 global::profiler.stop("epsilon_solver_coulwc_1");
 
-                global::profiler.start("epsilon_multiply_coulwc_2", "Multiply truncated Coulomb");
+                global::profiler.start("epsilon_multiply_coulwc_2",
+                                       "Multiply truncated Coulomb", LIBRPA_VERBOSE_DEBUG);
                 LaConnector::pgemm('N', 'N', n_abf, n_abf, n_abf, {1.0, 0.0}, coulwc_block_ptr, 1,
                                    1, desc_nabf_nabf_opt, coul_chi0_block_ptr, 1, 1,
                                    desc_nabf_nabf_opt, {0.0, 0.0}, chi0_block_ptr, 1, 1,
                                    desc_nabf_nabf_opt);
                 global::profiler.stop("epsilon_multiply_coulwc_2");
             }
+            global::profiler.stop("epsilon_to_wc");
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
             if (use_gpu_replace_scalapack)
             {

@@ -1582,7 +1582,8 @@ void G0W0::build_spacetime(
                             }
                             release_free_mem();
                             global::profiler.stop("g0w0_build_spacetime_5");
-                            global::profiler.start("g0w0_build_spacetime_5_clean");
+                            global::profiler.start("g0w0_build_spacetime_5_clean",
+                                                   LIBRPA_VERBOSE_DEBUG);
                             gw_libri_cplx.free_Gs();
                             release_free_mem();
                             global::profiler.stop("g0w0_build_spacetime_5_clean");
@@ -1660,8 +1661,9 @@ void G0W0::build_spacetime(
 	                                        symmetry_sector_stars, this->atbasis_wfc);
 	                            }
 	                            global::profiler.stop("g0w0_build_spacetime_5");
-                            global::profiler.start("g0w0_build_spacetime_5_clean");
+                            global::profiler.start("g0w0_build_spacetime_5_clean", LIBRPA_VERBOSE_DEBUG);
                             gw_libri.free_Gs();
+                            release_free_mem();
                             global::profiler.stop("g0w0_build_spacetime_5_clean");
 
                             // Check size of data

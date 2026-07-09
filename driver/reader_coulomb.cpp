@@ -735,17 +735,20 @@ void read_coulomb_v1_atom_pairs_collected(
 
     const auto block_reads = make_coulomb_v1_block_reads(file, sorted_atom_pairs);
     const auto collected_reads = collect_coulomb_v1_reads(block_reads);
-    MPI_Offset payload_bytes = 0;
-    for (const auto &block: block_reads) payload_bytes += block.nbytes;
-    std::ostringstream payload_mb;
-    payload_mb << std::fixed << std::setprecision(2)
-               << static_cast<double>(payload_bytes) * 1.0e-6;
-    ofs_myid << "read_Vq_row_v1 "
-             << (is_cut_coulomb ? "cut" : "bare")
-             << " collected payload reads for " << file.path
-             << ": blocks=" << block_reads.size()
-             << ", reads=" << collected_reads.size()
-             << ", payload=" << payload_mb.str() << " MB" << std::endl;
+    if (librpa_int::global::should_output(LIBRPA_VERBOSE_DEBUG))
+    {
+        MPI_Offset payload_bytes = 0;
+        for (const auto &block: block_reads) payload_bytes += block.nbytes;
+        std::ostringstream payload_mb;
+        payload_mb << std::fixed << std::setprecision(2)
+                   << static_cast<double>(payload_bytes) * 1.0e-6;
+        ofs_myid << "read_Vq_row_v1 "
+                 << (is_cut_coulomb ? "cut" : "bare")
+                 << " collected payload reads for " << file.path
+                 << ": blocks=" << block_reads.size()
+                 << ", reads=" << collected_reads.size()
+                 << ", payload=" << payload_mb.str() << " MB" << std::endl;
+    }
 
     for (const auto &read: collected_reads)
     {
@@ -862,14 +865,17 @@ size_t read_Vq_row_v1(const string &dir_path, const string &vq_fprefix, double t
 
     const auto sorted_local_atpair = sort_atom_pairs_by_coulomb_v1_order(
         local_atpair, basis_aux.n_atoms);
-    ofs_myid << "read_Vq_row_v1 "
-             << (is_cut_coulomb ? "cut" : "bare")
-             << " local atom-pairs in v1 file order"
-             << " (natoms=" << basis_aux.n_atoms
-             << ", count=" << sorted_local_atpair.size()
-             << "): "
-             << compact_atom_pair_ranges(sorted_local_atpair, basis_aux.n_atoms)
-             << std::endl;
+    if (librpa_int::global::should_output(LIBRPA_VERBOSE_DEBUG))
+    {
+        ofs_myid << "read_Vq_row_v1 "
+                 << (is_cut_coulomb ? "cut" : "bare")
+                 << " local atom-pairs in v1 file order"
+                 << " (natoms=" << basis_aux.n_atoms
+                 << ", count=" << sorted_local_atpair.size()
+                 << "): "
+                 << compact_atom_pair_ranges(sorted_local_atpair, basis_aux.n_atoms)
+                 << std::endl;
+    }
 
     for (const auto &path: files)
     {
