@@ -10,7 +10,6 @@
 #include <functional>
 #include <iomanip>
 #include <map>
-#include <numeric>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -1256,7 +1255,7 @@ void G0W0::build_spacetime(
         Wc_tau_q.clear();
         profiler.stop("g0w0_build_spacetime_ct_ft_wc");
     }
-    else
+    else // !use_atom_pair_Wc
     {
         // Transform from frequency/reciprocal to time/real-space
         profiler.start("g0w0_build_spacetime_ct_ft_wc", "Tranform Wc (q,w) -> (R,t)");
@@ -1316,10 +1315,10 @@ void G0W0::build_spacetime(
         sched.init(map_atpairs_balanced, atbasis_abf, atbasis_abf, ad_Wc, wc_major == MAJOR::ROW);
         for (auto &[tau, map_R_mat]: Wc_tau_R_blacs)
         {
+            profiler.start("g0w0_build_spacetime_prep_Wc_all", "Prepare LibRI Wc object");
             for (auto &[R, mat_blacs]: map_R_mat)
             {
                 auto pair_mat = get_ap_map_from_blacs_dist_scheduler(mat_blacs, sched, atbasis_abf, atbasis_abf, ad_Wc);
-                profiler.start("g0w0_build_spacetime_prep_Wc_all", "Prepare LibRI Wc object");
                 for (auto &[pair, mat_ap]: pair_mat)
                 {
                     const auto &I = as_int(pair.first);
@@ -1334,8 +1333,8 @@ void G0W0::build_spacetime(
                         tau_Wc_libri[tau][I][{J, {R.x, R.y, R.z}}] = RI::Tensor<double>({nabf_I, nabf_J}, mat_ap.get_real().sptr());
                 }
                 mat_blacs.clear();
-                profiler.stop("g0w0_build_spacetime_prep_Wc_all");
             }
+            profiler.stop("g0w0_build_spacetime_prep_Wc_all");
         }
         profiler.stop("g0w0_build_spacetime_ct_ft_wc");
     }
