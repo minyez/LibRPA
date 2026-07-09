@@ -3,6 +3,7 @@
 // Public API headers
 #include "librpa_enums.h"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -14,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "../io/fs.h"
@@ -92,6 +94,37 @@ static int infer_target_n_bands(
         throw LIBRPA_RUNTIME_ERROR("inconsistent target wave-function band counts");
 
     return n_bands_max;
+}
+
+static void add_phase_weighted_sigc_ijk(const Vector3_Order<int> &R_bvk,
+                                        const Vector3_Order<double> &kfrac_ik,
+                                        const double weight,
+                                        const Matz &sigc,
+                                        Matz &sigc_ijk)
+{
+    const auto ang = (kfrac_ik * R_bvk) * TWO_PI;
+    const cplxdb phase{weight * std::cos(ang), weight * std::sin(ang)};
+    auto sigc_weighted = sigc.copy();
+    sigc_weighted *= phase;
+    sigc_ijk += sigc_weighted;
+}
+
+static void add_weighted_sigc_R(std::map<Vector3_Order<int>, Matz> &R_sigc_shift,
+                                const Vector3_Order<int> &R_bvk,
+                                const Matz &sigc,
+                                const double weight)
+{
+    auto sigc_weighted = sigc.copy();
+    sigc_weighted *= weight;
+    const auto it = R_sigc_shift.find(R_bvk);
+    if (it == R_sigc_shift.end())
+    {
+        R_sigc_shift.emplace(R_bvk, std::move(sigc_weighted));
+    }
+    else
+    {
+        it->second += sigc_weighted;
+    }
 }
 
 static std::vector<int> collect_target_iks(
@@ -2225,17 +2258,6 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                     const auto kfrac_ik = kfrac_target[task.ik];
                                     Matz sigc_ijk(task.n_I, task.n_J, MAJOR::ROW);
                                     sigc_ijk.zero_out();
-                                    auto add_sigc_ijk =
-                                        [&](const Vector3_Order<int> &R_bvk, const Matz &sigc,
-                                            const double weight)
-                                    {
-                                        const auto ang = (kfrac_ik * R_bvk) * TWO_PI;
-                                        const complex<double> phase{weight * std::cos(ang),
-                                                                    weight * std::sin(ang)};
-                                        auto sigc_weighted = sigc.copy();
-                                        sigc_weighted *= phase;
-                                        sigc_ijk += sigc_weighted;
-                                    };
 
                                     for (const auto &[R, sigc]: *task.R_sigc)
                                     {
@@ -2243,17 +2265,21 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                         const auto *R_bvks = bvk_remap.find_R_bvk(IJ, R);
                                         if (R_bvks == nullptr || R_bvks->empty())
                                         {
-                                            add_sigc_ijk(R, sigc, 1.0);
+                                            add_phase_weighted_sigc_ijk(
+                                                R, kfrac_ik, 1.0, sigc, sigc_ijk);
                                         }
                                         else if (R_bvks->size() == 1)
                                         {
-                                            add_sigc_ijk(R_bvks->front(), sigc, 1.0);
+                                            add_phase_weighted_sigc_ijk(
+                                                R_bvks->front(), kfrac_ik, 1.0, sigc,
+                                                sigc_ijk);
                                         }
                                         else
                                         {
                                             const auto weight = 1.0 / static_cast<double>(R_bvks->size());
                                             for (const auto &R_bvk: *R_bvks)
-                                                add_sigc_ijk(R_bvk, sigc, weight);
+                                                add_phase_weighted_sigc_ijk(
+                                                    R_bvk, kfrac_ik, weight, sigc, sigc_ijk);
                                         }
                                     }
                                     fourier_results[static_cast<std::size_t>(itask)] = std::move(sigc_ijk);
@@ -2426,14 +2452,6 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                         const auto &sigc_IJ_R =
                             sigc_rotation_source->at(isp).at(ispn_bra).at(ispn_ket).at(freq);
                         sigc_isp_local[freq] = {};
-                        auto add_sigc = [](auto &R_sigc_shift, const Vector3_Order<int> &R_bvk,
-                                           const auto &sigc, const double weight)
-                        {
-                            auto sigc_weighted = sigc.copy();
-                            sigc_weighted *= weight;
-                            auto [it, inserted] = R_sigc_shift.emplace(R_bvk, sigc_weighted);
-                            if (!inserted) it->second += sigc_weighted;
-                        };
 
                         // Convert each <I,<J, R>> pair to the configured BvK counterpart
                         // to speed up later Fourier transform while keeping band interpolation accurate.
@@ -2461,7 +2479,7 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                                     const auto weight = 1.0 / static_cast<double>(R_bvks->size());
                                     for (const auto &R_bvk: *R_bvks)
                                     {
-                                        add_sigc(R_sigc_shift, R_bvk, sigc, weight);
+                                        add_weighted_sigc_R(R_sigc_shift, R_bvk, sigc, weight);
                                     }
                                 }
                             }

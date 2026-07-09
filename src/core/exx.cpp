@@ -1,12 +1,14 @@
 #include "exx.h"
 
 #include <omp.h>
+#include <cmath>
 #include <cstddef>
 #include <fstream>
 #include <iterator>
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "../io/global_io.h"
@@ -53,6 +55,28 @@ static std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
         atom_nw[atom] = atbasis.get_atom_nb(atom);
     }
     return atom_nw;
+}
+
+static void add_phase_weighted_exx_ijk(const Vector3_Order<int>& R_bvk,
+                                       const Vector3_Order<double>& kfrac_ik,
+                                       const double weight,
+                                       Matz exx_weighted,
+                                       Matz& exx_ijk)
+{
+    const auto ang = (kfrac_ik * R_bvk) * TWO_PI;
+    const cplxdb phase{weight * std::cos(ang), weight * std::sin(ang)};
+    exx_weighted *= phase;
+    exx_ijk += exx_weighted;
+}
+
+static Matz make_exx_ijk_complex_block(const Matd& exx)
+{
+    return exx.to_complex();
+}
+
+static Matz make_exx_ijk_complex_block(const Matz& exx)
+{
+    return exx.copy();
 }
 
 static bool use_symmetry_ibz_root_projection(
@@ -1401,45 +1425,30 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                             const auto kfrac_ik = kfrac_target[task.ik];
                             Matz exx_ijk(task.n_I, task.n_J, MAJOR::ROW);
                             exx_ijk.zero_out();
-                            auto add_exx_ijk =
-                                [&](const Vector3_Order<int> &R_bvk, const auto &exx,
-                                    const double weight)
-                            {
-                                auto exx_cplx =
-                                    [&exx]()
-                                {
-                                    using ExxBlock = std::decay_t<decltype(exx)>;
-                                    if constexpr (ExxBlock::is_complex)
-                                        return exx.copy();
-                                    else
-                                        return exx.to_complex();
-                                }();
-                                exx_cplx.swap_major(MAJOR::ROW);
-                                const auto ang = (kfrac_ik * R_bvk) * TWO_PI;
-                                const complex<double> phase{weight * std::cos(ang),
-                                                            weight * std::sin(ang)};
-                                auto exx_weighted = exx_cplx.copy();
-                                exx_weighted *= phase;
-                                exx_ijk += exx_weighted;
-                            };
 
                             for (const auto &[R, exx]: *task.R_exx)
                             {
+                                auto exx_cplx = make_exx_ijk_complex_block(exx);
+                                exx_cplx.swap_major(MAJOR::ROW);
                                 const atpair_t IJ{task.I, task.J};
                                 const auto *R_bvks = bvk_remap.find_R_bvk(IJ, R);
                                 if (R_bvks == nullptr || R_bvks->empty())
                                 {
-                                    add_exx_ijk(R, exx, 1.0);
+                                    add_phase_weighted_exx_ijk(
+                                        R, kfrac_ik, 1.0, std::move(exx_cplx), exx_ijk);
                                 }
                                 else if (R_bvks->size() == 1)
                                 {
-                                    add_exx_ijk(R_bvks->front(), exx, 1.0);
+                                    add_phase_weighted_exx_ijk(
+                                        R_bvks->front(), kfrac_ik, 1.0, std::move(exx_cplx),
+                                        exx_ijk);
                                 }
                                 else
                                 {
                                     const auto weight = 1.0 / static_cast<double>(R_bvks->size());
                                     for (const auto &R_bvk: *R_bvks)
-                                        add_exx_ijk(R_bvk, exx, weight);
+                                        add_phase_weighted_exx_ijk(
+                                            R_bvk, kfrac_ik, weight, exx_cplx.copy(), exx_ijk);
                                 }
                             }
                             fourier_results[static_cast<std::size_t>(itask)] = std::move(exx_ijk);
