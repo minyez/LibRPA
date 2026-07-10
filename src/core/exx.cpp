@@ -47,16 +47,6 @@ using namespace ddla;
 namespace librpa_int
 {
 
-static std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
-{
-    std::map<atom_t, size_t> atom_nw;
-    for (atom_t atom = 0; atom != as_atom(atbasis.n_atoms); ++atom)
-    {
-        atom_nw[atom] = atbasis.get_atom_nb(atom);
-    }
-    return atom_nw;
-}
-
 static void add_phase_weighted_exx_ijk(const Vector3_Order<int>& R_bvk,
                                        const Vector3_Order<double>& kfrac_ik,
                                        const double weight,
@@ -314,7 +304,7 @@ static void build_dmat_libri_kserial(
         const auto &R = IJR.second;
         map_R_IJs[R].push_back(IJR.first);
     }
-    const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const auto atom_nw = atbasis_wfc.get_atom_nb_map();
     const auto wfc_layouts = atbasis_wfc.has_l_shells()
         ? atbasis_wfc.build_species_basis_layouts(symmetry_context.atom_to_type)
         : std::vector<SpeciesBasisLayout>{};
@@ -565,7 +555,7 @@ void Exx::build(const LibrpaParallelRouting routing,
         this->use_symmetry_context
         && symmetry_ctx.available
         && symmetry_species_layouts_match_atom_counts(
-            wfc_layouts, symmetry_ctx.atom_to_type, build_atom_nw_map(atbasis_wfc))
+            wfc_layouts, symmetry_ctx.atom_to_type, atbasis_wfc.get_atom_nb_map())
         && !symmetry_ctx.irreducible_sector.empty()
         && !symmetry_ctx.rspace_sector_stars.empty()
         && !symmetry_ctx.rspace_operations.empty()
@@ -650,7 +640,7 @@ void Exx::build(const LibrpaParallelRouting routing,
     const bool use_input_exx_coulomb_restore =
         use_symmetry_exx
         && symmetry_species_layouts_match_atom_counts(
-            abf_layouts, symmetry_ctx.atom_to_type, build_atom_nw_map(atbasis_abf))
+            abf_layouts, symmetry_ctx.atom_to_type, atbasis_abf.get_atom_nb_map())
         && exx_coulomb_uses_symmetry_irreducible_sector_layout(
             coul_mat, symmetry_ctx, Rlist.size());
     if (use_input_exx_coulomb_restore)

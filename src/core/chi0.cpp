@@ -55,16 +55,6 @@ using std::vector;
 
 constexpr int SHRINK_SCALAPACK_BLOCK_CAP = 2048;
 
-static std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
-{
-    std::map<atom_t, size_t> atom_nw;
-    for (atom_t atom = 0; atom != as_atom(atbasis.n_atoms); ++atom)
-    {
-        atom_nw[atom] = atbasis.get_atom_nb(atom);
-    }
-    return atom_nw;
-}
-
 using Chi0CollectKey = std::pair<int, std::array<int, 3>>;
 using Chi0BlockKey = Chi0CollectKey;
 
@@ -531,7 +521,7 @@ static bool can_use_chi0_rspace_symmetry(
     if (!symmetry_species_layouts_match_atom_counts(
             abf_basis.build_species_basis_layouts(symmetry_ctx.atom_to_type),
             symmetry_ctx.atom_to_type,
-            build_atom_nw_map(abf_basis)))
+            abf_basis.get_atom_nb_map()))
     {
         return false;
     }
@@ -1086,7 +1076,7 @@ static void build_gf_Rt_libri_serial(
     }
     global::ofs_myid << "map_R_IJs " << map_R_IJs << std::endl;
 
-    const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const auto atom_nw = atbasis_wfc.get_atom_nb_map();
     const auto wfc_layouts = atbasis_wfc.has_l_shells()
         ? atbasis_wfc.build_species_basis_layouts(symmetry_context.atom_to_type)
         : std::vector<SpeciesBasisLayout>{};

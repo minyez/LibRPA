@@ -59,6 +59,12 @@ static void test_indexing()
     }
 }
 
+static void test_atom_nb_map()
+{
+    const AtomicBasis ab({4, 2, 8});
+    assert((ab.get_atom_nb_map() == std::map<atom_t, std::size_t>{{0, 4}, {1, 2}, {2, 8}}));
+}
+
 static void test_l_shell_metadata()
 {
     AtomicBasis ab({1, 3, 5});
@@ -207,6 +213,7 @@ int main (int argc, char *argv[])
     test_species_layout();
     test_species_layouts_from_basis();
     test_indexing();
+    test_atom_nb_map();
     test_get_2d_indices();
     test_get_1d_indices();
     return 0;

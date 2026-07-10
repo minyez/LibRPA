@@ -376,8 +376,7 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
     {
         ds.p_headwing->set_symmetry_context(ds.symmetry_context);
         ds.p_headwing->use_symmetry = true;
-        for (int atom = 0; atom != static_cast<int>(ds.basis_wfc.n_atoms); ++atom)
-            ds.p_headwing->atom_nw[atom] = ds.basis_wfc.get_atom_nb(atom);
+        ds.p_headwing->atom_nw = ds.basis_wfc.get_atom_nb_map();
         ds.p_headwing->coord_frac = ds.symmetry_context.input_coord_frac;
     }
     ds.p_headwing->init(opts.sqrt_coulomb_threshold, ds.vq);

@@ -279,16 +279,6 @@ static void read_exact(std::ifstream &ifs, void *dst, const std::streamsize n,
         throw LIBRPA_RUNTIME_ERROR("failed to read SigC checkpoint file: " + fn);
 }
 
-static std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis& atbasis)
-{
-    std::map<atom_t, size_t> atom_nw;
-    for (atom_t atom = 0; atom != as_atom(atbasis.n_atoms); ++atom)
-    {
-        atom_nw[atom] = atbasis.get_atom_nb(atom);
-    }
-    return atom_nw;
-}
-
 static bool use_symmetry_ibz_root_projection(
     const SymmetryContext& ctx,
     const PeriodicBoundaryData& pbc,
@@ -940,7 +930,7 @@ static void build_gf_libri_kserial(
         Rs_local.insert(IJR.second);
     }
     const std::vector<Vector3_Order<int>> Rs_vec{Rs_local.cbegin(), Rs_local.cend()};
-    const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const auto atom_nw = atbasis_wfc.get_atom_nb_map();
     const auto wfc_layouts = atbasis_wfc.has_l_shells()
         ? atbasis_wfc.build_species_basis_layouts(symmetry_context.atom_to_type)
         : std::vector<SpeciesBasisLayout>{};
@@ -1419,7 +1409,7 @@ void G0W0::build_spacetime(
         this->use_symmetry_context
         && symmetry_ctx.available
         && symmetry_species_layouts_match_atom_counts(
-            wfc_layouts, symmetry_ctx.atom_to_type, build_atom_nw_map(atbasis_wfc))
+            wfc_layouts, symmetry_ctx.atom_to_type, atbasis_wfc.get_atom_nb_map())
         && !symmetry_ctx.irreducible_sector.empty()
         && !symmetry_ctx.rspace_sector_stars.empty()
         && !symmetry_ctx.rspace_operations.empty()

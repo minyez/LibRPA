@@ -230,6 +230,9 @@ public:
     inline std::size_t get_atom_nb(int i_atom) const { return nbs_.at(as_size(i_atom)); }
     inline std::size_t operator[](int i_atom) const { return nbs_.at(as_size(i_atom)); }
     inline std::vector<std::size_t> get_atom_nbs() const noexcept { return nbs_; }
+    //! Get the number of basis functions indexed by atom.
+    template <typename T = atom_t>
+    std::map<T, std::size_t> get_atom_nb_map() const;
     inline bool has_l_shells() const noexcept { return l_shells_.size() == n_atoms && n_atoms > 0; }
     inline const std::vector<std::vector<int>>& get_l_shells() const noexcept { return l_shells_; }
     inline const std::vector<int>& get_l_shells(int i_atom) const noexcept { return l_shells_.at(i_atom); }
@@ -273,6 +276,15 @@ inline bool operator!=(const AtomicBasis &ab1, const AtomicBasis &ab2)
 {
     return !(ab1 == ab2);
 }
+
+template <typename T>
+std::map<T, std::size_t> AtomicBasis::get_atom_nb_map() const
+{
+    std::map<T, std::size_t> atom_nbs;
+    for (atom_t atom = 0; atom != n_atoms; ++atom)
+        atom_nbs.emplace(static_cast<T>(atom), nbs_[atom]);
+    return atom_nbs;
+};
 
 /*!
  * @brief Get the size of matrix block corresponding to an atom pair.
