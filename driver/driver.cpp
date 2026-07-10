@@ -171,6 +171,8 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             normal_pair(libri_g0w0_threshold_Wc),
             normal_pair(qpe_solver_thres),
             normal_pair(qpe_solver_damp_factor),
+            normal_pair(sf_gf_omega_shift),
+            normal_pair(sf_sigc_omega_shift),
         };
 
     const std::vector<std::pair<std::string, int>> int_params
