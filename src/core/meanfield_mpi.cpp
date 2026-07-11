@@ -70,36 +70,52 @@ static void check_same_imagtimes(const std::vector<double> &imagtimes,
 
 constexpr int wfc_gemm_block_size_opt = 128;
 
-static bool should_redistribute_full_wfc_for_gemm(const ArrayDesc &desc_wfc)
-{
-    return desc_wfc.nprocs() > 1 &&
-           desc_wfc.mb() >= desc_wfc.m() &&
-           desc_wfc.nb() >= desc_wfc.n() &&
-           (desc_wfc.mb() > wfc_gemm_block_size_opt ||
-            desc_wfc.nb() > wfc_gemm_block_size_opt);
-}
-
 struct WfcGemmWorkspace
 {
-    bool redistribute = false;
-    ArrayDesc desc_opt;
+    ArrayDesc desc_wfc_opt;
+    ArrayDesc desc_out_opt;
     Matz wfc_bra_opt;
     Matz scaled_wfc_ket_opt;
+    Matz out_opt;
 };
 
-static WfcGemmWorkspace create_wfc_gemm_workspace(const ArrayDesc &desc_wfc)
+static void check_wfc_gemm_context(const ArrayDesc &desc_wfc, const ArrayDesc &desc_out,
+                                   const BlacsCtxtHandler &blacs_h)
 {
-    WfcGemmWorkspace workspace;
-    workspace.redistribute = should_redistribute_full_wfc_for_gemm(desc_wfc);
-    if (!workspace.redistribute) return workspace;
+    if (!blacs_h.is_initialized())
+        throw LIBRPA_RUNTIME_ERROR("active BLACS context is not initialized");
+    if (!desc_wfc.is_initialized() || !desc_out.is_initialized())
+        throw LIBRPA_RUNTIME_ERROR("WFC pgemm descriptors are not initialized");
+    if (desc_wfc.ictxt() != blacs_h.ictxt || desc_out.ictxt() != blacs_h.ictxt)
+        throw LIBRPA_RUNTIME_ERROR("WFC pgemm descriptors must use the active k-point BLACS context");
+}
 
-    workspace.desc_opt = ArrayDesc(desc_wfc.ictxt());
-    workspace.desc_opt.init(desc_wfc.m(), desc_wfc.n(),
-                            std::min(desc_wfc.m(), wfc_gemm_block_size_opt),
-                            std::min(desc_wfc.n(), wfc_gemm_block_size_opt),
-                            desc_wfc.irsrc(), desc_wfc.icsrc());
-    workspace.wfc_bra_opt.resize(workspace.desc_opt.m_loc(), workspace.desc_opt.n_loc(), MAJOR::COL);
-    workspace.scaled_wfc_ket_opt.resize(workspace.desc_opt.m_loc(), workspace.desc_opt.n_loc(), MAJOR::COL);
+static WfcGemmWorkspace create_wfc_gemm_workspace(const ArrayDesc &desc_wfc,
+                                                  const ArrayDesc &desc_out,
+                                                  const BlacsCtxtHandler &blacs_h)
+{
+    check_wfc_gemm_context(desc_wfc, desc_out, blacs_h);
+
+    WfcGemmWorkspace workspace;
+    ArrayDesc desc_out_square(blacs_h);
+    desc_out_square.init_square_blk(desc_out.m(), desc_out.n(),
+                                    desc_out.irsrc(), desc_out.icsrc());
+    const int block_size_opt = std::min(wfc_gemm_block_size_opt,
+                                        desc_out_square.nb());
+    workspace.desc_wfc_opt = ArrayDesc(blacs_h);
+    workspace.desc_wfc_opt.init(desc_wfc.m(), desc_wfc.n(),
+                                block_size_opt, block_size_opt,
+                                desc_wfc.irsrc(), desc_wfc.icsrc());
+    workspace.desc_out_opt = ArrayDesc(blacs_h);
+    workspace.desc_out_opt.init(desc_out.m(), desc_out.n(),
+                                block_size_opt, block_size_opt,
+                                desc_out.irsrc(), desc_out.icsrc());
+    workspace.wfc_bra_opt.resize(workspace.desc_wfc_opt.m_loc(),
+                                 workspace.desc_wfc_opt.n_loc(), MAJOR::COL);
+    workspace.scaled_wfc_ket_opt.resize(workspace.desc_wfc_opt.m_loc(),
+                                        workspace.desc_wfc_opt.n_loc(), MAJOR::COL);
+    workspace.out_opt.resize(workspace.desc_out_opt.m_loc(),
+                             workspace.desc_out_opt.n_loc(), MAJOR::COL);
     return workspace;
 }
 
@@ -112,78 +128,81 @@ static void pgemm_wfc_scaled_wfc_h(const int n_aos, const int n_cols,
                                    const BlacsCtxtHandler &blacs_h)
 {
     global::profiler.start(__FUNCTION__, LIBRPA_VERBOSE_DEBUG);
-    const cplxdb *wfc_bra_gemm_ptr = wfc_bra_ptr;
-    const cplxdb *scaled_wfc_ket_gemm_ptr = scaled_wfc_ket_ptr;
-    const int *desc_wfc_gemm = desc_wfc.desc;
+    check_wfc_gemm_context(desc_wfc, desc_out, blacs_h);
+    if (n_aos != desc_wfc.m() || n_aos != desc_out.m() || n_aos != desc_out.n())
+        throw LIBRPA_RUNTIME_ERROR("WFC pgemm matrix dimensions are inconsistent");
+    if (n_cols < 0 || n_cols > desc_wfc.n())
+        throw LIBRPA_RUNTIME_ERROR("WFC pgemm column count is inconsistent with descriptor");
+    if (!workspace.desc_wfc_opt.is_initialized() || !workspace.desc_out_opt.is_initialized() ||
+        workspace.desc_wfc_opt.ictxt() != blacs_h.ictxt ||
+        workspace.desc_out_opt.ictxt() != blacs_h.ictxt)
+        throw LIBRPA_RUNTIME_ERROR("WFC pgemm workspace is not initialized on the active k-point BLACS context");
 
-    if (workspace.redistribute)
-    {
-        ScalapackConnector::pgemr2d_f(n_aos, n_cols,
-                                      wfc_bra_ptr, 1, 1, desc_wfc.desc,
-                                      workspace.wfc_bra_opt.ptr(), 1, 1,
-                                      workspace.desc_opt.desc, desc_wfc.ictxt());
-        ScalapackConnector::pgemr2d_f(n_aos, n_cols,
-                                      scaled_wfc_ket_ptr, 1, 1, desc_wfc.desc,
-                                      workspace.scaled_wfc_ket_opt.ptr(), 1, 1,
-                                      workspace.desc_opt.desc, desc_wfc.ictxt());
-        wfc_bra_gemm_ptr = workspace.wfc_bra_opt.ptr();
-        scaled_wfc_ket_gemm_ptr = workspace.scaled_wfc_ket_opt.ptr();
-        desc_wfc_gemm = workspace.desc_opt.desc;
+    ScalapackConnector::pgemr2d_f(n_aos, n_cols,
+                                  wfc_bra_ptr, 1, 1, desc_wfc.desc,
+                                  workspace.wfc_bra_opt.ptr(), 1, 1,
+                                  workspace.desc_wfc_opt.desc, blacs_h.ictxt);
+    ScalapackConnector::pgemr2d_f(n_aos, n_cols,
+                                  scaled_wfc_ket_ptr, 1, 1, desc_wfc.desc,
+                                  workspace.scaled_wfc_ket_opt.ptr(), 1, 1,
+                                  workspace.desc_wfc_opt.desc, blacs_h.ictxt);
 
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
-        using namespace ddla;
-        auto &blacs_h_nc = const_cast<BlacsCtxtHandler &>(blacs_h);
-        if (blacs_h_nc.ddla_handle == nullptr)
-            blacs_h_nc.init_ddla_handle();
-        workspace.desc_opt.set_ddla_desc(blacs_h_nc.ddla_handle);
-        ArrayDesc desc_c_opt(blacs_h);
-        desc_c_opt.init(n_aos, n_aos,
-                        workspace.desc_opt.mb(), workspace.desc_opt.nb(),
-                        workspace.desc_opt.irsrc(), workspace.desc_opt.icsrc());
-        desc_c_opt.set_ddla_desc(blacs_h_nc.ddla_handle);
+    using namespace ddla;
+    auto &blacs_h_nc = const_cast<BlacsCtxtHandler &>(blacs_h);
+    if (blacs_h_nc.ddla_handle == nullptr)
+        blacs_h_nc.init_ddla_handle();
+    workspace.desc_wfc_opt.set_ddla_desc(blacs_h_nc.ddla_handle);
+    workspace.desc_out_opt.set_ddla_desc(blacs_h_nc.ddla_handle);
 
-        Matz out_opt(desc_c_opt.m_loc(), desc_c_opt.n_loc(), MAJOR::COL);
-        auto handle = blacs_h_nc.ddla_handle;
-        const size_t size_ab = static_cast<size_t>(workspace.desc_opt.m_loc()) *
-                               workspace.desc_opt.n_loc();
-        const size_t size_c  = static_cast<size_t>(desc_c_opt.m_loc()) *
-                               desc_c_opt.n_loc();
-        cplxdb *d_A = nullptr, *d_B = nullptr, *d_C = nullptr;
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_A, size_ab * sizeof(cplxdb), handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_B, size_ab * sizeof(cplxdb), handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_C, size_c  * sizeof(cplxdb), handle->stream));
-        DEVICE_CHECK(deviceMemcpyAsync(d_A, wfc_bra_gemm_ptr,
+    auto handle = blacs_h_nc.ddla_handle;
+    const size_t size_ab = static_cast<size_t>(workspace.desc_wfc_opt.m_loc()) *
+                           workspace.desc_wfc_opt.n_loc();
+    const size_t size_c  = static_cast<size_t>(workspace.desc_out_opt.m_loc()) *
+                           workspace.desc_out_opt.n_loc();
+    const size_t alloc_size_ab = std::max<size_t>(size_ab, 1);
+    const size_t alloc_size_c = std::max<size_t>(size_c, 1);
+    cplxdb *d_A = nullptr, *d_B = nullptr, *d_C = nullptr;
+    DEVICE_CHECK(deviceMallocAsync((void**)&d_A, alloc_size_ab * sizeof(cplxdb), handle->stream));
+    DEVICE_CHECK(deviceMallocAsync((void**)&d_B, alloc_size_ab * sizeof(cplxdb), handle->stream));
+    DEVICE_CHECK(deviceMallocAsync((void**)&d_C, alloc_size_c * sizeof(cplxdb), handle->stream));
+    if (size_ab > 0)
+    {
+        DEVICE_CHECK(deviceMemcpyAsync(d_A, workspace.wfc_bra_opt.ptr(),
                                        size_ab * sizeof(cplxdb),
                                        deviceMemcpyHostToDevice, handle->stream));
-        DEVICE_CHECK(deviceMemcpyAsync(d_B, scaled_wfc_ket_gemm_ptr,
+        DEVICE_CHECK(deviceMemcpyAsync(d_B, workspace.scaled_wfc_ket_opt.ptr(),
                                        size_ab * sizeof(cplxdb),
                                        deviceMemcpyHostToDevice, handle->stream));
-        ddla::pgemm('N', 'C', n_aos, n_aos, n_cols, C_ONE,
-                    d_A, workspace.desc_opt.ddla_desc(),
-                    d_B, workspace.desc_opt.ddla_desc(),
-                    C_ZERO, d_C, desc_c_opt.ddla_desc());
-        DEVICE_CHECK(deviceMemcpyAsync(out_opt.ptr(), d_C,
+    }
+    ddla::pgemm('N', 'C', n_aos, n_aos, n_cols, C_ONE,
+                d_A, workspace.desc_wfc_opt.ddla_desc(),
+                d_B, workspace.desc_wfc_opt.ddla_desc(),
+                C_ZERO, d_C, workspace.desc_out_opt.ddla_desc());
+    if (size_c > 0)
+        DEVICE_CHECK(deviceMemcpyAsync(workspace.out_opt.ptr(), d_C,
                                        size_c * sizeof(cplxdb),
                                        deviceMemcpyDeviceToHost, handle->stream));
-        DEVICE_CHECK(deviceStreamSynchronize(handle->stream));
-        DEVICE_CHECK(deviceFreeAsync(d_A, handle->stream));
-        DEVICE_CHECK(deviceFreeAsync(d_B, handle->stream));
-        DEVICE_CHECK(deviceFreeAsync(d_C, handle->stream));
-
-        ScalapackConnector::pgemr2d_f(n_aos, n_aos,
-                                      out_opt.ptr(), 1, 1, desc_c_opt.desc,
-                                      out.ptr(), 1, 1, desc_out.desc,
-                                      desc_out.ictxt());
-        global::profiler.stop(__FUNCTION__);
-        return;
-#endif
-    }
+    DEVICE_CHECK(deviceStreamSynchronize(handle->stream));
+    DEVICE_CHECK(deviceFreeAsync(d_A, handle->stream));
+    DEVICE_CHECK(deviceFreeAsync(d_B, handle->stream));
+    DEVICE_CHECK(deviceFreeAsync(d_C, handle->stream));
+#else
     global::profiler.start("pgemm", LIBRPA_VERBOSE_DEBUG);
     ScalapackConnector::pgemm_f('N', 'C', n_aos, n_aos, n_cols, C_ONE,
-                                wfc_bra_gemm_ptr, 1, 1, desc_wfc_gemm,
-                                scaled_wfc_ket_gemm_ptr, 1, 1, desc_wfc_gemm,
-                                C_ZERO, out.ptr(), 1, 1, desc_out.desc);
+                                workspace.wfc_bra_opt.ptr(), 1, 1,
+                                workspace.desc_wfc_opt.desc,
+                                workspace.scaled_wfc_ket_opt.ptr(), 1, 1,
+                                workspace.desc_wfc_opt.desc,
+                                C_ZERO, workspace.out_opt.ptr(), 1, 1,
+                                workspace.desc_out_opt.desc);
     global::profiler.stop("pgemm");
+#endif
+    ScalapackConnector::pgemr2d_f(n_aos, n_aos,
+                                  workspace.out_opt.ptr(), 1, 1,
+                                  workspace.desc_out_opt.desc,
+                                  out.ptr(), 1, 1, desc_out.desc,
+                                  blacs_h.ictxt);
     global::profiler.stop(__FUNCTION__);
 }
 
@@ -432,7 +451,8 @@ std::map<Vector3_Order<int>, Matz> get_dmat_cplx_Rs_kblacs_para(
     std::vector<cplxdb> dummy(1, C_ZERO);
     Matz scaled_wfc_ket(desc_wfc.m_loc(), desc_wfc.n_loc(), MAJOR::COL);
     Matz dmat_k(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
-    auto wfc_gemm_workspace = create_wfc_gemm_workspace(desc_wfc);
+    auto wfc_gemm_workspace = create_wfc_gemm_workspace(desc_wfc, desc_dm,
+                                                        kblacs_ctxt.blacs_h);
     const auto &iks_local = kblacs_ctxt.kpoints_local();
     const int nk_local = iks_local.size();
     int nk_sum = 0;
@@ -635,7 +655,8 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
     std::vector<cplxdb> dummy(1, C_ZERO);
     Matz scaled_wfc_ket(desc_wfc.m_loc(), desc_wfc.n_loc(), MAJOR::COL);
     Matz gf_k(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
-    auto wfc_gemm_workspace = create_wfc_gemm_workspace(desc_wfc);
+    auto wfc_gemm_workspace = create_wfc_gemm_workspace(desc_wfc, desc_dm,
+                                                        kblacs_ctxt.blacs_h);
     Matz kmat(nk_local, n_elem, MAJOR::COL);
 
     const double scale_spin = 0.5 * mf.get_n_spins() * mf.get_n_spinor();
