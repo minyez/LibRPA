@@ -538,13 +538,16 @@ void Exx::build(const LibrpaParallelRouting routing,
     std::map<int,std::array<double,3>> atoms_pos;
     for (int i = 0; i < n_atoms; i++)
         atoms_pos.insert(std::pair<int, std::array<double, 3>>{i, {0, 0, 0}});
+    const auto atom_nw = atbasis_wfc.get_atom_nb_map<int>();
 
     if (use_complex_exx_r)
-        exx_libri_cplx.set_parallel(comm_h.comm, atoms_pos, this->pbc.latvec_array, this->pbc.period_array);
+        libri_set_parallel(exx_libri_cplx, comm_h.comm, atoms_pos, this->pbc.latvec_array,
+                           this->pbc.period_array, atom_nw);
     else
-        exx_libri.set_parallel(comm_h.comm, atoms_pos, this->pbc.latvec_array, this->pbc.period_array);
+        libri_set_parallel(exx_libri, comm_h.comm, atoms_pos, this->pbc.latvec_array,
+                           this->pbc.period_array, atom_nw);
 
-    const auto& symmetry_ctx = this->symmetry_context;
+    const auto &symmetry_ctx = this->symmetry_context;
     const auto wfc_layouts = atbasis_wfc.build_species_basis_layouts(symmetry_ctx.atom_to_type);
     const auto abf_layouts = atbasis_abf.build_species_basis_layouts(symmetry_ctx.atom_to_type);
     const auto n_full_rspace_blocks =

@@ -2063,16 +2063,16 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     const auto &lat_array = this->pbc.latvec_array;
 
     const auto &period_array = this->pbc.period_array;
+    const auto atom_nw = atbasis_wfc.get_atom_nb_map<int>();
 
     RI::RPA<int, int, 3, Tdata> rpa;
     global::profiler.start("chi0_libri_routing_set_parallel");
-    rpa.set_parallel(comm_h.comm, atoms_pos, lat_array, period_array);
+    libri_set_parallel(rpa, comm_h.comm, atoms_pos, lat_array, period_array, atom_nw);
     global::profiler.stop("chi0_libri_routing_set_parallel");
     const auto libri_chi0_irreducible_sector =
-        use_chi0_rspace_symmetry
-            ? convert_symmetry_irreducible_sector_to_libri_chi0(
-                  this->symmetry_context.irreducible_sector, period_array)
-            : std::map<std::pair<int, int>, std::set<std::array<int, 3>>>{};
+        use_chi0_rspace_symmetry ? convert_symmetry_irreducible_sector_to_libri_chi0(
+                                       this->symmetry_context.irreducible_sector, period_array)
+                                 : std::map<std::pair<int, int>, std::set<std::array<int, 3>>>{};
     if (use_chi0_rspace_symmetry)
     {
         if (comm_h.is_root())

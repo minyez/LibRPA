@@ -1373,11 +1373,13 @@ void G0W0::build_spacetime(
     // Dummy atoms position
     for (int i = 0; i != natom; i++)
         atoms_pos.insert(std::pair<int, std::array<double, 3>>{i, {0, 0, 0}});
+    const auto atom_nw = atbasis_wfc.get_atom_nb_map<int>();
 
     global::profiler.start("g0w0_build_spacetime_2", "Setup LibRI G0W0 object and C data");
     if (use_complex_tensor)
     {
-        gw_libri_cplx.set_parallel(comm_h.comm, atoms_pos, pbc.latvec_array, pbc.period_array);
+        libri_set_parallel(gw_libri_cplx, comm_h.comm, atoms_pos, pbc.latvec_array,
+                           pbc.period_array, atom_nw);
         ztensor_map data_libri;
         for (const auto &I_JR_C : LRI_Cs.data_libri)
         {
@@ -1395,11 +1397,12 @@ void G0W0::build_spacetime(
     }
     else
     {
-        gw_libri.set_parallel(comm_h.comm, atoms_pos, pbc.latvec_array, pbc.period_array);
+        libri_set_parallel(gw_libri, comm_h.comm, atoms_pos, pbc.latvec_array,
+                           pbc.period_array, atom_nw);
         gw_libri.set_Cs(LRI_Cs.data_libri, this->libri_threshold_C);
     }
 
-    const auto& symmetry_ctx = this->symmetry_context;
+    const auto &symmetry_ctx = this->symmetry_context;
     const auto wfc_layouts = atbasis_wfc.build_species_basis_layouts(symmetry_ctx.atom_to_type);
     const auto n_full_rspace_blocks =
         static_cast<std::size_t>(natom) * static_cast<std::size_t>(natom) * pbc.Rlist.size();
