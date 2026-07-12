@@ -352,6 +352,37 @@ static void test_spinor_symmetry_speedup_rejected()
     }));
 }
 
+static void test_disabled_component_symmetry_keeps_shared_context()
+{
+    using namespace librpa_int;
+
+    Dataset ds(MPI_COMM_WORLD);
+    ds.mf.set(1, 1, 1, 1, 1);
+    ds.pbc.set_latvec({1, 0, 0, 0, 1, 0, 0, 0, 1});
+    ds.pbc.set_kgrids_kvec(1, 1, 1, {0.0, 0.0, 0.0});
+    ds.scfk_blacs_ctxt.init(KPointBlacsProcessShape(1, 4, true), MPI_COMM_WORLD, 1);
+    ds.desc_wfc_kb_full = ds.scfk_blacs_ctxt.create_array_desc(1, 1, 1, 1);
+    ds.symmetry_context.set_available();
+    SymmetryKStar sentinel_star;
+    sentinel_star.star_index = 17;
+    ds.symmetry_context.kstars.push_back(sentinel_star);
+
+    LibrpaOptions opts;
+    librpa_init_options(&opts);
+    opts.use_symmetry_exx = LIBRPA_SWITCH_OFF;
+    opts.use_symmetry_rpa = LIBRPA_SWITCH_OFF;
+    opts.use_symmetry_gw = LIBRPA_SWITCH_OFF;
+
+    initialize_ds_exx(ds, opts);
+    initialize_ds_chi0(ds, opts);
+    initialize_ds_g0w0(ds, opts);
+
+    assert(ds.symmetry_context.available);
+    assert(ds.symmetry_context.kstars.size() == 1);
+    assert(ds.symmetry_context.kstars.front().star_index == 17);
+    ds.free();
+}
+
 static void test_redistribute_band_eigvecs_kpara_np4()
 {
     using namespace librpa_int;
@@ -433,6 +464,7 @@ int main (int argc, char *argv[])
     test_redistribute_eigvecs_kpara_np4();
     test_redistribute_band_eigvecs_kpara_np4();
     test_spinor_symmetry_speedup_rejected();
+    test_disabled_component_symmetry_keeps_shared_context();
 
     finalize_global_io();
     finalize_global_mpi();

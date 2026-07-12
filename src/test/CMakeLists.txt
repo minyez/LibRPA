@@ -57,7 +57,6 @@ foreach(target
     test_profiler
     test_qpe_solver
     test_rsh
-    test_rpa_headwing
     test_symmetry
     test_timefreq
     test_vector3
@@ -75,6 +74,7 @@ foreach(target
   test_matrix_m_mpi
   test_meanfield_mpi
   test_kpoint_blacs_parallel_context
+  test_rpa_headwing
   test_shared_memory_mpi
   )
   config_test(${target} 4)

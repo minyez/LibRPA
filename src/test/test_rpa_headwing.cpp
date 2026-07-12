@@ -3,7 +3,9 @@
 #include <complex>
 #include <cstdlib>
 #include <iostream>
+#include <map>
 #include <memory>
+#include <set>
 #include <valarray>
 
 #include "../core/chi0.h"
@@ -78,6 +80,13 @@ void require_double_close(const double actual, const double expected, const doub
                   << " diff=" << std::abs(actual - expected) << std::endl;
         std::abort();
     }
+}
+
+RI::Tensor<double> make_scalar_cs_tensor(const double value)
+{
+    auto data = std::make_shared<std::valarray<double>>(1);
+    (*data)[0] = value;
+    return RI::Tensor<double>({1UL, 1UL, 1UL}, data);
 }
 
 void test_kpoint_coordinate_mapping_selects_active_klist_from_full_source()
@@ -520,6 +529,110 @@ void test_headwing_local_kpoints_prefers_kpoint_blacs_context()
     assert((mismatched == std::vector<int>{0, 1, 2, 3, 4}));
 }
 
+void test_headwing_world_fourier_uses_all_R_blocks_at_nonzero_k()
+{
+    AtomicBasis basis_wfc({1});
+    AtomicBasis basis_abf({1});
+    librpa_int::Cs_LRI Cs_data;
+    Cs_data.use_libri = true;
+    Cs_data.data_libri[0][{0, {0, 0, 0}}] = make_scalar_cs_tensor(2.0);
+    Cs_data.data_libri[0][{0, {1, 0, 0}}] = make_scalar_cs_tensor(3.0);
+    Cs_data.data_libri[0][{0, {2, 0, 0}}] = make_scalar_cs_tensor(-1.0);
+
+    const auto targets = librpa_int::build_headwing_full_bz_fourier_targets(
+        {{0.0, 0.0, 0.0}, {0.25, 0.0, 0.0}});
+    const auto Cs_IJ_k =
+        librpa_int::fourier_headwing_cs_to_ijk(Cs_data, basis_wfc, basis_abf, targets);
+
+    const auto &blocks = Cs_IJ_k.at(0);
+    assert_complex_close(blocks.at({0, 0})(0, 0, 0), {4.0, 0.0}, 1e-12);
+    assert_complex_close(blocks.at({0, 1})(0, 0, 0), {3.0, 3.0}, 1e-12);
+}
+
+void test_headwing_symmetry_fourier_target_ids_are_deterministic()
+{
+    librpa_int::SymmetryContext ctx;
+    ctx.set_available();
+
+    librpa_int::SymmetryKStar first;
+    first.star_index = 0;
+    first.k_ibz = {0.0, 0.0, 0.0};
+    first.members.resize(2);
+    first.members[0].k_bz = {0.0, 0.0, 0.0};
+    first.members[1].k_bz = {0.5, 0.0, 0.0};
+    ctx.kstars.push_back(first);
+
+    librpa_int::SymmetryKStar second;
+    second.star_index = 1;
+    second.k_ibz = {0.25, 0.0, 0.0};
+    second.members.resize(3);
+    second.members[0].k_bz = {0.25, 0.0, 0.0};
+    second.members[1].k_bz = {0.0, 0.25, 0.0};
+    second.members[2].k_bz = {0.0, 0.0, 0.25};
+    ctx.kstars.push_back(second);
+
+    PeriodicBoundaryData pbc;
+    const auto flattened = librpa_int::build_headwing_symmetry_fourier_targets(
+        ctx, pbc, {first.k_ibz, second.k_ibz});
+
+    assert((flattened.target_ids_by_ibz_member[0] == std::vector<int>{0, 1}));
+    assert((flattened.target_ids_by_ibz_member[1] == std::vector<int>{2, 3, 4}));
+    assert(flattened.targets.size() == 5);
+    for (int target_id = 0; target_id != 5; ++target_id)
+        assert(flattened.targets[target_id].target_id == target_id);
+    assert(flattened.targets[0].owner_ik == 0);
+    assert(flattened.targets[1].owner_ik == 0);
+    assert(flattened.targets[2].owner_ik == 1);
+    assert(flattened.targets[4].kfrac == second.members[2].k_bz);
+}
+
+void test_headwing_ijk_redistribution_is_owner_group_local()
+{
+    if (librpa_int::get_mpi_size(MPI_COMM_WORLD) != 4) return;
+
+    KPointBlacsProcessShape shape(2, 2, true);
+    KPointBlacsParallelContext kctx(shape, MPI_COMM_WORLD, 4);
+    const auto desc_nao_nao = kctx.create_array_desc(2, 2, 1, 1);
+    const AtomicBasis basis_wfc(std::vector<std::size_t>{1, 1});
+    const AtomicBasis basis_abf(std::vector<std::size_t>{1, 1});
+    const auto targets = librpa_int::build_headwing_full_bz_fourier_targets(
+        {{0.0, 0.0, 0.0}, {0.25, 0.0, 0.0}, {0.5, 0.0, 0.0}, {0.75, 0.0, 0.0}});
+    const std::set<int> local_iks(kctx.kpoints_local().begin(), kctx.kpoints_local().end());
+    const auto requests = librpa_int::build_headwing_cs_ijk_requests(
+        basis_wfc, targets, kctx.kpoints_local(), desc_nao_nao);
+
+    for (const auto &[J, target_id] : requests.second)
+    {
+        (void)J;
+        assert(local_iks.count(targets.at(target_id).owner_ik) == 1);
+    }
+
+#ifdef LIBRPA_USE_LIBRI
+    librpa_int::Cs_LRI Cs_data;
+    Cs_data.use_libri = true;
+    if (librpa_int::get_mpi_rank(MPI_COMM_WORLD) == 0)
+    {
+        for (int I = 0; I != 2; ++I)
+            for (int J = 0; J != 2; ++J)
+                Cs_data.data_libri[I][{J, {0, 0, 0}}] =
+                    make_scalar_cs_tensor(1.0 + 2.0 * I + J);
+    }
+    const auto Cs_IJ_k = librpa_int::redistribute_headwing_cs_ijk(
+        Cs_data, basis_wfc, basis_abf, targets, kctx.kpoints_local(), desc_nao_nao,
+        librpa_int::global::mpi_comm_global_h);
+    for (const auto &[I, Jtargets] : Cs_IJ_k)
+    {
+        assert(requests.first.count(I) == 1);
+        for (const auto &[Jtarget, tensor] : Jtargets)
+        {
+            assert(requests.second.count(Jtarget) == 1);
+            assert(local_iks.count(targets.at(Jtarget.second).owner_ik) == 1);
+            assert(std::abs(tensor(0, 0, 0)) > 0.0);
+        }
+    }
+#endif
+}
+
 void test_accumulate_wing_mu_for_pair_matches_original_formula()
 {
     const std::vector<double> omega{0.5, 1.25};
@@ -812,6 +925,11 @@ void test_kblacs_transform_with_restored_wfc_matches_full_bz_atom_permutation(
 
 void test_kblacs_transform_matches_original_transform(const BlacsCtxtHandler &blacs_h)
 {
+    const int nprocs = librpa_int::get_mpi_size(MPI_COMM_WORLD);
+    KPointBlacsProcessShape shape(1, nprocs, true);
+    KPointBlacsParallelContext kctx(shape, MPI_COMM_WORLD, 1);
+    const auto desc_wfc = kctx.create_array_desc(2, 2, 2, 2);
+
     MeanField mf(1, 1, 2, 2, 1);
     auto &wfc = mf.get_eigenvectors()[0][0][0];
     wfc.create(2, 2);
@@ -825,22 +943,36 @@ void test_kblacs_transform_matches_original_transform(const BlacsCtxtHandler &bl
     AtomicBasis basis_wfc({2});
     AtomicBasis basis_abf({1});
     PeriodicBoundaryData pbc;
-    const std::vector<Vector3_Order<double>> kfrac{{0.0, 0.0, 0.0}};
+    const std::vector<Vector3_Order<double>> kfrac{{0.25, 0.0, 0.0}};
     const std::vector<double> omega{0.5};
 
     diele_func df(mf, velocity, kfrac, basis_wfc, basis_abf, omega, 2, 2, 1, 1, pbc,
-                  librpa_int::global::mpi_comm_global_h, blacs_h);
+                  librpa_int::global::mpi_comm_global_h, blacs_h, true, &kctx, &desc_wfc);
 
-    auto tensor_data = std::make_shared<std::valarray<double>>(4);
-    (*tensor_data)[0] = 1.0;
-    (*tensor_data)[1] = 0.2;
-    (*tensor_data)[2] = -0.4;
-    (*tensor_data)[3] = 0.8;
+    auto tensor_R0 = std::make_shared<std::valarray<double>>(4);
+    (*tensor_R0)[0] = 1.0;
+    (*tensor_R0)[1] = 0.2;
+    (*tensor_R0)[2] = -0.4;
+    (*tensor_R0)[3] = 0.8;
+    auto tensor_R1 = std::make_shared<std::valarray<double>>(4);
+    (*tensor_R1)[0] = 0.3;
+    (*tensor_R1)[1] = -0.1;
+    (*tensor_R1)[2] = 0.2;
+    (*tensor_R1)[3] = 0.5;
     std::map<int, std::map<librpa_int::libri_types<int, int>::TAC, RI::Tensor<double>>> Cs_IJ;
-    Cs_IJ[0][{0, {0, 0, 0}}] = RI::Tensor<double>({1UL, 2UL, 2UL}, tensor_data);
+    Cs_IJ[0][{0, {0, 0, 0}}] = RI::Tensor<double>({1UL, 2UL, 2UL}, tensor_R0);
+    Cs_IJ[0][{0, {1, 0, 0}}] = RI::Tensor<double>({1UL, 2UL, 2UL}, tensor_R1);
+
+    librpa_int::Cs_LRI Cs_data;
+    Cs_data.use_libri = true;
+    Cs_data.data_libri = Cs_IJ;
+    const auto targets = librpa_int::build_headwing_full_bz_fourier_targets(kfrac);
+    const auto Cs_IJ_k =
+        librpa_int::fourier_headwing_cs_to_ijk(Cs_data, basis_wfc, basis_abf, targets);
 
     auto original = df.transform_Cs2mnk(0, 0, Cs_IJ);
-    auto kblacs = df.transform_Cs2mnk_kblacs(0, 0, Cs_IJ, blacs_h, kfrac[0]);
+    auto kblacs = df.transform_Cs2mnk_kblacs(0, 0, Cs_IJ, kctx.blacs_h, kfrac[0]);
+    auto prefourier = df.transform_Cs2mnk_kblacs(0, 0, 0, Cs_IJ_k, kctx.blacs_h);
 
     assert(original.first.m() == kblacs.first.m());
     assert(original.first.n() == kblacs.first.n());
@@ -851,12 +983,51 @@ void test_kblacs_transform_matches_original_transform(const BlacsCtxtHandler &bl
         for (int j = 0; j != original.first.n_loc(); ++j)
         {
             assert_complex_close(kblacs.second(i, j), original.second(i, j), 1e-12);
+            assert_complex_close(prefourier.second(i, j), kblacs.second(i, j), 1e-12);
         }
     }
+
+    std::vector<std::vector<ComplexMatrix>> override_storage(1);
+    override_storage[0].resize(1);
+    std::vector<std::vector<const ComplexMatrix *>> override_ptrs(1);
+    override_ptrs[0].assign(1, nullptr);
+    if (desc_wfc.is_src())
+    {
+        auto &override_wfc = override_storage[0][0];
+        override_wfc.create(2, 2);
+        override_wfc(0, 0) = {0.2, -0.4};
+        override_wfc(0, 1) = {0.6, 0.1};
+        override_wfc(1, 0) = {-0.5, 0.3};
+        override_wfc(1, 1) = {0.4, -0.2};
+        override_ptrs[0][0] = &override_wfc;
+    }
+    const auto real_override = df.transform_Cs2mnk_kblacs(
+        0, 0, Cs_IJ, kctx.blacs_h, kfrac[0], &override_ptrs);
+    const auto prefourier_override = df.transform_Cs2mnk_kblacs(
+        0, 0, 0, Cs_IJ_k, kctx.blacs_h, &override_ptrs);
+    int override_changed_local = 0;
+    for (int i = 0; i != real_override.first.m_loc(); ++i)
+    {
+        for (int j = 0; j != real_override.first.n_loc(); ++j)
+        {
+            assert_complex_close(prefourier_override.second(i, j), real_override.second(i, j),
+                                 1e-12);
+            if (std::abs(real_override.second(i, j) - kblacs.second(i, j)) > 1e-12)
+                override_changed_local = 1;
+        }
+    }
+    int override_changed = 0;
+    MPI_Allreduce(&override_changed_local, &override_changed, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+    assert(override_changed == 1);
 }
 
 void test_transform_Cs2mnk_can_keep_spin_channels_separate(const BlacsCtxtHandler &blacs_h)
 {
+    const int nprocs = librpa_int::get_mpi_size(MPI_COMM_WORLD);
+    KPointBlacsProcessShape shape(1, nprocs, true);
+    KPointBlacsParallelContext kctx(shape, MPI_COMM_WORLD, 1);
+    const auto desc_wfc = kctx.create_array_desc(2, 2, 2, 2);
+
     MeanField mf(2, 1, 2, 2, 1);
     auto &wfc_up = mf.get_eigenvectors()[0][0][0];
     auto &wfc_dn = mf.get_eigenvectors()[1][0][0];
@@ -880,7 +1051,7 @@ void test_transform_Cs2mnk_can_keep_spin_channels_separate(const BlacsCtxtHandle
     const std::vector<double> omega{0.5};
 
     diele_func df(mf, velocity, kfrac, basis_wfc, basis_abf, omega, 2, 2, 2, 1, pbc,
-                  librpa_int::global::mpi_comm_global_h, blacs_h);
+                  librpa_int::global::mpi_comm_global_h, blacs_h, true, &kctx, &desc_wfc);
 
     auto tensor_data = std::make_shared<std::valarray<double>>(4);
     (*tensor_data)[0] = 1.0;
@@ -889,23 +1060,37 @@ void test_transform_Cs2mnk_can_keep_spin_channels_separate(const BlacsCtxtHandle
     (*tensor_data)[3] = 0.8;
     std::map<int, std::map<librpa_int::libri_types<int, int>::TAC, RI::Tensor<double>>> Cs_IJ;
     Cs_IJ[0][{0, {0, 0, 0}}] = RI::Tensor<double>({1UL, 2UL, 2UL}, tensor_data);
+    librpa_int::Cs_LRI Cs_data;
+    Cs_data.use_libri = true;
+    Cs_data.data_libri = Cs_IJ;
+    const auto Cs_IJ_k = librpa_int::fourier_headwing_cs_to_ijk(
+        Cs_data, basis_wfc, basis_abf,
+        librpa_int::build_headwing_full_bz_fourier_targets(kfrac));
 
     const auto all_spin = df.transform_Cs2mnk(0, 0, Cs_IJ);
     const auto spin_up = df.transform_Cs2mnk(0, 0, Cs_IJ, 0);
     const auto spin_dn = df.transform_Cs2mnk(0, 0, Cs_IJ, 1);
+    const auto all_spin_k = df.transform_Cs2mnk_kblacs(0, 0, 0, Cs_IJ_k, kctx.blacs_h);
+    const auto spin_up_k = df.transform_Cs2mnk_kblacs(0, 0, 0, Cs_IJ_k, kctx.blacs_h, nullptr, 0);
+    const auto spin_dn_k = df.transform_Cs2mnk_kblacs(0, 0, 0, Cs_IJ_k, kctx.blacs_h, nullptr, 1);
 
-    bool spin_channels_differ = false;
+    int spin_channels_differ_local = 0;
     for (int i = 0; i != all_spin.first.m_loc(); ++i)
     {
         for (int j = 0; j != all_spin.first.n_loc(); ++j)
         {
             assert_complex_close(all_spin.second(i, j), spin_up.second(i, j) + spin_dn.second(i, j),
                                  1e-12);
-            spin_channels_differ =
-                spin_channels_differ || std::abs(spin_up.second(i, j) - spin_dn.second(i, j)) > 1e-12;
+            assert_complex_close(all_spin_k.second(i, j),
+                                 spin_up_k.second(i, j) + spin_dn_k.second(i, j), 1e-12);
+            if (std::abs(spin_up_k.second(i, j) - spin_dn_k.second(i, j)) > 1e-12)
+                spin_channels_differ_local = 1;
         }
     }
-    assert(spin_channels_differ);
+    int spin_channels_differ = 0;
+    MPI_Allreduce(&spin_channels_differ_local, &spin_channels_differ, 1, MPI_INT, MPI_MAX,
+                  MPI_COMM_WORLD);
+    assert(spin_channels_differ == 1);
 }
 
 void test_head_initialization_does_not_require_coulomb_diagonalization(
@@ -1308,6 +1493,9 @@ int main(int argc, char *argv[])
         test_wing_cartesian_gram_is_invariant_under_row_phases();
         test_velocity_matrix_initialization();
         test_headwing_local_kpoints_prefers_kpoint_blacs_context();
+        test_headwing_world_fourier_uses_all_R_blocks_at_nonzero_k();
+        test_headwing_symmetry_fourier_target_ids_are_deterministic();
+        test_headwing_ijk_redistribution_is_owner_group_local();
         test_accumulate_wing_mu_for_pair_matches_original_formula();
         test_headwing_wfc_restore_applies_atom_permutation();
         test_headwing_wfc_restore_applies_time_reversal();
