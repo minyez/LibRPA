@@ -1351,6 +1351,9 @@ static void build_gf_Rt_libri_kblacs_para(
     const IndexScheduler &sched,
     const AtomicBasis &atbasis_wfc,
     int ispin, int ispinor_bra, int ispinor_ket,
+    const PeriodicBoundaryData &pbc,
+    const SymmetryContext &symmetry_context,
+    const bool use_symmetry_context,
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<Vector3_Order<int>> &Rs,
     double tau,
@@ -1358,10 +1361,23 @@ static void build_gf_Rt_libri_kblacs_para(
 {
     global::profiler.start("build_gf_Rt_libri_kblacs_para");
 
-    auto gf_imagtimes_Rs_cplx =
-        get_gf_cplx_imagtimes_Rs_kblacs_para(ispin, ispinor_bra, ispinor_ket, mf,
-                                             kfrac_list, {tau}, Rs, kblacs_ctxt,
-                                             desc_wfc, desc_gf);
+    const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const auto wfc_layouts = atbasis_wfc.has_l_shells()
+        ? atbasis_wfc.build_species_basis_layouts(symmetry_context.atom_to_type)
+        : std::vector<SpeciesBasisLayout>{};
+    const bool restore_symmetry_kstars =
+        use_symmetry_context
+        && can_restore_symmetry_kstar_meanfield(
+            symmetry_context, wfc_layouts, mf, kfrac_list, atom_nw);
+    global::ofs_myid << "Chi0 kBLACS GF symmetry restore: "
+                     << (restore_symmetry_kstars ? "on" : "off") << std::endl;
+    auto gf_imagtimes_Rs_cplx = restore_symmetry_kstars
+        ? get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
+              ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, {tau}, Rs, kblacs_ctxt,
+              desc_wfc, desc_gf, symmetry_context, pbc, atbasis_wfc)
+        : get_gf_cplx_imagtimes_Rs_kblacs_para(
+              ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, {tau}, Rs, kblacs_ctxt,
+              desc_wfc, desc_gf);
     auto &gf_Rs_cplx = gf_imagtimes_Rs_cplx.at(tau);
 
     for (auto &R_gf_cplx: gf_Rs_cplx)
@@ -2243,10 +2259,14 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                     {
                         build_gf_Rt_libri_kblacs_para(
                             this->mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, this->atbasis_wfc,
-                            isp, is1, is2, this->pbc.kfrac_list, Rs_gf, tau, gf_po_libri);
+                            isp, is1, is2, this->pbc, this->symmetry_context,
+                            this->use_symmetry_context, this->pbc.kfrac_list, Rs_gf, tau,
+                            gf_po_libri);
                         build_gf_Rt_libri_kblacs_para(
                             this->mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, this->atbasis_wfc,
-                            isp, is2, is1, this->pbc.kfrac_list, Rs_gf, -tau, gf_ne_libri);
+                            isp, is2, is1, this->pbc, this->symmetry_context,
+                            this->use_symmetry_context, this->pbc.kfrac_list, Rs_gf, -tau,
+                            gf_ne_libri);
                     }
                     else
                     {

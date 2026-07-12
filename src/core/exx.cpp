@@ -467,6 +467,9 @@ static void build_dmat_libri_kblacs_para(
     const IndexScheduler &sched,
     const AtomicBasis &atbasis_wfc,
     int ispin, int ispinor_bra, int ispinor_ket,
+    const PeriodicBoundaryData &pbc,
+    const SymmetryContext &symmetry_context,
+    const bool use_symmetry_context,
     const std::vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<Vector3_Order<int>> Rs,
     const bool save_cplx,
@@ -475,7 +478,23 @@ static void build_dmat_libri_kblacs_para(
 {
     global::profiler.start("exx_build_dmat_libri_kblacs_para");
 
-    auto dmat_Rs_cplx = get_dmat_cplx_Rs_kblacs_para(ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, Rs, kblacs_ctxt, desc_wfc, desc_dm);
+    const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const auto wfc_layouts = atbasis_wfc.has_l_shells()
+        ? atbasis_wfc.build_species_basis_layouts(symmetry_context.atom_to_type)
+        : std::vector<SpeciesBasisLayout>{};
+    const bool restore_symmetry_kstars =
+        use_symmetry_context
+        && can_restore_symmetry_kstar_meanfield(
+            symmetry_context, wfc_layouts, mf, kfrac_list, atom_nw);
+    global::ofs_myid << "EXX kBLACS Dmat symmetry restore: "
+                     << (restore_symmetry_kstars ? "on" : "off") << std::endl;
+    auto dmat_Rs_cplx = restore_symmetry_kstars
+        ? get_symmetry_restored_dmat_cplx_Rs_kblacs_para(
+              ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, Rs, kblacs_ctxt,
+              desc_wfc, desc_dm, symmetry_context, pbc, atbasis_wfc)
+        : get_dmat_cplx_Rs_kblacs_para(
+              ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, Rs, kblacs_ctxt,
+              desc_wfc, desc_dm);
     // global::ofs_myid << kfrac_list << std::endl;
     for (auto &R_dmat_cplx: dmat_Rs_cplx)
     {
@@ -860,6 +879,8 @@ void Exx::build(const LibrpaParallelRouting routing,
                     //                        dmat_libri, dmat_libri_cplx);
                     build_dmat_libri_kblacs_para(mf, kblacs_ctxt, desc_wfc, desc_dm, sched,
                                                  atbasis_wfc, isp, ispn_bra, ispn_ket,
+                                                 this->pbc, this->symmetry_context,
+                                                 this->use_symmetry_context,
                                                  this->pbc.kfrac_list, Rs, use_complex_exx_r,
                                                  dmat_libri, dmat_libri_cplx);
                 }

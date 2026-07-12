@@ -1,8 +1,11 @@
 #include "../core/meanfield_mpi.h"
 
 #include <cmath>
+#include <complex>
 #include <iostream>
 #include <iterator>
+#include <map>
+#include <stdexcept>
 #include <vector>
 
 #include "../mpi/global_mpi.h"
@@ -443,6 +446,308 @@ static void test_dm_gf_kblacs_para_redistributed_full_wfc()
     }
 }
 
+static SymmetryContext build_two_member_identity_kstar_context()
+{
+    SymmetryContext ctx;
+    ctx.set_available();
+    ctx.atom_to_type[0] = 0;
+    ctx.input_coord_frac[0] = {0.0, 0.0, 0.0};
+
+    SymmetryOperation identity_operation;
+    identity_operation.rotation.Identity();
+    identity_operation.translation = {0.0, 0.0, 0.0};
+    ctx.rspace_operations.push_back(identity_operation);
+    ctx.rsh_rotations.emplace_back();
+    ctx.rsh_rotations.back()[0] = ComplexMatrix(1, 1);
+    ctx.rsh_rotations.back()[0](0, 0) = {1.0, 0.0};
+
+    SymmetryKAtomRotation atom_rotation;
+    atom_rotation.atom_from = 0;
+    atom_rotation.atom_to = 0;
+    atom_rotation.atom_type = 0;
+    atom_rotation.lmax = 0;
+    atom_rotation.bloch_rsh_rotations[0] = ComplexMatrix(1, 1);
+    atom_rotation.bloch_rsh_rotations[0](0, 0) = {1.0, 0.0};
+
+    SymmetryKStar star;
+    star.star_index = 0;
+    star.k_ibz = {0.0, 0.0, 0.0};
+    star.members.resize(2);
+    star.members[0].spatial_isym = 0;
+    star.members[0].k_bz = {0.0, 0.0, 0.0};
+    star.members[0].atom_rotations.push_back(atom_rotation);
+    star.members[1].spatial_isym = 0;
+    star.members[1].k_bz = {0.5, 0.0, 0.0};
+    star.members[1].atom_rotations.push_back(atom_rotation);
+    ctx.kstars.push_back(star);
+
+    return ctx;
+}
+
+static void set_one_ao_reduced_kstar_meanfield(MeanField &mf)
+{
+    mf.get_efermi() = 0.0;
+    mf.get_eigenvals()[0](0, 0) = -1.0;
+    mf.get_weight()[0](0, 0) = 2.0;
+    mf.get_eigenvectors()[0][0][0].create(1, 1);
+    mf.get_eigenvectors()[0][0][0](0, 0) = {1.0, 0.0};
+}
+
+static SymmetryKStarMember make_one_ao_atom_rotation_member(
+    const atom_t atom_from, const atom_t atom_to, const std::complex<double> &rotation)
+{
+    SymmetryKStarMember member;
+    member.spatial_isym = 0;
+    member.k_bz = {0.0, 0.0, 0.0};
+
+    SymmetryKAtomRotation atom_rotation;
+    atom_rotation.atom_from = atom_from;
+    atom_rotation.atom_to = atom_to;
+    atom_rotation.atom_type = 0;
+    atom_rotation.lmax = 0;
+    atom_rotation.bloch_rsh_rotations[0] = ComplexMatrix(1, 1);
+    atom_rotation.bloch_rsh_rotations[0](0, 0) = rotation;
+    member.atom_rotations.push_back(atom_rotation);
+    return member;
+}
+
+static SymmetryContext build_two_atom_swap_kstar_context()
+{
+    SymmetryContext ctx;
+    ctx.set_available();
+    ctx.atom_to_type = {{0, 0}, {1, 0}};
+    ctx.input_coord_frac = {{0, {0.0, 0.0, 0.0}}, {1, {0.5, 0.0, 0.0}}};
+
+    SymmetryOperation identity_operation;
+    identity_operation.rotation.Identity();
+    identity_operation.translation = {0.0, 0.0, 0.0};
+    ctx.rspace_operations.push_back(identity_operation);
+    ctx.rsh_rotations.emplace_back();
+    ctx.rsh_rotations.back()[0] = ComplexMatrix(1, 1);
+    ctx.rsh_rotations.back()[0](0, 0) = {1.0, 0.0};
+
+    SymmetryKStar star;
+    star.star_index = 0;
+    star.k_ibz = {0.0, 0.0, 0.0};
+
+    auto identity_atom_0 = make_one_ao_atom_rotation_member(0, 0, {1.0, 0.0}).atom_rotations[0];
+    auto identity_atom_1 = make_one_ao_atom_rotation_member(1, 1, {1.0, 0.0}).atom_rotations[0];
+    SymmetryKStarMember identity_member;
+    identity_member.spatial_isym = 0;
+    identity_member.k_bz = {0.0, 0.0, 0.0};
+    identity_member.atom_rotations = {identity_atom_0, identity_atom_1};
+
+    auto swap_atom_0 = make_one_ao_atom_rotation_member(0, 1, {0.0, 1.0}).atom_rotations[0];
+    auto swap_atom_1 = make_one_ao_atom_rotation_member(1, 0, {-1.0, 0.0}).atom_rotations[0];
+    SymmetryKStarMember swap_member;
+    swap_member.spatial_isym = 0;
+    swap_member.k_bz = {0.5, 0.0, 0.0};
+    swap_member.atom_rotations = {swap_atom_0, swap_atom_1};
+
+    star.members = {identity_member, swap_member};
+    ctx.kstars.push_back(star);
+    return ctx;
+}
+
+static ComplexMatrix restore_test_wfc_to_member(
+    const SymmetryContext &ctx, const SymmetryKStarMember &member,
+    const std::vector<SpeciesBasisLayout> &wfc_layouts,
+    const std::map<atom_t, size_t> &atom_nw,
+    const Vector3_Order<double> &k_ibz, const ComplexMatrix &wfc_ibz)
+{
+    const auto rotation = build_symmetry_kspace_rotation_matrix(
+        ctx, wfc_layouts, member, atom_nw, k_ibz, member.time_reversal, &member.k_bz);
+    if (member.time_reversal)
+    {
+        return conj(wfc_ibz) * rotation;
+    }
+    return wfc_ibz * conj(rotation);
+}
+
+static void set_two_atom_reduced_kstar_meanfield(MeanField &mf)
+{
+    mf.get_efermi() = 0.0;
+    mf.get_eigenvals()[0](0, 0) = -0.4;
+    mf.get_eigenvals()[0](0, 1) = 0.7;
+    mf.get_weight()[0](0, 0) = 2.0;
+    mf.get_weight()[0](0, 1) = 0.0;
+
+    auto &wfc = mf.get_eigenvectors()[0][0][0];
+    wfc.create(2, 2);
+    wfc(0, 0) = {0.7, -0.2};
+    wfc(0, 1) = {-0.4, 0.6};
+    wfc(1, 0) = {0.3, 0.5};
+    wfc(1, 1) = {-0.8, -0.1};
+}
+
+static MeanField build_two_atom_full_bz_meanfield_from_kstar(
+    const SymmetryContext &ctx, const std::vector<SpeciesBasisLayout> &wfc_layouts,
+    const std::map<atom_t, size_t> &atom_nw)
+{
+    MeanField mf_ibz(1, 1, 2, 2);
+    set_two_atom_reduced_kstar_meanfield(mf_ibz);
+
+    MeanField mf_full(1, 2, 2, 2);
+    mf_full.get_efermi() = mf_ibz.get_efermi();
+    const auto &star = ctx.kstars.front();
+    for (int ik = 0; ik != 2; ++ik)
+    {
+        mf_full.get_eigenvals()[0](ik, 0) = mf_ibz.get_eigenvals()[0](0, 0);
+        mf_full.get_eigenvals()[0](ik, 1) = mf_ibz.get_eigenvals()[0](0, 1);
+        mf_full.get_weight()[0](ik, 0) = 1.0;
+        mf_full.get_weight()[0](ik, 1) = 0.0;
+        auto &wfc_full = mf_full.get_eigenvectors()[0][0][ik];
+        wfc_full = restore_test_wfc_to_member(
+            ctx, star.members[static_cast<std::size_t>(ik)], wfc_layouts, atom_nw,
+            star.k_ibz, mf_ibz.get_eigenvectors()[0][0][0]);
+    }
+    return mf_full;
+}
+
+static void test_dmat_gf_kblacs_reduced_kstar_matches_full_bz_fourier()
+{
+    if (size_global < 2) return;
+
+    const auto ctx = build_two_atom_swap_kstar_context();
+    AtomicBasis atbasis_wfc(std::vector<size_t>{1, 1});
+    atbasis_wfc.set_l_shells({{0}, {0}});
+    const auto wfc_layouts = atbasis_wfc.build_species_basis_layouts(ctx.atom_to_type);
+    const std::map<atom_t, size_t> atom_nw{{0, 1}, {1, 1}};
+    PeriodicBoundaryData pbc;
+
+    const std::vector<Vector3_Order<double>> kfrac_ibz{{0.0, 0.0, 0.0}};
+    const std::vector<Vector3_Order<double>> kfrac_full{{0.0, 0.0, 0.0}, {0.5, 0.0, 0.0}};
+    const std::vector<Vector3_Order<int>> Rs{{0, 0, 0}, {1, 0, 0}};
+    const std::vector<double> taus{-0.25, 0.25};
+
+    MeanField mf_full = build_two_atom_full_bz_meanfield_from_kstar(ctx, wfc_layouts, atom_nw);
+    const auto expected_dmat_R0 = mf_full.get_dmat_cplx_R(0, 0, 0, kfrac_full, Rs.front());
+    const auto expected_dmat_R1 = mf_full.get_dmat_cplx_R(0, 0, 0, kfrac_full, Rs.back());
+    const auto expected_gf =
+        mf_full.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_full, taus, Rs);
+
+    KPointBlacsProcessShape shape(1, size_global, false);
+    KPointBlacsParallelContext context(shape, mpi_comm_global_h.comm, 1);
+    const auto desc_wfc_full = context.create_array_desc(2, 2, 2, 2);
+    const auto desc_dm = context.create_array_desc(2, 2);
+
+    MeanField mf(1, 1, 2, 2);
+    mf.get_efermi() = 0.0;
+    mf.get_eigenvals()[0](0, 0) = -0.4;
+    mf.get_eigenvals()[0](0, 1) = 0.7;
+    mf.get_weight()[0](0, 0) = 2.0;
+    mf.get_weight()[0](0, 1) = 0.0;
+    if (context.kpoint_blacs_root_global_rank(0) == myid_global)
+    {
+        set_two_atom_reduced_kstar_meanfield(mf);
+    }
+
+    const auto actual_dmat = get_symmetry_restored_dmat_cplx_Rs_kblacs_para(
+        0, 0, 0, mf, kfrac_ibz, Rs, context, desc_wfc_full, desc_dm, ctx, pbc,
+        atbasis_wfc);
+    const auto actual_gf = get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
+        0, 0, 0, mf, kfrac_ibz, taus, Rs, context, desc_wfc_full, desc_dm, ctx, pbc,
+        atbasis_wfc);
+
+    const std::map<Vector3_Order<int>, ComplexMatrix> expected_dmat{
+        {Rs.front(), expected_dmat_R0}, {Rs.back(), expected_dmat_R1}};
+    for (const auto &R : Rs)
+    {
+        const auto &rmat = actual_dmat.at(R);
+        for (int jloc = 0; jloc != desc_dm.n_loc(); ++jloc)
+        {
+            const int jglob = desc_dm.indx_l2g_c(jloc);
+            for (int iloc = 0; iloc != desc_dm.m_loc(); ++iloc)
+            {
+                const int iglob = desc_dm.indx_l2g_r(iloc);
+                assert(fequal(rmat(iloc, jloc), expected_dmat.at(R)(iglob, jglob),
+                              cplxdb{1e-12, 0.0}));
+            }
+        }
+    }
+    for (const auto tau : taus)
+    {
+        for (const auto &R : Rs)
+        {
+            const auto &rmat = actual_gf.at(tau).at(R);
+            for (int jloc = 0; jloc != desc_dm.n_loc(); ++jloc)
+            {
+                const int jglob = desc_dm.indx_l2g_c(jloc);
+                for (int iloc = 0; iloc != desc_dm.m_loc(); ++iloc)
+                {
+                    const int iglob = desc_dm.indx_l2g_r(iloc);
+                    assert(fequal(rmat(iloc, jloc), expected_gf.at(tau).at(R)(iglob, jglob),
+                                  cplxdb{1e-12, 0.0}));
+                }
+            }
+        }
+    }
+}
+
+static void test_dmat_kblacs_reduced_kstar_matches_symmetry_restore()
+{
+    if (size_global < 2) return;
+
+    const auto ctx = build_two_member_identity_kstar_context();
+    const std::vector<SpeciesBasisLayout> wfc_layouts{{"X", {0}}};
+    const std::vector<Vector3_Order<double>> kfrac_list{{0.0, 0.0, 0.0}};
+    const std::vector<Vector3_Order<int>> Rs{{1, 0, 0}};
+    const std::map<atom_t, size_t> atom_nw{{0, 1}};
+    AtomicBasis atbasis_wfc({1});
+    atbasis_wfc.set_l_shells({{0}});
+    PeriodicBoundaryData pbc;
+
+    MeanField mf_ref(1, 1, 1, 1);
+    set_one_ao_reduced_kstar_meanfield(mf_ref);
+    const auto expected = get_symmetry_restored_dmat_cplx_R(
+        ctx, wfc_layouts, mf_ref, 0, 0, 0, kfrac_list, Rs.front(), atom_nw);
+    const std::vector<double> taus{-0.25, 0.25};
+    const auto expected_gf = get_symmetry_restored_gf_cplx_imagtimes_Rs(
+        ctx, wfc_layouts, mf_ref, 0, 0, 0, kfrac_list, taus, Rs, atom_nw);
+
+    KPointBlacsProcessShape shape(1, size_global, false);
+    KPointBlacsParallelContext context(shape, mpi_comm_global_h.comm, 1);
+    const auto desc_wfc_full = context.create_array_desc(1, 1, 1, 1);
+    const auto desc_dm = context.create_array_desc(1, 1);
+
+    MeanField mf(1, 1, 1, 1);
+    mf.get_efermi() = 0.0;
+    mf.get_eigenvals()[0](0, 0) = -1.0;
+    mf.get_weight()[0](0, 0) = 2.0;
+    if (context.kpoint_blacs_root_global_rank(0) == myid_global)
+    {
+        mf.get_eigenvectors()[0][0][0].create(1, 1);
+        mf.get_eigenvectors()[0][0][0](0, 0) = {1.0, 0.0};
+    }
+
+    const auto actual = get_symmetry_restored_dmat_cplx_Rs_kblacs_para(
+        0, 0, 0, mf, kfrac_list, Rs, context, desc_wfc_full, desc_dm, ctx, pbc,
+        atbasis_wfc);
+    const auto actual_gf = get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
+        0, 0, 0, mf, kfrac_list, taus, Rs, context, desc_wfc_full, desc_dm, ctx, pbc,
+        atbasis_wfc);
+    if (desc_dm.m_loc() > 0 && desc_dm.n_loc() > 0)
+    {
+        const auto diff = std::abs(actual.at(Rs.front())(0, 0) - expected(0, 0));
+        if (diff > 1e-12)
+        {
+            throw std::runtime_error(
+                "kBLACS density matrix for reduced k-star did not match symmetry restore");
+        }
+        for (const auto tau : taus)
+        {
+            const auto gf_diff = std::abs(
+                actual_gf.at(tau).at(Rs.front())(0, 0)
+                - expected_gf.at(tau).at(Rs.front())(0, 0));
+            if (gf_diff > 1e-12)
+            {
+                throw std::runtime_error(
+                    "kBLACS Green's function for reduced k-star did not match symmetry restore");
+            }
+        }
+    }
+}
+
 // a=3A, k222, light, minimal + 2p in tier1, FHI-aims
 static void test_dmat_cplx_Rs_kpara()
 {
@@ -525,6 +830,8 @@ int main (int argc, char *argv[])
     test_dmat_cplx_Rs_kblacs_para_full_wfc();
     test_gf_cplx_imagtimes_Rs_kblacs_para_full_wfc();
     test_dm_gf_kblacs_para_redistributed_full_wfc();
+    test_dmat_kblacs_reduced_kstar_matches_symmetry_restore();
+    test_dmat_gf_kblacs_reduced_kstar_matches_full_bz_fourier();
 
     finalize_global_io();
     finalize_global_mpi();

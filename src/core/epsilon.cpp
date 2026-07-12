@@ -378,119 +378,20 @@ static librpa_int::symmetry_atom_block_matrix_map_t gather_symmetry_ibz_blocks_c
     return build_symmetry_blocks_from_dense_matrix(dense_ibz_global, atom_nabf);
 }
 
-static librpa_int::symmetry_irreducible_sector_t filter_symmetry_irreducible_sector_by_rlist(
-    const librpa_int::symmetry_irreducible_sector_t& irreducible_sector,
-    const std::vector<Vector3_Order<int>>& Rlist)
-{
-    librpa_int::symmetry_irreducible_sector_t filtered_sector;
-    const std::set<Vector3_Order<int>> requested_rset(Rlist.begin(), Rlist.end());
-    for (const auto& pair_Rs : irreducible_sector)
-    {
-        for (const auto& R_array : pair_Rs.second)
-        {
-            const Vector3_Order<int> R{R_array[0], R_array[1], R_array[2]};
-            if (requested_rset.count(R) == 0)
-            {
-                continue;
-            }
-            filtered_sector[pair_Rs.first].insert(R_array);
-        }
-    }
-    return filtered_sector;
-}
-
-static std::set<std::pair<atom_t, atom_t>> build_symmetry_irreducible_target_atom_pairs(
-    const librpa_int::symmetry_irreducible_sector_t& irreducible_sector)
-{
-    std::set<std::pair<atom_t, atom_t>> target_atom_pairs;
-    for (const auto& pair_Rs : irreducible_sector)
-    {
-        if (!pair_Rs.second.empty())
-        {
-            target_atom_pairs.insert(pair_Rs.first);
-        }
-    }
-    return target_atom_pairs;
-}
-
-struct SymmetryIrreducibleWRPlan
-{
-    bool available = false;
-    librpa_int::symmetry_irreducible_sector_t local_irreducible_sector;
-    librpa_int::symmetry_rspace_sector_stars_t local_sector_stars;
-    std::set<std::pair<atom_t, atom_t>> local_irreducible_pairs;
-    std::vector<librpa_int::SymmetryKStarGridMappingEntry> kstar_grid_mapping;
-};
-
-static SymmetryIrreducibleWRPlan build_symmetry_irreducible_wr_plan(
-    const librpa_int::SymmetryContext& ctx,
-    const std::set<std::pair<atom_t, atom_t>>& local_target_pairs,
-    const PeriodicBoundaryData& pbc,
-    const std::vector<Vector3_Order<int>>& Rlist)
-{
-    SymmetryIrreducibleWRPlan plan;
-    const auto filtered_sector =
-        filter_symmetry_irreducible_sector_by_rlist(ctx.irreducible_sector, Rlist);
-    if (filtered_sector.empty())
-    {
-        return plan;
-    }
-
-    for (const auto& pair_star : ctx.rspace_sector_stars)
-    {
-        const auto& ir_pair = pair_star.first;
-        const auto filtered_pair_iter = filtered_sector.find(ir_pair);
-        if (filtered_pair_iter == filtered_sector.end())
-        {
-            continue;
-        }
-        for (const auto& R_members : pair_star.second)
-        {
-            if (filtered_pair_iter->second.count(
-                    {R_members.first.x, R_members.first.y, R_members.first.z}) == 0)
-            {
-                continue;
-            }
-            std::vector<librpa_int::SymmetryRSpaceRestoreMember> local_members;
-            for (const auto& restore_member : R_members.second)
-            {
-                if (local_target_pairs.count(restore_member.full_atom_pair) != 0)
-                {
-                    local_members.push_back(restore_member);
-                }
-            }
-            if (local_members.empty())
-            {
-                continue;
-            }
-
-            plan.local_sector_stars[ir_pair][R_members.first] = std::move(local_members);
-            plan.local_irreducible_sector[ir_pair].insert(
-                {R_members.first.x, R_members.first.y, R_members.first.z});
-        }
-    }
-
-    plan.local_irreducible_pairs =
-        build_symmetry_irreducible_target_atom_pairs(plan.local_irreducible_sector);
-    plan.kstar_grid_mapping = ctx.kstar_grid_mapping;
-    plan.available = true;
-    return plan;
-}
-
-static abf_rspace_dense_block_map_t allocate_symmetry_irreducible_wr_storage(
-    const librpa_int::symmetry_irreducible_sector_t& irreducible_sector,
+static abf_rspace_dense_block_map_t allocate_symmetry_full_wr_storage(
+    const std::set<std::pair<atom_t, atom_t>>& target_atom_pairs,
+    const std::vector<Vector3_Order<int>>& Rlist,
     const std::map<atom_t, size_t>& atom_nabf)
 {
     abf_rspace_dense_block_map_t blocks_by_R_dense;
-    for (const auto& pair_Rs : irreducible_sector)
+    for (const auto& atom_pair : target_atom_pairs)
     {
-        const auto atom_i = pair_Rs.first.first;
-        const auto atom_j = pair_Rs.first.second;
+        const auto atom_i = atom_pair.first;
+        const auto atom_j = atom_pair.second;
         const int n_i = static_cast<int>(atom_nabf.at(atom_i));
         const int n_j = static_cast<int>(atom_nabf.at(atom_j));
-        for (const auto& R_array : pair_Rs.second)
+        for (const auto& R : Rlist)
         {
-            const Vector3_Order<int> R{R_array[0], R_array[1], R_array[2]};
             blocks_by_R_dense[atom_i][atom_j][R] = ComplexMatrix(n_i, n_j);
         }
     }
@@ -515,61 +416,6 @@ static abf_rspace_complex_block_map_t convert_dense_rspace_blocks_to_row_major(
     return row_major_blocks;
 }
 
-static abf_rspace_dense_block_map_t restore_symmetry_abf_rspace_dense_blocks(
-    const abf_rspace_dense_block_map_t& tensors_ir,
-    const librpa_int::SymmetryContext& symmetry_ctx,
-    const std::vector<SpeciesBasisLayout>& abf_layouts,
-    const librpa_int::symmetry_rspace_sector_stars_t& sector_stars)
-{
-    abf_rspace_dense_block_map_t tensors_full;
-    for (const auto& i_entry : tensors_ir)
-    {
-        const auto ir_I = static_cast<atom_t>(i_entry.first);
-        for (const auto& jr_entry : i_entry.second)
-        {
-            const auto ir_J = static_cast<atom_t>(jr_entry.first);
-            const auto pair_iter = sector_stars.find({ir_I, ir_J});
-            if (pair_iter == sector_stars.end())
-            {
-                throw std::runtime_error(
-                    "Failed to match an irreducible W(R) atom pair with the symmetry restore map");
-            }
-            for (const auto& R_matrix : jr_entry.second)
-            {
-                const auto& ir_R = R_matrix.first;
-                const auto star_iter = pair_iter->second.find(ir_R);
-                if (star_iter == pair_iter->second.end())
-                {
-                    std::ostringstream oss;
-                    oss << "Failed to match an irreducible W(R) block with the symmetry restore map"
-                        << " for I=" << ir_I << " J=" << ir_J << " R=(" << ir_R.x << ","
-                        << ir_R.y << "," << ir_R.z << ")";
-                    throw std::runtime_error(oss.str());
-                }
-
-                for (const auto& restore_member : star_iter->second)
-                {
-                    ComplexMatrix w_full = librpa_int::rotate_symmetry_rspace_block(
-                        symmetry_ctx, abf_layouts, restore_member.isym, ir_I, ir_J, R_matrix.second);
-                    auto& target =
-                        tensors_full[restore_member.full_atom_pair.first]
-                                    [restore_member.full_atom_pair.second][restore_member.full_R];
-                    if (target.c == nullptr)
-                    {
-                        target = std::move(w_full);
-                    }
-                    else
-                    {
-                        throw std::runtime_error(
-                            "Duplicate full-sector W(R) block appears during symmetry restore");
-                    }
-                }
-            }
-        }
-    }
-    return tensors_full;
-}
-
 static std::complex<double> build_ft_wq_phase(const PeriodicBoundaryData& pbc,
                                               const Vector3_Order<double>& q_internal,
                                               const Vector3_Order<int>& R)
@@ -580,7 +426,7 @@ static std::complex<double> build_ft_wq_phase(const PeriodicBoundaryData& pbc,
            / static_cast<double>(pbc.get_n_cells_bvk());
 }
 
-static bool can_use_symmetry_irreducible_sector_wr_restore(
+static bool can_use_symmetry_qstar_wr_restore(
     const librpa_int::SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& abf_layouts,
     const std::map<atom_t, size_t>& atom_nabf,
@@ -594,7 +440,7 @@ static bool can_use_symmetry_irreducible_sector_wr_restore(
     return ctx.available
            && !ctx.kstars.empty()
            && ctx.kstars.size() == pbc.kfrac_list.size()
-           && !pbc.map_irk_ks.empty()
+           && !ctx.kstar_grid_mapping.empty()
            && ctx.atom_to_type.size() == atom_nabf.size()
            && ctx.input_coord_frac.size() == atom_nabf.size()
            && pbc.klist.size() < static_cast<std::size_t>(pbc.get_n_cells_bvk())
@@ -675,19 +521,18 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
     const std::map<atom_t, size_t>& atom_nabf)
 {
     const auto local_target_pairs = collect_local_target_atom_pairs_from_qspace(Wc_q);
-    const auto plan = build_symmetry_irreducible_wr_plan(ctx, local_target_pairs, pbc, Rlist);
-    if (!plan.available)
+    if (local_target_pairs.empty() || ctx.kstar_grid_mapping.empty())
     {
         return {};
     }
-    auto blocks_by_R_ir =
-        allocate_symmetry_irreducible_wr_storage(plan.local_irreducible_sector, atom_nabf);
+    auto blocks_by_R_full =
+        allocate_symmetry_full_wr_storage(local_target_pairs, Rlist, atom_nabf);
     const auto full_grid_member_targets =
         build_symmetry_full_grid_kstar_member_kfrac_targets(ctx, pbc.kfrac_list);
     const bool use_full_grid_member_targets =
         full_grid_member_targets.size() == ctx.kstars.size();
 
-    for (const auto& star_mapping : plan.kstar_grid_mapping)
+    for (const auto& star_mapping : ctx.kstar_grid_mapping)
     {
         const auto& star = ctx.kstars.at(static_cast<std::size_t>(star_mapping.star_list_index));
 
@@ -701,7 +546,7 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
             continue;
         }
         const auto rotation_atom_pairs =
-            librpa_int::build_symmetry_upper_atom_pair_closure(star, plan.local_irreducible_pairs);
+            librpa_int::build_symmetry_upper_atom_pair_closure(star, local_target_pairs);
         blocks_ibz = librpa_int::symmetrize_symmetry_ibz_kspace_operator_blocks(
             ctx, abf_layouts, q_ibz_frac, blocks_ibz, atom_nabf, &rotation_atom_pairs);
         if (star.members.size() != star_mapping.member_q_bz_keys.size())
@@ -713,17 +558,19 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
         for (std::size_t imember = 0; imember < star.members.size(); ++imember)
         {
             const auto& member = star.members[imember];
-            const Vector3_Order<double> q_bz_target_frac =
+            const Vector3_Order<double> raw_q_bz_target_frac =
                 use_full_grid_member_targets
                     ? full_grid_member_targets[static_cast<std::size_t>(
                           star_mapping.star_list_index)][imember]
                     : Vector3_Order<double>{pbc.latvec * star_mapping.member_q_bz_keys[imember]};
+            const Vector3_Order<double> q_bz_target_frac =
+                restrict_fractional_coordinate(raw_q_bz_target_frac);
             librpa_int::symmetry_atom_block_matrix_map_t rotated_blocks;
             try
             {
                 rotated_blocks = librpa_int::rotate_symmetry_kspace_operator_blocks(
                     ctx, abf_layouts, member, blocks_ibz, atom_nabf, star.k_ibz,
-                    member.time_reversal, &rotation_atom_pairs, &q_bz_target_frac);
+                    member.time_reversal, &local_target_pairs, &q_bz_target_frac);
             }
             catch (const std::exception& ex)
             {
@@ -736,28 +583,16 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
                 throw std::runtime_error(oss.str());
             }
 
-            const auto q_internal_from_full_grid = q_bz_target_frac * pbc.G;
-            const Vector3_Order<double> q_internal =
-                use_full_grid_member_targets
-                    ? Vector3_Order<double>{q_internal_from_full_grid}
-                    : star_mapping.member_q_bz_keys[imember];
+            const Vector3_Order<double> q_internal{q_bz_target_frac * pbc.G};
             for (const auto& atom_i_pair : rotated_blocks)
             {
                 for (const auto& atom_j_pair : atom_i_pair.second)
                 {
-                    const auto sector_iter =
-                        plan.local_irreducible_sector.find({atom_i_pair.first, atom_j_pair.first});
-                    if (sector_iter == plan.local_irreducible_sector.end())
+                    for (const auto& R : Rlist)
                     {
-                        continue;
-                    }
-
-                    for (const auto& R_array : sector_iter->second)
-                    {
-                        const Vector3_Order<int> R{R_array[0], R_array[1], R_array[2]};
                         const auto phase = build_ft_wq_phase(pbc, q_internal, R);
                         add_scaled_complex_matrix(
-                            blocks_by_R_ir.at(atom_i_pair.first).at(atom_j_pair.first).at(R),
+                            blocks_by_R_full.at(atom_i_pair.first).at(atom_j_pair.first).at(R),
                             atom_j_pair.second, phase);
                     }
                 }
@@ -765,9 +600,6 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
         }
     }
 
-    const auto blocks_by_R_full =
-        restore_symmetry_abf_rspace_dense_blocks(
-            blocks_by_R_ir, ctx, abf_layouts, plan.local_sector_stars);
     return convert_dense_rspace_blocks_to_row_major(blocks_by_R_full);
 }
 CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx_mat_t &coulmat,
@@ -3578,7 +3410,7 @@ static void fill_blacs_local_from_dense(Matz& local_matrix,
 
 static Matz rotate_symmetry_blacs_wq(const Matz& Wq_rep,
                                      const ArrayDesc& desc,
-                                     const ComplexMatrix& rotation_dense,
+                                     const ComplexMatrix& transform_dense,
                                      const bool use_time_reversal)
 {
     if (desc.m() != desc.n())
@@ -3586,35 +3418,35 @@ static Matz rotate_symmetry_blacs_wq(const Matz& Wq_rep,
         throw LIBRPA_RUNTIME_ERROR("Dense Wc symmetry restore requires a square descriptor");
     }
     const int n = desc.m();
-    auto rotation = init_local_mat<cplxdb>(desc, MAJOR::COL);
+    auto transform = init_local_mat<cplxdb>(desc, MAJOR::COL);
     auto tmp = init_local_mat<cplxdb>(desc, MAJOR::COL);
     auto Wq_member = init_local_mat<cplxdb>(desc, MAJOR::COL);
-    fill_blacs_local_from_dense(rotation, desc, rotation_dense);
+    fill_blacs_local_from_dense(transform, desc, transform_dense);
 
     if (use_time_reversal)
     {
+        auto transform_conj = transform.copy();
+        transform_conj.conj();
         auto Wq_conj = Wq_rep.copy();
         Wq_conj.conj();
-        ScalapackConnector::pgemm_f('C', 'N', n, n, n, 1.0,
-                                    rotation.ptr(), 1, 1, desc.desc,
+        ScalapackConnector::pgemm_f('N', 'N', n, n, n, 1.0,
+                                    transform_conj.ptr(), 1, 1, desc.desc,
                                     Wq_conj.ptr(), 1, 1, desc.desc,
                                     0.0, tmp.ptr(), 1, 1, desc.desc);
-        ScalapackConnector::pgemm_f('N', 'N', n, n, n, 1.0,
+        ScalapackConnector::pgemm_f('N', 'T', n, n, n, 1.0,
                                     tmp.ptr(), 1, 1, desc.desc,
-                                    rotation.ptr(), 1, 1, desc.desc,
+                                    transform.ptr(), 1, 1, desc.desc,
                                     0.0, Wq_member.ptr(), 1, 1, desc.desc);
     }
     else
     {
-        auto rotation_conj = rotation.copy();
-        rotation_conj.conj();
-        ScalapackConnector::pgemm_f('T', 'N', n, n, n, 1.0,
-                                    rotation.ptr(), 1, 1, desc.desc,
+        ScalapackConnector::pgemm_f('N', 'N', n, n, n, 1.0,
+                                    transform.ptr(), 1, 1, desc.desc,
                                     Wq_rep.ptr(), 1, 1, desc.desc,
                                     0.0, tmp.ptr(), 1, 1, desc.desc);
-        ScalapackConnector::pgemm_f('N', 'N', n, n, n, 1.0,
+        ScalapackConnector::pgemm_f('N', 'C', n, n, n, 1.0,
                                     tmp.ptr(), 1, 1, desc.desc,
-                                    rotation_conj.ptr(), 1, 1, desc.desc,
+                                    transform.ptr(), 1, 1, desc.desc,
                                     0.0, Wq_member.ptr(), 1, 1, desc.desc);
     }
     return Wq_member;
@@ -3622,7 +3454,7 @@ static Matz rotate_symmetry_blacs_wq(const Matz& Wq_rep,
 
 static Matz restore_symmetry_blacs_wq_to_star_source(const Matz& Wq_source,
                                                      const ArrayDesc& desc,
-                                                     const ComplexMatrix& source_rotation_dense,
+                                                     const ComplexMatrix& source_transform_dense,
                                                      const bool source_uses_time_reversal)
 {
     if (desc.m() != desc.n())
@@ -3630,13 +3462,10 @@ static Matz restore_symmetry_blacs_wq_to_star_source(const Matz& Wq_source,
         throw LIBRPA_RUNTIME_ERROR("Dense Wc symmetry source restore requires a square descriptor");
     }
     const int n = desc.m();
-    auto source_rotation = init_local_mat<cplxdb>(desc, MAJOR::COL);
-    auto source_rotation_conj = init_local_mat<cplxdb>(desc, MAJOR::COL);
+    auto source_transform = init_local_mat<cplxdb>(desc, MAJOR::COL);
     auto tmp = init_local_mat<cplxdb>(desc, MAJOR::COL);
     auto Wq_star = init_local_mat<cplxdb>(desc, MAJOR::COL);
-    fill_blacs_local_from_dense(source_rotation, desc, source_rotation_dense);
-    source_rotation_conj = source_rotation.copy();
-    source_rotation_conj.conj();
+    fill_blacs_local_from_dense(source_transform, desc, source_transform_dense);
 
     auto Wq_effective = Wq_source.copy();
     if (source_uses_time_reversal)
@@ -3644,13 +3473,13 @@ static Matz restore_symmetry_blacs_wq_to_star_source(const Matz& Wq_source,
         Wq_effective.conj();
     }
 
-    ScalapackConnector::pgemm_f('N', 'N', n, n, n, 1.0,
-                                source_rotation_conj.ptr(), 1, 1, desc.desc,
+    ScalapackConnector::pgemm_f('C', 'N', n, n, n, 1.0,
+                                source_transform.ptr(), 1, 1, desc.desc,
                                 Wq_effective.ptr(), 1, 1, desc.desc,
                                 0.0, tmp.ptr(), 1, 1, desc.desc);
-    ScalapackConnector::pgemm_f('N', 'T', n, n, n, 1.0,
+    ScalapackConnector::pgemm_f('N', 'N', n, n, n, 1.0,
                                 tmp.ptr(), 1, 1, desc.desc,
-                                source_rotation.ptr(), 1, 1, desc.desc,
+                                source_transform.ptr(), 1, 1, desc.desc,
                                 0.0, Wq_star.ptr(), 1, 1, desc.desc);
     return Wq_star;
 }
@@ -3680,7 +3509,8 @@ static std::map<Vector3_Order<double>, Matz> restore_symmetry_dense_wq_map(
         {
             throw LIBRPA_RUNTIME_ERROR("Dense Wc symmetry restore is missing a representative q");
         }
-        const Vector3_Order<double> q_rep_frac{pbc.latvec * q_rep};
+        const Vector3_Order<double> q_rep_frac =
+            restrict_fractional_coordinate(Vector3_Order<double>{pbc.latvec * q_rep});
         const auto& star =
             find_symmetry_kstar_for_kpoint(symmetry_context.kstars, q_rep_frac,
                                            "dense Wc q-star restore");
@@ -3703,16 +3533,18 @@ static std::map<Vector3_Order<double>, Matz> restore_symmetry_dense_wq_map(
             throw LIBRPA_RUNTIME_ERROR("Dense Wc symmetry restore could not find the representative in its q-star");
         }
         const auto& source_member = star.members[source_member_index];
-        const auto source_rotation = build_symmetry_kspace_rotation_matrix(
+        const auto source_transform = build_symmetry_kspace_operator_transform_matrix(
             symmetry_context, abf_layouts, source_member, atom_nabf, star.k_ibz,
             source_member.time_reversal, &q_rep_frac);
         const auto Wq_star_source = restore_symmetry_blacs_wq_to_star_source(
-            Wq_iter->second, ad_Wc, source_rotation, source_member.time_reversal);
+            Wq_iter->second, ad_Wc, source_transform, source_member.time_reversal);
 
         for (std::size_t imember = 0; imember != members.size(); ++imember)
         {
             const auto& q_member = members[imember];
-            const Vector3_Order<double> q_member_frac{pbc.latvec * q_member};
+            const Vector3_Order<double> q_member_frac =
+                restrict_fractional_coordinate(Vector3_Order<double>{pbc.latvec * q_member});
+            const Vector3_Order<double> q_member_internal{q_member_frac * pbc.G};
             const auto star_member_index = find_star_member_index(star, q_member_frac);
             if (star_member_index == star.members.size())
             {
@@ -3721,15 +3553,16 @@ static std::map<Vector3_Order<double>, Matz> restore_symmetry_dense_wq_map(
             const auto& member = star.members[star_member_index];
             if (star_member_index == source_member_index)
             {
-                Wq_full_map[q_member] = Wq_iter->second.copy();
+                Wq_full_map[q_member_internal] = Wq_iter->second.copy();
                 continue;
             }
 
-            const auto rotation = build_symmetry_kspace_rotation_matrix(
+            const auto transform = build_symmetry_kspace_operator_transform_matrix(
                 symmetry_context, abf_layouts, member, atom_nabf, star.k_ibz,
                 member.time_reversal, &q_member_frac);
-            Wq_full_map[q_member] =
-                rotate_symmetry_blacs_wq(Wq_star_source, ad_Wc, rotation, member.time_reversal);
+            Wq_full_map[q_member_internal] =
+                rotate_symmetry_blacs_wq(Wq_star_source, ad_Wc, transform,
+                                         member.time_reversal);
         }
     }
     return Wq_full_map;
@@ -3832,7 +3665,10 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
     // Divide into batches to limit the memory consumption of temporary matrices for Fourier transform
     // Maximal 1GB per process for HPC usage, about 500 * 500 elements with 216 k-points (6x6x6)
     const auto maxbytes_tmpmat = gbytes;
-    const auto size_batch_max = std::min(maxbytes_tmpmat / sizeof(cplxdb) / n_k_points, size);
+    // A valid BLACS rank can own no local matrix elements when the matrix is smaller than the
+    // process grid. Keep the batch divisor positive; zero local data then gives zero batches.
+    const auto size_batch_max = std::max<std::size_t>(
+        1, std::min(maxbytes_tmpmat / sizeof(cplxdb) / n_k_points, size));
     const auto n_data_batches = ceil_div(size, size_batch_max);
     const auto n_r_batch_max = std::min(maxbytes_tmpmat / sizeof(cplxdb) / size_batch_max, as_size(n_k_points));
     const auto n_r_batches = ceil_div(as_size(n_k_points), n_r_batch_max);
@@ -4556,11 +4392,11 @@ atom_mapping<std::map<Vector3_Order<int>, matrix_m<complex<double>>>>::pair_t_ol
     const auto abf_layouts =
         atbasis_abf.build_species_basis_layouts(symmetry_context.atom_to_type);
     if (use_symmetry_context
-        && can_use_symmetry_irreducible_sector_wr_restore(
+        && can_use_symmetry_qstar_wr_restore(
             symmetry_context, abf_layouts, atom_nabf, pbc))
     {
         lib_printf_root(
-            "GW symmetry accumulates irreducible-sector `W(R)` directly from IBZ q-stars\n");
+            "GW symmetry accumulates full `W(R)` directly from IBZ q-stars\n");
         Wc_R = accumulate_symmetry_full_wr_from_ibz_q(
             symmetry_context, abf_layouts, Wc_q, pbc, Rlist, atom_nabf);
         comm_h.barrier();

@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <complex>
 #include <map>
 #include <stdexcept>
@@ -73,7 +74,7 @@ void test_kspace_shell_rotations_use_direct_rotation()
     const Vector3_Order<int> return_lattice{1, 0, 0};
     const auto phase = build_symmetry_kspace_phase(
         k_source, k_target, atom_from, atom_to, return_lattice, basis_convention);
-    assert(fequal(phase, std::complex<double>(0.0, -1.0), std::complex<double>(1e-12, 0.0)));
+    assert(fequal(phase, std::complex<double>(0.0, 1.0), std::complex<double>(1e-12, 0.0)));
 
     const auto phased_shell_rotations =
         build_symmetry_kspace_shell_rotations(op,
@@ -164,6 +165,47 @@ void test_kstar_member_atom_mapping_tolerates_text_coordinate_noise()
     ctx.build_kstar_member_rotations(0);
     assert(ctx.kspace_return_lattice.at({0, 0}) == Vector3_Order<int>(1, 0, 0));
     assert(ctx.kstars.at(0).members.at(0).atom_rotations.at(0).atom_to == 0);
+}
+
+void test_kstar_member_atom_mapping_tolerates_si_fractional_roundoff()
+{
+    SymmetryContext ctx;
+    const Matrix3 lattice(1.0, 0.0, 0.0,
+                          0.0, 1.0, 0.0,
+                          0.0, 0.0, 1.0);
+    ctx.set_crystal_structure(
+        lattice,
+        lattice,
+        {{0, 0}, {1, 0}},
+        {{0, {0.12500258782275, 0.12500258782275, 0.12500258782275}},
+         {1, {0.87501811475925, 0.87501811475925, 0.87501811475925}}});
+    ctx.basis_convention = {-1,
+                            0,
+                            LIBRPA_ANGULAR_ORDER_NATURAL,
+                            LIBRPA_RSH_COEFF_1_M,
+                            LIBRPA_RSH_COEFF_1_M};
+
+    SymmetryOperation op;
+    op.rotation = Matrix3(0.0, -1.0, 0.0,
+                          1.0, -1.0, 0.0,
+                          0.0, -1.0, 1.0);
+    op.translation = {0.0, 0.5, -1.0};
+    op.use_row_convention = true;
+    ctx.rspace_operations.push_back(op);
+
+    SymmetryKStar star;
+    star.star_index = 0;
+    star.k_ibz = {0.0, 0.0, 0.0};
+    star.members.resize(1);
+    star.members[0].spatial_isym = 0;
+    star.members[0].k_bz = {0.0, 0.0, 0.0};
+    ctx.kstars.push_back(star);
+
+    ctx.build_kstar_member_rotations(0);
+    assert(ctx.kspace_return_lattice.at({0, 0}) == Vector3_Order<int>(0, 0, -1));
+    assert(ctx.kspace_return_lattice.at({1, 0}) == Vector3_Order<int>(0, -3, -1));
+    assert(ctx.kstars.at(0).members.at(0).atom_rotations.at(0).atom_to == 0);
+    assert(ctx.kstars.at(0).members.at(0).atom_rotations.at(1).atom_to == 1);
 }
 
 void test_species_basis_layout_keeps_shell_order()
@@ -927,16 +969,16 @@ ComplexMatrix atom_blocks_to_dense(
     return matrix;
 }
 
-ComplexMatrix rotate_dense_operator_from_rotation_matrix(
+ComplexMatrix rotate_dense_operator_from_transform_matrix(
     const ComplexMatrix& matrix,
-    const ComplexMatrix& rotation,
+    const ComplexMatrix& transform,
     const bool use_time_reversal)
 {
     if (use_time_reversal)
     {
-        return transpose(rotation, true) * conj(matrix) * rotation;
+        return conj(transform) * conj(matrix) * transpose(transform, false);
     }
-    return transpose(rotation, false) * matrix * conj(rotation);
+    return transform * matrix * transpose(transform, true);
 }
 
 void test_dense_kspace_rotation_matrix_orders_atom_swap_blocks()
@@ -979,6 +1021,103 @@ void test_dense_kspace_rotation_matrix_orders_atom_swap_blocks()
     expected(0, 1) = rot_0.bloch_rsh_rotations.at(0)(0, 0);
     expected(1, 0) = rot_1.bloch_rsh_rotations.at(0)(0, 0);
     assert_matrix_close(rotation, expected);
+}
+
+void test_dense_operator_rotation_matches_atom_blocks_for_asymmetric_swap_phases()
+{
+    SymmetryContext ctx;
+    ctx.rspace_operations.push_back(SpaceGroupSymOp::IDENTITY);
+
+    SymmetryKStarMember member;
+    member.spatial_isym = 0;
+    member.k_bz = {0.125, 0.125, 0.125};
+
+    SymmetryKAtomRotation rot_0;
+    rot_0.atom_from = 0;
+    rot_0.atom_to = 1;
+    rot_0.atom_type = 0;
+    rot_0.lmax = 0;
+    rot_0.bloch_rsh_rotations[0] = ComplexMatrix(1, 1);
+    rot_0.bloch_rsh_rotations[0](0, 0) =
+        std::polar(1.0, -3.0 * PI / 4.0);
+
+    SymmetryKAtomRotation rot_1;
+    rot_1.atom_from = 1;
+    rot_1.atom_to = 0;
+    rot_1.atom_type = 0;
+    rot_1.lmax = 0;
+    rot_1.bloch_rsh_rotations[0] = ComplexMatrix(1, 1);
+    rot_1.bloch_rsh_rotations[0](0, 0) = {1.0, 0.0};
+    member.atom_rotations = {rot_0, rot_1};
+
+    SpeciesBasisLayout layout;
+    layout.label = "X";
+    layout.set({0});
+    const std::map<atom_t, size_t> atom_nw{{0, 1}, {1, 1}};
+    ComplexMatrix source(2, 2);
+    source(0, 0) = {1.0, 0.0};
+    source(0, 1) = {2.0, 3.0};
+    source(1, 0) = {4.0, -5.0};
+    source(1, 1) = {6.0, 0.0};
+
+    const auto source_blocks = dense_to_atom_blocks(source, atom_nw);
+    const auto rotated_blocks = rotate_symmetry_kspace_operator_blocks(
+        ctx, {layout}, member, source_blocks, atom_nw, member.k_bz, false, nullptr,
+        &member.k_bz);
+    const auto expected = atom_blocks_to_dense(rotated_blocks, atom_nw);
+    const auto transform = build_symmetry_kspace_operator_transform_matrix(
+        ctx, {layout}, member, atom_nw, member.k_bz, false, &member.k_bz);
+    const auto actual = rotate_dense_operator_from_transform_matrix(source, transform, false);
+    assert_matrix_close(actual, expected);
+}
+
+void test_equivalent_kpoint_gauge_respects_bloch_atom_phase_convention()
+{
+    SymmetryContext ctx;
+    const Matrix3 lattice(1.0, 0.0, 0.0,
+                          0.0, 1.0, 0.0,
+                          0.0, 0.0, 1.0);
+    ctx.set_crystal_structure(lattice,
+                              lattice,
+                              {{0, 0}},
+                              {{0, {0.25, 0.0, 0.0}}});
+    ctx.rspace_operations.push_back(SpaceGroupSymOp::IDENTITY);
+
+    SymmetryKStarMember member;
+    member.spatial_isym = 0;
+    member.k_bz = {-1.0 / 3.0, 0.0, 0.0};
+    SymmetryKAtomRotation atom_rotation;
+    atom_rotation.atom_from = 0;
+    atom_rotation.atom_to = 0;
+    atom_rotation.atom_type = 0;
+    atom_rotation.lmax = 0;
+    atom_rotation.bloch_rsh_rotations[0] = ComplexMatrix(1, 1);
+    atom_rotation.bloch_rsh_rotations[0](0, 0) = {1.0, 0.0};
+    member.atom_rotations.push_back(atom_rotation);
+
+    SpeciesBasisLayout layout;
+    layout.label = "X";
+    layout.set({0});
+    const std::map<atom_t, size_t> atom_nw{{0, 1}};
+    const Vector3_Order<double> canonical_target{2.0 / 3.0, 0.0, 0.0};
+
+    ctx.basis_convention = {-1,
+                            0,
+                            LIBRPA_ANGULAR_ORDER_NATURAL,
+                            LIBRPA_RSH_COEFF_1_M,
+                            LIBRPA_RSH_COEFF_1_M};
+    const auto rotation_without_atom_phase = build_symmetry_kspace_rotation_matrix(
+        ctx, {layout}, member, atom_nw, member.k_bz, false, &canonical_target);
+    assert(fequal(rotation_without_atom_phase(0, 0),
+                  std::complex<double>(1.0, 0.0),
+                  std::complex<double>(1e-12, 0.0)));
+
+    ctx.basis_convention.bloch_ratom = 1;
+    const auto rotation_with_atom_phase = build_symmetry_kspace_rotation_matrix(
+        ctx, {layout}, member, atom_nw, member.k_bz, false, &canonical_target);
+    assert(fequal(rotation_with_atom_phase(0, 0),
+                  std::complex<double>(0.0, 1.0),
+                  std::complex<double>(1e-12, 0.0)));
 }
 
 void test_mgo_dense_kspace_rotation_matches_atom_block_rotation()
@@ -1024,11 +1163,11 @@ void test_mgo_dense_kspace_rotation_matches_atom_block_rotation()
     {
         for (const auto& member : star.members)
         {
-            const auto rotation = build_symmetry_kspace_rotation_matrix(
+            const auto transform = build_symmetry_kspace_operator_transform_matrix(
                 ctx, layouts, member, atom_nabf, star.k_ibz, member.time_reversal,
                 &member.k_bz);
-            const auto rotated_dense = rotate_dense_operator_from_rotation_matrix(
-                matrix, rotation, member.time_reversal);
+            const auto rotated_dense = rotate_dense_operator_from_transform_matrix(
+                matrix, transform, member.time_reversal);
             const auto rotated_blocks = rotate_symmetry_kspace_operator_blocks(
                 ctx, layouts, member, blocks, atom_nabf, star.k_ibz,
                 member.time_reversal, nullptr, &member.k_bz);
@@ -1073,6 +1212,117 @@ void test_mgo_k333_irreducible_sector_matches_single()
         }
     }
     assert(restored_members == Rlist.size());
+}
+
+void test_rspace_sector_star_member_isym_maps_full_to_ir_r()
+{
+    SymmetryContext ctx;
+    const Matrix3 lattice(1.0, 0.0, 0.0,
+                          0.0, 1.0, 0.0,
+                          0.0, 0.0, 1.0);
+    ctx.set_crystal_structure(lattice,
+                              lattice,
+                              {{0, 0}},
+                              {{0, {0.0, 0.0, 0.0}}});
+    const auto c4 = make_row_symmetry_operation({0,  1, 0,
+                                                -1,  0, 0,
+                                                 0,  0, 1});
+    const auto c4_inv = make_row_symmetry_operation({0, -1, 0,
+                                                     1,  0, 0,
+                                                     0,  0, 1});
+    ctx.set_rspace_operations({SpaceGroupSymOp::IDENTITY, c4, c4_inv});
+    ctx.irreducible_sector.clear();
+    add_irreducible_sector_entry(ctx.irreducible_sector, 0, 0, {1, 0, 0});
+    ctx.set_available();
+
+    const Vector3_Order<int> period{3, 3, 1};
+    const std::vector<Vector3_Order<int>> Rlist{
+        {1, 0, 0}, {0, 1, 0}, {0, -1, 0}};
+    symmetry_rspace_sector_stars_t sector_stars;
+    build_symmetry_rspace_sector_stars(ctx, period, Rlist, sector_stars);
+
+    const auto& members = sector_stars.at({0, 0}).at({1, 0, 0});
+    assert(members.size() == 3);
+    bool checked_non_identity = false;
+    for (const auto& member : members)
+    {
+        const auto rotated = multiply_row_vector(
+            Vector3_Order<double>(static_cast<double>(member.full_R.x),
+                                  static_cast<double>(member.full_R.y),
+                                  static_cast<double>(member.full_R.z)),
+            ctx.rspace_operations.at(member.isym).rotation);
+        const Vector3_Order<int> expected{
+            static_cast<int>(std::llround(rotated.x)),
+            static_cast<int>(std::llround(rotated.y)),
+            static_cast<int>(std::llround(rotated.z))};
+        assert(expected == Vector3_Order<int>(1, 0, 0));
+        checked_non_identity = checked_non_identity || member.isym != 0;
+    }
+    assert(checked_non_identity);
+}
+
+void test_rspace_block_restore_uses_stored_operation_rotation_convention()
+{
+    SymmetryContext ctx;
+    const Matrix3 lattice(1.0, 0.0, 0.0,
+                          0.0, 1.0, 0.0,
+                          0.0, 0.0, 1.0);
+    ctx.set_crystal_structure(lattice,
+                              lattice,
+                              {{0, 0}},
+                              {{0, {0.0, 0.0, 0.0}}});
+    ctx.basis_convention = {-1,
+                            0,
+                            LIBRPA_ANGULAR_ORDER_NATURAL,
+                            LIBRPA_RSH_COEFF_1_M,
+                            LIBRPA_RSH_COEFF_1_M};
+    const auto c4 = make_row_symmetry_operation({0,  1, 0,
+                                                -1,  0, 0,
+                                                 0,  0, 1});
+    const auto c4_inv = make_row_symmetry_operation({0, -1, 0,
+                                                     1,  0, 0,
+                                                     0,  0, 1});
+    ctx.set_rspace_operations({SpaceGroupSymOp::IDENTITY, c4, c4_inv});
+    ctx.build_rsh_rotations(ctx.basis_convention, 1);
+    ctx.irreducible_sector.clear();
+    add_irreducible_sector_entry(ctx.irreducible_sector, 0, 0, {1, 0, 0});
+    ctx.set_available();
+
+    const Vector3_Order<int> period{3, 3, 1};
+    const std::vector<Vector3_Order<int>> Rlist{
+        {1, 0, 0}, {0, 1, 0}, {0, -1, 0}};
+    symmetry_rspace_sector_stars_t sector_stars;
+    build_symmetry_rspace_sector_stars(ctx, period, Rlist, sector_stars);
+
+    const auto& members = sector_stars.at({0, 0}).at({1, 0, 0});
+    const SymmetryRSpaceRestoreMember* non_identity_member = nullptr;
+    for (const auto& member : members)
+    {
+        if (member.isym != 0)
+        {
+            non_identity_member = &member;
+            break;
+        }
+    }
+    assert(non_identity_member != nullptr);
+
+    const std::vector<SpeciesBasisLayout> layouts{{"X", {1}}};
+    ComplexMatrix block_ir(3, 3);
+    block_ir(0, 0) = 1.0;
+    block_ir(0, 1) = 0.2;
+    block_ir(0, 2) = -0.3;
+    block_ir(1, 0) = 0.4;
+    block_ir(1, 1) = 2.0;
+    block_ir(1, 2) = 0.5;
+    block_ir(2, 0) = -0.6;
+    block_ir(2, 1) = 0.7;
+    block_ir(2, 2) = 3.0;
+
+    const auto T = ctx.get_rotation_matrix(layouts, 0, non_identity_member->isym);
+    const auto expected_full = transpose(T, false) * block_ir * conj(T);
+    const auto restored = rotate_symmetry_rspace_block(
+        ctx, layouts, non_identity_member->isym, 0, 0, block_ir);
+    assert_matrix_close(restored, expected_full);
 }
 
 void test_mgo_k333_irreducible_sector_matches_both()
@@ -1179,6 +1429,7 @@ int main()
     test_kspace_shell_rotations_use_direct_rotation();
     test_kstar_member_return_lattice_preserves_input_fractional_representative();
     test_kstar_member_atom_mapping_tolerates_text_coordinate_noise();
+    test_kstar_member_atom_mapping_tolerates_si_fractional_roundoff();
     test_species_basis_layout_keeps_shell_order();
     test_species_layouts_match_basis_dimensions();
     test_atomic_basis_builds_symmetry_species_layouts();
@@ -1195,8 +1446,12 @@ int main()
     test_mgo_keeps_all_kspace_operations_for_full_qstars();
     test_kstar_routes_prefer_improper_spatial_operation_over_time_reversal();
     test_dense_kspace_rotation_matrix_orders_atom_swap_blocks();
+    test_dense_operator_rotation_matches_atom_blocks_for_asymmetric_swap_phases();
+    test_equivalent_kpoint_gauge_respects_bloch_atom_phase_convention();
     test_mgo_dense_kspace_rotation_matches_atom_block_rotation();
     test_mgo_k333_irreducible_sector_matches_single();
+    test_rspace_sector_star_member_isym_maps_full_to_ir_r();
+    test_rspace_block_restore_uses_stored_operation_rotation_convention();
     test_mgo_k333_irreducible_sector_matches_both();
     test_bn_shrink_irreducible_sector_can_be_generated_from_symmetry();
 }

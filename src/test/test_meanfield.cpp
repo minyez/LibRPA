@@ -331,6 +331,11 @@ void test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge()
 
     librpa_int::SymmetryContext ctx;
     ctx.set_available();
+    ctx.basis_convention = {-1,
+                            1,
+                            LIBRPA_ANGULAR_ORDER_NATURAL,
+                            LIBRPA_RSH_COEFF_1_M,
+                            LIBRPA_RSH_COEFF_1_M};
     const std::vector<SpeciesBasisLayout> wfc_layouts{{"X", {0}}};
     ctx.atom_to_type[0] = 0;
     ctx.atom_to_type[1] = 0;

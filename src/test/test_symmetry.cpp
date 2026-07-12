@@ -6,6 +6,7 @@
 #include <cmath>
 #include <iostream>
 #include <map>
+#include <stdexcept>
 #include <vector>
 
 using namespace librpa_int;
@@ -594,6 +595,40 @@ static void test_return_lattice_preserves_input_fractional_representative()
     assert(map.return_lattice[1] == Vector3_Order<int>(0, 0, 1));
 }
 
+static void test_direct_fractional_coordinates_fix_si_symmetry_atom_mapping()
+{
+    const std::map<size_t, int> atom_to_type{{0, 0}, {1, 0}};
+    SpaceGroupSymOp op;
+    op.rotation = {0, -1, 0, 1, -1, 0, 0, -1, 1};
+    op.translation = {0.0, 0.5, -1.0};
+    op.use_row_convention = true;
+
+    const std::map<size_t, Vector3_Order<double>> coord_frac_from_mismatched_cart{
+        {0, {0.12500258782275, 0.12500258782275, 0.12500258782275}},
+        {1, {0.87501811475925, 0.87501811475925, 0.87501811475925}},
+    };
+    bool failed_with_mismatched_cart = false;
+    try
+    {
+        (void)get_space_group_atom_mapping(
+            op, coord_frac_from_mismatched_cart, atom_to_type, 5e-5);
+    }
+    catch (const std::runtime_error&)
+    {
+        failed_with_mismatched_cart = true;
+    }
+    assert(failed_with_mismatched_cart);
+
+    const std::map<size_t, Vector3_Order<double>> coord_frac_from_direct_stru{
+        {0, {0.125, 0.125, 0.125}},
+        {1, {0.875, 0.875, 0.875}},
+    };
+    const auto map =
+        get_space_group_atom_mapping(op, coord_frac_from_direct_stru, atom_to_type, 5e-5);
+    assert(map.atom_map[0] == 0);
+    assert(map.atom_map[1] == 1);
+}
+
 int main()
 {
     test_rotation();
@@ -608,5 +643,6 @@ int main()
     test_lih_rocksalt_rspace_irreducible_sectors_use_input_fractional_representatives();
     test_get_space_group_atom_mapping_mgo();
     test_return_lattice_preserves_input_fractional_representative();
+    test_direct_fractional_coordinates_fix_si_symmetry_atom_mapping();
     return 0;
 }
