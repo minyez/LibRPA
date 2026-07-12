@@ -818,6 +818,129 @@ void G0W0::read_sigc(const std::string &input_dir)
     global::profiler.stop("g0w0_read_sigc(R,iw) in NAO");
 }
 
+void G0W0::collect_sigc_rf_output_shards()
+{
+#ifndef LIBRPA_USE_LIBRI
+    throw LIBRPA_RUNTIME_ERROR("collecting SigC(R,iw) output shards requires LibRI");
+#else
+    std::set<int> all_atoms;
+    std::vector<int> atoms;
+    atoms.reserve(atbasis_wfc.n_atoms);
+    for (std::size_t iatom = 0; iatom != atbasis_wfc.n_atoms; ++iatom)
+    {
+        all_atoms.insert(as_int(iatom));
+        atoms.push_back(as_int(iatom));
+    }
+
+    // Disjoint (J,R) requests make comm_map2 sum each global block onto one output shard.
+    std::set<std::pair<int, std::array<int, 3>>> local_JRs;
+    for (const auto &[J, R] :
+         dispatch_vector_prod(atoms, pbc.Rlist, comm_h.myid, comm_h.nprocs, true, false))
+    {
+        local_JRs.insert({J, {R.x, R.y, R.z}});
+    }
+
+    const int n_spinor = mf.get_n_spinor();
+    for (int ispin = 0; ispin != mf.get_n_spins(); ++ispin)
+    {
+        for (int ispinor_bra = 0; ispinor_bra != n_spinor; ++ispinor_bra)
+        {
+            for (int ispinor_ket = 0; ispinor_ket != n_spinor; ++ispinor_ket)
+            {
+                for (const auto omega : tfg.get_freq_nodes())
+                {
+                    auto &sigc_IJ_R = sigc_is_f_IJ_R[ispin][ispinor_bra][ispinor_ket][omega];
+                    std::map<int, std::map<std::pair<int, std::array<int, 3>>, Tensor<cplxdb>>>
+                        sigc_I_JR_local;
+                    for (const auto &[IJ, R_sigc] : sigc_IJ_R)
+                    {
+                        const int I = IJ.first;
+                        const int J = IJ.second;
+                        const auto n_I = atbasis_wfc.get_atom_nb(I);
+                        const auto n_J = atbasis_wfc.get_atom_nb(J);
+                        for (const auto &[R, sigc] : R_sigc)
+                        {
+                            sigc_I_JR_local[I][{J, {R.x, R.y, R.z}}] =
+                                Tensor<cplxdb>({n_I, n_J}, sigc.sptr());
+                        }
+                    }
+
+                    auto sigc_I_JR = comm_map2(comm_h.comm, sigc_I_JR_local, all_atoms, local_JRs);
+                    ap_p_map<std::map<Vector3_Order<int>, Matz>> sigc_collected;
+                    for (const auto &[I, JR_sigc] : sigc_I_JR)
+                    {
+                        const int n_I = as_int(atbasis_wfc.get_atom_nb(I));
+                        for (const auto &[JR, sigc] : JR_sigc)
+                        {
+                            const int J = JR.first;
+                            const int n_J = as_int(atbasis_wfc.get_atom_nb(J));
+                            const auto &R = JR.second;
+                            sigc_collected[{I, J}][{R[0], R[1], R[2]}] =
+                                Matz{n_I, n_J, sigc.data, MAJOR::ROW};
+                        }
+                    }
+                    sigc_IJ_R = std::move(sigc_collected);
+                }
+            }
+        }
+    }
+#endif
+}
+
+void G0W0::write_sigc_rf_output_files() const
+{
+    const int n_spinor = mf.get_n_spinor();
+    for (int ispin = 0; ispin != mf.get_n_spins(); ++ispin)
+    {
+        for (int ispinor_bra = 0; ispinor_bra != n_spinor; ++ispinor_bra)
+        {
+            for (int ispinor_ket = 0; ispinor_ket != n_spinor; ++ispinor_ket)
+            {
+                for (std::size_t iomega = 0; iomega != tfg.get_n_grids(); ++iomega)
+                {
+                    const auto fn =
+                        make_sigc_rf_filenames(output_dir, ispin, ispinor_bra, ispinor_ket,
+                                               n_spinor, as_int(iomega), global::myid_global)
+                            .front();
+                    std::ofstream ofs_sigmac_r(fn, std::ios::out | std::ios::binary);
+                    if (!ofs_sigmac_r)
+                        throw LIBRPA_RUNTIME_ERROR("cannot open SigC output file: " + fn);
+
+                    std::size_t n_IJR_myid = 0;
+                    ofs_sigmac_r.write(reinterpret_cast<const char *>(&n_IJR_myid),
+                                       sizeof(n_IJR_myid));
+
+                    const auto omega = tfg.get_freq_nodes()[iomega];
+                    const auto &sigc_IJ_R =
+                        sigc_is_f_IJ_R.at(ispin).at(ispinor_bra).at(ispinor_ket).at(omega);
+                    for (const auto &[IJ, R_sigc] : sigc_IJ_R)
+                    {
+                        const int I = IJ.first;
+                        const int J = IJ.second;
+                        const auto n_I = atbasis_wfc.get_atom_nb(I);
+                        const auto n_J = atbasis_wfc.get_atom_nb(J);
+                        for (const auto &[R, sigc] : R_sigc)
+                        {
+                            const std::size_t dims[5] = {as_size(pbc.get_R_index(R)), as_size(I),
+                                                         as_size(J), n_I, n_J};
+                            assert(sigc.size() == n_I * n_J);
+                            ++n_IJR_myid;
+                            ofs_sigmac_r.write(reinterpret_cast<const char *>(dims), sizeof(dims));
+                            ofs_sigmac_r.write(reinterpret_cast<const char *>(sigc.ptr()),
+                                               sigc.size() * sizeof(cplxdb));
+                        }
+                    }
+                    ofs_sigmac_r.seekp(0);
+                    ofs_sigmac_r.write(reinterpret_cast<const char *>(&n_IJR_myid),
+                                       sizeof(n_IJR_myid));
+                    if (!ofs_sigmac_r)
+                        throw LIBRPA_RUNTIME_ERROR("failed to write SigC output file: " + fn);
+                }
+            }
+        }
+    }
+}
+
 void G0W0::write_sigc_matrices_KS_binary(const std::string &output_dir,
                                          const std::string &source) const
 {
@@ -1890,52 +2013,8 @@ void G0W0::build_spacetime(
     // Export real-space imaginary-frequency NAO sigma_c matrices
     if (is_rspace_built_ && this->output_sigc_mat_rf)
     {
-        const int n_spinor = mf.get_n_spinor();
-        for (int ispin = 0; ispin != mf.get_n_spins(); ispin++)
-        {
-            for (int ispinor_bra = 0; ispinor_bra < n_spinor; ispinor_bra++)
-            {
-                for (int ispinor_ket = 0; ispinor_ket < n_spinor; ispinor_ket++)
-                {
-                    for (size_t iomega = 0; iomega != tfg.get_n_grids(); iomega++)
-                    {
-                        size_t n_IJR_myid = 0;
-                        const auto fn = make_sigc_rf_filenames(
-                            this->output_dir, ispin, ispinor_bra, ispinor_ket,
-                            n_spinor, as_int(iomega), global::myid_global).front();
-                        ofs_sigmac_r.open(fn, std::ios::out | std::ios::binary);
-                        ofs_sigmac_r.write((char *) &n_IJR_myid, sizeof(size_t)); // placeholder
-
-                        const auto omega = tfg.get_freq_nodes()[iomega];
-                        const auto &sigc_IJ_R = sigc_is_f_IJ_R[ispin][ispinor_bra][ispinor_ket][omega];
-                        for (const auto &[IJ, R_sigc]: sigc_IJ_R)
-                        {
-                            const int I = IJ.first;
-                            const int J = IJ.second;
-                            for (const auto &[R, sigc]: R_sigc)
-                            {
-                                const auto iR = this->pbc.get_R_index(R);
-                                const auto &n_I = this->atbasis_wfc.get_atom_nb(I);
-                                const auto &n_J = this->atbasis_wfc.get_atom_nb(J);
-                                n_IJR_myid++;
-                                size_t dims[5];
-                                dims[0] = iR;
-                                dims[1] = I;
-                                dims[2] = J;
-                                dims[3] = n_I;
-                                dims[4] = n_J;
-                                assert (sigc.size() == n_I * n_J);
-                                ofs_sigmac_r.write((char *) dims, 5 * sizeof(size_t));
-                                ofs_sigmac_r.write((char *) sigc.ptr(), sigc.size() * sizeof(cplxdb));
-                            }
-                        }
-                        ofs_sigmac_r.seekp(0);
-                        ofs_sigmac_r.write((char *) &n_IJR_myid, sizeof(size_t)); // placeholder
-                        ofs_sigmac_r.close();
-                    }
-                }
-            }
-        }
+        collect_sigc_rf_output_shards();
+        write_sigc_rf_output_files();
     }
 }
 

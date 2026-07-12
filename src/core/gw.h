@@ -35,6 +35,9 @@ private:
     // Sparse storage from LibRI calculation
     SigcRspaceMap sigc_is_f_IJ_R;
 
+    void collect_sigc_rf_output_shards();
+    void write_sigc_rf_output_files() const;
+
     void build_sigc_matrix_KS(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
                               const std::vector<Vector3_Order<double>> &kfrac_target,
                               const AtomPairBvKRemap<atom_t> &bvk_remap);
