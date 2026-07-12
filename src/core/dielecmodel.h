@@ -1,8 +1,10 @@
 #pragma once
 #include <array>
+#include <cstddef>
 #include <complex>
 #include <functional>
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -97,6 +99,47 @@ const ComplexMatrix &direct_full_bz_wfc_for_kstar_member(
     int ik_ibz,
     std::size_t imember);
 
+using HeadwingIJKAtomKey = std::size_t;
+using HeadwingIJKKey = std::pair<HeadwingIJKAtomKey, int>;
+using HeadwingCsIJKMap =
+    std::map<HeadwingIJKAtomKey,
+             std::map<HeadwingIJKKey, RI::Tensor<std::complex<double>>>>;
+using HeadwingCsIJKRequests =
+    std::pair<std::set<HeadwingIJKAtomKey>, std::set<HeadwingIJKKey>>;
+
+struct HeadwingFourierTarget
+{
+    int target_id = -1;
+    int owner_ik = -1;
+    Vector3_Order<double> kfrac{0.0, 0.0, 0.0};
+};
+
+struct HeadwingSymmetryFourierTargets
+{
+    std::vector<HeadwingFourierTarget> targets;
+    std::vector<std::vector<int>> target_ids_by_ibz_member;
+};
+
+std::vector<HeadwingFourierTarget> build_headwing_full_bz_fourier_targets(
+    const std::vector<Vector3_Order<double>> &kfrac_list);
+HeadwingSymmetryFourierTargets build_headwing_symmetry_fourier_targets(
+    const SymmetryContext &ctx, const PeriodicBoundaryData &pbc,
+    const std::vector<Vector3_Order<double>> &kfrac_ibz);
+HeadwingCsIJKMap fourier_headwing_cs_to_ijk(
+    const Cs_LRI &Cs_data, const AtomicBasis &atomic_basis_wfc,
+    const AtomicBasis &atomic_basis_abf,
+    const std::vector<HeadwingFourierTarget> &targets);
+HeadwingCsIJKRequests build_headwing_cs_ijk_requests(
+    const AtomicBasis &atomic_basis_wfc,
+    const std::vector<HeadwingFourierTarget> &targets,
+    const std::vector<int> &owner_iks_local, const ArrayDesc &desc_nao_nao);
+HeadwingCsIJKMap redistribute_headwing_cs_ijk(
+    const Cs_LRI &Cs_data, const AtomicBasis &atomic_basis_wfc,
+    const AtomicBasis &atomic_basis_abf,
+    const std::vector<HeadwingFourierTarget> &targets,
+    const std::vector<int> &owner_iks_local, const ArrayDesc &desc_nao_nao,
+    const MpiCommHandler &comm_h);
+
 // All calculation in unit: Bohr and Ha.
 class diele_func
 {
@@ -149,6 +192,8 @@ private:
     const BlacsCtxtHandler &blacs_h;
     const SymmetryContext *symmetry_context_;
     const KPointBlacsParallelContext *kblacs_ctxt_;
+    const ArrayDesc *desc_wfc_kblacs_;
+    bool use_kpara_eigvec_;
     size_t n_nonsingular;
     // Lebedev-Laikov angular grid; qw has absorbed 4Pi.
     std::vector<double> qx_leb, qy_leb, qz_leb, qw_leb;
@@ -197,7 +242,9 @@ public:
                const int nspin, const int nabf, const PeriodicBoundaryData &pbc,
                const MpiCommHandler &comm_h_in,
                const BlacsCtxtHandler &blacs_h_in,
-               const KPointBlacsParallelContext *kblacs_ctxt_in = nullptr)
+               bool use_kpara_eigvec = false,
+               const KPointBlacsParallelContext *kblacs_ctxt_in = nullptr,
+               const ArrayDesc *desc_wfc_kblacs_in = nullptr)
         : meanfield_df(mf),
           omega(frequencies_target),
           kfrac_band(kfrac),
@@ -214,6 +261,8 @@ public:
           blacs_h(blacs_h_in),
           symmetry_context_(nullptr),
           kblacs_ctxt_(nullptr),
+          desc_wfc_kblacs_(desc_wfc_kblacs_in),
+          use_kpara_eigvec_(use_kpara_eigvec),
           n_nonsingular(0)
     {
         if (kblacs_ctxt_in && kblacs_ctxt_in->is_initialized())
@@ -225,6 +274,22 @@ public:
                     "context");
             }
             kblacs_ctxt_ = kblacs_ctxt_in;
+        }
+        if (use_kpara_eigvec_)
+        {
+            if (kblacs_ctxt_ == nullptr || desc_wfc_kblacs_ == nullptr ||
+                !desc_wfc_kblacs_->is_initialized())
+            {
+                throw std::runtime_error(
+                    "k-parallel head/wing requires an initialized k-BLACS context and "
+                    "wave-function descriptor");
+            }
+            if (desc_wfc_kblacs_->m() != n_basis || desc_wfc_kblacs_->n() != n_states ||
+                desc_wfc_kblacs_->ictxt() != kblacs_ctxt_->blacs_h.ictxt)
+            {
+                throw std::runtime_error(
+                    "k-parallel head/wing wave-function descriptor is inconsistent");
+            }
         }
     };
     ~diele_func(){};
@@ -293,6 +358,11 @@ public:
         const BlacsCtxtHandler &wing_blacs_h, const Vector3_Order<double> &kfrac,
         const std::vector<std::vector<const ComplexMatrix *>> *wfc_override = nullptr,
         int spin_filter = -1);
+    std::pair<ArrayDesc, matrix_m<complex<double>>> transform_Cs2mnk_kblacs(
+        int source_ik, int target_id, int mu, const HeadwingCsIJKMap &Cs_IJ_k,
+        const BlacsCtxtHandler &wing_blacs_h,
+        const std::vector<std::vector<const ComplexMatrix *>> *wfc_override = nullptr,
+        int spin_filter = -1);
     // void FT_R2k();
     // std::complex<double> compute_Cijk(Cs_LRI &Cs_in, int mu, int I, int i, int J, int j, int
     // ik); void Cs_ij2mn(); std::complex<double> compute_Cs_ij2mn(int mu, int m, int n, int
@@ -338,6 +408,14 @@ public:
     void rewrite_rpa_response(matrix_m<std::complex<double>> &eps_minus_identity_block,
                               const int ifreq, ArrayDesc &desc_nabf_nabf_opt);
     void assign_chi0(matrix_m<std::complex<double>> &chi0_block, ArrayDesc &desc_nabf_nabf_opt);
+
+private:
+    std::pair<ArrayDesc, matrix_m<complex<double>>> rotate_Cs_nao2mnk_kblacs(
+        int source_ik, int mu, matrix_m<complex<double>> &C_nao_nao,
+        const ArrayDesc &desc_nao_nao, const BlacsCtxtHandler &wing_blacs_h,
+        const ArrayDesc &desc_wfc_src,
+        const std::vector<std::vector<const ComplexMatrix *>> *wfc_override,
+        int spin_filter);
 };
 
 int rpa_headwing_regular_body_start_channel(const RpaHeadwingSettings &settings);

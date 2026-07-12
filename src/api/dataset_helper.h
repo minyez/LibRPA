@@ -33,5 +33,7 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts);
 void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, bool need_wing);
 
 void initialize_symmetry_context(Dataset &ds, bool build_shell_rotations);
+void require_symmetry_shell_layouts(const Dataset &ds, const char *calculation);
+void reject_spinor_symmetry_speedup(const Dataset &ds, const char *calculation);
 
 }

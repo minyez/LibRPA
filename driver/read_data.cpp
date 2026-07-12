@@ -1246,6 +1246,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     const bool wants_headwing_symmetry =
         driver::get_bool(driver::opts.use_symmetry_rpa) ||
         driver::get_bool(driver::opts.use_symmetry_gw);
+    const bool use_kpara_eigvec = driver::get_bool(driver::opts.use_kpara_scf_eigvec);
     const string pyatb_dir = path_as_directory(dir_path) + "pyatb_librpa_df/";
     const string pyatb_velocity = pyatb_dir + "velocity_matrix";
 
@@ -1293,7 +1294,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         read_scf_occ_eigenvalues(pyatb_dir + "band_out", mf, use_spinor_wfc,
                                   target_to_source_ik, static_cast<int>(kfrac_pyatb.size()));
         std::vector<int> iks_headwing_eigvec_this;
-        if (pds->scfk_blacs_ctxt.is_initialized())
+        if (use_kpara_eigvec && pds->scfk_blacs_ctxt.is_initialized())
         {
             if (pds->scfk_blacs_ctxt.n_kpoints() != mf.get_n_kpoints())
                 throw std::runtime_error(
@@ -1305,7 +1306,9 @@ void read_headwing_input(const string &dir_path, bool need_wing)
             }
         }
         const std::vector<int> *source_iks_headwing_eigvec_selected =
-            pds->scfk_blacs_ctxt.is_initialized() ? &iks_headwing_eigvec_this : nullptr;
+            use_kpara_eigvec && pds->scfk_blacs_ctxt.is_initialized()
+                ? &iks_headwing_eigvec_this
+                : nullptr;
         const int ret_eigenvec =
             read_eigenvector(pyatb_dir, mf, use_spinor_wfc, source_to_target_ik,
                              source_iks_headwing_eigvec_selected,
@@ -1385,16 +1388,25 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         driver::get_bool(driver::opts.use_shrink_abfs) ? pds->basis_aux_shrink : pds->basis_aux;
     if (!headwing_basis_aux.initialized())
         throw std::runtime_error("Head/wing auxiliary basis is not initialized");
+
+    const bool use_headwing_symmetry = wants_headwing_symmetry;
+    if (use_headwing_symmetry)
+    {
+        reject_spinor_symmetry_speedup(*pds, "analytic head/wing");
+        initialize_symmetry_context(*pds, true);
+        require_symmetry_shell_layouts(*pds, "analytic head/wing");
+    }
     pds->p_headwing = std::make_unique<diele_func>(
         mf, velocity_matrix, pds->pbc.kfrac_list, pds->basis_wfc, headwing_basis_aux, freqs,
         n_basis, n_states, n_spin, headwing_basis_aux.nb_total, pds->pbc, pds->comm_h,
-        pds->blacs_h, &pds->scfk_blacs_ctxt);
+        pds->blacs_h, use_kpara_eigvec, &pds->scfk_blacs_ctxt, &pds->desc_wfc_kb_full);
     pds->p_headwing->use_2d_dielectric = driver::get_bool(driver::opts.use_2d_dielectric);
     pds->p_headwing->use_soc = mf.get_n_spinor() > 1;
     pds->p_headwing->debug = librpa_int::global::should_output(LIBRPA_VERBOSE_DEBUG);
     // Symmetry-aware head/wing uses the same active k-list as the main LibRPA
     // path: full BZ without symmetry, IBZ with input k-star metadata.
-    if (pds->symmetry_context.available && !pds->symmetry_context.kstars.empty())
+    if (use_headwing_symmetry && pds->symmetry_context.available &&
+        !pds->symmetry_context.kstars.empty())
     {
         pds->p_headwing->set_symmetry_context(pds->symmetry_context);
         pds->p_headwing->use_symmetry = true;

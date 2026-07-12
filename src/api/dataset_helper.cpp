@@ -228,9 +228,9 @@ void initialize_ds_exx(Dataset &ds, const LibrpaOptions &opts)
     {
         reject_spinor_symmetry_speedup(ds, "EXX");
     }
-    initialize_symmetry_context(ds, use_symmetry);
     if (use_symmetry)
     {
+        initialize_symmetry_context(ds, true);
         require_symmetry_shell_layouts(ds, "EXX");
     }
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
@@ -253,9 +253,9 @@ void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts)
     {
         reject_spinor_symmetry_speedup(ds, "RPA/chi0");
     }
-    initialize_symmetry_context(ds, use_symmetry);
     if (use_symmetry)
     {
+        initialize_symmetry_context(ds, true);
         require_symmetry_shell_layouts(ds, "RPA/chi0");
     }
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
@@ -288,9 +288,9 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts)
     {
         reject_spinor_symmetry_speedup(ds, "GW");
     }
-    initialize_symmetry_context(ds, use_symmetry);
     if (use_symmetry)
     {
+        initialize_symmetry_context(ds, true);
         require_symmetry_shell_layouts(ds, "GW");
     }
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
@@ -362,16 +362,27 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
     if (!headwing_basis_aux.initialized())
         throw LIBRPA_RUNTIME_ERROR("analytic head/wing auxiliary basis is not initialized");
 
+    const bool use_headwing_symmetry = opts.use_symmetry_rpa == LIBRPA_SWITCH_ON ||
+                                       opts.use_symmetry_gw == LIBRPA_SWITCH_ON;
+    if (use_headwing_symmetry)
+    {
+        reject_spinor_symmetry_speedup(ds, "analytic head/wing");
+        initialize_symmetry_context(ds, true);
+        require_symmetry_shell_layouts(ds, "analytic head/wing");
+    }
+
     const auto &freqs = ds.tfg.get_freq_nodes();
+    const bool use_kpara_eigvec = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     ds.p_headwing = std::make_unique<diele_func>(
         mf, ds.velocity_matrix, ds.pbc.kfrac_list, ds.basis_wfc,
         headwing_basis_aux, freqs, mf.get_n_aos(), mf.get_n_states(),
         mf.get_n_spins(), headwing_basis_aux.nb_total, ds.pbc, ds.comm_h, ds.blacs_h,
-        &ds.scfk_blacs_ctxt);
+        use_kpara_eigvec, &ds.scfk_blacs_ctxt, &ds.desc_wfc_kb_full);
     ds.p_headwing->use_2d_dielectric = opts.use_2d_dielectric == LIBRPA_SWITCH_ON;
     ds.p_headwing->use_soc = mf.get_n_spinor() > 1;
     ds.p_headwing->debug = global::should_output(LIBRPA_VERBOSE_DEBUG);
-    if (ds.symmetry_context.available && !ds.symmetry_context.kstars.empty())
+    if (use_headwing_symmetry && ds.symmetry_context.available &&
+        !ds.symmetry_context.kstars.empty())
     {
         ds.p_headwing->set_symmetry_context(ds.symmetry_context);
         ds.p_headwing->use_symmetry = true;
