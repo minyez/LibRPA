@@ -1,144 +1,179 @@
-# *G*{sup}`0`*W*{sup}`0` quasi-particle band structure with FHI-aims dataset
+# *G*{sup}`0`*W*{sup}`0` quasiparticle band structure from FHI-aims data
 
-This tutorial guides you through the process of setting up and running a calculation using FHI-aims for geometry and SCF computations, and LibRPA for quasi-particle energies by one-shot GW method.
+This tutorial calculates the one-shot *GW* quasiparticle band structure of
+silicon. FHI-aims performs the PBE calculation and writes the GreenX/LibRPA
+dataset; the LibRPA driver then evaluates the quasiparticle energies on the
+regular k-grid and along the requested band path.
 
-The silicon unit cell is used as test case.
-
-## 1. **Prerequisites**
-Before starting, ensure that you have:
-- [FHI-aims](https://fhi-aims.org/get-the-code-menu/get-the-code) installed with `USE_GREENX` set to `ON`.
-- LibRPA [installed](../../../user_guide/install.md) with [LibRI enabled](<librpa-use-libri>).
-
-## 2. **FHI-aims Input Files**
-These files are required to run the initial SCF and geometry optimization using FHI-aims:
-- **`control.in`**: This file contains control parameters for FHI-aims. Below is an example:
-  ```text
-  # Basic model
-  xc               pbe
-  k_grid           4 4 4
-  occupation_type  gaussian 0.001
-
-  # GW switches
-  qpe_calc         gw_expt
-  freq_grid_type   minimax
-  frequency_points 16
-  anacon_type      1
-
-  # Output flags
-  output librpa
-  output band   0.50000  0.50000  0.50000   0.00000  0.00000  0.00000 13 L G
-  output band   0.00000  0.00000  0.00000   0.50000  0.00000  0.50000 13 G X
-
-  [light species default for Si]
-  ```
-- **`geometry.in`**: Contains the geometry of the system. For silicon:
-  ```text
-  lattice_vector   3.8301668167   0.0000000000   0.0000000000
-  lattice_vector   1.9150834084   3.3170217640   0.0000000000
-  lattice_vector   1.9150834084   1.1056739213   3.1273181102
-  atom_frac        0.0000000000   0.0000000000   0.0000000000  Si
-  atom_frac        0.2500000000   0.2500000000   0.2500000000  Si
-  ```
-
-Then run FHI-aims by
-
-```bash
-mpirun -np 4 /path/to/bin/aims.x > aims.out
+```{note}
+The numerical settings below are intended to demonstrate the workflow. Check
+basis-set, k-point, and frequency-grid convergence before using the results in
+production calculations.
 ```
 
-It takes about 30 seconds to finish on an M2 Max Macbook Pro laptop.
-This will generate dataset files (~500 MB) for the LibRPA driver.
+## 1. Prerequisites
 
-## 3. **LibRPA Input File**
+You need:
 
-LibRPA requires **`librpa.in`** which specifies the parameters.
-For one-shot GW calculation for band structure, it looks like:
+- FHI-aims built with GreenX support (`USE_GREENX=ON`);
+- LibRPA built with the driver and
+  [`LIBRPA_USE_LIBRI=ON`](<librpa-use-libri>); and
+- an MPI launcher compatible with both executables.
+
+## 2. Generate the FHI-aims dataset
+
+The example uses PBE, a 4 × 4 × 4 k-grid, 16 minimax frequency points, and two
+band-path segments, L–Γ and Γ–X. The relevant part of `control.in` is:
 
 ```text
-task = g0w0_band
+# Basic model
+xc               pbe
+k_grid           4 4 4
+occupation_type  gaussian 0.001
+
+# GW switches
+qpe_calc         gw_expt
+frequency_points 16
+anacon_type      1
+
+# Band k-paths
+output band   0.50000  0.50000  0.50000   0.00000  0.00000  0.00000 13 L G
+output band   0.00000  0.00000  0.00000   0.50000  0.00000  0.50000 13 G X
+
+# Export dataset for LibRPA
+output librpa
+
+[light species default for Si]
+```
+
+Most settings are the same as in a standard periodic *GW* calculation in
+FHI-aims; `output librpa` is the key addition.
+
+The corresponding `geometry.in` is:
+
+```text
+lattice_vector   3.8301668167   0.0000000000   0.0000000000
+lattice_vector   1.9150834084   3.3170217640   0.0000000000
+lattice_vector   1.9150834084   1.1056739213   3.1273181102
+atom_frac        0.0000000000   0.0000000000   0.0000000000  Si
+atom_frac        0.2500000000   0.2500000000   0.2500000000  Si
+```
+
+Place both files in a `dataset` directory and run FHI-aims there:
+
+```bash
+cd dataset
+mpirun -np 4 /path/to/aims.x > aims.out 2> aims.err
+```
+
+The `output librpa` directive writes the structure, basis, eigenstate, RI
+coefficients, Coulomb matrices, dielectric head, and band-path data required by
+the LibRPA driver. The generated dataset for this example is about 500 MiB.
+Its size and generation time depend strongly on the basis and numerical grids.
+
+## 3. Configure LibRPA
+
+Create a sibling `librpa` directory containing this `librpa.in`:
+
+```text
+task = g0w0
+input_dir = ../dataset
 nfreq = 16
 option_dielect_func = 0
 replace_w_head = t
 parallel_routing = libri
 ```
 
-Here `replace_w_head` is switched on, so that LibRPA uses the dielectric function
-directly computed in FHI-aims for the correction of dielectric matrix to speed up
-k-point convergence.
+`task = g0w0` calculates both regular-k-grid and band-path quasiparticle
+energies when band-path data are present. `nfreq` must match the FHI-aims
+frequency grid.
 
-## 4. **Run GW with LibRPA**
+`replace_w_head` uses the macroscopic dielectric function written by FHI-aims
+to correct the head of the dielectric matrix and improve k-point convergence.
 
-After obtaining the output files from FHI-aims and setting up the parameters in `librpa.in`,
-you can run the LibRPA driver at the same working directory to calculate the quasi-particle band structure:
+## 4. Run LibRPA
+
+Run the driver from the `librpa` directory so that `input_dir = ../dataset`
+resolves correctly:
 
 ```bash
-mpirun -np 4 /path/to/LibRPA/build/chi0_main.exe > LibRPA.out
+cd librpa
+export OMP_NUM_THREADS=1
+mpirun -np 4 /path/to/LibRPA/build/chi0_main.exe > librpa.out 2> librpa.err
 ```
 
-On the same laptop, this takes about 1.7 hour.
-The calculation can be sped up if more MPI tasks and/or OpenMP threads are used.
+A successful run ends with `libRPA finished successfully`. The run used to
+refresh this tutorial employed four MPI ranks and one OpenMP thread per rank
+and took about 1.4 hours. Runtime is hardware-dependent, and additional
+MPI ranks or OpenMP threads may reduce it.
 
-## 5. **Analyze LibRPA Output**
+## 5. Inspect the quasiparticle energies
 
-After successful run, you can find in `LibRPA.out` the quasi-particle energies and its compositions
-for states on the regular k-grid:
+The first regular-k-grid block in the refreshed `librpa.out` includes:
+
 ```text
-spin  1, k-point    1: (0.00000, 0.00000, 0.00000) 
+Printing quasi-particle energy [unit: eV]
+
+spin  1, k-point    1: (0.00000, 0.00000, 0.00000)
 ----------------------------------------------------------------------------------------------------------------------------
 State              occ             e_mf             v_xc            v_exx           ReSigc           ImSigc             e_qp
 ----------------------------------------------------------------------------------------------------------------------------
-    1          2.00000      -1789.50277       -153.07760       -244.87703          8.90359          3.15362      -1872.39861
-    2          2.00000      -1789.50277       -153.07762       -244.87688          8.90214          3.15478      -1872.39990
+    1          2.00000      -1789.50277       -153.07760       -244.87703          8.90361          3.15363      -1872.39859
 ...
-   11          2.00000        -17.67291        -12.19859        -19.21812          6.69564         -0.86364        -17.99680
-   12          2.00000         -5.63619        -13.27559        -14.75075          1.24879         -0.00015         -5.86256
-   13          2.00000         -5.63548        -13.27912        -14.75356          1.24876         -0.00015         -5.86116
-   14          2.00000         -5.63533        -13.27943        -14.75386          1.24871         -0.00015         -5.86104
-   15          0.00000         -3.07993        -11.57831         -7.20939         -3.90052         -0.01063         -2.61152
-   16          0.00000         -3.07901        -11.57980         -7.21005         -3.90139         -0.01064         -2.61065
-   17          0.00000         -3.07776        -11.58158         -7.21096         -3.90154         -0.01066         -2.60869
-   18          0.00000         -2.14654        -14.88107         -9.67057         -4.69199         -0.01374         -1.62803
-...
-   49          0.00000         48.77341        -11.89143         -2.44414        -25.95775         -4.20613         32.26294
-   50          0.00000         94.46523        -19.21422         -6.75051         20.24488        -42.71633        127.17381
-
-spin  1, k-point    2: (0.00000, 0.00000, 0.33333) 
-----------------------------------------------------------------------------------------------------------------------------
+   11          2.00000        -17.67291        -12.19859        -19.21812          6.69555         -0.86361        -17.99689
+   12          2.00000         -5.63619        -13.27559        -14.75075          1.24875         -0.00015         -5.86260
+   13          2.00000         -5.63548        -13.27912        -14.75356          1.24872         -0.00015         -5.86120
+   14          2.00000         -5.63533        -13.27943        -14.75386          1.24867         -0.00015         -5.86108
+   15          0.00000         -3.07993        -11.57831         -7.20939         -3.90057         -0.01063         -2.61157
+   16          0.00000         -3.07901        -11.57980         -7.21005         -3.90144         -0.01064         -2.61070
+   17          0.00000         -3.07776        -11.58158         -7.21096         -3.90159         -0.01066         -2.60874
+   18          0.00000         -2.14654        -14.88107         -9.67057         -4.69196         -0.01374         -1.62800
 ...
 ```
 
-The columns in the above output have the following meanings:
+The columns contain:
 
-- `State`: band index $n$
-- `occ`: occupation number $f_{nk}$ (read from input)
-- `e_mf`: Kohn-Sham mean-field eigenvalue $E^{\mathrm{KS}}_{nk}$ (read from input)
-- `v_xc`: exchange-correlation potential $v^{\mathrm{xc}}_{nk}$ (read from input)
-- `v_exx`: exact-exchange potential $v^{\mathrm{exx}}_{nk}$
-- `ReSigc`: real part of the correlation self-energy $\Re\Sigma^{\mathrm{c}}_{nk}$
-- `ImSigc`: imaginary part of the correlation self-energy $\Im\Sigma^{\mathrm{c}}_{nk}$
-- `e_qp`: resulting quasiparticle energy $E^{\mathrm{QP}}_{nk}$. It is computed as
+- `State`: one-based band index $n$;
+- `occ`: input occupation $f_{nk}$;
+- `e_mf`: input Kohn–Sham eigenvalue $E^{\mathrm{KS}}_{nk}$;
+- `v_xc`: input exchange-correlation potential $v^{\mathrm{xc}}_{nk}$;
+- `v_exx`: exact-exchange potential $v^{\mathrm{exx}}_{nk}$;
+- `ReSigc` and `ImSigc`: real and imaginary parts of the correlation
+  self-energy $\Sigma^{\mathrm{c}}_{nk}$; and
+- `e_qp`: quasiparticle energy
 
   $$
-  E^{\mathrm{QP}}_{nk} = E^{\mathrm{KS}}_{nk} - v^{\mathrm{xc}}_{nk} + v^{\mathrm{exx}}_{nk} + \Re\Sigma^{\mathrm{c}}_{nk}
+  E^{\mathrm{QP}}_{nk} = E^{\mathrm{KS}}_{nk} - v^{\mathrm{xc}}_{nk} + v^{\mathrm{exx}}_{nk} + \Re\Sigma^{\mathrm{c}}_{nk}.
   $$
 
-All energy quantities are given in eV.
+All energies in this table are in eV.
 
-For band calculations with the `g0w0_band` task, LibRPA also writes the band-structure results to the following files:
+## 6. Plot the band structure
 
-- `KS_band_spin_<ispin>.dat`: input Kohn-Sham band structure, for reference
-- `EXX_band_spin_<ispin>.dat`: non-self-consistent exact-exchange-only band structure
-- `GW_band_spin_<ispin>.dat`: GW quasiparticle band structure
+When band-path data are present, `task = g0w0` writes:
 
-All of these band-structure files use the same format as the corresponding
-FHI-aims output files and can therefore be post-processed in the same way using
-existing FHI-aims scripts.
-The **main difference** is in the energy reference: FHI-aims aligns the band
-energies to the Fermi level, whereas LibRPA uses its internal energy zero.
-The PBE and *GW* band structures of this case is plotted in {numref}`fig-band-si`.
+- `KS_band_spin_<ispin>.dat`: input Kohn–Sham band structure;
+- `EXX_band_spin_<ispin>.dat`: non-self-consistent exact-exchange band
+  structure; and
+- `GW_band_spin_<ispin>.dat`: *GW* quasiparticle band structure.
+
+These files follow the FHI-aims band-output format. Their raw energies use
+LibRPA's internal energy zero, so choose and document a common reference when
+comparing calculations. The plot below aligns the PBE and *GW* results to their
+respective valence-band maxima and omits the five highest bands, which exhibit
+large errors from the localized resolution-of-identity approximation.
+
+For this example, both calculations yield an indirect fundamental gap, with the
+valence-band maximum at Γ and the conduction-band minimum along Γ–X. The gap is
+0.57 eV for PBE and 1.08 eV for *GW*. These values should not be treated as
+fully converged.
 
 :::{figure-md} fig-band-si
-![band](band.svg){align=center}
+![PBE and one-shot GW band structures of silicon](band.svg){align=center}
 
-Band structure of Silicon, one-shot GW from LibRPA
+PBE and one-shot *GW* band structures of silicon.
 :::
+
+The [result archive](solution.tar.gz) contains the complete FHI-aims and LibRPA
+inputs, the refreshed outputs, the three band files, the generated figure, and
+the plotting script. The script uses NumPy and Matplotlib.
