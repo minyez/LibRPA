@@ -1243,10 +1243,17 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     } restore_mf(mf);
 
     const bool use_spinor_wfc = driver::driver_params.use_spinor_wfc;
+    const bool wants_headwing_symmetry =
+        driver::get_bool(driver::opts.use_symmetry_rpa) ||
+        driver::get_bool(driver::opts.use_symmetry_gw);
     const string pyatb_dir = path_as_directory(dir_path) + "pyatb_librpa_df/";
     const string pyatb_velocity = pyatb_dir + "velocity_matrix";
 
     const auto &active_kfrac_list = pds->pbc.kfrac_list;
+    std::vector<Vector3_Order<double>> kfrac_pyatb;
+    velocity_matrix_t direct_full_bz_velocity;
+    MeanField direct_full_bz_wfc;
+    std::vector<std::vector<int>> direct_full_bz_velocity_member_source_ik;
     int n_basis = 0;
     int n_states = 0;
     int n_spin = 0;
@@ -1264,8 +1271,8 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         {
             std::cout << "Reading head/wing input from " << pyatb_dir << std::endl;
         }
-        std::vector<Vector3_Order<double>> kfrac_pyatb =
-            read_headwing_k_path_info(pyatb_dir + "k_path_info", n_basis, n_states, n_spin);
+        kfrac_pyatb = read_headwing_k_path_info(pyatb_dir + "k_path_info", n_basis, n_states,
+                                                 n_spin);
         if (use_spinor_wfc)
         {
             if (n_basis % 2 != 0)
@@ -1341,16 +1348,39 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         }
     }
 
-    const bool wants_headwing_symmetry =
-        driver::get_bool(driver::opts.use_symmetry_rpa) ||
-        driver::get_bool(driver::opts.use_symmetry_gw);
     if (wants_headwing_symmetry &&
         (!pds->symmetry_context.available || pds->symmetry_context.kstars.empty() ||
          pds->symmetry_context.rsh_rotations.empty()))
     {
         librpa_int::initialize_symmetry_context(*pds, true);
     }
-
+    if (path_exists(pyatb_velocity.c_str()) && pds->symmetry_context.available &&
+        !pds->symmetry_context.kstars.empty())
+    {
+        direct_full_bz_velocity_member_source_ik =
+            map_symmetry_kstar_members_to_source_kpoints(
+                pds->symmetry_context, active_kfrac_list, kfrac_pyatb,
+                kSymmetryKpointMatchTol);
+        MeanField full_bz_headwing_mf(
+            mf.get_n_spins(), static_cast<int>(kfrac_pyatb.size()), mf.get_n_states(),
+            mf.get_n_aos(), mf.get_n_spinor());
+        std::vector<int> full_bz_identity_map(kfrac_pyatb.size());
+        for (int ik = 0; ik != static_cast<int>(full_bz_identity_map.size()); ++ik)
+            full_bz_identity_map[ik] = ik;
+        const int ret_full_wfc = read_eigenvector(
+            pyatb_dir, full_bz_headwing_mf, use_spinor_wfc, full_bz_identity_map, nullptr,
+            LegacyTextWfcOrder::SpinBasisBand);
+        if (ret_full_wfc != 0)
+        {
+            throw std::runtime_error(
+                "Failed to read full-BZ PyATB head/wing eigenvectors from " + pyatb_dir);
+        }
+        read_velocity(pyatb_velocity, full_bz_headwing_mf, direct_full_bz_velocity);
+        direct_full_bz_wfc = std::move(full_bz_headwing_mf);
+        librpa_int::global::lib_printf_root(
+            "Head/wing symmetry: use direct full-BZ PyATB WFC and velocity for %zu k-star members.\n",
+            pds->symmetry_context.count_kstar_members());
+    }
     const auto &headwing_basis_aux =
         driver::get_bool(driver::opts.use_shrink_abfs) ? pds->basis_aux_shrink : pds->basis_aux;
     if (!headwing_basis_aux.initialized())
@@ -1371,6 +1401,13 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         for (atom_t atom = 0; atom != static_cast<atom_t>(pds->basis_wfc.n_atoms); ++atom)
             pds->p_headwing->atom_nw[atom] = pds->basis_wfc.get_atom_nb(atom);
         pds->p_headwing->coord_frac = pds->symmetry_context.input_coord_frac;
+    }
+    if (!direct_full_bz_velocity.empty())
+    {
+        pds->p_headwing->set_direct_full_bz_headwing_inputs(
+            std::move(direct_full_bz_velocity),
+            std::move(direct_full_bz_wfc),
+            std::move(direct_full_bz_velocity_member_source_ik));
     }
     if (restore_mf.active)
     {

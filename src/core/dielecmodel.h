@@ -2,7 +2,9 @@
 #include <array>
 #include <complex>
 #include <functional>
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "../math/matrix3.h"
@@ -51,16 +53,49 @@ void initialize_velocity_matrix(velocity_matrix_t &velocity, int n_spins, int n_
 std::vector<int> map_kpoints_by_coordinates(
     const std::vector<Vector3_Order<double>> &target_kpoints,
     const std::vector<Vector3_Order<double>> &source_kpoints, double tolerance = 1.0e-5);
+std::vector<std::vector<int>> map_symmetry_kstar_members_to_source_kpoints(
+    const SymmetryContext &ctx, const std::vector<Vector3_Order<double>> &ibz_kpoints,
+    const std::vector<Vector3_Order<double>> &source_kpoints, double tolerance = 1.0e-5);
 
 double headwing_transition_weight(double occupied_weight, double unoccupied_weight, int n_spin,
                                   bool spin_orbit_coupled);
 double headwing_spin_prefactor(int n_spin, bool spin_orbit_coupled);
+std::array<std::array<std::complex<double>, 3>, 3> compute_wing_cartesian_gram(
+    const ComplexMatrix &wing);
 void accumulate_wing_mu_for_pair(const std::vector<double> &omega,
                                  const std::array<std::complex<double>, 3> &velocity_unocc_occ,
                                  const std::complex<double> &c_mn, double egap, double factor1,
-                                 double factor2, std::complex<double> *wing_mu_for_mu);
+                                 double factor2, std::complex<double> *wing_mu_for_mu,
+                                 std::complex<double> *wing_mu_iomega0_for_mu = nullptr);
 std::vector<int> headwing_local_kpoints(int n_kpoints,
                                         const KPointBlacsParallelContext *kblacs_ctxt);
+ComplexMatrix rotate_headwing_wfc_to_kstar_member(
+    const SymmetryContext &ctx,
+    const SymmetryKStarMember &member,
+    const std::vector<SpeciesBasisLayout> &wfc_layouts,
+    const std::map<atom_t, size_t> &atom_nw,
+    const Vector3_Order<double> &k_ibz,
+    const ComplexMatrix &wfc_ibz,
+    const Vector3_Order<double> *k_bz_target = nullptr);
+std::array<ComplexMatrix, 3> rotate_headwing_velocity_to_kstar_member(
+    const SymmetryContext &ctx,
+    const SymmetryKStarMember &member,
+    const std::array<ComplexMatrix, 3> &velocity_ibz,
+    int n_bands,
+    bool use_time_reversal);
+std::array<ComplexMatrix, 3> direct_full_bz_velocity_for_kstar_member(
+    const velocity_matrix_t &velocity_full,
+    const std::vector<std::vector<int>> &member_source_ik,
+    int ispin,
+    int ik_ibz,
+    std::size_t imember);
+const ComplexMatrix &direct_full_bz_wfc_for_kstar_member(
+    const MeanField &wfc_full,
+    const std::vector<std::vector<int>> &member_source_ik,
+    int ispin,
+    int ispinor,
+    int ik_ibz,
+    std::size_t imember);
 
 // All calculation in unit: Bohr and Ha.
 class diele_func
@@ -107,6 +142,9 @@ private:
     const AtomicBasis &atomic_basis_wfc_;
     const AtomicBasis &atomic_basis_abf_;
     const velocity_matrix_t &velocity_;
+    velocity_matrix_t direct_full_bz_velocity_;
+    MeanField direct_full_bz_wfc_;
+    std::vector<std::vector<int>> direct_full_bz_velocity_member_source_ik_;
     const MpiCommHandler &comm_h;
     const BlacsCtxtHandler &blacs_h;
     const SymmetryContext *symmetry_context_;
@@ -131,6 +169,19 @@ public:
     std::map<atom_t, size_t> atom_nw;
     std::map<atom_t, std::array<double, 3>> coord_frac;
     void set_symmetry_context(const SymmetryContext &ctx) { symmetry_context_ = &ctx; }
+    void set_direct_full_bz_headwing_inputs(
+        velocity_matrix_t velocity_full,
+        MeanField wfc_full,
+        std::vector<std::vector<int>> member_source_ik)
+    {
+        direct_full_bz_velocity_ = std::move(velocity_full);
+        direct_full_bz_wfc_ = std::move(wfc_full);
+        direct_full_bz_velocity_member_source_ik_ = std::move(member_source_ik);
+    }
+    bool has_direct_full_bz_headwing_inputs() const
+    {
+        return !direct_full_bz_velocity_.empty() && direct_full_bz_wfc_.initialized();
+    }
 
     // Public access to the head/wing mean-field copy for driver-side validation
     // of producer eigenvector coverage. The driver must not expand or broadcast
@@ -186,8 +237,9 @@ private:
     // Full-BZ head summation (the historical path, now also used as the fallback
     // when symmetry restoration is unavailable). Expects wg indexed as wg(ik, ib).
     void cal_head_full_bz();
-    // Symmetry-aware head: IBZ outer loop + k-star member inner loop. Uses
-    // rotate_headwing_velocity to reconstruct the BZ velocity for every member.
+    // Symmetry-aware head: IBZ outer loop + k-star member inner loop. Full-BZ
+    // PyATB velocity is selected directly when available; otherwise the
+    // historical velocity-restoration fallback is used.
     void cal_head_symmetric();
 
 public:
@@ -201,8 +253,9 @@ public:
 
 private:
     // Symmetry-aware wing: each kBLACS owner group loops over its local IBZ
-    // k-points, rotates the current k-star member on demand, and contributes to
-    // wing_mu. The IBZ mean-field is not expanded or broadcast globally.
+    // k-points and contributes each k-star member to wing_mu. Full-BZ PyATB
+    // velocity is selected directly when available; the IBZ mean-field is not
+    // expanded or broadcast globally.
     void cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_threshold,
                             const atpair_k_cplx_mat_t &Vq);
     // The historical full-BZ wing summation, also used as the fallback when

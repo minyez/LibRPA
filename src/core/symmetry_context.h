@@ -181,6 +181,15 @@ ComplexMatrix build_symmetry_kspace_rotation_matrix(const SymmetryContext& ctx,
                                                     bool use_time_reversal = false,
                                                     const Vector3_Order<double>* k_bz_target = nullptr);
 
+std::array<ComplexMatrix, 3> build_symmetry_kspace_rotation_matrix_derivatives(
+    const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& layouts,
+    const SymmetryKStarMember& member,
+    const std::map<atom_t, size_t>& atom_nw,
+    const Vector3_Order<double>& k_ibz,
+    bool use_time_reversal = false,
+    const Vector3_Order<double>* k_bz_target = nullptr);
+
 ComplexMatrix build_symmetry_kspace_operator_transform_matrix(
     const SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& layouts,

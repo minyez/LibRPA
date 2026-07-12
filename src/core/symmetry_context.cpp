@@ -1825,6 +1825,119 @@ ComplexMatrix build_symmetry_kspace_rotation_matrix(const SymmetryContext& ctx,
         ctx, layouts, member, atom_nw, k_ibz, use_time_reversal, k_bz_target);
 }
 
+std::array<ComplexMatrix, 3> build_symmetry_kspace_rotation_matrix_derivatives(
+    const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& layouts,
+    const SymmetryKStarMember& member,
+    const std::map<atom_t, size_t>& atom_nw,
+    const Vector3_Order<double>& k_ibz,
+    const bool use_time_reversal,
+    const Vector3_Order<double>* k_bz_target)
+{
+    if (!ctx.lattice_available || !is_basis_bloch_convention_set(ctx.basis_convention))
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "K-space rotation derivative requires lattice vectors and Bloch convention");
+    }
+    if (member.spatial_isym < 0
+        || member.spatial_isym >= static_cast<int>(ctx.rspace_operations.size()))
+    {
+        throw LIBRPA_RUNTIME_ERROR("K-space rotation derivative uses an invalid symmetry index");
+    }
+
+    const auto rotation = build_symmetry_kspace_rotation_matrix_impl(
+        ctx, layouts, member, atom_nw, k_ibz, use_time_reversal, k_bz_target);
+    const auto offsets = build_atom_offsets(atom_nw);
+    const auto& operation = ctx.rspace_operations.at(static_cast<std::size_t>(member.spatial_isym));
+    const Matrix3 k_target_jacobian =
+        (preserves_lattice_metric(operation.rotation, ctx.lattice_vectors, 1e-6)
+             ? fractional_rotation_to_cartesian(operation, ctx.lattice_vectors)
+             : operation.rotation)
+            .Inverse();
+    const std::array<std::array<double, 3>, 3> jacobian{{
+        {k_target_jacobian.e11, k_target_jacobian.e12, k_target_jacobian.e13},
+        {k_target_jacobian.e21, k_target_jacobian.e22, k_target_jacobian.e23},
+        {k_target_jacobian.e31, k_target_jacobian.e32, k_target_jacobian.e33},
+    }};
+    const double time_reversal_sign = (use_time_reversal || member.time_reversal) ? -1.0 : 1.0;
+    const int bloch_phase = ctx.basis_convention.bloch_phase;
+    const int bloch_ratom = ctx.basis_convention.bloch_ratom;
+
+    std::array<ComplexMatrix, 3> derivatives;
+    for (auto& derivative : derivatives)
+    {
+        derivative.create(rotation.nr, rotation.nc);
+        derivative.zero_out();
+    }
+
+    for (const auto& atom_rotation : member.atom_rotations)
+    {
+        const auto return_lattice_iter = ctx.kspace_return_lattice.find(
+            {atom_rotation.atom_from, member.spatial_isym});
+        const auto from_coord_iter = ctx.input_coord_frac.find(atom_rotation.atom_from);
+        const auto to_coord_iter = ctx.input_coord_frac.find(atom_rotation.atom_to);
+        if (return_lattice_iter == ctx.kspace_return_lattice.end()
+            || from_coord_iter == ctx.input_coord_frac.end()
+            || to_coord_iter == ctx.input_coord_frac.end())
+        {
+            throw LIBRPA_RUNTIME_ERROR(
+                "K-space rotation derivative is missing atom phase metadata");
+        }
+
+        const auto lattice_shift_cart = multiply_row_vector(
+            Vector3_Order<double>{static_cast<double>(return_lattice_iter->second.x),
+                                  static_cast<double>(return_lattice_iter->second.y),
+                                  static_cast<double>(return_lattice_iter->second.z)},
+            ctx.lattice_vectors);
+        const auto from_coord_cart = multiply_row_vector(
+            Vector3_Order<double>{from_coord_iter->second}, ctx.lattice_vectors);
+        const auto to_coord_cart = multiply_row_vector(
+            Vector3_Order<double>{to_coord_iter->second}, ctx.lattice_vectors);
+        const std::array<double, 3> target_displacement{{
+            lattice_shift_cart.x - static_cast<double>(bloch_ratom) * to_coord_cart.x,
+            lattice_shift_cart.y - static_cast<double>(bloch_ratom) * to_coord_cart.y,
+            lattice_shift_cart.z - static_cast<double>(bloch_ratom) * to_coord_cart.z,
+        }};
+        const std::array<double, 3> from_position{{
+            from_coord_cart.x, from_coord_cart.y, from_coord_cart.z,
+        }};
+
+        const int row_offset = offsets.at(static_cast<std::size_t>(atom_rotation.atom_from));
+        const int col_offset = offsets.at(static_cast<std::size_t>(atom_rotation.atom_to));
+        const int nrows = offsets.at(static_cast<std::size_t>(atom_rotation.atom_from) + 1)
+                          - row_offset;
+        const int ncols = offsets.at(static_cast<std::size_t>(atom_rotation.atom_to) + 1)
+                          - col_offset;
+        if (nrows != ncols)
+        {
+            throw LIBRPA_RUNTIME_ERROR(
+                "K-space rotation derivative atom block has incompatible dimensions");
+        }
+
+        for (int alpha = 0; alpha != 3; ++alpha)
+        {
+            double target_term = 0.0;
+            for (int beta = 0; beta != 3; ++beta)
+            {
+                target_term += jacobian.at(alpha).at(beta) * target_displacement.at(beta);
+            }
+            const double dphase = -static_cast<double>(bloch_phase)
+                * time_reversal_sign
+                * (target_term + static_cast<double>(bloch_ratom) * from_position.at(alpha));
+            const std::complex<double> derivative_factor{0.0, dphase};
+            for (int row = 0; row != nrows; ++row)
+            {
+                for (int col = 0; col != ncols; ++col)
+                {
+                    derivatives[alpha](row_offset + row, col_offset + col) =
+                        derivative_factor * rotation(row_offset + row, col_offset + col);
+                }
+            }
+        }
+    }
+    return derivatives;
+}
+
 ComplexMatrix build_symmetry_kspace_operator_transform_matrix(
     const SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& layouts,

@@ -208,6 +208,97 @@ void test_kstar_member_atom_mapping_tolerates_si_fractional_roundoff()
     assert(ctx.kstars.at(0).members.at(0).atom_rotations.at(1).atom_to == 1);
 }
 
+void test_kspace_rotation_derivative_matches_bloch_phase_difference()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    pbc.set_irreducible_kgrids_kvec(
+        3, 1, 1,
+        {0.0, 0.0, 0.0,
+         TWO_PI / 3.0, 0.0, 0.0},
+        {{{0.0, 0.0, 0.0}},
+         {{1.0 / 3.0, 0.0, 0.0}, {-1.0 / 3.0, 0.0, 0.0}}});
+
+    SymmetryContext ctx;
+    ctx.set_crystal_structure(
+        pbc.latvec, pbc.G,
+        {{0, 0}, {1, 0}},
+        {{0, {0.25, 0.0, 0.0}}, {1, {0.75, 0.0, 0.0}}});
+    SymmetryOperation identity;
+    identity.rotation.Identity();
+    SymmetryOperation inversion;
+    inversion.rotation = Matrix3(-1.0, 0.0, 0.0,
+                                 0.0, 1.0, 0.0,
+                                 0.0, 0.0, 1.0);
+    ctx.set_rspace_operations({identity, inversion});
+    ctx.set_available();
+    ctx.build_periodic_mappings(pbc, pbc.Rlist);
+    ctx.build_rsh_rotations({-1,
+                             1,
+                             LIBRPA_ANGULAR_ORDER_NATURAL,
+                             LIBRPA_RSH_COEFF_1_M,
+                             LIBRPA_RSH_COEFF_1_M},
+                            0);
+    ctx.build_kstar_member_rotations(0);
+
+    const auto &star = find_symmetry_kstar_for_ibz_kpoint(ctx, {1.0 / 3.0, 0.0, 0.0});
+    const auto member_iter = std::find_if(
+        star.members.begin(), star.members.end(), [](const SymmetryKStarMember &member) {
+            return !member.time_reversal && std::abs(member.k_bz.x + 1.0 / 3.0) < 1e-12;
+        });
+    assert(member_iter != star.members.end());
+    const auto &member = *member_iter;
+
+    SpeciesBasisLayout layout;
+    layout.label = "X";
+    layout.set({0});
+    const std::map<atom_t, size_t> atom_nw{{0, 1}, {1, 1}};
+    const auto derivative = build_symmetry_kspace_rotation_matrix_derivatives(
+        ctx, {layout}, member, atom_nw, star.k_ibz, false, nullptr);
+
+    const double delta_kfrac = 1e-6;
+    auto shifted_member = [&](const double shift) {
+        auto shifted = member;
+        shifted.k_bz.x += shift;
+        const Vector3_Order<double> shifted_kibz{star.k_ibz.x - shift, 0.0, 0.0};
+        for (auto &atom_rotation : shifted.atom_rotations)
+        {
+            const auto return_lattice = ctx.kspace_return_lattice.at(
+                {atom_rotation.atom_from, shifted.spatial_isym});
+            atom_rotation.bloch_rsh_rotations = build_symmetry_kspace_shell_rotations(
+                ctx.rspace_operations.at(static_cast<size_t>(shifted.spatial_isym)),
+                ctx.lattice_vectors,
+                atom_rotation.lmax,
+                ctx.basis_convention,
+                shifted.k_bz,
+                shifted_kibz,
+                Vector3_Order<double>{ctx.input_coord_frac.at(atom_rotation.atom_from)},
+                Vector3_Order<double>{ctx.input_coord_frac.at(atom_rotation.atom_to)},
+                return_lattice);
+        }
+        return std::pair{std::move(shifted), shifted_kibz};
+    };
+    const auto [member_plus, kibz_plus] = shifted_member(delta_kfrac);
+    const auto [member_minus, kibz_minus] = shifted_member(-delta_kfrac);
+    const auto rotation_plus = build_symmetry_kspace_rotation_matrix(
+        ctx, {layout}, member_plus, atom_nw, kibz_plus, false, nullptr);
+    const auto rotation_minus = build_symmetry_kspace_rotation_matrix(
+        ctx, {layout}, member_minus, atom_nw, kibz_minus, false, nullptr);
+    for (int row = 0; row != 2; ++row)
+    {
+        for (int col = 0; col != 2; ++col)
+        {
+            const auto finite_difference =
+                (rotation_plus(row, col) - rotation_minus(row, col)) /
+                (2.0 * TWO_PI * delta_kfrac);
+            assert(fequal(derivative[0](row, col), finite_difference,
+                          std::complex<double>(1e-7, 0.0)));
+        }
+    }
+}
+
 void test_species_basis_layout_keeps_shell_order()
 {
     SpeciesBasisLayout layout;
@@ -1430,6 +1521,7 @@ int main()
     test_kstar_member_return_lattice_preserves_input_fractional_representative();
     test_kstar_member_atom_mapping_tolerates_text_coordinate_noise();
     test_kstar_member_atom_mapping_tolerates_si_fractional_roundoff();
+    test_kspace_rotation_derivative_matches_bloch_phase_difference();
     test_species_basis_layout_keeps_shell_order();
     test_species_layouts_match_basis_dimensions();
     test_atomic_basis_builds_symmetry_species_layouts();

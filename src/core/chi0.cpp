@@ -433,6 +433,15 @@ static Chi0ExactCollectRequest make_padding_chi0_exact_collect_request(
     return {{0}, {{0, R}}};
 }
 
+// An arbitrary band cutoff can split a little-group multiplet, so real-space
+// symmetry restoration is guaranteed exact only in the complete AO space.
+bool rspace_symmetry_has_complete_band_space(const MeanField &mf, const int n_bands)
+{
+    const int n_bands_used = n_bands < 0 ? mf.get_n_bands() : n_bands;
+    return n_bands_used == mf.get_n_aos()
+        && n_bands_used <= mf.get_n_bands();
+}
+
 #ifdef LIBRPA_USE_LIBRI
 static std::array<int, 3> canonicalize_chi0_symmetry_R(
     const std::array<int, 3> &R,
@@ -1979,12 +1988,27 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
     const auto all_atpairs_ABF = generate_atom_pair_from_nat(atbasis_abf.n_atoms, false);
     const auto q_uhap_process_shape = resolve_chi0_q_uhap_process_shape(
         comm_h.nprocs, qlist.size(), all_atpairs_ABF.size());
-    const bool use_chi0_rspace_symmetry =
+    const bool chi0_rspace_symmetry_available =
         can_use_chi0_rspace_symmetry(
             this->symmetry_context, abf_Cs, Rlist_gf, this->use_symmetry_context);
+    const bool chi0_band_space_complete =
+        rspace_symmetry_has_complete_band_space(this->mf, this->nbands_G);
+    const bool use_chi0_rspace_symmetry =
+        chi0_rspace_symmetry_available && chi0_band_space_complete;
+    if (chi0_rspace_symmetry_available && !chi0_band_space_complete
+        && comm_h.is_root())
+    {
+        const int n_bands_used =
+            this->nbands_G < 0 ? this->mf.get_n_bands() : this->nbands_G;
+        global::lib_printf(
+            "chi0 real-space irreducible-sector contraction disabled: "
+            "%d response bands do not span the complete %d-state AO space; "
+            "k-star and q-star symmetry remain active\n",
+            n_bands_used, this->mf.get_n_aos());
+    }
     const bool use_q_uhap_split =
         global::dev_opts.use_chi0_q_uhap_split && !use_shrink_chi &&
-        !use_chi0_rspace_symmetry &&
+        !chi0_rspace_symmetry_available &&
         comm_h.nprocs > 1 && q_uhap_process_shape.nprocs_outer > 1;
     TwoLevelParallelContext q_uhap_ctxt;
     std::vector<Vector3_Order<double>> qlist_chi0(qlist.begin(), qlist.end());

@@ -84,11 +84,33 @@ double headwing_spin_prefactor(const int n_spin, const bool spin_orbit_coupled)
     return 2.0 / static_cast<double>(n_spin);
 }
 
+std::array<std::array<std::complex<double>, 3>, 3> compute_wing_cartesian_gram(
+    const ComplexMatrix &wing)
+{
+    if (wing.nc != 3)
+        throw std::invalid_argument("wing Cartesian Gram requires exactly three columns");
+
+    std::array<std::array<std::complex<double>, 3>, 3> gram{};
+    for (int lambda = 0; lambda != wing.nr; ++lambda)
+    {
+        for (int alpha = 0; alpha != 3; ++alpha)
+        {
+            for (int beta = 0; beta != 3; ++beta)
+            {
+                gram.at(alpha).at(beta) +=
+                    std::conj(wing(lambda, alpha)) * wing(lambda, beta);
+            }
+        }
+    }
+    return gram;
+}
+
 void accumulate_wing_mu_for_pair(const std::vector<double> &omega,
                                  const std::array<std::complex<double>, 3> &velocity_unocc_occ,
                                  const std::complex<double> &c_mn, const double egap,
                                  const double factor1, const double factor2,
-                                 std::complex<double> *wing_mu_for_mu)
+                                 std::complex<double> *wing_mu_for_mu,
+                                 std::complex<double> *wing_mu_iomega0_for_mu)
 {
     if (factor1 <= 1.e-8 && factor2 <= 1.e-8)
     {
@@ -110,7 +132,136 @@ void accumulate_wing_mu_for_pair(const std::vector<double> &omega,
             {
                 wing += factor2 * c_mn * velocity_unocc_occ[alpha] / denom;
             }
+            if (iomega == 0 && wing_mu_iomega0_for_mu != nullptr)
+            {
+                auto &wing_iomega0 = wing_mu_iomega0_for_mu[alpha];
+                if (factor1 > 1.e-8)
+                {
+                    wing_iomega0 += factor1 * std::conj(c_mn * velocity_unocc_occ[alpha]) / denom;
+                }
+                if (factor2 > 1.e-8)
+                {
+                    wing_iomega0 += factor2 * c_mn * velocity_unocc_occ[alpha] / denom;
+                }
+            }
         }
+    }
+}
+
+static void print_wing_mu_k_contribution_gram(
+    const char *route, const int ik, const Vector3_Order<double> &kfrac,
+    const std::vector<std::complex<double>> &wing_mu_iomega0, const int n_abf,
+    const SymmetryKStarMember *member = nullptr)
+{
+    if (static_cast<int>(wing_mu_iomega0.size()) != n_abf * 3)
+        throw std::invalid_argument("Wing_mu k contribution has an invalid size");
+    ComplexMatrix wing_mu_k(n_abf, 3);
+    for (int mu = 0; mu != n_abf; ++mu)
+        for (int alpha = 0; alpha != 3; ++alpha)
+            wing_mu_k(mu, alpha) = wing_mu_iomega0[as_size(mu * 3 + alpha)];
+    const auto gram = compute_wing_cartesian_gram(wing_mu_k);
+    if (member == nullptr)
+    {
+        global::lib_printf(
+            "Wing_mu k Gram (iomega=0): route=%s ik=%d k=(% .12f,% .12f,% .12f)\n",
+            route, ik, kfrac.x, kfrac.y, kfrac.z);
+    }
+    else
+    {
+        global::lib_printf(
+            "Wing_mu k Gram (iomega=0): route=%s ik=%d k=(% .12f,% .12f,% .12f) "
+            "spatial_isym=%d time_reversal=%d\n",
+            route, ik, kfrac.x, kfrac.y, kfrac.z, member->spatial_isym,
+            member->time_reversal ? 1 : 0);
+    }
+    for (int alpha = 0; alpha != 3; ++alpha)
+    {
+        global::lib_printf("(%15.8e,%15.8e) (%15.8e,%15.8e) (%15.8e,%15.8e)\n",
+                           gram.at(alpha).at(0).real(), gram.at(alpha).at(0).imag(),
+                           gram.at(alpha).at(1).real(), gram.at(alpha).at(1).imag(),
+                           gram.at(alpha).at(2).real(), gram.at(alpha).at(2).imag());
+    }
+}
+
+static void print_head_k_contribution(const char *route, const int ik,
+                                      const Vector3_Order<double> &kfrac,
+                                      const std::array<std::complex<double>, 9> &head_k)
+{
+    global::lib_printf("Head k matrix (iomega=0): route=%s ik=%d k=(% .12f,% .12f,% .12f)\n",
+                       route, ik, kfrac.x, kfrac.y, kfrac.z);
+    for (int alpha = 0; alpha != 3; ++alpha)
+    {
+        global::lib_printf("(%15.8e,%15.8e) (%15.8e,%15.8e) (%15.8e,%15.8e)\n",
+                           head_k.at(as_size(alpha * 3)).real(),
+                           head_k.at(as_size(alpha * 3)).imag(),
+                           head_k.at(as_size(alpha * 3 + 1)).real(),
+                           head_k.at(as_size(alpha * 3 + 1)).imag(),
+                           head_k.at(as_size(alpha * 3 + 2)).real(),
+                           head_k.at(as_size(alpha * 3 + 2)).imag());
+    }
+}
+
+static bool is_wing_wfc_probe_kpoint(const Vector3_Order<double> &kfrac)
+{
+    return std::abs(kfrac.x - 0.625) < 1.0e-10 && std::abs(kfrac.y) < 1.0e-10 &&
+           std::abs(kfrac.z) < 1.0e-10;
+}
+
+static void print_wing_wfc_probe(const int ik_ibz, const Vector3_Order<double> &k_ibz,
+                                 const SymmetryKStarMember &member,
+                                 const Vector3_Order<double> &k_bz,
+                                 const ComplexMatrix &wfc_bz)
+{
+    global::lib_printf(
+        "Wing WFC probe: ik_ibz=%d k_ibz=(% .12f,% .12f,% .12f) "
+        "member_k=(% .12f,% .12f,% .12f) k_bz=(% .12f,% .12f,% .12f) "
+        "spatial_isym=%d time_reversal=%d rows=band columns=AO\n",
+        ik_ibz, k_ibz.x, k_ibz.y, k_ibz.z, member.k_bz.x, member.k_bz.y, member.k_bz.z,
+        k_bz.x, k_bz.y, k_bz.z, member.spatial_isym, member.time_reversal ? 1 : 0);
+    for (int iband = 0; iband != wfc_bz.nr; ++iband)
+    {
+        global::lib_printf("band=%d", iband);
+        for (int iao = 0; iao != wfc_bz.nc; ++iao)
+            global::lib_printf(" (% .15e,% .15e)", wfc_bz(iband, iao).real(),
+                               wfc_bz(iband, iao).imag());
+        global::lib_printf("\n");
+    }
+}
+
+static void print_wing_cmnk_probe(const char *route, const int mu,
+                                  const Vector3_Order<double> &kfrac,
+                                  const ArrayDesc &desc_nband_nband,
+                                  const matrix_m<std::complex<double>> &C_mnk)
+{
+    if (mu != 0 || !is_wing_wfc_probe_kpoint(kfrac) || !desc_nband_nband.is_src()) return;
+    global::lib_printf(
+        "Wing C_mnk probe: route=%s mu=%d k=(% .12f,% .12f,% .12f) rows=m columns=n\n",
+        route, mu, kfrac.x, kfrac.y, kfrac.z);
+    for (int m = 0; m != C_mnk.nr(); ++m)
+    {
+        global::lib_printf("m=%d", m);
+        for (int n = 0; n != C_mnk.nc(); ++n)
+            global::lib_printf(" (% .15e,% .15e)", C_mnk(m, n).real(), C_mnk(m, n).imag());
+        global::lib_printf("\n");
+    }
+}
+
+static void print_wing_cnao_probe(const char *route, const int mu,
+                                  const Vector3_Order<double> &kfrac,
+                                  const ArrayDesc &desc_nao_nao,
+                                  const matrix_m<std::complex<double>> &C_nao_nao)
+{
+    if (mu != 0 || !is_wing_wfc_probe_kpoint(kfrac) || !desc_nao_nao.is_src()) return;
+    global::lib_printf(
+        "Wing C_nao probe: route=%s mu=%d k=(% .12f,% .12f,% .12f) rows=AO columns=AO\n",
+        route, mu, kfrac.x, kfrac.y, kfrac.z);
+    for (int row = 0; row != C_nao_nao.nr(); ++row)
+    {
+        global::lib_printf("ao=%d", row);
+        for (int col = 0; col != C_nao_nao.nc(); ++col)
+            global::lib_printf(" (% .15e,% .15e)", C_nao_nao(row, col).real(),
+                               C_nao_nao(row, col).imag());
+        global::lib_printf("\n");
     }
 }
 
@@ -149,6 +300,32 @@ static bool use_matching_kpoint_blacs(const int n_kpoints,
     return kblacs_ctxt && kblacs_ctxt->is_initialized() && kblacs_ctxt->n_kpoints() == n_kpoints;
 }
 
+ComplexMatrix rotate_headwing_wfc_to_kstar_member(
+    const SymmetryContext &ctx,
+    const SymmetryKStarMember &member,
+    const std::vector<SpeciesBasisLayout> &wfc_layouts,
+    const std::map<atom_t, size_t> &atom_nw,
+    const Vector3_Order<double> &k_ibz,
+    const ComplexMatrix &wfc_ibz,
+    const Vector3_Order<double> *k_bz_target)
+{
+    const auto rotation = build_symmetry_kspace_rotation_matrix(
+        ctx, wfc_layouts, member, atom_nw, k_ibz, member.time_reversal, k_bz_target);
+    if (wfc_ibz.nc != rotation.nr || rotation.nr != rotation.nc)
+    {
+        throw std::runtime_error("headwing WFC rotation dimension mismatch");
+    }
+
+    // `rotation` is the coefficient-side matrix for the generated member.
+    // The non-TR route is C_bz = C_ibz M. This was checked directly against
+    // full-BZ PyATB WFCs for nondegenerate Si bands.
+    if (member.time_reversal)
+    {
+        return conj(wfc_ibz) * rotation;
+    }
+    return wfc_ibz * rotation;
+}
+
 static void allreduce_head_matrices(std::vector<matrix_m<std::complex<double>>> &head,
                                     const MPI_Comm comm)
 {
@@ -174,7 +351,7 @@ static void allreduce_head_check(
                   MPI_SUM, comm);
 }
 
-static std::array<ComplexMatrix, 3> rotate_headwing_velocity_by_shape(
+std::array<ComplexMatrix, 3> rotate_headwing_velocity_to_kstar_member(
     const SymmetryContext &ctx, const SymmetryKStarMember &member,
     const std::array<ComplexMatrix, 3> &v_band_ibz, const int n_bands,
     const bool use_time_reversal)
@@ -205,7 +382,8 @@ static std::array<ComplexMatrix, 3> rotate_headwing_velocity_by_shape(
     const Matrix3 cartesian_rotation =
         (preserves_lattice_metric(operation.rotation, ctx.lattice_vectors, 1e-6)
              ? fractional_rotation_to_cartesian(operation, ctx.lattice_vectors)
-             : operation.rotation);
+             : operation.rotation)
+            .Inverse();
     const std::array<std::array<double, 3>, 3> cartesian_rotation_values{{
         {cartesian_rotation.e11, cartesian_rotation.e12, cartesian_rotation.e13},
         {cartesian_rotation.e21, cartesian_rotation.e22, cartesian_rotation.e23},
@@ -228,112 +406,43 @@ static std::array<ComplexMatrix, 3> rotate_headwing_velocity_by_shape(
     return v_band_bz;
 }
 
-static std::vector<int> build_headwing_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
+std::array<ComplexMatrix, 3> direct_full_bz_velocity_for_kstar_member(
+    const velocity_matrix_t &velocity_full, const std::vector<std::vector<int>> &member_source_ik,
+    const int ispin, const int ik_ibz, const std::size_t imember)
 {
-    std::vector<int> offsets(atom_nw.size() + 1, 0);
-    int running = 0;
-    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+    if (ispin < 0 || ispin >= static_cast<int>(velocity_full.size()) || ik_ibz < 0 ||
+        ik_ibz >= static_cast<int>(member_source_ik.size()) ||
+        imember >= member_source_ik[ik_ibz].size())
     {
-        const auto iter = atom_nw.find(static_cast<atom_t>(atom));
-        if (iter == atom_nw.end())
-            throw std::runtime_error("headwing AO rotation atom_nw is not contiguous");
-        offsets[atom] = running;
-        running += static_cast<int>(iter->second);
+        throw std::runtime_error("direct_full_bz_velocity: invalid spin or k-star member index");
     }
-    offsets.back() = running;
-    return offsets;
+    const int ik_source = member_source_ik[ik_ibz][imember];
+    if (ik_source < 0 || ik_source >= static_cast<int>(velocity_full[ispin].size()) ||
+        velocity_full[ispin][ik_source].size() != 3)
+    {
+        throw std::runtime_error("direct_full_bz_velocity: invalid PyATB full-BZ velocity entry");
+    }
+    return {velocity_full[ispin][ik_source][0], velocity_full[ispin][ik_source][1],
+            velocity_full[ispin][ik_source][2]};
 }
 
-static Vector3_Order<int> headwing_equivalent_kpoint_shift(
-    const Vector3_Order<double>& k_source, const Vector3_Order<double>& k_target)
+const ComplexMatrix &direct_full_bz_wfc_for_kstar_member(
+    const MeanField &wfc_full, const std::vector<std::vector<int>> &member_source_ik,
+    const int ispin, const int ispinor, const int ik_ibz, const std::size_t imember)
 {
-    const Vector3_Order<double> k_shift{k_target.x - k_source.x,
-                                        k_target.y - k_source.y,
-                                        k_target.z - k_source.z};
-    if (!nearly_integer_vector(k_shift, 1.e-5))
-        throw std::runtime_error("headwing AO rotation got non-equivalent full-k targets");
-    return round_to_integer_vector(k_shift);
-}
-
-static std::complex<double> headwing_reciprocal_gauge_phase(
-    const SymmetryContext& ctx,
-    const Vector3_Order<int>& k_shift,
-    const atom_t atom)
-{
-    const auto coord_iter = ctx.input_coord_frac.find(atom);
-    if (coord_iter == ctx.input_coord_frac.end())
-        throw std::runtime_error("headwing AO rotation missing target-gauge coordinate");
-    const Vector3_Order<double> tau{coord_iter->second};
-    const double phase_arg =
-        TWO_PI * (static_cast<double>(k_shift.x) * tau.x
-                  + static_cast<double>(k_shift.y) * tau.y
-                  + static_cast<double>(k_shift.z) * tau.z);
-    return {std::cos(phase_arg), std::sin(phase_arg)};
-}
-
-static ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
-    const SymmetryContext& ctx, const SymmetryKStarMember& member,
-    const std::vector<SpeciesBasisLayout>& wfc_layouts,
-    const std::map<atom_t, size_t>& atom_nw, const Vector3_Order<double>& k_ibz,
-    const Vector3_Order<double>* k_bz_target)
-{
-    const auto offsets = build_headwing_atom_offsets(atom_nw);
-    const int nao_total = offsets.back();
-
-    std::vector<const SymmetryKAtomRotation*> rotations_by_from(atom_nw.size(), nullptr);
-    std::vector<bool> visited_to(atom_nw.size(), false);
-    for (const auto& atom_rotation : member.atom_rotations)
+    if (ik_ibz < 0 || ik_ibz >= static_cast<int>(member_source_ik.size()) ||
+        imember >= member_source_ik[ik_ibz].size())
     {
-        if (atom_rotation.atom_from < 0 || atom_rotation.atom_from >= static_cast<int>(atom_nw.size())
-            || atom_rotation.atom_to < 0 || atom_rotation.atom_to >= static_cast<int>(atom_nw.size()))
-            throw std::runtime_error("headwing AO rotation atom mapping is out of range");
-        rotations_by_from[static_cast<std::size_t>(atom_rotation.atom_from)] = &atom_rotation;
-        visited_to[static_cast<std::size_t>(atom_rotation.atom_to)] = true;
+        throw std::runtime_error("direct_full_bz_wfc: invalid k-star member index");
     }
-    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+    const int ik_source = member_source_ik[ik_ibz][imember];
+    const auto *wfc = wfc_full.find_wfc(ispin, ispinor, ik_source);
+    if (wfc == nullptr || wfc->nr != wfc_full.get_n_states() ||
+        wfc->nc != wfc_full.get_n_aos())
     {
-        if (rotations_by_from[atom] == nullptr)
-            throw std::runtime_error("headwing AO rotations do not cover every atom");
-        if (!visited_to[atom])
-            throw std::runtime_error("headwing AO atom mapping is not a full permutation");
+        throw std::runtime_error("direct_full_bz_wfc: invalid PyATB full-BZ eigenvector entry");
     }
-
-    if (member.spatial_isym < 0
-        || member.spatial_isym >= static_cast<int>(ctx.rspace_operations.size()))
-        throw std::runtime_error("headwing AO rotation uses an invalid symmetry index");
-
-    std::vector<ComplexMatrix> atom_M_blocks(atom_nw.size());
-    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
-    {
-        const auto* atom_rotation = rotations_by_from[atom];
-        const auto& layout =
-            get_symmetry_species_layout(wfc_layouts, atom_rotation->atom_type);
-        atom_M_blocks[atom] =
-            build_symmetry_rotation_matrix(layout, atom_rotation->bloch_rsh_rotations);
-    }
-
-    const bool apply_target_gauge = (k_bz_target != nullptr);
-    std::vector<std::complex<double>> atom_target_phases(atom_nw.size(), {1.0, 0.0});
-    if (apply_target_gauge)
-    {
-        const auto k_shift = headwing_equivalent_kpoint_shift(member.k_bz, *k_bz_target);
-        for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
-            atom_target_phases[atom] =
-                headwing_reciprocal_gauge_phase(ctx, k_shift, static_cast<atom_t>(atom));
-    }
-
-    ComplexMatrix M_full(nao_total, nao_total);
-    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
-    {
-        const auto off = offsets[atom];
-        const auto n_ao = static_cast<int>(atom_nw.at(static_cast<atom_t>(atom)));
-        ComplexMatrix block = atom_M_blocks[atom];
-        if (apply_target_gauge) block *= atom_target_phases[atom];
-        for (int row = 0; row < n_ao; ++row)
-            for (int col = 0; col < n_ao; ++col)
-                M_full(off + row, off + col) = block(row, col);
-    }
-    return M_full;
+    return *wfc;
 }
 
 void initialize_velocity_matrix(velocity_matrix_t &velocity, const int n_spins,
@@ -398,6 +507,36 @@ std::vector<int> map_kpoints_by_coordinates(
     return target_to_source;
 }
 
+std::vector<std::vector<int>> map_symmetry_kstar_members_to_source_kpoints(
+    const SymmetryContext &ctx, const std::vector<Vector3_Order<double>> &ibz_kpoints,
+    const std::vector<Vector3_Order<double>> &source_kpoints, const double tolerance)
+{
+    std::vector<std::size_t> member_offsets;
+    member_offsets.reserve(ibz_kpoints.size() + 1);
+    member_offsets.emplace_back(0);
+    std::vector<Vector3_Order<double>> member_kpoints;
+    for (const auto &k_ibz : ibz_kpoints)
+    {
+        const auto &star = find_symmetry_kstar_for_ibz_kpoint(ctx, k_ibz);
+        if (star.members.empty())
+            throw std::runtime_error("symmetry k-star has no members for full-BZ velocity");
+        for (const auto &member : star.members) member_kpoints.emplace_back(member.k_bz);
+        member_offsets.emplace_back(member_kpoints.size());
+    }
+
+    const auto member_source_indices =
+        map_kpoints_by_coordinates(member_kpoints, source_kpoints, tolerance);
+    std::vector<std::vector<int>> source_indices(ibz_kpoints.size());
+    for (std::size_t ik = 0; ik != ibz_kpoints.size(); ++ik)
+    {
+        const auto begin = member_offsets[ik];
+        const auto end = member_offsets[ik + 1];
+        source_indices[ik].assign(member_source_indices.begin() + begin,
+                                  member_source_indices.begin() + end);
+    }
+    return source_indices;
+}
+
 std::vector<double> interpolate_dielec_func(int option, const std::vector<double> &frequencies_in,
                                             const std::vector<double> &df_in,
                                             const std::vector<double> &frequencies_target)
@@ -460,6 +599,62 @@ void diele_func::init(double coulomb_eigen_threshold, const librpa_int::atpair_k
                 if (vmat.nr != n_states || vmat.nc != n_states)
                     throw LIBRPA_RUNTIME_ERROR(
                         "head/wing velocity matrix size is inconsistent with bands");
+            }
+        }
+    }
+    if (has_direct_full_bz_headwing_inputs())
+    {
+        if (symmetry_context_ == nullptr ||
+            static_cast<int>(direct_full_bz_velocity_.size()) != n_spin ||
+            direct_full_bz_wfc_.get_n_spins() != n_spin ||
+            direct_full_bz_wfc_.get_n_spinor() != meanfield_df.get_n_spinor() ||
+            direct_full_bz_wfc_.get_n_states() != n_states ||
+            direct_full_bz_wfc_.get_n_aos() != n_basis ||
+            static_cast<int>(direct_full_bz_velocity_member_source_ik_.size()) != nk)
+        {
+            throw LIBRPA_RUNTIME_ERROR(
+                "direct full-BZ head/wing inputs are inconsistent with symmetric meanfield");
+        }
+        for (int ik_ibz = 0; ik_ibz != nk; ++ik_ibz)
+        {
+            const auto &star = librpa_int::find_symmetry_kstar_for_ibz_kpoint(
+                *symmetry_context_, kfrac_band[ik_ibz]);
+            if (direct_full_bz_velocity_member_source_ik_[ik_ibz].size() != star.members.size())
+            {
+                throw LIBRPA_RUNTIME_ERROR(
+                    "direct full-BZ velocity k-star mapping has an inconsistent member count");
+            }
+            for (const int ik_source : direct_full_bz_velocity_member_source_ik_[ik_ibz])
+            {
+                for (int ispin = 0; ispin != n_spin; ++ispin)
+                {
+                    if (ik_source < 0 ||
+                        ik_source >= static_cast<int>(direct_full_bz_velocity_[ispin].size()) ||
+                        direct_full_bz_velocity_[ispin][ik_source].size() != 3)
+                    {
+                        throw LIBRPA_RUNTIME_ERROR(
+                            "direct full-BZ head/wing velocity has an invalid PyATB k point");
+                    }
+                    for (int alpha = 0; alpha != 3; ++alpha)
+                    {
+                        const auto &vmat = direct_full_bz_velocity_[ispin][ik_source][alpha];
+                        if (vmat.nr != n_states || vmat.nc != n_states)
+                        {
+                            throw LIBRPA_RUNTIME_ERROR(
+                                "direct full-BZ head/wing velocity matrix size is inconsistent "
+                                "with bands");
+                        }
+                    }
+                    for (int ispinor = 0; ispinor != meanfield_df.get_n_spinor(); ++ispinor)
+                    {
+                        const auto *wfc = direct_full_bz_wfc_.find_wfc(ispin, ispinor, ik_source);
+                        if (wfc == nullptr || wfc->nr != n_states || wfc->nc != n_basis)
+                        {
+                            throw LIBRPA_RUNTIME_ERROR(
+                                "direct full-BZ head/wing WFC has an invalid PyATB k point");
+                        }
+                    }
+                }
             }
         }
     }
@@ -579,6 +774,8 @@ void diele_func::cal_head_full_bz()
     std::complex<double> tmp;
     const bool use_kblacs = use_matching_kpoint_blacs(nk, kblacs_ctxt_);
     const auto kpoints = headwing_local_kpoint_roots(nk, kblacs_ctxt_);
+    std::vector<std::array<std::complex<double>, 9>> head_k_iomega0(as_size(nk));
+    for (auto &head_k : head_k_iomega0) head_k.fill({0.0, 0.0});
 
     for (int ispin = 0; ispin != n_spin; ispin++)
     {
@@ -614,6 +811,9 @@ void diele_func::cal_head_full_bz()
                                               velocity[ik][beta](iocc, iunocc) /
                                               (egap * egap + omega_ev * omega_ev) / egap;
                                         this->head.at(iomega)(alpha, beta) -= tmp;
+                                        if (iomega == 0)
+                                            head_k_iomega0.at(as_size(ik)).at(
+                                                as_size(alpha * 3 + beta)) -= tmp;
                                     }
                                 }
                             }
@@ -624,14 +824,21 @@ void diele_func::cal_head_full_bz()
         }
     }
     if (use_kblacs) allreduce_head_matrices(this->head, comm_h.comm);
+    if (comm_h.is_root())
+    {
+        for (int ik = 0; ik != nk; ++ik)
+            print_head_k_contribution("full_bz", ik, kfrac_band[ik],
+                                      head_k_iomega0.at(as_size(ik)));
+    }
 }
 
 void diele_func::cal_head_symmetric()
 {
     // Symmetry-aware head: sum over the full BZ by looping IBZ k-points and, for
-    // each, every member of the k-star. The BZ velocity for every member is
-    // reconstructed from the IBZ velocity via rotate_headwing_velocity; the
-    // eigenvalues are symmetry-invariant so the IBZ gap is reused directly.
+    // each, every member of the k-star. Full-BZ PyATB velocity is selected at
+    // the member k point when available; otherwise the historical IBZ rotation
+    // fallback is used. The eigenvalues are symmetry-invariant, so the IBZ gap
+    // is reused directly.
     if (symmetry_context_ == nullptr)
         throw std::runtime_error("cal_head_symmetric: symmetry context is not set");
     const auto& ctx = *symmetry_context_;
@@ -642,9 +849,8 @@ void diele_func::cal_head_symmetric()
     const auto member_targets =
         librpa_int::build_symmetry_kstar_member_kfrac_targets(ctx, pbc_);
 
-    // Total BZ k-count = sum of star sizes. The IBZ mean-field stores wg as
-    // occ/n_ibz, but the head/wing sum is over the full BZ, so each BZ k must
-    // carry wg(bz) = occ/n_bz = wg(ibz) * n_ibz / n_bz.
+    // PyATB velocity inputs on an IBZ grid use the active-grid occupation normalization.
+    // Expanding each representative to the full BZ therefore scales every member uniformly.
     const std::size_t n_kpoints_bz = ctx.count_kstar_members();
     const double bz_weight_scale = static_cast<double>(nk) / static_cast<double>(n_kpoints_bz);
     const bool use_kblacs = use_matching_kpoint_blacs(nk, kblacs_ctxt_);
@@ -688,21 +894,24 @@ void diele_func::cal_head_symmetric()
                 continue;
             }
 
-            // IBZ velocity, band basis, per Cartesian component.
-            std::array<ComplexMatrix, 3> v_band_ibz{velocity[ik_ibz][0], velocity[ik_ibz][1],
-                                                    velocity[ik_ibz][2]};
-
             for (std::size_t imember = 0; imember != star.members.size(); ++imember)
             {
                 const auto &member = star.members[imember];
                 const auto &k_bz =
                     member_targets.empty() ? member.k_bz : member_targets[ik_ibz][imember];
+                std::array<std::complex<double>, 9> head_k_iomega0{};
 
-                // Reconstruct the BZ band-basis velocity for all three Cartesian
-                // components in one call.
                 (void)k_bz;
-                const auto v_band_bz = rotate_headwing_velocity_by_shape(
-                    ctx, member, v_band_ibz, n_states, member.time_reversal);
+                const auto v_band_bz = has_direct_full_bz_headwing_inputs()
+                                          ? direct_full_bz_velocity_for_kstar_member(
+                                                direct_full_bz_velocity_,
+                                                direct_full_bz_velocity_member_source_ik_, ispin,
+                                                ik_ibz, imember)
+                                          : rotate_headwing_velocity_to_kstar_member(
+                                                ctx, member,
+                                                {velocity[ik_ibz][0], velocity[ik_ibz][1],
+                                                 velocity[ik_ibz][2]},
+                                                n_states, member.time_reversal);
 
                 // Sum over band pairs. Eigenvalues are symmetry-invariant, so the
                 // IBZ gap Delta_cv applies to every star member unchanged.
@@ -711,7 +920,6 @@ void diele_func::cal_head_symmetric()
                     for (int iunocc = 0; iunocc != n_states; iunocc++)
                     {
                         if (iocc >= iunocc) continue;
-                        // Each BZ k carries wg(bz) = wg(ibz) * n_ibz / n_bz.
                         const double factor =
                             bz_weight_scale * headwing_transition_weight(wg(ik_ibz, iocc),
                                                                          wg(ik_ibz, iunocc), n_spin,
@@ -733,12 +941,16 @@ void diele_func::cal_head_symmetric()
                                         v_band_bz[beta](iocc, iunocc) /
                                         (egap * egap + omega_ev * omega_ev) / egap;
                                     this->head.at(iomega)(alpha, beta) -= tmp;
+                                    if (iomega == 0)
+                                        head_k_iomega0.at(as_size(alpha * 3 + beta)) -= tmp;
                                     if (debug) head_check[iomega][alpha][beta] -= tmp;
                                 }
                             }
                         }
                     }
                 }
+                if (comm_h.is_root())
+                    print_head_k_contribution("sym_restored", ik_ibz, k_bz, head_k_iomega0);
             }
         }
     }
@@ -914,6 +1126,8 @@ void diele_func::cal_wing_full_bz(const Cs_LRI &Cs_data, double coulomb_eigen_th
     int n_lambda = this->n_nonsingular - 1;
     std::vector<std::complex<double>> local_wing_mu;
     local_wing_mu.resize(this->omega.size() * 3 * n_abf, 0.0);
+    std::vector<std::complex<double>> local_wing_mu_k_iomega0(
+        as_size(nk) * as_size(n_abf) * 3, 0.0);
     const bool use_kblacs = use_matching_kpoint_blacs(nk, kblacs_ctxt_);
     const BlacsCtxtHandler &wing_blacs_h = use_kblacs ? kblacs_ctxt_->blacs_h : blacs_h;
     const auto kpoints_local = headwing_local_kpoints(nk, use_kblacs ? kblacs_ctxt_ : nullptr);
@@ -941,11 +1155,14 @@ void diele_func::cal_wing_full_bz(const Cs_LRI &Cs_data, double coulomb_eigen_th
                         : transform_Cs2mnk(ik, mu, Cs_IJ, isp);
                 auto &desc_nband_nband = desc_C_mnk.first;
                 auto &C_mnk = desc_C_mnk.second;
+                print_wing_cmnk_probe("full_bz", mu, kfrac_band[ik], desc_nband_nband, C_mnk);
                 const bool use_soc_wing = meanfield_df.get_n_spinor() > 1;
                 const auto &eigenvalues = this->meanfield_df.get_eigenvals();
                 const auto &wg = this->meanfield_df.get_weight()[isp];
                 const auto &velocity = this->velocity_[isp][ik];
                 auto *wing_mu_for_mu = local_wing_mu.data() + as_size(mu) * this->omega.size() * 3;
+                auto *wing_mu_k_iomega0_for_mu =
+                    local_wing_mu_k_iomega0.data() + as_size(ik * n_abf + mu) * 3;
 
                 for (int iocc = 0; iocc != n_states; iocc++)
                 {
@@ -980,11 +1197,22 @@ void diele_func::cal_wing_full_bz(const Cs_LRI &Cs_data, double coulomb_eigen_th
                             velocity[0](iunocc, iocc), velocity[1](iunocc, iocc),
                             velocity[2](iunocc, iocc)};
                         accumulate_wing_mu_for_pair(this->omega, velocity_unocc_occ, c_mn, egap,
-                                                    factor1, factor2, wing_mu_for_mu);
+                                                    factor1, factor2, wing_mu_for_mu,
+                                                    wing_mu_k_iomega0_for_mu);
                     }
                 }
             }
             // profiler.stop("compute_wing");
+        }
+    }
+    if (comm_h.is_root())
+    {
+        for (int ik = 0; ik != nk; ++ik)
+        {
+            const auto begin = local_wing_mu_k_iomega0.begin() + as_size(ik * n_abf) * 3;
+            const auto end = begin + as_size(n_abf) * 3;
+            print_wing_mu_k_contribution_gram("full_bz", ik, kfrac_band[ik],
+                                              {begin, end}, n_abf);
         }
     }
     profiler.start("Comm_wing");
@@ -1040,9 +1268,8 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
     if (symmetry_context_ == nullptr)
         throw std::runtime_error("cal_wing_symmetric: symmetry context is not set");
     const auto &ctx = *symmetry_context_;
-    const auto wfc_layouts = atomic_basis_wfc_.build_species_basis_layouts(ctx.atom_to_type);
-    const auto member_targets =
-        librpa_int::build_symmetry_kstar_member_kfrac_targets(ctx, pbc_);
+            const auto member_targets =
+                librpa_int::build_symmetry_kstar_member_kfrac_targets(ctx, pbc_);
 
     const int n_kpoints_ibz = nk;
     const int n_spinor = meanfield_df.get_n_spinor();
@@ -1050,6 +1277,11 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
     const double bz_weight_scale_wing =
         static_cast<double>(n_kpoints_ibz) / static_cast<double>(n_kpoints_bz);
     const bool source_rank = wing_blacs_h.myprow == 0 && wing_blacs_h.mypcol == 0;
+    if (!has_direct_full_bz_headwing_inputs())
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "symmetry head/wing requires full-BZ PyATB velocity_matrix and KS eigenvectors");
+    }
 
     for (const int ik_ibz : kpoints_local)
     {
@@ -1062,44 +1294,43 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
             const auto &member = star.members[imember];
             const auto &k_bz =
                 member_targets.empty() ? member.k_bz : member_targets[ik_ibz][imember];
+            std::vector<std::complex<double>> member_wing_mu_iomega0(as_size(n_abf) * 3, 0.0);
 
             std::vector<std::array<ComplexMatrix, 3>> velocity_bz(n_spin);
             for (int ispin = 0; ispin != n_spin; ++ispin)
             {
-                const std::array<ComplexMatrix, 3> v_band_ibz{velocity_[ispin][ik_ibz][0],
-                                                              velocity_[ispin][ik_ibz][1],
-                                                              velocity_[ispin][ik_ibz][2]};
-                velocity_bz[ispin] = rotate_headwing_velocity_by_shape(
-                    ctx, member, v_band_ibz, n_states, member.time_reversal);
+                velocity_bz[ispin] = direct_full_bz_velocity_for_kstar_member(
+                    direct_full_bz_velocity_, direct_full_bz_velocity_member_source_ik_, ispin,
+                    ik_ibz, imember);
             }
 
-            std::vector<std::vector<ComplexMatrix>> wfc_bz_storage(n_spin);
             std::vector<std::vector<const ComplexMatrix *>> wfc_bz_ptrs(n_spin);
             for (int ispin = 0; ispin != n_spin; ++ispin)
             {
-                wfc_bz_storage[ispin].resize(n_spinor);
                 wfc_bz_ptrs[ispin].assign(n_spinor, nullptr);
             }
             if (source_rank)
             {
-                const auto M_full = build_symmetry_ao_bloch_rotation_matrix_full(
-                    ctx, member, wfc_layouts, atom_nw, k_ibz, &k_bz);
-                const ComplexMatrix M_full_conj = conj(M_full);
                 for (int ispin = 0; ispin != n_spin; ++ispin)
                 {
                     for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
                     {
-                        const auto *C_ibz = meanfield_df.find_wfc(ispin, ispinor, ik_ibz);
-                        if (C_ibz == nullptr) continue;
-                        wfc_bz_storage[ispin][ispinor] = (*C_ibz) * M_full_conj;
-                        wfc_bz_ptrs[ispin][ispinor] = &wfc_bz_storage[ispin][ispinor];
+                        wfc_bz_ptrs[ispin][ispinor] = &direct_full_bz_wfc_for_kstar_member(
+                            direct_full_bz_wfc_, direct_full_bz_velocity_member_source_ik_,
+                            ispin, ispinor, ik_ibz, imember);
                     }
                 }
+                if (is_wing_wfc_probe_kpoint(k_bz) && !wfc_bz_ptrs.empty() &&
+                    !wfc_bz_ptrs.front().empty())
+                    print_wing_wfc_probe(ik_ibz, k_ibz, member, k_bz,
+                                         *wfc_bz_ptrs.front().front());
             }
 
             for (int mu = 0; mu != n_abf; ++mu)
             {
                 auto *wing_mu_for_mu = local_wing_mu.data() + as_size(mu) * this->omega.size() * 3;
+                auto *member_wing_mu_iomega0_for_mu =
+                    member_wing_mu_iomega0.data() + as_size(mu) * 3;
 
                 for (int isp = 0; isp != n_spin; ++isp)
                 {
@@ -1107,6 +1338,7 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
                                                               k_bz, &wfc_bz_ptrs, isp);
                     auto &desc_nband_nband = desc_C_mnk.first;
                     auto &C_mnk = desc_C_mnk.second;
+                    print_wing_cmnk_probe("sym_restored", mu, k_bz, desc_nband_nband, C_mnk);
                     const bool use_soc_wing = meanfield_df.get_n_spinor() > 1;
                     const auto &eigenvalues = this->meanfield_df.get_eigenvals();
                     const auto &wg = this->meanfield_df.get_weight()[isp];
@@ -1147,11 +1379,15 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
                                 velocity[0](iunocc, iocc), velocity[1](iunocc, iocc),
                                 velocity[2](iunocc, iocc)};
                             accumulate_wing_mu_for_pair(this->omega, velocity_unocc_occ, c_mn, egap,
-                                                        factor1, factor2, wing_mu_for_mu);
+                                                        factor1, factor2, wing_mu_for_mu,
+                                                        member_wing_mu_iomega0_for_mu);
                         }
                     }
                 }
             }
+            if (comm_h.is_root())
+                print_wing_mu_k_contribution_gram("sym_restored", ik_ibz, k_bz,
+                                                  member_wing_mu_iomega0, n_abf, &member);
         }
     }
 
@@ -1225,6 +1461,7 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk(
     collect_block_from_IJ_storage_tensor_transform_triple(C_nao_nao, desc_nao_nao,
                                                           atomic_basis_wfc_, atomic_basis_wfc_,
                                                           fourier, Cs_IJ, Mu, mu_local);
+    print_wing_cnao_probe("full_bz", mu, kfrac, desc_nao_nao, C_nao_nao);
     // if (ik == 1 && mu == 4)
     // {
     //     for (const auto IJRc : Cs_IJ)
@@ -1339,6 +1576,8 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::transform_Cs2mnk_kbl
     collect_block_from_IJ_storage_tensor_transform_triple(C_nao_nao, desc_nao_nao,
                                                           atomic_basis_wfc_, atomic_basis_wfc_,
                                                           fourier, Cs_IJ, Mu, mu_local);
+    print_wing_cnao_probe(wfc_override == nullptr ? "full_bz" : "sym_restored", mu, kfrac,
+                          desc_nao_nao, C_nao_nao);
 
     const auto get_wfc = [&](const int ispin, const int ispinor) -> const ComplexMatrix *
     {
@@ -1543,10 +1782,27 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
 
     if (!this->wing.empty())
     {
+        const auto &wing0 = this->wing.at(0);
+        ComplexMatrix wing0_global(n_lambda, 3);
+        for (int ilambda = 0; ilambda != wing0.nr(); ++ilambda)
+        {
+            const int lambda = desc_wing_opt.indx_l2g_r(ilambda);
+            if (lambda < 0) continue;
+            for (int ialpha = 0; ialpha != wing0.nc(); ++ialpha)
+            {
+                const int alpha = desc_wing_opt.indx_l2g_c(ialpha);
+                if (alpha >= 0 && alpha < 3) wing0_global(lambda, alpha) = wing0(ilambda, ialpha);
+            }
+        }
+        if (wing0_global.size > std::numeric_limits<int>::max())
+            throw LIBRPA_RUNTIME_ERROR("wing Cartesian Gram buffer is too large for MPI_Allreduce");
+        MPI_Allreduce(MPI_IN_PLACE, wing0_global.c, wing0_global.size, MPI_CXX_DOUBLE_COMPLEX,
+                      MPI_SUM, comm_h.comm);
+        const auto wing0_gram = compute_wing_cartesian_gram(wing0_global);
+
         double max_abs_real_local = 0.0;
         double max_abs_imag_local = 0.0;
         double max_abs_value_local = 0.0;
-        const auto &wing0 = this->wing.at(0);
         for (int i = 0; i != wing0.nr(); ++i)
         {
             for (int j = 0; j != wing0.nc(); ++j)
@@ -1570,6 +1826,17 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
                 "Wing_lambda diagnostics (iomega=0): max_abs_real=%15.8e "
                 "max_abs_imag=%15.8e max_abs_value=%15.8e real_over_abs=%15.8e\n",
                 max_abs_real, max_abs_imag, max_abs_value, real_over_abs);
+            global::lib_printf("Wing_lambda Gram (iomega=0, rows alpha, columns beta):\n");
+            for (int alpha = 0; alpha != 3; ++alpha)
+            {
+                global::lib_printf("(%15.8e,%15.8e) (%15.8e,%15.8e) (%15.8e,%15.8e)\n",
+                                   wing0_gram.at(alpha).at(0).real(),
+                                   wing0_gram.at(alpha).at(0).imag(),
+                                   wing0_gram.at(alpha).at(1).real(),
+                                   wing0_gram.at(alpha).at(1).imag(),
+                                   wing0_gram.at(alpha).at(2).real(),
+                                   wing0_gram.at(alpha).at(2).imag());
+            }
         }
         if (debug)
         {
@@ -1898,6 +2165,22 @@ void diele_func::test_wing()
             "Wing_mu diagnostics (iomega=0): max_abs_real=%15.8e max_abs_imag=%15.8e "
             "max_abs_value=%15.8e real_over_abs=%15.8e\n",
             max_abs_real, max_abs_imag, max_abs_value, real_over_abs);
+        ComplexMatrix wing_mu0(n_abf, 3);
+        for (int mu = 0; mu != n_abf; ++mu)
+            for (int alpha = 0; alpha != 3; ++alpha)
+                wing_mu0(mu, alpha) = this->wing_mu.at(0)(mu, alpha);
+        const auto wing_mu0_gram = compute_wing_cartesian_gram(wing_mu0);
+        lib_printf("Wing_mu Gram (iomega=0, rows alpha, columns beta):\n");
+        for (int alpha = 0; alpha != 3; ++alpha)
+        {
+            lib_printf("(%15.8e,%15.8e) (%15.8e,%15.8e) (%15.8e,%15.8e)\n",
+                       wing_mu0_gram.at(alpha).at(0).real(),
+                       wing_mu0_gram.at(alpha).at(0).imag(),
+                       wing_mu0_gram.at(alpha).at(1).real(),
+                       wing_mu0_gram.at(alpha).at(1).imag(),
+                       wing_mu0_gram.at(alpha).at(2).real(),
+                       wing_mu0_gram.at(alpha).at(2).imag());
+        }
         if (debug)
         {
             std::cout << "Index of abfs & wing(iomega=0, z) of dielectric function(Re, Im): "

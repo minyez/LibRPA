@@ -74,16 +74,6 @@ static void check_same_imagtimes(const std::vector<double> &imagtimes,
     }
 }
 
-static std::map<atom_t, size_t> build_atom_nw_map(const AtomicBasis &atbasis)
-{
-    std::map<atom_t, size_t> atom_nw;
-    for (atom_t atom = 0; atom != as_atom(atbasis.n_atoms); ++atom)
-    {
-        atom_nw[atom] = atbasis.get_atom_nb(atom);
-    }
-    return atom_nw;
-}
-
 static std::vector<const SymmetryKAtomRotation*> build_rotations_by_from(
     const SymmetryKStarMember &member, const std::size_t n_atoms)
 {
@@ -703,7 +693,7 @@ std::map<Vector3_Order<int>, Matz> get_symmetry_restored_dmat_cplx_Rs_kblacs_par
     if (desc_wfc.ictxt() != desc_dm.ictxt())
         throw LIBRPA_RUNTIME_ERROR("wave-function and density-matrix descriptors must use the same BLACS context");
 
-    const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const auto atom_nw = atbasis_wfc.get_atom_nb_map();
     const auto wfc_layouts = atbasis_wfc.has_l_shells()
         ? atbasis_wfc.build_species_basis_layouts(symmetry_context.atom_to_type)
         : std::vector<SpeciesBasisLayout>{};
@@ -755,7 +745,8 @@ std::map<Vector3_Order<int>, Matz> get_symmetry_restored_dmat_cplx_Rs_kblacs_par
     std::vector<cplxdb> dummy(1, C_ZERO);
     Matz scaled_wfc_ket(desc_wfc.m_loc(), desc_wfc.n_loc(), MAJOR::COL);
     Matz dmat_k(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
-    auto wfc_gemm_workspace = create_wfc_gemm_workspace(desc_wfc);
+    auto wfc_gemm_workspace = create_wfc_gemm_workspace(desc_wfc, desc_dm,
+                                                        kblacs_ctxt.blacs_h);
     const auto &iks_local = kblacs_ctxt.kpoints_local();
     const int nk_local = iks_local.size();
     int nk_sum = 0;
@@ -1174,7 +1165,7 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
 
     check_same_imagtimes(imagtimes, kblacs_ctxt.comm_global_h);
 
-    const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const auto atom_nw = atbasis_wfc.get_atom_nb_map();
     const auto wfc_layouts = atbasis_wfc.has_l_shells()
         ? atbasis_wfc.build_species_basis_layouts(symmetry_context.atom_to_type)
         : std::vector<SpeciesBasisLayout>{};
@@ -1228,7 +1219,8 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
     std::vector<cplxdb> dummy(1, C_ZERO);
     Matz scaled_wfc_ket(desc_wfc.m_loc(), desc_wfc.n_loc(), MAJOR::COL);
     Matz gf_k(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
-    auto wfc_gemm_workspace = create_wfc_gemm_workspace(desc_wfc);
+    auto wfc_gemm_workspace = create_wfc_gemm_workspace(desc_wfc, desc_dm,
+                                                        kblacs_ctxt.blacs_h);
     const auto &iks_local = kblacs_ctxt.kpoints_local();
     const int nk_local = iks_local.size();
     int nk_sum = 0;

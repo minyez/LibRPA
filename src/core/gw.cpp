@@ -1547,7 +1547,7 @@ void G0W0::build_spacetime(
         static_cast<std::size_t>(natom) * static_cast<std::size_t>(natom) * pbc.Rlist.size();
     const bool symmetry_reduces_rspace =
         symmetry_ctx.count_irreducible_blocks() < n_full_rspace_blocks;
-    const bool use_input_sigc_symmetry =
+    const bool sigc_rspace_symmetry_available =
         this->use_symmetry_context
         && symmetry_ctx.available
         && symmetry_species_layouts_match_atom_counts(
@@ -1558,6 +1558,18 @@ void G0W0::build_spacetime(
         && symmetry_ctx.atom_to_type.size() == static_cast<std::size_t>(natom)
         && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(natom)
         && symmetry_reduces_rspace;
+    const bool sigc_band_space_complete =
+        rspace_symmetry_has_complete_band_space(mf, -1);
+    const bool use_input_sigc_symmetry =
+        sigc_rspace_symmetry_available && sigc_band_space_complete;
+    if (sigc_rspace_symmetry_available && !sigc_band_space_complete && comm_h.is_root())
+    {
+        global::lib_printf(
+            "GW real-space self-energy irreducible-sector contraction disabled: "
+            "%d response bands do not span the complete %d-state AO space; "
+            "k-star and q-star symmetry remain active\n",
+            mf.get_n_bands(), mf.get_n_aos());
+    }
     const auto libri_sigc_irreducible_sector =
         use_input_sigc_symmetry
             ? convert_symmetry_irreducible_sector_to_libri_gw(

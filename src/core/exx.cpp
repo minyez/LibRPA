@@ -3,7 +3,6 @@
 #include <omp.h>
 #include <cmath>
 #include <cstddef>
-#include <fstream>
 #include <iterator>
 #include <set>
 #include <sstream>
@@ -589,7 +588,6 @@ void Exx::build(const LibrpaParallelRouting routing,
             ? convert_symmetry_irreducible_sector_to_libri(
                   symmetry_ctx.irreducible_sector, this->pbc.period_array)
             : std::map<std::pair<int, int>, std::set<std::array<int, 3>>>{};
-    const bool use_libri_exx_symmetry_filter = use_symmetry_exx;
     const auto& symmetry_sector_stars = symmetry_ctx.rspace_sector_stars;
     if (use_symmetry_exx)
     {
@@ -918,106 +916,108 @@ void Exx::build(const LibrpaParallelRouting routing,
                 global::profiler.stop("build_real_space_exx_4");
                 release_free_mem();
 
-                global::lib_printf("Task %4d: cal_Hs elapsed time: %f\n", comm_h.myid, global::profiler.get_wall_time_last("build_real_space_exx_4"));
+                global::lib_printf(
+                    "Task %4d: cal_Hs elapsed time: %f\n", comm_h.myid,
+                    global::profiler.get_wall_time_last("build_real_space_exx_4"));
                 // print_keys(global::ofs_myid, exx_libri.Hs);
                 // ofs_myid << "exx_libri.Hs:\n" << exx_libri.Hs << endl;
 
-	                auto store_exx_block = [&](const atom_t full_I,
-	                                           const atom_t full_J,
-	                                           const Vector3_Order<int>& full_R,
-	                                           const ComplexMatrix& block)
-	                {
-	                    const auto n_full_I = ab_wfc.get_atom_nb(full_I);
-	                    const auto n_full_J = ab_wfc.get_atom_nb(full_J);
-	                    if (block.nr != as_int(n_full_I) || block.nc != as_int(n_full_J))
-	                    {
-	                        throw std::runtime_error(
-	                            "EXX real-space symmetry restore produced an AO block with an inconsistent dimension");
-	                    }
-	                    if (use_complex_exx_r)
-	                    {
-	                        this->exx_IJR_cplx[isp][ispn_bra][ispn_ket][full_I][full_J][full_R] =
-	                            Matz(n_full_I, n_full_J, block.c, MAJOR::ROW);
-	                    }
-	                    else
-	                    {
-	                        const auto block_real = block.real();
-	                        this->exx_IJR[isp][ispn_bra][ispn_ket][full_I][full_J][full_R] =
-	                            Matd(n_full_I, n_full_J, block_real.c, MAJOR::ROW);
-	                    }
-	                };
+                auto store_exx_block = [&](const atom_t full_I,
+                                           const atom_t full_J,
+                                           const Vector3_Order<int>& full_R,
+                                           const ComplexMatrix& block)
+                {
+                    const auto n_full_I = ab_wfc.get_atom_nb(full_I);
+                    const auto n_full_J = ab_wfc.get_atom_nb(full_J);
+                    if (block.nr != as_int(n_full_I) || block.nc != as_int(n_full_J))
+                    {
+                        throw std::runtime_error(
+                            "EXX real-space symmetry restore produced an AO block with an inconsistent dimension");
+                    }
+                    if (use_complex_exx_r)
+                    {
+                        this->exx_IJR_cplx[isp][ispn_bra][ispn_ket][full_I][full_J][full_R] =
+                            Matz(n_full_I, n_full_J, block.c, MAJOR::ROW);
+                    }
+                    else
+                    {
+                        const auto block_real = block.real();
+                        this->exx_IJR[isp][ispn_bra][ispn_ket][full_I][full_J][full_R] =
+                            Matd(n_full_I, n_full_J, block_real.c, MAJOR::ROW);
+                    }
+                };
 
-	                auto copy_exx_blocks = [&](const auto &Hs)
-	                {
-	                    global::ofs_myid << "Number of exx_libri.Hs keys: "
-	                                     << get_num_keys(Hs) << std::endl;
-	                    if (use_libri_exx_symmetry_filter)
-	                    {
-	                        global::lib_printf(
-	                            "Restoring the symmetry-filtered LibRI EXX blocks to the full AO real-space sector\n");
-	                    }
-	                    for (const auto &I_JR_exx : Hs)
-	                    {
-	                        const auto &I = I_JR_exx.first;
-	                        const auto n_I = ab_wfc.get_atom_nb(I);
-	                        for (const auto &JR_exx : I_JR_exx.second)
-	                        {
-	                            const auto &J = JR_exx.first.first;
-	                            const auto n_J = ab_wfc.get_atom_nb(J);
-	                            const auto &Ra = JR_exx.first.second;
-	                            const auto R = Vector3_Order<int>{Ra[0], Ra[1], Ra[2]};
-	                            const auto block_ir =
-	                                convert_libri_tensor_to_complex_matrix(
-	                                    JR_exx.second, n_I, n_J);
-	                            if (use_libri_exx_symmetry_filter)
-	                            {
-	                                const auto sector_pair =
-	                                    std::make_pair(static_cast<atom_t>(I),
-	                                                   static_cast<atom_t>(J));
-	                                const auto pair_iter =
-	                                    symmetry_sector_stars.find(sector_pair);
-	                                if (pair_iter == symmetry_sector_stars.end()
-	                                    || pair_iter->second.count(R) == 0)
-	                                {
-	                                    std::ostringstream oss;
-	                                    oss << "Failed to match a symmetry-filtered EXX real-space block"
-	                                        << " with the irreducible-sector restore map for I="
-	                                        << I << " J=" << J << " R=(" << R.x << ","
-	                                        << R.y << "," << R.z << ")";
-	                                    throw std::runtime_error(oss.str());
-	                                }
-	                                for (const auto& restore_member : pair_iter->second.at(R))
-	                                {
-	                                    const auto block_full =
-	                                        librpa_int::rotate_symmetry_rspace_block(
-	                                            symmetry_ctx, wfc_layouts, restore_member.isym,
-	                                            static_cast<atom_t>(I),
-	                                            static_cast<atom_t>(J), block_ir);
-	                                    store_exx_block(
-	                                        restore_member.full_atom_pair.first,
-	                                        restore_member.full_atom_pair.second,
-	                                        restore_member.full_R,
-	                                        block_full);
-	                                }
-	                            }
-	                            else
-	                            {
-	                                store_exx_block(
-	                                    static_cast<atom_t>(I),
-	                                    static_cast<atom_t>(J),
-	                                    R,
-	                                    block_ir);
-	                            }
-	                        }
-	                    }
-	                };
+                auto copy_exx_blocks = [&](const auto &Hs)
+                {
+                    global::ofs_myid << "Number of exx_libri.Hs keys: "
+                                     << get_num_keys(Hs) << std::endl;
+                    if (use_symmetry_exx)
+                    {
+                        global::lib_printf(
+                            "Restoring the symmetry-filtered LibRI EXX blocks to the full AO real-space sector\n");
+                    }
+                    for (const auto &I_JR_exx : Hs)
+                    {
+                        const auto &I = I_JR_exx.first;
+                        const auto n_I = ab_wfc.get_atom_nb(I);
+                        for (const auto &JR_exx : I_JR_exx.second)
+                        {
+                            const auto &J = JR_exx.first.first;
+                            const auto n_J = ab_wfc.get_atom_nb(J);
+                            const auto &Ra = JR_exx.first.second;
+                            const auto R = Vector3_Order<int>{Ra[0], Ra[1], Ra[2]};
+                            const auto block_ir =
+                                convert_libri_tensor_to_complex_matrix(
+                                    JR_exx.second, n_I, n_J);
+                            if (use_symmetry_exx)
+                            {
+                                const auto sector_pair =
+                                    std::make_pair(static_cast<atom_t>(I),
+                                                   static_cast<atom_t>(J));
+                                const auto pair_iter =
+                                    symmetry_sector_stars.find(sector_pair);
+                                if (pair_iter == symmetry_sector_stars.end()
+                                    || pair_iter->second.count(R) == 0)
+                                {
+                                    std::ostringstream oss;
+                                    oss << "Failed to match a symmetry-filtered EXX real-space block"
+                                        << " with the irreducible-sector restore map for I="
+                                        << I << " J=" << J << " R=(" << R.x << ","
+                                        << R.y << "," << R.z << ")";
+                                    throw std::runtime_error(oss.str());
+                                }
+                                for (const auto& restore_member : pair_iter->second.at(R))
+                                {
+                                    const auto block_full =
+                                        librpa_int::rotate_symmetry_rspace_block(
+                                            symmetry_ctx, wfc_layouts, restore_member.isym,
+                                            static_cast<atom_t>(I),
+                                            static_cast<atom_t>(J), block_ir);
+                                    store_exx_block(
+                                        restore_member.full_atom_pair.first,
+                                        restore_member.full_atom_pair.second,
+                                        restore_member.full_R,
+                                        block_full);
+                                }
+                            }
+                            else
+                            {
+                                store_exx_block(
+                                    static_cast<atom_t>(I),
+                                    static_cast<atom_t>(J),
+                                    R,
+                                    block_ir);
+                            }
+                        }
+                    }
+                };
 
-	                global::profiler.start("build_real_space_exx_5");
-	                if (use_complex_exx_r)
-	                    copy_exx_blocks(exx_libri_cplx.Hs);
-	                else
-	                    copy_exx_blocks(exx_libri.Hs);
-	                global::profiler.stop("build_real_space_exx_5");
+                global::profiler.start("build_real_space_exx_5");
+                if (use_complex_exx_r)
+                    copy_exx_blocks(exx_libri_cplx.Hs);
+                else
+                    copy_exx_blocks(exx_libri.Hs);
+                global::profiler.stop("build_real_space_exx_5");
             }
         }
     }

@@ -6,8 +6,10 @@
 #include <memory>
 #include <valarray>
 
+#include "../core/chi0.h"
 #include "../core/dielecmodel.h"
 #include "../core/epsilon.h"
+#include "../core/qpoint_view.h"
 #include "../io/global_io.h"
 #include "../math/utils_matrix_m_mpi.h"
 #include "../mpi/base_blacs.h"
@@ -26,13 +28,36 @@ using librpa_int::init_local_mat;
 using librpa_int::KPointBlacsParallelContext;
 using librpa_int::KPointBlacsProcessShape;
 using librpa_int::MAJOR;
+using librpa_int::Matrix3;
+using librpa_int::Matz;
 using librpa_int::matrix_m;
 using librpa_int::MeanField;
 using librpa_int::PeriodicBoundaryData;
+using librpa_int::SpeciesBasisLayout;
+using librpa_int::SymmetryContext;
+using librpa_int::SymmetryKAtomRotation;
+using librpa_int::SymmetryKStarMember;
+using librpa_int::SymmetryOperation;
+using librpa_int::SymmetryQPointRestoreMode;
+using librpa_int::TFGrids;
 using librpa_int::Vector3_Order;
+using librpa_int::atom_mapping;
+using librpa_int::atom_t;
+using librpa_int::build_symmetry_qpoint_view;
 
 namespace
 {
+
+void test_rspace_symmetry_requires_complete_band_space()
+{
+    MeanField truncated(1, 1, 2, 3);
+    assert(!librpa_int::rspace_symmetry_has_complete_band_space(truncated, -1));
+    assert(!librpa_int::rspace_symmetry_has_complete_band_space(truncated, 3));
+
+    MeanField complete(1, 1, 3, 3);
+    assert(librpa_int::rspace_symmetry_has_complete_band_space(complete, -1));
+    assert(!librpa_int::rspace_symmetry_has_complete_band_space(complete, 2));
+}
 
 void assert_complex_close(const std::complex<double> &actual, const std::complex<double> &expected,
                           const double tolerance)
@@ -71,6 +96,35 @@ void test_kpoint_coordinate_mapping_selects_active_klist_from_full_source()
     const auto wrapped_mapping =
         librpa_int::map_kpoints_by_coordinates(wrapped_active_kpoints, pyatb_full_kpoints);
     assert((wrapped_mapping == std::vector<int>{6}));
+}
+
+void test_kstar_velocity_mapping_preserves_member_order_and_periodic_gauge()
+{
+    SymmetryContext ctx;
+    librpa_int::SymmetryKStar gamma;
+    gamma.k_ibz = {0.0, 0.0, 0.0};
+    librpa_int::SymmetryKStarMember gamma_first;
+    gamma_first.k_bz = {0.0, 0.0, 0.0};
+    librpa_int::SymmetryKStarMember gamma_second;
+    gamma_second.k_bz = {0.5, 0.0, 0.0};
+    gamma.members = {gamma_first, gamma_second};
+    librpa_int::SymmetryKStar quarter;
+    quarter.k_ibz = {0.25, 0.0, 0.0};
+    librpa_int::SymmetryKStarMember quarter_first;
+    quarter_first.k_bz = {0.25, 0.0, 0.0};
+    librpa_int::SymmetryKStarMember quarter_second;
+    quarter_second.k_bz = {-0.25, 0.0, 0.0};
+    quarter.members = {quarter_first, quarter_second};
+    ctx.kstars = {gamma, quarter};
+
+    const std::vector<Vector3_Order<double>> ibz_kpoints{{0.25, 0.0, 0.0}, {0.0, 0.0, 0.0}};
+    const std::vector<Vector3_Order<double>> full_bz_kpoints{
+        {0.5, 0.0, 0.0}, {0.75, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.25, 0.0, 0.0}};
+
+    const auto mapping = librpa_int::map_symmetry_kstar_members_to_source_kpoints(
+        ctx, ibz_kpoints, full_bz_kpoints);
+
+    assert((mapping == std::vector<std::vector<int>>{{3, 1}, {2, 0}}));
 }
 
 void test_replace_rpa_response_headwing_replaces_only_singular_channels(
@@ -396,6 +450,35 @@ void test_headwing_spin_weights()
     assert(std::abs(librpa_int::headwing_spin_prefactor(1, false) - 2.0) < 1e-12);
 }
 
+void test_wing_cartesian_gram_is_invariant_under_row_phases()
+{
+    ComplexMatrix wing(2, 3);
+    wing(0, 0) = {1.0, 1.0};
+    wing(0, 1) = {2.0, -1.0};
+    wing(0, 2) = {0.0, -1.0};
+    wing(1, 0) = {0.5, -2.0};
+    wing(1, 1) = {-1.0, 0.25};
+    wing(1, 2) = {3.0, 0.5};
+
+    ComplexMatrix phased = wing;
+    for (int alpha = 0; alpha != 3; ++alpha)
+    {
+        phased(0, alpha) *= std::complex<double>{0.0, 1.0};
+        phased(1, alpha) *= std::complex<double>{-1.0, 0.0};
+    }
+
+    const auto gram = librpa_int::compute_wing_cartesian_gram(wing);
+    const auto phased_gram = librpa_int::compute_wing_cartesian_gram(phased);
+    for (int alpha = 0; alpha != 3; ++alpha)
+    {
+        for (int beta = 0; beta != 3; ++beta)
+        {
+            assert_complex_close(gram.at(alpha).at(beta), phased_gram.at(alpha).at(beta), 1e-12);
+        }
+    }
+    assert_complex_close(gram.at(0).at(0), {6.25, 0.0}, 1e-12);
+}
+
 void test_velocity_matrix_initialization()
 {
     librpa_int::velocity_matrix_t velocity;
@@ -462,6 +545,269 @@ void test_accumulate_wing_mu_for_pair_matches_original_formula()
             assert_complex_close(accumulated[iomega * 3 + alpha], expected, 1e-12);
         }
     }
+}
+
+SymmetryKStarMember make_headwing_wfc_atom_swap_member(
+    const std::complex<double> &rot_0, const std::complex<double> &rot_1)
+{
+    SymmetryKStarMember member;
+    member.spatial_isym = 0;
+    member.k_bz = {0.0, 0.0, 0.0};
+
+    SymmetryKAtomRotation atom_0;
+    atom_0.atom_from = 0;
+    atom_0.atom_to = 1;
+    atom_0.atom_type = 0;
+    atom_0.lmax = 0;
+    atom_0.bloch_rsh_rotations[0] = ComplexMatrix(1, 1);
+    atom_0.bloch_rsh_rotations[0](0, 0) = rot_0;
+
+    SymmetryKAtomRotation atom_1;
+    atom_1.atom_from = 1;
+    atom_1.atom_to = 0;
+    atom_1.atom_type = 0;
+    atom_1.lmax = 0;
+    atom_1.bloch_rsh_rotations[0] = ComplexMatrix(1, 1);
+    atom_1.bloch_rsh_rotations[0](0, 0) = rot_1;
+
+    member.atom_rotations = {atom_0, atom_1};
+    return member;
+}
+
+void test_headwing_wfc_restore_applies_atom_permutation()
+{
+    SymmetryContext ctx;
+    ctx.set_available();
+    ctx.atom_to_type = {{0, 0}, {1, 0}};
+    ctx.input_coord_frac = {{0, {0.0, 0.0, 0.0}}, {1, {0.5, 0.0, 0.0}}};
+
+    SymmetryOperation identity_operation;
+    identity_operation.rotation.Identity();
+    identity_operation.translation = {0.0, 0.0, 0.0};
+    ctx.rspace_operations.push_back(identity_operation);
+
+    SpeciesBasisLayout layout;
+    layout.label = "X";
+    layout.set({0});
+    const std::vector<SpeciesBasisLayout> layouts{layout};
+    const std::map<librpa_int::atom_t, size_t> atom_nw{{0, 1}, {1, 1}};
+    const auto member = make_headwing_wfc_atom_swap_member(
+        {2.0, 0.5}, {3.0, -0.25});
+
+    ComplexMatrix wfc_ibz(1, 2);
+    wfc_ibz(0, 0) = {0.7, -0.2};
+    wfc_ibz(0, 1) = {-0.4, 0.6};
+
+    const auto wfc_bz = librpa_int::rotate_headwing_wfc_to_kstar_member(
+        ctx, member, layouts, atom_nw, {0.0, 0.0, 0.0}, wfc_ibz, nullptr);
+
+    assert_complex_close(wfc_bz(0, 0), wfc_ibz(0, 1) * std::complex<double>{3.0, -0.25},
+                         1e-12);
+    assert_complex_close(wfc_bz(0, 1), wfc_ibz(0, 0) * std::complex<double>{2.0, 0.5},
+                         1e-12);
+}
+
+void test_headwing_wfc_restore_applies_time_reversal()
+{
+    SymmetryContext ctx;
+    ctx.set_available();
+    ctx.atom_to_type = {{0, 0}};
+    ctx.input_coord_frac = {{0, {0.0, 0.0, 0.0}}};
+
+    SymmetryOperation identity_operation;
+    identity_operation.rotation.Identity();
+    identity_operation.translation = {0.0, 0.0, 0.0};
+    ctx.rspace_operations.push_back(identity_operation);
+
+    SpeciesBasisLayout layout;
+    layout.label = "X";
+    layout.set({0});
+    const std::vector<SpeciesBasisLayout> layouts{layout};
+    const std::map<librpa_int::atom_t, size_t> atom_nw{{0, 1}};
+
+    SymmetryKStarMember member;
+    member.spatial_isym = 0;
+    member.k_bz = {0.0, 0.0, 0.0};
+    member.time_reversal = true;
+    SymmetryKAtomRotation atom;
+    atom.atom_from = 0;
+    atom.atom_to = 0;
+    atom.atom_type = 0;
+    atom.lmax = 0;
+    atom.bloch_rsh_rotations[0] = ComplexMatrix(1, 1);
+    atom.bloch_rsh_rotations[0](0, 0) = {0.25, 0.75};
+    member.atom_rotations.push_back(atom);
+
+    ComplexMatrix wfc_ibz(1, 1);
+    wfc_ibz(0, 0) = {0.6, -0.35};
+
+    const auto wfc_bz = librpa_int::rotate_headwing_wfc_to_kstar_member(
+        ctx, member, layouts, atom_nw, {0.0, 0.0, 0.0}, wfc_ibz, nullptr);
+
+    assert_complex_close(wfc_bz(0, 0), std::conj(wfc_ibz(0, 0)) * std::complex<double>{0.25, 0.75},
+                         1e-12);
+}
+
+void test_headwing_velocity_restore_uses_inverse_spatial_route()
+{
+    SymmetryContext ctx;
+    ctx.lattice_vectors.Identity();
+    SymmetryOperation operation;
+    operation.rotation = Matrix3(0.0, -1.0, 0.0,
+                                 1.0,  0.0, 0.0,
+                                 0.0,  0.0, 1.0);
+    ctx.rspace_operations = {operation};
+
+    SymmetryKStarMember member;
+    member.spatial_isym = 0;
+    std::array<ComplexMatrix, 3> velocity_ibz;
+    for (auto &component : velocity_ibz) component.create(1, 1);
+    velocity_ibz[0](0, 0) = {1.0, 2.0};
+    velocity_ibz[1](0, 0) = {3.0, -1.0};
+    velocity_ibz[2](0, 0) = {-0.5, 0.25};
+
+    const auto velocity_bz = librpa_int::rotate_headwing_velocity_to_kstar_member(
+        ctx, member, velocity_ibz, 1, false);
+    assert_complex_close(velocity_bz[0](0, 0), -velocity_ibz[1](0, 0), 1e-12);
+    assert_complex_close(velocity_bz[1](0, 0), velocity_ibz[0](0, 0), 1e-12);
+    assert_complex_close(velocity_bz[2](0, 0), velocity_ibz[2](0, 0), 1e-12);
+
+    member.time_reversal = true;
+    const auto velocity_bz_tr = librpa_int::rotate_headwing_velocity_to_kstar_member(
+        ctx, member, velocity_ibz, 1, true);
+    assert_complex_close(velocity_bz_tr[0](0, 0), std::conj(velocity_ibz[1](0, 0)), 1e-12);
+    assert_complex_close(velocity_bz_tr[1](0, 0), -std::conj(velocity_ibz[0](0, 0)), 1e-12);
+    assert_complex_close(velocity_bz_tr[2](0, 0), -std::conj(velocity_ibz[2](0, 0)), 1e-12);
+}
+
+void test_headwing_direct_full_bz_velocity_selects_kstar_member()
+{
+    librpa_int::velocity_matrix_t velocity_full;
+    librpa_int::initialize_velocity_matrix(velocity_full, 1, 2, 1);
+    velocity_full[0][0][0](0, 0) = {1.0, 0.0};
+    velocity_full[0][1][0](0, 0) = {2.0, 0.0};
+    velocity_full[0][1][1](0, 0) = {3.0, 0.0};
+    velocity_full[0][1][2](0, 0) = {4.0, 0.0};
+
+    const std::vector<std::vector<int>> member_source_ik{{1}};
+    const auto &velocity = librpa_int::direct_full_bz_velocity_for_kstar_member(
+        velocity_full, member_source_ik, 0, 0, 0);
+    assert_complex_close(velocity[0](0, 0), {2.0, 0.0}, 1e-12);
+    assert_complex_close(velocity[1](0, 0), {3.0, 0.0}, 1e-12);
+    assert_complex_close(velocity[2](0, 0), {4.0, 0.0}, 1e-12);
+}
+
+void test_headwing_direct_full_bz_wfc_selects_same_kstar_member()
+{
+    MeanField wfc_full(1, 2, 1, 1);
+    auto &wfc_k0 = wfc_full.get_eigenvectors()[0][0][0];
+    wfc_k0.create(1, 1);
+    wfc_k0(0, 0) = {1.0, 0.0};
+    auto &wfc_k1 = wfc_full.get_eigenvectors()[0][0][1];
+    wfc_k1.create(1, 1);
+    wfc_k1(0, 0) = {0.0, 1.0};
+
+    const std::vector<std::vector<int>> member_source_ik{{1}};
+    const auto &wfc = librpa_int::direct_full_bz_wfc_for_kstar_member(
+        wfc_full, member_source_ik, 0, 0, 0, 0);
+    assert_complex_close(wfc(0, 0), {0.0, 1.0}, 1e-12);
+}
+
+RI::Tensor<double> make_single_value_tensor(const double value)
+{
+    auto data = std::make_shared<std::valarray<double>>(1);
+    (*data)[0] = value;
+    return RI::Tensor<double>({1UL, 1UL, 1UL}, data);
+}
+
+void compare_local_blacs_matrices(
+    const std::pair<ArrayDesc, matrix_m<std::complex<double>>> &actual,
+    const std::pair<ArrayDesc, matrix_m<std::complex<double>>> &expected,
+    const double tolerance)
+{
+    assert(actual.first.m() == expected.first.m());
+    assert(actual.first.n() == expected.first.n());
+    assert(actual.first.m_loc() == expected.first.m_loc());
+    assert(actual.first.n_loc() == expected.first.n_loc());
+    for (int i = 0; i != actual.first.m_loc(); ++i)
+    {
+        for (int j = 0; j != actual.first.n_loc(); ++j)
+        {
+            assert_complex_close(actual.second(i, j), expected.second(i, j), tolerance);
+        }
+    }
+}
+
+void test_kblacs_transform_with_restored_wfc_matches_full_bz_atom_permutation(
+    const BlacsCtxtHandler &blacs_h)
+{
+    SymmetryContext ctx;
+    ctx.set_available();
+    ctx.atom_to_type = {{0, 0}, {1, 0}};
+    ctx.input_coord_frac = {{0, {0.0, 0.0, 0.0}}, {1, {0.5, 0.0, 0.0}}};
+
+    SymmetryOperation identity_operation;
+    identity_operation.rotation.Identity();
+    identity_operation.translation = {0.0, 0.0, 0.0};
+    ctx.rspace_operations.push_back(identity_operation);
+
+    SpeciesBasisLayout layout;
+    layout.label = "X";
+    layout.set({0});
+    const std::vector<SpeciesBasisLayout> layouts{layout};
+    const std::map<librpa_int::atom_t, size_t> atom_nw{{0, 1}, {1, 1}};
+
+    auto member = make_headwing_wfc_atom_swap_member({0.0, 1.0}, {-1.0, 0.0});
+    member.k_bz = {0.5, 0.0, 0.0};
+
+    MeanField mf_ibz(1, 1, 2, 2, 1);
+    auto &wfc_ibz = mf_ibz.get_eigenvectors()[0][0][0];
+    wfc_ibz.create(2, 2);
+    wfc_ibz(0, 0) = {0.7, -0.2};
+    wfc_ibz(0, 1) = {-0.4, 0.6};
+    wfc_ibz(1, 0) = {0.3, 0.5};
+    wfc_ibz(1, 1) = {-0.8, -0.1};
+
+    const auto wfc_bz = librpa_int::rotate_headwing_wfc_to_kstar_member(
+        ctx, member, layouts, atom_nw, {0.0, 0.0, 0.0}, wfc_ibz, &member.k_bz);
+
+    MeanField mf_full(1, 1, 2, 2, 1);
+    auto &wfc_full = mf_full.get_eigenvectors()[0][0][0];
+    wfc_full.create(2, 2);
+    for (int ib = 0; ib != 2; ++ib)
+    {
+        for (int iao = 0; iao != 2; ++iao)
+        {
+            wfc_full(ib, iao) = wfc_bz(ib, iao);
+        }
+    }
+
+    librpa_int::velocity_matrix_t velocity;
+    librpa_int::initialize_velocity_matrix(velocity, 1, 1, 2);
+    AtomicBasis basis_wfc(std::vector<size_t>{1, 1});
+    AtomicBasis basis_abf(std::vector<size_t>{1, 1});
+    PeriodicBoundaryData pbc;
+    const std::vector<Vector3_Order<double>> kfrac_ibz{{0.0, 0.0, 0.0}};
+    const std::vector<double> omega{0.5};
+
+    diele_func df_ibz(mf_ibz, velocity, kfrac_ibz, basis_wfc, basis_abf, omega, 2, 2, 1, 1,
+                      pbc, librpa_int::global::mpi_comm_global_h, blacs_h);
+    diele_func df_full(mf_full, velocity, {member.k_bz}, basis_wfc, basis_abf, omega, 2, 2, 1, 1,
+                       pbc, librpa_int::global::mpi_comm_global_h, blacs_h);
+
+    std::map<int, std::map<librpa_int::libri_types<int, int>::TAC, RI::Tensor<double>>> Cs_IJ;
+    Cs_IJ[0][{0, {0, 0, 0}}] = make_single_value_tensor(1.0);
+    Cs_IJ[0][{1, {0, 0, 0}}] = make_single_value_tensor(-0.35);
+    Cs_IJ[0][{1, {1, 0, 0}}] = make_single_value_tensor(0.42);
+
+    std::vector<std::vector<const ComplexMatrix *>> restored_wfc_ptrs(
+        1, std::vector<const ComplexMatrix *>(1, &wfc_bz));
+    const auto restored = df_ibz.transform_Cs2mnk_kblacs(
+        0, 0, Cs_IJ, blacs_h, member.k_bz, &restored_wfc_ptrs);
+    const auto full = df_full.transform_Cs2mnk_kblacs(
+        0, 0, Cs_IJ, blacs_h, member.k_bz);
+
+    compare_local_blacs_matrices(restored, full, 1e-12);
 }
 
 void test_kblacs_transform_matches_original_transform(const BlacsCtxtHandler &blacs_h)
@@ -594,6 +940,297 @@ void test_head_initialization_does_not_require_coulomb_diagonalization(
     assert(df.get_head_vec().size() == 1);
 }
 
+void add_scalar_wq_block(
+    atom_mapping<std::map<Vector3_Order<double>, matrix_m<std::complex<double>>>>::pair_t_old
+        &wq,
+    const atom_t atom_i,
+    const atom_t atom_j,
+    const Vector3_Order<double> &q,
+    const std::complex<double> value)
+{
+    auto &block = wq[atom_i][atom_j][q];
+    block = matrix_m<std::complex<double>>(1, 1, MAJOR::ROW);
+    block(0, 0) = value;
+}
+
+librpa_int::symmetry_atom_block_matrix_map_t scalar_wq_to_blocks(
+    const std::map<atom_t, std::map<atom_t, std::complex<double>>> &values)
+{
+    librpa_int::symmetry_atom_block_matrix_map_t blocks;
+    for (const auto &[atom_i, row] : values)
+    {
+        for (const auto &[atom_j, value] : row)
+        {
+            blocks[atom_i][atom_j] = ComplexMatrix(1, 1);
+            blocks[atom_i][atom_j](0, 0) = value;
+        }
+    }
+    return blocks;
+}
+
+void add_scalar_wq_blocks(
+    atom_mapping<std::map<Vector3_Order<double>, matrix_m<std::complex<double>>>>::pair_t_old
+        &wq,
+    const Vector3_Order<double> &q,
+    const librpa_int::symmetry_atom_block_matrix_map_t &blocks)
+{
+    for (const auto &[atom_i, row] : blocks)
+    {
+        for (const auto &[atom_j, block] : row)
+        {
+            add_scalar_wq_block(wq, atom_i, atom_j, q, block(0, 0));
+        }
+    }
+}
+
+PeriodicBoundaryData make_wq_full_pbc()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    const std::vector<double> kvecs{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+        librpa_int::TWO_PI * 2.0 / 3.0, 0.0, 0.0};
+    pbc.set_kgrids_kvec(3, 1, 1, kvecs);
+    return pbc;
+}
+
+PeriodicBoundaryData make_wq_reduced_pbc()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    const std::vector<double> kvecs_ibz{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI / 3.0, 0.0, 0.0};
+    const std::vector<std::vector<Vector3_Order<double>>> full_kstars{
+        {{0.0, 0.0, 0.0}},
+        {{1.0 / 3.0, 0.0, 0.0}, {-1.0 / 3.0, 0.0, 0.0}}};
+    pbc.set_irreducible_kgrids_kvec(3, 1, 1, kvecs_ibz, full_kstars);
+    return pbc;
+}
+
+SymmetryContext make_two_atom_inversion_context(const PeriodicBoundaryData &pbc)
+{
+    SymmetryContext ctx;
+    const Matrix3 lattice(1.0, 0.0, 0.0,
+                          0.0, 1.0, 0.0,
+                          0.0, 0.0, 1.0);
+    ctx.set_crystal_structure(
+        lattice, lattice,
+        {{0, 0}, {1, 0}},
+        {{0, {0.25, 0.0, 0.0}}, {1, {0.75, 0.0, 0.0}}});
+
+    SymmetryOperation identity;
+    identity.rotation.Identity();
+    identity.translation = {0.0, 0.0, 0.0};
+
+    SymmetryOperation inversion;
+    inversion.rotation = Matrix3(-1.0, 0.0, 0.0,
+                                  0.0, 1.0, 0.0,
+                                  0.0, 0.0, 1.0);
+    inversion.translation = {0.0, 0.0, 0.0};
+
+    ctx.set_rspace_operations({identity, inversion});
+    ctx.set_available();
+    ctx.build_periodic_mappings(pbc, pbc.Rlist);
+    ctx.build_rsh_rotations({-1,
+                             0,
+                             LIBRPA_ANGULAR_ORDER_NATURAL,
+                             LIBRPA_RSH_COEFF_1_M,
+                             LIBRPA_RSH_COEFF_1_M},
+                            0);
+    ctx.build_kstar_member_rotations(0);
+    return ctx;
+}
+
+void assert_wq_rspace_maps_close(
+    const atom_mapping<std::map<Vector3_Order<int>, matrix_m<std::complex<double>>>>::pair_t_old
+        &actual,
+    const atom_mapping<std::map<Vector3_Order<int>, matrix_m<std::complex<double>>>>::pair_t_old
+        &expected)
+{
+    for (const auto &[atom_i, expected_row] : expected)
+    {
+        assert(actual.count(atom_i) != 0);
+        for (const auto &[atom_j, expected_Rs] : expected_row)
+        {
+            assert(actual.at(atom_i).count(atom_j) != 0);
+            for (const auto &[R, expected_block] : expected_Rs)
+            {
+                assert(actual.at(atom_i).at(atom_j).count(R) != 0);
+                const auto &actual_block = actual.at(atom_i).at(atom_j).at(R);
+                if (std::abs(actual_block(0, 0) - expected_block(0, 0)) >= 1e-12)
+                {
+                    std::cerr << "atom_pair=(" << atom_i << "," << atom_j << ") R=("
+                              << R.x << "," << R.y << "," << R.z << ")" << std::endl;
+                }
+                assert_complex_close(actual_block(0, 0), expected_block(0, 0), 1e-12);
+            }
+        }
+    }
+}
+
+void test_wq_to_wr_symmetry_reduced_q_matches_full_bz()
+{
+    const auto pbc_full = make_wq_full_pbc();
+    const auto pbc_sym = make_wq_reduced_pbc();
+    auto ctx = make_two_atom_inversion_context(pbc_sym);
+
+    AtomicBasis basis_abf(std::vector<std::size_t>{1, 1});
+    basis_abf.set_l_shells({{0}, {0}});
+    const auto layouts = basis_abf.build_species_basis_layouts(ctx.atom_to_type);
+    const std::map<atom_t, size_t> atom_nabf{{0, 1}, {1, 1}};
+
+    atom_mapping<std::map<Vector3_Order<double>, matrix_m<std::complex<double>>>>::pair_t_old
+        wq_sym;
+    const auto q_gamma_sym = pbc_sym.klist.at(0);
+    const auto q_rep_sym = pbc_sym.klist.at(1);
+    const auto gamma_blocks = scalar_wq_to_blocks({
+        {0, {{0, {1.5, 0.0}}, {1, {0.4, 0.0}}}},
+        {1, {{0, {0.4, 0.0}}, {1, {1.5, 0.0}}}}});
+    const auto rep_blocks = scalar_wq_to_blocks({
+        {0, {{0, {2.1, 0.0}}, {1, {-0.7, 0.5}}}},
+        {1, {{0, {-0.7, -0.5}}, {1, {1.4, 0.0}}}}});
+    add_scalar_wq_blocks(wq_sym, q_gamma_sym, gamma_blocks);
+    add_scalar_wq_blocks(wq_sym, q_rep_sym, rep_blocks);
+    const double symmetry_collective_scale =
+        1.0 / static_cast<double>(librpa_int::global::mpi_comm_global_h.nprocs);
+    for (auto &[atom_i, row] : wq_sym)
+    {
+        for (auto &[atom_j, q_blocks] : row)
+        {
+            for (auto &[q, block] : q_blocks)
+            {
+                block *= symmetry_collective_scale;
+            }
+        }
+    }
+
+    atom_mapping<std::map<Vector3_Order<double>, matrix_m<std::complex<double>>>>::pair_t_old
+        wq_full;
+    add_scalar_wq_blocks(wq_full, pbc_full.klist.at(0), gamma_blocks);
+    add_scalar_wq_blocks(wq_full, pbc_full.klist.at(1), rep_blocks);
+    const auto inversion_minus_blocks = scalar_wq_to_blocks({
+        {0, {{0, {1.4, 0.0}}, {1, {-0.7, -0.5}}}},
+        {1, {{0, {-0.7, 0.5}}, {1, {2.1, 0.0}}}}});
+    add_scalar_wq_blocks(wq_full, pbc_full.klist.at(2), inversion_minus_blocks);
+
+    const TFGrids dummy_tfg;
+    SymmetryContext no_symmetry;
+    const auto expected = librpa_int::FT_Wc_q2R(
+        librpa_int::global::mpi_comm_global_h, basis_abf, no_symmetry, wq_full,
+        dummy_tfg, pbc_full, pbc_full.Rlist, false, "", false);
+    const auto actual = librpa_int::FT_Wc_q2R(
+        librpa_int::global::mpi_comm_global_h, basis_abf, ctx, wq_sym,
+        dummy_tfg, pbc_sym, pbc_sym.Rlist, false, "", true);
+
+    assert_wq_rspace_maps_close(actual, expected);
+}
+
+Matz dense_wq_from_scalar_blocks(const librpa_int::symmetry_atom_block_matrix_map_t &blocks,
+                                 const ArrayDesc &desc)
+{
+    Matz mat(desc.m_loc(), desc.n_loc(), MAJOR::COL);
+    for (int i_local = 0; i_local < desc.m_loc(); ++i_local)
+    {
+        const int atom_i = desc.indx_l2g_r(i_local);
+        for (int j_local = 0; j_local < desc.n_loc(); ++j_local)
+        {
+            const int atom_j = desc.indx_l2g_c(j_local);
+            mat(i_local, j_local) = blocks.at(static_cast<atom_t>(atom_i))
+                                        .at(static_cast<atom_t>(atom_j))(0, 0);
+        }
+    }
+    return mat;
+}
+
+void assert_dense_wq_rspace_maps_close(
+    const std::map<double, std::map<Vector3_Order<int>, Matz>> &actual,
+    const std::map<double, std::map<Vector3_Order<int>, Matz>> &expected)
+{
+    for (const auto &[freq, expected_Rs] : expected)
+    {
+        assert(actual.count(freq) != 0);
+        for (const auto &[R, expected_mat] : expected_Rs)
+        {
+            assert(actual.at(freq).count(R) != 0);
+            const auto diff = actual.at(freq).at(R) - expected_mat;
+            double max_abs = 0.0;
+            for (int i = 0; i < diff.nr(); ++i)
+            {
+                for (int j = 0; j < diff.nc(); ++j)
+                {
+                    max_abs = std::max(max_abs, std::abs(diff(i, j)));
+                }
+            }
+            if (max_abs >= 1e-12)
+            {
+                std::cerr << "freq=" << freq << " R=(" << R.x << "," << R.y << "," << R.z
+                          << ") max_abs=" << max_abs << std::endl;
+                for (int i = 0; i < diff.nr(); ++i)
+                {
+                    for (int j = 0; j < diff.nc(); ++j)
+                    {
+                        std::cerr << "  (" << i << "," << j << ") actual="
+                                  << actual.at(freq).at(R)(i, j) << " expected="
+                                  << expected_mat(i, j) << " diff=" << diff(i, j) << std::endl;
+                    }
+                }
+            }
+            assert(max_abs < 1e-12);
+        }
+    }
+}
+
+void test_dense_wq_to_wr_symmetry_reduced_q_matches_full_bz(const BlacsCtxtHandler &blacs_h)
+{
+    const auto pbc_full = make_wq_full_pbc();
+    const auto pbc_sym = make_wq_reduced_pbc();
+    auto ctx = make_two_atom_inversion_context(pbc_sym);
+    const auto qpoint_view = build_symmetry_qpoint_view(ctx, pbc_sym, true);
+    assert(qpoint_view.restore_mode == SymmetryQPointRestoreMode::FULL_CRYSTAL);
+
+    AtomicBasis basis_abf(std::vector<std::size_t>{1, 1});
+    basis_abf.set_l_shells({{0}, {0}});
+    const auto layouts = basis_abf.build_species_basis_layouts(ctx.atom_to_type);
+    const std::map<atom_t, size_t> atom_nabf{{0, 1}, {1, 1}};
+    ArrayDesc ad_Wc(blacs_h);
+    ad_Wc.init(2, 2, 2, 2, 0, 0);
+
+    const auto gamma_blocks = scalar_wq_to_blocks({
+        {0, {{0, {1.5, 0.0}}, {1, {0.4, 0.0}}}},
+        {1, {{0, {0.4, 0.0}}, {1, {1.5, 0.0}}}}});
+    const auto rep_blocks = scalar_wq_to_blocks({
+        {0, {{0, {2.1, 0.0}}, {1, {-0.7, 0.5}}}},
+        {1, {{0, {-0.7, -0.5}}, {1, {1.4, 0.0}}}}});
+
+    constexpr double freq = 0.25;
+    std::map<double, std::map<Vector3_Order<double>, Matz>> wq_sym;
+    wq_sym[freq][pbc_sym.klist.at(0)] = dense_wq_from_scalar_blocks(gamma_blocks, ad_Wc);
+    wq_sym[freq][pbc_sym.klist.at(1)] = dense_wq_from_scalar_blocks(rep_blocks, ad_Wc);
+
+    std::map<double, std::map<Vector3_Order<double>, Matz>> wq_full;
+    wq_full[freq][pbc_full.klist.at(0)] = dense_wq_from_scalar_blocks(gamma_blocks, ad_Wc);
+    wq_full[freq][pbc_full.klist.at(1)] = dense_wq_from_scalar_blocks(rep_blocks, ad_Wc);
+    const auto inversion_minus_blocks = scalar_wq_to_blocks({
+        {0, {{0, {1.4, 0.0}}, {1, {-0.7, -0.5}}}},
+        {1, {{0, {-0.7, 0.5}}, {1, {2.1, 0.0}}}}});
+    wq_full[freq][pbc_full.klist.at(2)] =
+        dense_wq_from_scalar_blocks(inversion_minus_blocks, ad_Wc);
+
+    const auto expected = librpa_int::FT_Wc_freq_q(
+        librpa_int::global::mpi_comm_global_h, wq_full, pbc_full, false);
+    const auto actual = librpa_int::FT_Wc_freq_q(
+        librpa_int::global::mpi_comm_global_h, wq_sym, pbc_sym, false,
+        &qpoint_view, &ctx, &basis_abf, &ad_Wc);
+
+    assert_dense_wq_rspace_maps_close(actual, expected);
+}
+
 }  // namespace
 
 int main(int argc, char *argv[])
@@ -609,7 +1246,9 @@ int main(int argc, char *argv[])
         blacs_h.set_square_grid();
 
         test_replace_rpa_response_headwing_replaces_only_singular_channels(blacs_h);
+        test_rspace_symmetry_requires_complete_band_space();
         test_kpoint_coordinate_mapping_selects_active_klist_from_full_source();
+        test_kstar_velocity_mapping_preserves_member_order_and_periodic_gauge();
         test_replace_rpa_response_head_only_keeps_numeric_wings(blacs_h);
         test_head_only_trace_logdet_can_use_reduced_response(blacs_h);
         test_rpa_trace_log_average_uses_directional_head_and_wing();
@@ -617,12 +1256,21 @@ int main(int argc, char *argv[])
         test_rpa_headwing_gamma_cell_volume_uses_reciprocal_lattice();
         test_rpa_chi0v_wing_desc_uses_global_rows(blacs_h);
         test_headwing_spin_weights();
+        test_wing_cartesian_gram_is_invariant_under_row_phases();
         test_velocity_matrix_initialization();
         test_headwing_local_kpoints_prefers_kpoint_blacs_context();
         test_accumulate_wing_mu_for_pair_matches_original_formula();
+        test_headwing_wfc_restore_applies_atom_permutation();
+        test_headwing_wfc_restore_applies_time_reversal();
+        test_headwing_velocity_restore_uses_inverse_spatial_route();
+        test_headwing_direct_full_bz_velocity_selects_kstar_member();
+        test_headwing_direct_full_bz_wfc_selects_same_kstar_member();
+        test_kblacs_transform_with_restored_wfc_matches_full_bz_atom_permutation(blacs_h);
         test_kblacs_transform_matches_original_transform(blacs_h);
         test_transform_Cs2mnk_can_keep_spin_channels_separate(blacs_h);
         test_head_initialization_does_not_require_coulomb_diagonalization(blacs_h);
+        test_wq_to_wr_symmetry_reduced_q_matches_full_bz();
+        test_dense_wq_to_wr_symmetry_reduced_q_matches_full_bz(blacs_h);
     }
 
     librpa_int::global::finalize_global_io();
