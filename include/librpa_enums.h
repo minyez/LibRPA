@@ -61,8 +61,8 @@ typedef enum
 /**
  * @brief Coefficient-pair convention for one nonzero real spherical harmonic branch.
  *
- * For m < 0 this selects {a, b} in i/sqrt(2) [a Y_l^m - b Y_l^{-m}].
- * For m > 0 this selects {c, d} in 1/sqrt(2) [c Y_l^m + d Y_l^{-m}].
+ * For m < 0 this selects {a, b} in \f$i/\sqrt{2} [a Y_l^m - b Y_l^{-m}]\f$.
+ * For m > 0 this selects {c, d} in \f$1/\sqrt{2} [c Y_l^m + d Y_l^{-m}]\f$.
  */
 typedef enum
 {
