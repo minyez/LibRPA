@@ -1,5 +1,7 @@
 #include "compute_helper.h"
 
+#include <librpa_enums.h>
+
 #include <algorithm>
 #include <set>
 #include <string>
@@ -88,6 +90,8 @@ AtomPairBvKRemap<atom_t> build_band_bvk_remap(const Atoms &atoms,
     {
         for (const auto &[R, R_bvks]: R_map)
         {
+            // Only print 1-to-1 remapping with debug
+            if (R_bvks.size() < 2 && !global::should_output(LIBRPA_VERBOSE_DEBUG)) continue;
             ofs_myid << "| " << atom_pair << " " << R << " -> " << R_bvks << "\n";
         }
     }
