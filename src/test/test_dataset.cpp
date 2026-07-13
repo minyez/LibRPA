@@ -308,6 +308,73 @@ static void test_redistribute_eigvecs_kpara_np4()
     ds.free();
 }
 
+static void test_redistribute_eigvecs_kpara_2d_np4()
+{
+    using namespace librpa_int;
+
+    constexpr int n_spins = 1;
+    constexpr int n_spinor = 2;
+    constexpr int n_kpoints = 3;
+    constexpr int n_states = 5;
+    constexpr int n_aos = 7;
+    const std::vector<int> initial_owner{3, 0, 1};
+
+    Dataset ds(MPI_COMM_WORLD);
+    ds.mf.set(n_spins, n_kpoints, n_states, n_aos, n_spinor);
+    ds.scfk_blacs_ctxt.init({2, 2}, MPI_COMM_WORLD, n_kpoints);
+    ds.desc_wfc_kb = ds.scfk_blacs_ctxt.create_array_desc(n_aos, n_states);
+    ds.desc_wfc_kb_full =
+        ds.scfk_blacs_ctxt.create_array_desc(n_aos, n_states, n_aos, n_states);
+
+    for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+    {
+        for (int ik = 0; ik != n_kpoints; ++ik)
+        {
+            if (ds.comm_h.myid != initial_owner[ik]) continue;
+            auto &wfc = ds.mf.get_eigenvectors()[0][ispinor][ik];
+            wfc.create(n_states, n_aos);
+            for (int ib = 0; ib != n_states; ++ib)
+                for (int iao = 0; iao != n_aos; ++iao)
+                {
+                    const double value = 100.0 * ispinor + 10.0 * ik + ib + 0.01 * iao;
+                    wfc(ib, iao) = {value, -value};
+                }
+        }
+    }
+
+    ds.redistribute_eigvecs_kpara_2d();
+    ds.redistribute_eigvecs_kpara_2d();
+    assert(ds.eigvecs_kpara_2d_ready());
+
+    for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+    {
+        for (int ik = 0; ik != n_kpoints; ++ik)
+        {
+            const auto *wfc = ds.mf.find_wfc(0, ispinor, ik);
+            if (!ds.scfk_blacs_ctxt.owns_kpoint(ik))
+            {
+                assert(wfc == nullptr);
+                continue;
+            }
+            assert(wfc != nullptr);
+            assert(wfc->nr == ds.desc_wfc_kb.n_loc());
+            assert(wfc->nc == ds.desc_wfc_kb.m_loc());
+            for (int jloc = 0; jloc != ds.desc_wfc_kb.n_loc(); ++jloc)
+            {
+                const int ib = ds.desc_wfc_kb.indx_l2g_c(jloc);
+                for (int iloc = 0; iloc != ds.desc_wfc_kb.m_loc(); ++iloc)
+                {
+                    const int iao = ds.desc_wfc_kb.indx_l2g_r(iloc);
+                    const double value = 100.0 * ispinor + 10.0 * ik + ib + 0.01 * iao;
+                    assert(fequal((*wfc)(jloc, iloc),
+                                  std::complex<double>(value, -value)));
+                }
+            }
+        }
+    }
+    ds.free();
+}
+
 static void setup_spinor_dataset(librpa_int::Dataset &ds)
 {
     using namespace librpa_int;
@@ -444,6 +511,51 @@ static void test_redistribute_band_eigvecs_kpara_np4()
     ds.free();
 }
 
+static void test_redistribute_band_eigvecs_kpara_2d_np4()
+{
+    using namespace librpa_int;
+    constexpr int n_kpoints = 4;
+    constexpr int n_states = 3;
+    constexpr int n_aos = 5;
+
+    Dataset ds(MPI_COMM_WORLD);
+    ds.mf_band.set(1, n_kpoints, n_states, n_aos, 1);
+    for (int ik = 0; ik != n_kpoints; ++ik)
+    {
+        if (ds.comm_h.myid != (3 - ik)) continue;
+        auto &wfc = ds.mf_band.get_eigenvectors()[0][0][ik];
+        wfc.create(n_states, n_aos);
+        for (int ib = 0; ib != n_states; ++ib)
+            for (int iao = 0; iao != n_aos; ++iao)
+                wfc(ib, iao) = {10.0 * ik + ib, 0.1 * iao};
+    }
+    ds.redistribute_band_eigvecs_kpara_2d();
+    assert(ds.band_eigvecs_kpara_2d_ready());
+    for (int ik = 0; ik != n_kpoints; ++ik)
+    {
+        const auto *wfc = ds.mf_band.find_wfc(0, 0, ik);
+        if (!ds.bandk_blacs_ctxt.owns_kpoint(ik))
+        {
+            assert(wfc == nullptr);
+            continue;
+        }
+        assert(wfc != nullptr);
+        assert(wfc->nr == ds.desc_band_wfc_kb.n_loc());
+        assert(wfc->nc == ds.desc_band_wfc_kb.m_loc());
+        for (int jloc = 0; jloc != ds.desc_band_wfc_kb.n_loc(); ++jloc)
+        {
+            const int ib = ds.desc_band_wfc_kb.indx_l2g_c(jloc);
+            for (int iloc = 0; iloc != ds.desc_band_wfc_kb.m_loc(); ++iloc)
+            {
+                const int iao = ds.desc_band_wfc_kb.indx_l2g_r(iloc);
+                assert(fequal((*wfc)(jloc, iloc),
+                              std::complex<double>(10.0 * ik + ib, 0.1 * iao)));
+            }
+        }
+    }
+    ds.free();
+}
+
 int main (int argc, char *argv[])
 {
     using namespace librpa_int;
@@ -462,7 +574,9 @@ int main (int argc, char *argv[])
     test_redistribute_blacs2ap_np4({2, 3});
     test_redistribute_blacs2ap_np4({10, 4, 5});
     test_redistribute_eigvecs_kpara_np4();
+    test_redistribute_eigvecs_kpara_2d_np4();
     test_redistribute_band_eigvecs_kpara_np4();
+    test_redistribute_band_eigvecs_kpara_2d_np4();
     test_spinor_symmetry_speedup_rejected();
     test_disabled_component_symmetry_keeps_shared_context();
 

@@ -234,9 +234,11 @@ void initialize_ds_exx(Dataset &ds, const LibrpaOptions &opts)
         require_symmetry_shell_layouts(ds, "EXX");
     }
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
+    const ArrayDesc &desc_scf_wfc =
+        ds.eigvecs_kpara_2d_ready() ? ds.desc_wfc_kb : ds.desc_wfc_kb_full;
     ds.p_exx = std::make_unique<librpa_int::Exx>(ds.mf, ds.basis_wfc, ds.pbc, ds.symmetry_context,
                                                  ds.scfk_blacs_ctxt, ds.bandk_blacs_ctxt,
-                                                 ds.desc_wfc_kb_full,
+                                                 desc_scf_wfc, ds.desc_band_wfc_kb,
                                                  is_eigvec_k_distributed,
                                                  use_symmetry);
     ds.p_exx->libri_threshold_C = opts.libri_exx_threshold_C;
@@ -259,16 +261,18 @@ void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts)
         require_symmetry_shell_layouts(ds, "RPA/chi0");
     }
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
+    const ArrayDesc &desc_scf_wfc =
+        ds.eigvecs_kpara_2d_ready() ? ds.desc_wfc_kb : ds.desc_wfc_kb_full;
     if (opts.use_shrink_abfs == LIBRPA_SWITCH_ON)
         ds.p_chi0 = std::make_unique<librpa_int::Chi0>(ds.mf, ds.basis_wfc, ds.basis_aux_shrink, ds.pbc,
                                                        ds.symmetry_context,
-                                                       ds.tfg, ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
+                                                       ds.tfg, ds.scfk_blacs_ctxt, desc_scf_wfc,
                                                        is_eigvec_k_distributed,
                                                        use_symmetry);
     else
         ds.p_chi0 = std::make_unique<librpa_int::Chi0>(ds.mf, ds.basis_wfc, ds.basis_aux, ds.pbc,
                                                        ds.symmetry_context,
-                                                       ds.tfg, ds.scfk_blacs_ctxt, ds.desc_wfc_kb_full,
+                                                       ds.tfg, ds.scfk_blacs_ctxt, desc_scf_wfc,
                                                        is_eigvec_k_distributed,
                                                        use_symmetry);
     ds.p_chi0->gf_threshold = opts.gf_threshold;
@@ -294,11 +298,13 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts)
         require_symmetry_shell_layouts(ds, "GW");
     }
     const bool is_eigvec_k_distributed = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
+    const ArrayDesc &desc_scf_wfc =
+        ds.eigvecs_kpara_2d_ready() ? ds.desc_wfc_kb : ds.desc_wfc_kb_full;
     // global::ofs_myid << "is_eigvec_k_distributed " << is_eigvec_k_distributed << std::endl;
     ds.p_g0w0 = std::make_unique<librpa_int::G0W0>(ds.mf, ds.basis_wfc, ds.pbc,
                                                    ds.symmetry_context, ds.tfg,
                                                    ds.scfk_blacs_ctxt, ds.bandk_blacs_ctxt,
-                                                   ds.desc_wfc_kb_full,
+                                                   desc_scf_wfc, ds.desc_band_wfc_kb,
                                                    is_eigvec_k_distributed,
                                                    use_symmetry);
     ds.p_g0w0->libri_threshold_C = opts.libri_g0w0_threshold_C;
@@ -373,11 +379,13 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
 
     const auto &freqs = ds.tfg.get_freq_nodes();
     const bool use_kpara_eigvec = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
+    const ArrayDesc &desc_scf_wfc =
+        ds.eigvecs_kpara_2d_ready() ? ds.desc_wfc_kb : ds.desc_wfc_kb_full;
     ds.p_headwing = std::make_unique<diele_func>(
         mf, ds.velocity_matrix, ds.pbc.kfrac_list, ds.basis_wfc,
         headwing_basis_aux, freqs, mf.get_n_aos(), mf.get_n_states(),
         mf.get_n_spins(), headwing_basis_aux.nb_total, ds.pbc, ds.comm_h, ds.blacs_h,
-        use_kpara_eigvec, &ds.scfk_blacs_ctxt, &ds.desc_wfc_kb_full);
+        use_kpara_eigvec, &ds.scfk_blacs_ctxt, &desc_scf_wfc);
     ds.p_headwing->use_2d_dielectric = opts.use_2d_dielectric == LIBRPA_SWITCH_ON;
     ds.p_headwing->use_soc = mf.get_n_spinor() > 1;
     ds.p_headwing->debug = global::should_output(LIBRPA_VERBOSE_DEBUG);

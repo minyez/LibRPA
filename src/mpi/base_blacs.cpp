@@ -1,5 +1,6 @@
 #include "base_blacs.h"
 
+#include <algorithm>
 #include <string>
 
 #include "../interface/blacs_scalapack.h"
@@ -20,6 +21,19 @@ void CTXT_barrier(int ictxt, CTXT_SCOPE scope)
         case (CTXT_SCOPE::A): scope_ch = 'A';
     }
     Cblacs_barrier(ictxt, &scope_ch);
+}
+
+int get_capped_blacs_block_size(const int dimension, const int max_block_size,
+                                const BlacsCtxtHandler &blacs_h)
+{
+    if (!blacs_h.is_initialized() || blacs_h.nprows <= 0 || blacs_h.npcols <= 0)
+        throw LIBRPA_RUNTIME_ERROR("BLACS process grid is not initialized");
+    if (dimension <= 0 || max_block_size <= 0)
+        throw LIBRPA_RUNTIME_ERROR("BLACS block-size inputs must be positive");
+
+    const int rows_per_process = 1 + (dimension - 1) / blacs_h.nprows;
+    const int cols_per_process = 1 + (dimension - 1) / blacs_h.npcols;
+    return std::max(1, std::min({max_block_size, rows_per_process, cols_per_process}));
 }
 
 BlacsCtxtHandler::BlacsCtxtHandler()

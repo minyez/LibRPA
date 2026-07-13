@@ -228,10 +228,12 @@ Exx::Exx(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
          const PeriodicBoundaryData &pbc_in, const SymmetryContext &symmetry_context_in,
          const KPointBlacsParallelContext &kblacs_ctxt_in,
          const KPointBlacsParallelContext &band_kblacs_ctxt_in,
-         const ArrayDesc &desc_wfc_in, bool is_mf_eigvec_k_distributed,
+         const ArrayDesc &desc_wfc_in, const ArrayDesc &desc_band_wfc_in,
+         bool is_mf_eigvec_k_distributed,
          const bool use_symmetry_context_in)
     : mf(mf_in),
       desc_wfc(desc_wfc_in),
+      desc_band_wfc(desc_band_wfc_in),
       atbasis_wfc(atbasis_wfc_in),
       pbc(pbc_in),
       symmetry_context(symmetry_context_in),
@@ -1101,6 +1103,12 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
     }
     const BlacsCtxtHandler &rotation_blacs_h =
         use_klocal_rotation ? target_kblacs_ctxt.blacs_h : blacs_ctxt_h;
+    const ArrayDesc &desc_wfc_target = target_is_band_path ? desc_band_wfc : desc_wfc;
+    if (use_klocal_rotation &&
+        (!desc_wfc_target.is_initialized() || desc_wfc_target.m() != n_aos ||
+         desc_wfc_target.n() != n_bands ||
+         desc_wfc_target.ictxt() != rotation_blacs_h.ictxt))
+        throw LIBRPA_RUNTIME_ERROR("EXX source wave-function descriptor is inconsistent");
 
     // prepare scalapack array descriptors
     ArrayDesc desc_nao_nao(rotation_blacs_h);
@@ -1132,13 +1140,17 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
     auto temp_nband_nao = init_local_mat<complex<double>>(desc_nband_nao, MAJOR::COL);
 
     // opt block-size descriptors for better pgemm performance
-    int mb_opt = std::min(128, std::min(desc_nband_nao.mb(), desc_nband_nao.nb()));
+    constexpr int block_size_cap = 128;
+    const int block_nao =
+        get_capped_blacs_block_size(n_aos, block_size_cap, rotation_blacs_h);
+    const int block_nband =
+        get_capped_blacs_block_size(n_bands, block_size_cap, rotation_blacs_h);
     ArrayDesc desc_nband_nao_opt(rotation_blacs_h), desc_nao_nao_opt(rotation_blacs_h);
     ArrayDesc desc_nao_nband_opt(rotation_blacs_h), desc_nband_nband_opt(rotation_blacs_h);
-    desc_nband_nao_opt.init(n_bands, n_aos, mb_opt, mb_opt, 0, 0);
-    desc_nao_nao_opt.init(n_aos, n_aos, mb_opt, mb_opt, 0, 0);
-    desc_nband_nband_opt.init(n_bands, n_bands, mb_opt, mb_opt, 0, 0);
-    desc_nao_nband_opt.init(n_aos, n_bands, mb_opt, mb_opt, 0, 0);
+    desc_nband_nao_opt.init(n_bands, n_aos, block_nband, block_nao, 0, 0);
+    desc_nao_nao_opt.init(n_aos, n_aos, block_nao, block_nao, 0, 0);
+    desc_nband_nband_opt.init(n_bands, n_bands, block_nband, block_nband, 0, 0);
+    desc_nao_nband_opt.init(n_aos, n_bands, block_nao, block_nband, 0, 0);
 
     auto Hexx_nao_nao_opt = init_local_mat<complex<double>>(desc_nao_nao_opt, MAJOR::COL);
     auto Hexx_nband_nband_opt = init_local_mat<complex<double>>(desc_nband_nband_opt, MAJOR::COL);
@@ -1506,7 +1518,6 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                     exx_I_Jik_mat.clear();
                     global::profiler.stop("exx_build_KS_ijk_redist");
 
-                    desc_nao_nband_fb.init(n_aos, n_bands, n_aos, n_bands, 0, 0);
                     std::vector<complex<double>> dummy(1, complex<double>{0.0, 0.0});
                     release_free_mem();
                     for (const int ik: target_kblacs_ctxt.kpoints_local())
@@ -1524,30 +1535,35 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                                                       Hexx_nao_nao.ptr(), 1, 1, desc_nao_nao.desc,
                                                       Hexx_nao_nao_opt.ptr(), 1, 1, desc_nao_nao_opt.desc,
                                                       desc_nao_nao.ictxt());
-                        if (desc_nao_nband_fb.is_src())
-                        {
-                            const auto &wfc_bra = wfc_target.at(isp).at(ispn_bra).at(ik);
-                            const auto &wfc_ket = wfc_target.at(isp).at(ispn_ket).at(ik);
-                            ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_bra.c, 1, 1,
-                                                          desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
-                                                          1, 1, desc_nao_nband_opt.desc,
-                                                          desc_nao_nband_fb.ictxt());
-                            ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_ket.c, 1, 1,
-                                                          desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
-                                                          1, 1, desc_nao_nband_opt.desc,
-                                                          desc_nao_nband_fb.ictxt());
-                        }
-                        else
-                        {
-                            ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1,
-                                                          desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
-                                                          1, 1, desc_nao_nband_opt.desc,
-                                                          desc_nao_nband_fb.ictxt());
-                            ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1,
-                                                          desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
-                                                          1, 1, desc_nao_nband_opt.desc,
-                                                          desc_nao_nband_fb.ictxt());
-                        }
+                        const auto *wfc_bra =
+                            find_nested_int_map_3(wfc_target, isp, ispn_bra, ik);
+                        const auto *wfc_ket =
+                            find_nested_int_map_3(wfc_target, isp, ispn_ket, ik);
+                        const std::size_t wfc_size_local =
+                            static_cast<std::size_t>(desc_wfc_target.m_loc()) *
+                            desc_wfc_target.n_loc();
+                        const int bad_wfc_local =
+                            (wfc_size_local > 0 && (wfc_bra == nullptr || wfc_ket == nullptr)) ||
+                            (wfc_bra != nullptr &&
+                             static_cast<std::size_t>(wfc_bra->size) != wfc_size_local) ||
+                            (wfc_ket != nullptr &&
+                             static_cast<std::size_t>(wfc_ket->size) != wfc_size_local);
+                        int bad_wfc = 0;
+                        MPI_Allreduce(&bad_wfc_local, &bad_wfc, 1, MPI_INT, MPI_MAX,
+                                      rotation_blacs_h.comm());
+                        if (bad_wfc)
+                            throw LIBRPA_RUNTIME_ERROR(
+                                "EXX local wave-function block is inconsistent with its descriptor");
+                        ScalapackConnector::pgemr2d_f(
+                            n_aos, n_bands,
+                            wfc_bra == nullptr ? dummy.data() : wfc_bra->c, 1, 1,
+                            desc_wfc_target.desc, wfc_bra_opt.ptr(), 1, 1,
+                            desc_nao_nband_opt.desc, rotation_blacs_h.ictxt);
+                        ScalapackConnector::pgemr2d_f(
+                            n_aos, n_bands,
+                            wfc_ket == nullptr ? dummy.data() : wfc_ket->c, 1, 1,
+                            desc_wfc_target.desc, wfc_ket_opt.ptr(), 1, 1,
+                            desc_nao_nband_opt.desc, rotation_blacs_h.ictxt);
                         release_free_mem();
 
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)

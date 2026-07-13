@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "../core/utils_atomic_basis_blacs.h"
+#include "../math/scalapack_connector.h"
 #include "../math/utils_matrix_m_mpi.h"
 #include "../utils/profiler.h"
 #include "../io/stl_io_helper.h"
@@ -156,6 +157,66 @@ void redistribute_meanfield_eigvecs_kpara(MeanField &mf,
              << " eigenvector matrix blocks to k-point BLACS roots" << std::endl;
 }
 
+void redistribute_meanfield_eigvecs_kpara_2d(
+    MeanField &mf, const MpiCommHandler &comm_h,
+    const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc,
+    const ArrayDesc &desc_wfc_full, const std::string &label, const int wfc_tag)
+{
+    if (!desc_wfc.is_initialized() || !desc_wfc_full.is_initialized())
+        throw LIBRPA_RUNTIME_ERROR(label + " wave-function descriptors are not initialized");
+    if (desc_wfc.ictxt() != kblacs_ctxt.blacs_h.ictxt ||
+        desc_wfc_full.ictxt() != kblacs_ctxt.blacs_h.ictxt)
+        throw LIBRPA_RUNTIME_ERROR(label + " wave-function descriptors use the wrong BLACS context");
+    if (desc_wfc.m() != mf.get_n_aos() || desc_wfc.n() != mf.get_n_states() ||
+        desc_wfc_full.m() != mf.get_n_aos() || desc_wfc_full.n() != mf.get_n_states())
+        throw LIBRPA_RUNTIME_ERROR(label + " wave-function descriptors have inconsistent dimensions");
+
+    // First retain the public-API compatibility behavior: locate the unique dense
+    // matrix and move it to the root of its owning k group.  The second step is a
+    // collective redistribution inside that group into the canonical local block.
+    redistribute_meanfield_eigvecs_kpara(mf, comm_h, kblacs_ctxt, label, wfc_tag);
+
+    using WfcMap = std::map<int, std::map<int, std::map<int, ComplexMatrix>>>;
+    WfcMap wfc_2d;
+    std::vector<cplxdb> dummy(1, cplxdb{0.0, 0.0});
+    const int n_spins = mf.get_n_spins();
+    const int n_spinor = mf.get_n_spinor();
+    const int n_aos = mf.get_n_aos();
+    const int n_states = mf.get_n_states();
+
+    for (int ispin = 0; ispin != n_spins; ++ispin)
+    {
+        for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+        {
+            for (const int ik : kblacs_ctxt.kpoints_local())
+            {
+                const auto *wfc_dense = mf.find_wfc(ispin, ispinor, ik);
+                const int bad_root =
+                    desc_wfc_full.is_src() &&
+                    (wfc_dense == nullptr || wfc_dense->nr != n_states ||
+                     wfc_dense->nc != n_aos);
+                int bad_any = 0;
+                MPI_Allreduce(&bad_root, &bad_any, 1, MPI_INT, MPI_MAX,
+                              kblacs_ctxt.comm_blacs_h.comm);
+                if (bad_any)
+                    throw LIBRPA_RUNTIME_ERROR(label +
+                                              " dense wave function is missing on its k-group root");
+
+                ComplexMatrix local(desc_wfc.n_loc(), desc_wfc.m_loc(), false);
+                const auto *src = wfc_dense == nullptr ? dummy.data() : wfc_dense->c;
+                auto *dst = local.c == nullptr ? dummy.data() : local.c;
+                ScalapackConnector::pgemr2d_f(
+                    n_aos, n_states, src, 1, 1, desc_wfc_full.desc, dst, 1, 1,
+                    desc_wfc.desc, kblacs_ctxt.blacs_h.ictxt);
+                wfc_2d[ispin][ispinor][ik] = std::move(local);
+            }
+        }
+    }
+    mf.get_eigenvectors().swap(wfc_2d);
+    global::ofs_myid << "Redistributed " << label
+                     << " eigenvectors into local k-BLACS 2D blocks" << std::endl;
+}
+
 } // namespace
 
 Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
@@ -163,6 +224,8 @@ Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
       comm_blacs_coul_initialized_(false),
       coul_blacs2ap_redistributed_(false),
       eigvecs_kpara_redistributed_(false),
+      eigvecs_kpara_2d_redistributed_(false),
+      band_eigvecs_kpara_2d_redistributed_(false),
       comm_h(comm, true),
       blacs_h(comm),
       scfk_blacs_ctxt(),
@@ -175,6 +238,8 @@ Dataset::Dataset(MPI_Comm comm, const bool input_blacs_matloc_row_major)
       desc_wfc(),
       desc_wfc_kb(),
       desc_wfc_kb_full(),
+      desc_band_wfc_kb(),
+      desc_band_wfc_kb_full(),
       desc_abf(),
       desc_abf_shrink(),
       atpairs_local(), atpairs_unique_all(),
@@ -221,6 +286,8 @@ void Dataset::free()
     finalize_comm_blacs_coul();
     desc_wfc_kb.reset_handler();
     desc_wfc_kb_full.reset_handler();
+    desc_band_wfc_kb.reset_handler();
+    desc_band_wfc_kb_full.reset_handler();
     bandk_blacs_ctxt.finalize();
     scfk_blacs_ctxt.finalize();
 }
@@ -562,19 +629,67 @@ void Dataset::redistribute_band_eigvecs_kpara()
     using global::profiler;
     profiler.start(__FUNCTION__);
 
+    initialize_band_kblacs_wfc_layout();
+
+    redistribute_meanfield_eigvecs_kpara(mf_band, comm_h, bandk_blacs_ctxt, "band-path", 19318);
+    profiler.stop(__FUNCTION__);
+}
+
+void Dataset::initialize_band_kblacs_wfc_layout()
+{
     const int n_kpoints = mf_band.get_n_kpoints();
     if (n_kpoints <= 0)
-        throw LIBRPA_RUNTIME_ERROR("band-path mean-field dimensions must be set before redistributing eigenvectors");
+        throw LIBRPA_RUNTIME_ERROR(
+            "band-path mean-field dimensions must be set before initializing k-BLACS");
 
     if (!bandk_blacs_ctxt.is_initialized() || bandk_blacs_ctxt.n_kpoints() != n_kpoints)
     {
+        if (bandk_blacs_ctxt.is_initialized())
+        {
+            desc_band_wfc_kb.reset_handler();
+            desc_band_wfc_kb_full.reset_handler();
+            bandk_blacs_ctxt.finalize();
+        }
         KPointBlacsProcessShape bandk_blacs_shape;
         bandk_blacs_shape.favor_square_blacs_grid = true;
         bandk_blacs_ctxt.init(bandk_blacs_shape, comm_h.comm, n_kpoints);
     }
+    desc_band_wfc_kb =
+        bandk_blacs_ctxt.create_array_desc(mf_band.get_n_aos(), mf_band.get_n_states());
+    desc_band_wfc_kb_full = bandk_blacs_ctxt.create_array_desc(
+        mf_band.get_n_aos(), mf_band.get_n_states(), mf_band.get_n_aos(),
+        mf_band.get_n_states());
+}
 
-    redistribute_meanfield_eigvecs_kpara(mf_band, comm_h, bandk_blacs_ctxt, "band-path", 19318);
-    profiler.stop(__FUNCTION__);
+void Dataset::reset_band_eigvecs_kpara_state()
+{
+    band_eigvecs_kpara_2d_redistributed_ = false;
+    desc_band_wfc_kb.reset_handler();
+    desc_band_wfc_kb_full.reset_handler();
+    if (bandk_blacs_ctxt.is_initialized()) bandk_blacs_ctxt.finalize();
+}
+
+void Dataset::redistribute_eigvecs_kpara_2d()
+{
+    if (eigvecs_kpara_2d_redistributed_) return;
+    global::profiler.start(__FUNCTION__);
+    redistribute_meanfield_eigvecs_kpara_2d(mf, comm_h, scfk_blacs_ctxt, desc_wfc_kb,
+                                            desc_wfc_kb_full, "SCF", 19319);
+    eigvecs_kpara_redistributed_ = true;
+    eigvecs_kpara_2d_redistributed_ = true;
+    global::profiler.stop(__FUNCTION__);
+}
+
+void Dataset::redistribute_band_eigvecs_kpara_2d()
+{
+    if (band_eigvecs_kpara_2d_redistributed_) return;
+    global::profiler.start(__FUNCTION__);
+    initialize_band_kblacs_wfc_layout();
+    redistribute_meanfield_eigvecs_kpara_2d(
+        mf_band, comm_h, bandk_blacs_ctxt, desc_band_wfc_kb, desc_band_wfc_kb_full,
+        "band-path", 19320);
+    band_eigvecs_kpara_2d_redistributed_ = true;
+    global::profiler.stop(__FUNCTION__);
 }
 
 void Dataset::finalize_comm_blacs_coul()

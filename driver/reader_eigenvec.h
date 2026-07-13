@@ -4,6 +4,8 @@
 #include <vector>
 
 #include "../src/core/meanfield.h"
+#include "../src/mpi/base_blacs.h"
+#include "../src/mpi/kpoint_blacs_parallel_context.h"
 
 enum class LegacyTextWfcOrder
 {
@@ -18,3 +20,10 @@ int read_eigenvector(const std::string &dir_path, librpa_int::MeanField &mf, boo
                      const std::vector<int> &source_to_target_ik,
                      const std::vector<int> *source_iks_selected,
                      LegacyTextWfcOrder text_order = LegacyTextWfcOrder::BasisSpinorBandSpin);
+
+int read_eigenvector_kblacs_2d(
+    const std::string &dir_path, librpa_int::MeanField &mf, bool use_spinor_wfc,
+    const librpa_int::KPointBlacsParallelContext &kblacs_ctxt,
+    const librpa_int::ArrayDesc &desc_wfc,
+    const std::vector<int> *source_to_target_ik = nullptr,
+    LegacyTextWfcOrder text_order = LegacyTextWfcOrder::BasisSpinorBandSpin);

@@ -10,6 +10,7 @@
 
 #include "../mpi/global_mpi.h"
 #include "../math/matrix_m.h"
+#include "../math/scalapack_connector.h"
 
 #include "../io/stl_io_helper.h"
 #include "testutils.h"
@@ -351,7 +352,7 @@ static void test_dm_gf_kblacs_para_redistributed_full_wfc()
 
     const int nk = 2;
     const int nb = 144;
-    const int nao = nb;
+    const int nao = 72;
     const int nocc = 6;
     const double efermi = 0.0;
     std::vector<Vector3_Order<double>> kfrac_list{{0.0, 0.0, 0.0}, {0.5, 0.0, 0.0}};
@@ -393,6 +394,7 @@ static void test_dm_gf_kblacs_para_redistributed_full_wfc()
 
     KPointBlacsProcessShape shape(1, size_global, false);
     KPointBlacsParallelContext context(shape, mpi_comm_global_h.comm, nk);
+    const auto desc_wfc = context.create_array_desc(nao, nb);
     const auto desc_wfc_full = context.create_array_desc(nao, nb, nao, nb);
     const auto desc_dm = context.create_array_desc(nao, nao);
 
@@ -404,10 +406,24 @@ static void test_dm_gf_kblacs_para_redistributed_full_wfc()
         set_wfc(mf, ik);
     }
 
+    MeanField mf_2d(1, nk, nb, nao);
+    set_common_mf_data(mf_2d);
+    std::vector<cplxdb> dummy(1, cplxdb{0.0, 0.0});
+    for (int ik = 0; ik != nk; ++ik)
+    {
+        const auto *wfc_full = mf.find_wfc(0, 0, ik);
+        ComplexMatrix wfc_local(desc_wfc.n_loc(), desc_wfc.m_loc(), false);
+        ScalapackConnector::pgemr2d_f(
+            nao, nb, wfc_full == nullptr ? dummy.data() : wfc_full->c, 1, 1,
+            desc_wfc_full.desc, wfc_local.c == nullptr ? dummy.data() : wfc_local.c, 1, 1,
+            desc_wfc.desc, context.blacs_h.ictxt);
+        mf_2d.get_eigenvectors()[0][0][ik] = std::move(wfc_local);
+    }
+
     const auto dm_Rs = get_dmat_cplx_Rs_kblacs_para(
-        0, mf, kfrac_list, Rs, context, desc_wfc_full, desc_dm);
+        0, mf_2d, kfrac_list, Rs, context, desc_wfc, desc_dm);
     const auto gf_Rs = get_gf_cplx_imagtimes_Rs_kblacs_para(
-        0, mf, kfrac_list, imagtimes, Rs, context, desc_wfc_full, desc_dm);
+        0, mf_2d, kfrac_list, imagtimes, Rs, context, desc_wfc, desc_dm);
 
     for (const auto &R: Rs)
     {
@@ -819,6 +835,13 @@ int main (int argc, char *argv[])
     init_global_mpi(MPI_COMM_WORLD);
     init_global_io();
 
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+    BlacsCtxtHandler world_blacs_h(MPI_COMM_WORLD);
+    world_blacs_h.init();
+    world_blacs_h.set_square_grid();
+    world_blacs_h.init_ddla_handle();
+#endif
+
     // Fictious examples
     test_dmat_cplx_Rs_kpara(3, 8, 2);
     test_dmat_cplx_Rs_kpara(15, 4, 2);
@@ -833,6 +856,9 @@ int main (int argc, char *argv[])
     test_dmat_kblacs_reduced_kstar_matches_symmetry_restore();
     test_dmat_gf_kblacs_reduced_kstar_matches_full_bz_fourier();
 
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+    world_blacs_h.exit();
+#endif
     finalize_global_io();
     finalize_global_mpi();
     MPI_Finalize();

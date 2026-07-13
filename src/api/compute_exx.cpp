@@ -134,7 +134,12 @@ void librpa_build_exx(LibrpaHandler* h, const LibrpaOptions *p_opts)
     }
 
     if (opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON)
-        pds->redistribute_eigvecs_kpara();
+    {
+        if (routing == LIBRPA_ROUTING_LIBRI)
+            pds->redistribute_eigvecs_kpara_2d();
+        else
+            pds->redistribute_eigvecs_kpara();
+    }
 
     // Determine the atom pairs that this process is responsible for
     initialize_ds_atpairs_local(*pds, routing);
@@ -260,7 +265,7 @@ void librpa_get_exx_pot_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, co
             pds->atoms, pds->pbc, opts.option_bvk_remap);
         if (opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON)
         {
-            pds->redistribute_band_eigvecs_kpara();
+            pds->redistribute_band_eigvecs_kpara_2d();
         }
         pexx->build_KS_band_blacs(pds->mf_band.get_eigenvectors(), pds->kfrac_band_list,
                                   bvk_remap, pds->blacs_h, opts.use_gpu_replace_scalapack);

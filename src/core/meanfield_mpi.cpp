@@ -173,18 +173,17 @@ static WfcGemmWorkspace create_wfc_gemm_workspace(const ArrayDesc &desc_wfc,
     check_wfc_gemm_context(desc_wfc, desc_out, blacs_h);
 
     WfcGemmWorkspace workspace;
-    ArrayDesc desc_out_square(blacs_h);
-    desc_out_square.init_square_blk(desc_out.m(), desc_out.n(),
-                                    desc_out.irsrc(), desc_out.icsrc());
-    const int block_size_opt = std::min(wfc_gemm_block_size_opt,
-                                        desc_out_square.nb());
+    const int block_ao = get_capped_blacs_block_size(
+        desc_wfc.m(), wfc_gemm_block_size_opt, blacs_h);
+    const int block_state = get_capped_blacs_block_size(
+        desc_wfc.n(), wfc_gemm_block_size_opt, blacs_h);
     workspace.desc_wfc_opt = ArrayDesc(blacs_h);
     workspace.desc_wfc_opt.init(desc_wfc.m(), desc_wfc.n(),
-                                block_size_opt, block_size_opt,
+                                block_ao, block_state,
                                 desc_wfc.irsrc(), desc_wfc.icsrc());
     workspace.desc_out_opt = ArrayDesc(blacs_h);
     workspace.desc_out_opt.init(desc_out.m(), desc_out.n(),
-                                block_size_opt, block_size_opt,
+                                block_ao, block_ao,
                                 desc_out.irsrc(), desc_out.icsrc());
     workspace.wfc_bra_opt.resize(workspace.desc_wfc_opt.m_loc(),
                                  workspace.desc_wfc_opt.n_loc(), MAJOR::COL);

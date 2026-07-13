@@ -75,6 +75,9 @@ public:
     const MPI_Comm &get_comm() const { return this->mpi_comm_h.comm; };
 };
 
+int get_capped_blacs_block_size(const int dimension, const int max_block_size,
+                                const BlacsCtxtHandler &blacs_h);
+
 /*!
  * @brief Get indices of process to which the distributed elements of global matrix belong
  *

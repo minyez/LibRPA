@@ -401,7 +401,7 @@ void ensure_band_sigc_ks_blacs(librpa_int::Dataset &ds, const LibrpaOptions &opt
     const bool use_band_kblacs_wfc = opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON;
     if (use_band_kblacs_wfc)
     {
-        ds.redistribute_band_eigvecs_kpara();
+        ds.redistribute_band_eigvecs_kpara_2d();
     }
     ds.p_g0w0->build_sigc_matrix_KS_band_blacs(ds.mf_band.get_eigenvectors(),
                                                ds.kfrac_band_list,
@@ -702,7 +702,12 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
     }
 
     if (opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON)
-        pds->redistribute_eigvecs_kpara();
+    {
+        if (routing == LIBRPA_ROUTING_LIBRI)
+            pds->redistribute_eigvecs_kpara_2d();
+        else
+            pds->redistribute_eigvecs_kpara();
+    }
 
     auto ensure_exx = [&]()
     {
@@ -879,7 +884,10 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
         use_shrink_abfs ? &pds->basis_aux_shrink : nullptr,
         use_shrink_abfs ? &pds->basis_aux : nullptr,
         use_shrink_abfs ? &pds->blacs_h : nullptr,
-        use_shrink_abfs ? &pds->desc_wfc_kb_full : nullptr);
+        use_shrink_abfs
+            ? &(pds->eigvecs_kpara_2d_ready() ? pds->desc_wfc_kb
+                                              : pds->desc_wfc_kb_full)
+            : nullptr);
     profiler.stop("g0w0_sigc_IJ");
     release_free_mem();
 

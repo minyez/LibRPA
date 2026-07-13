@@ -40,6 +40,8 @@ class Exx
         const MeanField &mf;
         //! Array descriptor of wave functions saved in the MeanField object
         const ArrayDesc &desc_wfc;
+        //! Array descriptor of band-path wave functions.
+        const ArrayDesc &desc_band_wfc;
         const AtomicBasis &atbasis_wfc;
         const PeriodicBoundaryData &pbc;
         const SymmetryContext &symmetry_context;
@@ -67,6 +69,7 @@ class Exx
             const KPointBlacsParallelContext &kblacs_ctxt_in,
             const KPointBlacsParallelContext &band_kblacs_ctxt_in,
             const ArrayDesc &desc_wfc_in,
+            const ArrayDesc &desc_band_wfc_in,
             bool is_mf_eigvec_k_distributed,
             bool use_symmetry_context_in = true);
 

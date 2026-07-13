@@ -654,10 +654,12 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
            const TFGrids &tfg_in,
            const KPointBlacsParallelContext &kblacs_ctxt_in,
            const KPointBlacsParallelContext &band_kblacs_ctxt_in,
-           const ArrayDesc &desc_wfc_in, bool is_eigvec_k_distributed,
+           const ArrayDesc &desc_wfc_in, const ArrayDesc &desc_band_wfc_in,
+           bool is_eigvec_k_distributed,
            const bool use_symmetry_context_in)
     : mf(mf_in),
       desc_wfc(desc_wfc_in),
+      desc_band_wfc(desc_band_wfc_in),
       atbasis_wfc(atbasis_wfc_in),
       pbc(pbc_in),
       symmetry_context(symmetry_context_in),
@@ -2091,6 +2093,12 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     }
     const BlacsCtxtHandler &rotation_blacs_h =
         use_klocal_rotation ? rotation_kblacs_ctxt->blacs_h : blacs_ctxt_h;
+    const ArrayDesc &desc_wfc_target = source_is_band_path ? desc_band_wfc : desc_wfc;
+    if (use_klocal_rotation &&
+        (!desc_wfc_target.is_initialized() || desc_wfc_target.m() != n_aos ||
+         desc_wfc_target.n() != n_bands ||
+         desc_wfc_target.ictxt() != rotation_blacs_h.ictxt))
+        throw LIBRPA_RUNTIME_ERROR("SigC source wave-function descriptor is inconsistent");
 
     global::profiler.start("g0w0_build_sigc_KS");
 
@@ -2110,15 +2118,19 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     ArrayDesc desc_nband_nband(rotation_blacs_h);
     desc_nband_nband.init_1b1p(n_bands, n_bands, 0, 0);
 
-    int mb_opt = std::min(128, std::min(desc_nband_nao.mb(), desc_nband_nao.nb()));
+    constexpr int block_size_cap = 128;
+    const int block_nao =
+        get_capped_blacs_block_size(n_aos, block_size_cap, rotation_blacs_h);
+    const int block_nband =
+        get_capped_blacs_block_size(n_bands, block_size_cap, rotation_blacs_h);
     ArrayDesc desc_nband_nao_opt(rotation_blacs_h), desc_nao_nao_opt(rotation_blacs_h);
     ArrayDesc desc_nao_nband_opt(rotation_blacs_h),  desc_nband_nband_opt(rotation_blacs_h);
-    desc_nband_nao_opt.init(n_bands, n_aos, mb_opt, mb_opt, 0, 0);
-    desc_nao_nao_opt.init(n_aos, n_aos, mb_opt, mb_opt, 0, 0);
-    desc_nband_nband_opt.init(n_bands, n_bands, mb_opt, mb_opt, 0, 0);
-    desc_nao_nband_opt.init(n_aos, n_bands, mb_opt, mb_opt, 0, 0);
+    desc_nband_nao_opt.init(n_bands, n_aos, block_nband, block_nao, 0, 0);
+    desc_nao_nao_opt.init(n_aos, n_aos, block_nao, block_nao, 0, 0);
+    desc_nband_nband_opt.init(n_bands, n_bands, block_nband, block_nband, 0, 0);
+    desc_nao_nband_opt.init(n_aos, n_bands, block_nao, block_nband, 0, 0);
     desc_sigc_is_ik_f_KS.reset_handler(rotation_blacs_h);
-    desc_sigc_is_ik_f_KS.init(n_bands, n_bands, mb_opt, mb_opt, 0, 0);
+    desc_sigc_is_ik_f_KS.init(n_bands, n_bands, block_nband, block_nband, 0, 0);
 
     auto wfc_bra_opt = init_local_mat<complex<double>>(desc_nao_nband_opt, MAJOR::COL);
     auto wfc_ket_opt = init_local_mat<complex<double>>(desc_nao_nband_opt, MAJOR::COL);
@@ -2310,7 +2322,6 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                 {
                     global::profiler.start("g0w0_build_sigc_KS_rotate_kpara_klocal_blacs");
                     auto temp_nband_nao_opt = init_local_mat<complex<double>>(desc_nband_nao_opt, MAJOR::COL);
-                    desc_nao_nband_fb.init(n_aos, n_bands, n_aos, n_bands, 0, 0);
                     std::vector<complex<double>> dummy(1, complex<double>{0.0, 0.0});
                     release_free_mem();
                     for (const auto& freq: this->tfg.get_freq_nodes())
@@ -2449,26 +2460,36 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
                             ScalapackConnector::pgemr2d_f(n_aos, n_aos, sigc_nao_nao.ptr(), 1, 1,
                                                           desc_nao_nao.desc, sigc_nao_nao_opt.ptr(),
                                                           1, 1, desc_nao_nao_opt.desc, desc_nao_nao.ictxt());
-                            if (desc_nao_nband_fb.is_src())
-                            {
-                                const auto &wfc_bra = wfc_target.at(isp).at(ispn_bra).at(ik);
-                                const auto &wfc_ket = wfc_target.at(isp).at(ispn_ket).at(ik);
-                                ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_bra.c, 1, 1,
-                                                              desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
-                                                              1, 1, desc_nao_nband_opt.desc, desc_nao_nband_fb.ictxt());
-                                ScalapackConnector::pgemr2d_f(n_aos, n_bands, wfc_ket.c, 1, 1,
-                                                              desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
-                                                              1, 1, desc_nao_nband_opt.desc, desc_nao_nband_fb.ictxt());
-                            }
-                            else
-                            {
-                                ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1,
-                                                              desc_nao_nband_fb.desc, wfc_bra_opt.ptr(),
-                                                              1, 1, desc_nao_nband_opt.desc, desc_nao_nband_fb.ictxt());
-                                ScalapackConnector::pgemr2d_f(n_aos, n_bands, dummy.data(), 1, 1,
-                                                              desc_nao_nband_fb.desc, wfc_ket_opt.ptr(),
-                                                              1, 1, desc_nao_nband_opt.desc, desc_nao_nband_fb.ictxt());
-                            }
+                            const auto *wfc_bra =
+                                find_nested_int_map_3(wfc_target, isp, ispn_bra, ik);
+                            const auto *wfc_ket =
+                                find_nested_int_map_3(wfc_target, isp, ispn_ket, ik);
+                            const std::size_t wfc_size_local =
+                                static_cast<std::size_t>(desc_wfc_target.m_loc()) *
+                                desc_wfc_target.n_loc();
+                            const int bad_wfc_local =
+                                (wfc_size_local > 0 &&
+                                 (wfc_bra == nullptr || wfc_ket == nullptr)) ||
+                                (wfc_bra != nullptr &&
+                                 static_cast<std::size_t>(wfc_bra->size) != wfc_size_local) ||
+                                (wfc_ket != nullptr &&
+                                 static_cast<std::size_t>(wfc_ket->size) != wfc_size_local);
+                            int bad_wfc = 0;
+                            MPI_Allreduce(&bad_wfc_local, &bad_wfc, 1, MPI_INT, MPI_MAX,
+                                          rotation_blacs_h.comm());
+                            if (bad_wfc)
+                                throw LIBRPA_RUNTIME_ERROR(
+                                    "SigC local wave-function block is inconsistent with its descriptor");
+                            ScalapackConnector::pgemr2d_f(
+                                n_aos, n_bands,
+                                wfc_bra == nullptr ? dummy.data() : wfc_bra->c, 1, 1,
+                                desc_wfc_target.desc, wfc_bra_opt.ptr(), 1, 1,
+                                desc_nao_nband_opt.desc, rotation_blacs_h.ictxt);
+                            ScalapackConnector::pgemr2d_f(
+                                n_aos, n_bands,
+                                wfc_ket == nullptr ? dummy.data() : wfc_ket->c, 1, 1,
+                                desc_wfc_target.desc, wfc_ket_opt.ptr(), 1, 1,
+                                desc_nao_nband_opt.desc, rotation_blacs_h.ictxt);
                             release_free_mem();
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
                             if (use_gpu_replace_scalapack)
@@ -2825,7 +2846,10 @@ void G0W0::build_sigc_matrix_KS_band_blacs(
                                      "band_" + std::to_string(output_band_index));
     if (this->output_sigc_ks_kf)
     {
-        const int n_bands = infer_target_n_bands(comm_h, wfc, this->mf.get_n_bands());
+        const int n_bands = is_eigvec_k_distributed_
+                                ? desc_band_wfc.n()
+                                : infer_target_n_bands(comm_h, wfc,
+                                                       this->mf.get_n_bands());
         const auto iks = output_iks == nullptr
                              ? collect_target_iks(comm_h, wfc, static_cast<int>(kfrac_band.size()))
                              : *output_iks;

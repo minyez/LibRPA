@@ -199,6 +199,15 @@ int main(int argc, char **argv)
         lib_printf_root("\n");
         profiler.stop("driver_basis");
 
+        // Direct k-BLACS eigenvector input is a LibRI path.  Resolve AUTO before
+        // reading wave functions so the reader can choose the final ownership
+        // layout instead of first materializing dense matrices on k-group roots.
+        if (driver::opts.parallel_routing == LIBRPA_ROUTING_AUTO)
+        {
+            driver::opts.parallel_routing = librpa_int::decide_auto_routing(
+                driver::n_atoms, driver::opts.nfreq * driver::n_kpoints);
+        }
+
         profiler.start("driver_read_eigenvector", "SCF eigenvectors");
         int ret_eigenvec = read_eigenvector(driver_params.input_dir);
         mpi_comm_global_h.barrier();

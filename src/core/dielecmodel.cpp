@@ -709,6 +709,233 @@ const ComplexMatrix &direct_full_bz_wfc_for_kstar_member(
     return *wfc;
 }
 
+static std::vector<int> build_headwing_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
+{
+    std::vector<int> offsets(atom_nw.size() + 1, 0);
+    int running = 0;
+    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+    {
+        const auto iter = atom_nw.find(static_cast<atom_t>(atom));
+        if (iter == atom_nw.end())
+            throw std::runtime_error("headwing AO rotation atom_nw is not contiguous");
+        offsets[atom] = running;
+        running += static_cast<int>(iter->second);
+    }
+    offsets.back() = running;
+    return offsets;
+}
+
+static Vector3_Order<int> headwing_equivalent_kpoint_shift(
+    const Vector3_Order<double>& k_source, const Vector3_Order<double>& k_target)
+{
+    const Vector3_Order<double> k_shift{k_target.x - k_source.x,
+                                        k_target.y - k_source.y,
+                                        k_target.z - k_source.z};
+    if (!nearly_integer_vector(k_shift, 1.e-5))
+        throw std::runtime_error("headwing AO rotation got non-equivalent full-k targets");
+    return round_to_integer_vector(k_shift);
+}
+
+static std::complex<double> headwing_reciprocal_gauge_phase(
+    const SymmetryContext& ctx,
+    const Vector3_Order<int>& k_shift,
+    const atom_t atom)
+{
+    const auto coord_iter = ctx.input_coord_frac.find(atom);
+    if (coord_iter == ctx.input_coord_frac.end())
+        throw std::runtime_error("headwing AO rotation missing target-gauge coordinate");
+    const Vector3_Order<double> tau{coord_iter->second};
+    const double phase_arg =
+        TWO_PI * (static_cast<double>(k_shift.x) * tau.x
+                  + static_cast<double>(k_shift.y) * tau.y
+                  + static_cast<double>(k_shift.z) * tau.z);
+    return {std::cos(phase_arg), std::sin(phase_arg)};
+}
+
+struct HeadwingAoRotationBlocks
+{
+    std::vector<int> offsets;
+    std::vector<ComplexMatrix> blocks;
+};
+
+static HeadwingAoRotationBlocks build_symmetry_ao_bloch_rotation_blocks(
+    const SymmetryContext& ctx, const SymmetryKStarMember& member,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
+    const std::map<atom_t, size_t>& atom_nw, const Vector3_Order<double>& k_ibz,
+    const Vector3_Order<double>* k_bz_target)
+{
+    HeadwingAoRotationBlocks result;
+    result.offsets = build_headwing_atom_offsets(atom_nw);
+
+    std::vector<const SymmetryKAtomRotation*> rotations_by_from(atom_nw.size(), nullptr);
+    std::vector<bool> visited_to(atom_nw.size(), false);
+    for (const auto& atom_rotation : member.atom_rotations)
+    {
+        if (atom_rotation.atom_from < 0 || atom_rotation.atom_from >= static_cast<int>(atom_nw.size())
+            || atom_rotation.atom_to < 0 || atom_rotation.atom_to >= static_cast<int>(atom_nw.size()))
+            throw std::runtime_error("headwing AO rotation atom mapping is out of range");
+        rotations_by_from[static_cast<std::size_t>(atom_rotation.atom_from)] = &atom_rotation;
+        visited_to[static_cast<std::size_t>(atom_rotation.atom_to)] = true;
+    }
+    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+    {
+        if (rotations_by_from[atom] == nullptr)
+            throw std::runtime_error("headwing AO rotations do not cover every atom");
+        if (!visited_to[atom])
+            throw std::runtime_error("headwing AO atom mapping is not a full permutation");
+    }
+
+    if (member.spatial_isym < 0
+        || member.spatial_isym >= static_cast<int>(ctx.rspace_operations.size()))
+        throw std::runtime_error("headwing AO rotation uses an invalid symmetry index");
+
+    result.blocks.resize(atom_nw.size());
+    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+    {
+        const auto* atom_rotation = rotations_by_from[atom];
+        const auto& layout =
+            get_symmetry_species_layout(wfc_layouts, atom_rotation->atom_type);
+        result.blocks[atom] =
+            build_symmetry_rotation_matrix(layout, atom_rotation->bloch_rsh_rotations);
+    }
+
+    const bool apply_target_gauge = (k_bz_target != nullptr);
+    std::vector<std::complex<double>> atom_target_phases(atom_nw.size(), {1.0, 0.0});
+    if (apply_target_gauge)
+    {
+        const auto k_shift = headwing_equivalent_kpoint_shift(member.k_bz, *k_bz_target);
+        for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+            atom_target_phases[atom] =
+                headwing_reciprocal_gauge_phase(ctx, k_shift, static_cast<atom_t>(atom));
+    }
+
+    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+    {
+        if (apply_target_gauge) result.blocks[atom] *= atom_target_phases[atom];
+    }
+    (void)k_ibz;
+    return result;
+}
+
+static ComplexMatrix build_symmetry_ao_bloch_rotation_matrix_full(
+    const SymmetryContext& ctx, const SymmetryKStarMember& member,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
+    const std::map<atom_t, size_t>& atom_nw, const Vector3_Order<double>& k_ibz,
+    const Vector3_Order<double>* k_bz_target)
+{
+    const auto rotation = build_symmetry_ao_bloch_rotation_blocks(
+        ctx, member, wfc_layouts, atom_nw, k_ibz, k_bz_target);
+    const int nao_total = rotation.offsets.back();
+    ComplexMatrix M_full(nao_total, nao_total);
+    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+    {
+        const auto off = rotation.offsets[atom];
+        const auto n_ao = static_cast<int>(atom_nw.at(static_cast<atom_t>(atom)));
+        const auto &block = rotation.blocks[atom];
+        for (int row = 0; row < n_ao; ++row)
+            for (int col = 0; col < n_ao; ++col)
+                M_full(off + row, off + col) = block(row, col);
+    }
+    return M_full;
+}
+
+static void fill_symmetry_ao_bloch_rotation_matrix_local(
+    matrix_m<std::complex<double>> &M_local, const ArrayDesc &desc_M,
+    const SymmetryContext& ctx, const SymmetryKStarMember& member,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
+    const std::map<atom_t, size_t>& atom_nw, const Vector3_Order<double>& k_ibz,
+    const Vector3_Order<double>* k_bz_target)
+{
+    const auto rotation = build_symmetry_ao_bloch_rotation_blocks(
+        ctx, member, wfc_layouts, atom_nw, k_ibz, k_bz_target);
+    if (desc_M.m() != rotation.offsets.back() || desc_M.n() != rotation.offsets.back())
+        throw std::runtime_error("headwing AO rotation descriptor has inconsistent dimensions");
+    M_local.zero_out();
+    for (std::size_t atom = 0; atom < atom_nw.size(); ++atom)
+    {
+        const int off = rotation.offsets[atom];
+        const int n_ao = static_cast<int>(atom_nw.at(static_cast<atom_t>(atom)));
+        const auto &block = rotation.blocks[atom];
+        for (int row = 0; row != n_ao; ++row)
+        {
+            const int iloc = desc_M.indx_g2l_r(off + row);
+            if (iloc < 0) continue;
+            for (int col = 0; col != n_ao; ++col)
+            {
+                const int jloc = desc_M.indx_g2l_c(off + col);
+                if (jloc >= 0) M_local(iloc, jloc) = block(row, col);
+            }
+        }
+    }
+}
+
+static std::vector<std::vector<ComplexMatrix>> rotate_headwing_wfc_symmetry_kblacs(
+    const MeanField &mf, const int source_ik, const ArrayDesc &desc_wfc_src,
+    const BlacsCtxtHandler &blacs_h, const SymmetryContext& ctx,
+    const SymmetryKStarMember& member,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
+    const std::map<atom_t, size_t>& atom_nw, const Vector3_Order<double>& k_ibz,
+    const Vector3_Order<double>* k_bz_target)
+{
+    const int n_aos = mf.get_n_aos();
+    const int n_states = mf.get_n_states();
+    if (!desc_wfc_src.is_initialized() || desc_wfc_src.m() != n_aos ||
+        desc_wfc_src.n() != n_states || desc_wfc_src.ictxt() != blacs_h.ictxt)
+        throw std::runtime_error("symmetric headwing source wave-function descriptor is invalid");
+
+    constexpr int block_cap = 128;
+    const int block_ao = get_capped_blacs_block_size(n_aos, block_cap, blacs_h);
+    const int block_band = get_capped_blacs_block_size(n_states, block_cap, blacs_h);
+    ArrayDesc desc_M_opt(blacs_h);
+    desc_M_opt.init(n_aos, n_aos, block_ao, block_ao, 0, 0);
+    ArrayDesc desc_wfc_opt(blacs_h);
+    desc_wfc_opt.init(n_aos, n_states, block_ao, block_band, 0, 0);
+    auto M_opt = init_local_mat<std::complex<double>>(desc_M_opt, MAJOR::COL);
+    auto wfc_ibz_opt = init_local_mat<std::complex<double>>(desc_wfc_opt, MAJOR::COL);
+    auto wfc_bz_opt = init_local_mat<std::complex<double>>(desc_wfc_opt, MAJOR::COL);
+    fill_symmetry_ao_bloch_rotation_matrix_local(
+        M_opt, desc_M_opt, ctx, member, wfc_layouts, atom_nw, k_ibz, k_bz_target);
+
+    std::vector<std::vector<ComplexMatrix>> result(mf.get_n_spins());
+    std::vector<std::complex<double>> dummy(1, {0.0, 0.0});
+    const std::size_t source_size =
+        static_cast<std::size_t>(desc_wfc_src.m_loc()) * desc_wfc_src.n_loc();
+    for (int ispin = 0; ispin != mf.get_n_spins(); ++ispin)
+    {
+        result[ispin].resize(mf.get_n_spinor());
+        for (int ispinor = 0; ispinor != mf.get_n_spinor(); ++ispinor)
+        {
+            const auto *wfc_ibz = mf.find_wfc(ispin, ispinor, source_ik);
+            const int bad_local =
+                (source_size > 0 && wfc_ibz == nullptr) ||
+                (wfc_ibz != nullptr &&
+                 static_cast<std::size_t>(wfc_ibz->size) != source_size);
+            int bad = 0;
+            MPI_Allreduce(&bad_local, &bad, 1, MPI_INT, MPI_MAX, blacs_h.comm());
+            if (bad)
+                throw std::runtime_error(
+                    "symmetric headwing local wave-function block is inconsistent");
+
+            ScalapackConnector::pgemr2d_f(
+                n_aos, n_states, wfc_ibz == nullptr ? dummy.data() : wfc_ibz->c, 1, 1,
+                desc_wfc_src.desc, wfc_ibz_opt.ptr(), 1, 1, desc_wfc_opt.desc,
+                blacs_h.ictxt);
+            ScalapackConnector::pgemm_f(
+                'C', 'N', n_aos, n_states, n_aos, 1.0, M_opt.ptr(), 1, 1,
+                desc_M_opt.desc, wfc_ibz_opt.ptr(), 1, 1, desc_wfc_opt.desc, 0.0,
+                wfc_bz_opt.ptr(), 1, 1, desc_wfc_opt.desc);
+
+            auto &wfc_bz = result[ispin][ispinor];
+            wfc_bz.create(desc_wfc_src.n_loc(), desc_wfc_src.m_loc(), false);
+            ScalapackConnector::pgemr2d_f(
+                n_aos, n_states, wfc_bz_opt.ptr(), 1, 1, desc_wfc_opt.desc,
+                wfc_bz.c == nullptr ? dummy.data() : wfc_bz.c, 1, 1,
+                desc_wfc_src.desc, blacs_h.ictxt);
+        }
+    }
+    return result;
+}
+
 void initialize_velocity_matrix(velocity_matrix_t &velocity, const int n_spins,
                                 const int n_kpoints, const int n_states)
 {
@@ -1141,23 +1368,19 @@ void diele_func::cal_head_symmetric()
             if (star.members.empty())
                 throw std::runtime_error("cal_head_symmetric: empty k-star");
 
-            const int ispinor_bra = 0;
-            const ComplexMatrix *C_ibz_ptr = meanfield_df.find_wfc(ispin, ispinor_bra, ik_ibz);
-            const int have_local = (C_ibz_ptr != nullptr) ? 1 : 0;
-            const int owner_rank = find_mpi_owner_rank(have_local != 0, comm_h.comm);
-            if (owner_rank < 0)
-                throw std::runtime_error("cal_head_symmetric: no rank owns the IBZ eigenvectors");
             if (use_kblacs)
             {
                 if (!kblacs_ctxt_->owns_kpoint(ik_ibz) || kblacs_ctxt_->comm_blacs_h.myid != 0)
                     continue;
-                if (C_ibz_ptr == nullptr)
-                    throw std::runtime_error(
-                        "cal_head_symmetric: kBLACS root does not own the IBZ eigenvectors");
             }
-            else if (comm_h.myid != owner_rank)
+            else
             {
-                continue;
+                const auto *C_ibz_ptr = meanfield_df.find_wfc(ispin, 0, ik_ibz);
+                const int owner_rank = find_mpi_owner_rank(C_ibz_ptr != nullptr, comm_h.comm);
+                if (owner_rank < 0)
+                    throw std::runtime_error(
+                        "cal_head_symmetric: no rank owns the IBZ eigenvectors");
+                if (comm_h.myid != owner_rank) continue;
             }
 
             for (std::size_t imember = 0; imember != star.members.size(); ++imember)
@@ -1950,17 +2173,12 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::rotate_Cs_nao2mnk_kb
     const int Mu = atomic_basis_abf_.get_i_atom(mu);
     const int n_ao_Mu = atomic_basis_wfc_.get_atom_nb(Mu);
     constexpr int block_size_cap = 128;
-    const auto capped_square_block_size = [&](const int dimension)
-    {
-        const int rows_per_process =
-            (dimension + wing_blacs_h.nprows - 1) / wing_blacs_h.nprows;
-        const int cols_per_process =
-            (dimension + wing_blacs_h.npcols - 1) / wing_blacs_h.npcols;
-        return std::max(1, std::min({block_size_cap, rows_per_process, cols_per_process}));
-    };
-    const int block_nao = capped_square_block_size(n_basis);
-    const int block_Mu = capped_square_block_size(n_ao_Mu);
-    const int block_nband = capped_square_block_size(n_states);
+    const int block_nao =
+        get_capped_blacs_block_size(n_basis, block_size_cap, wing_blacs_h);
+    const int block_Mu =
+        get_capped_blacs_block_size(n_ao_Mu, block_size_cap, wing_blacs_h);
+    const int block_nband =
+        get_capped_blacs_block_size(n_states, block_size_cap, wing_blacs_h);
 
     ArrayDesc desc_Mu_nao_opt(wing_blacs_h);
     desc_Mu_nao_opt.init(n_ao_Mu, n_basis, block_Mu, block_nao, 0, 0);
@@ -1994,7 +2212,8 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::rotate_Cs_nao2mnk_kb
     };
 
     std::vector<complex<double>> dummy_wfc(1, {0.0, 0.0});
-    const bool is_source_rank = desc_wfc_src.is_src();
+    const std::size_t wfc_size_local =
+        static_cast<std::size_t>(desc_wfc_src.m_loc()) * desc_wfc_src.n_loc();
     const int spin_begin = spin_filter < 0 ? 0 : spin_filter;
     const int spin_end = spin_filter < 0 ? n_spin : spin_filter + 1;
     for (int ispin = spin_begin; ispin != spin_end; ispin++)
@@ -2007,9 +2226,10 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::rotate_Cs_nao2mnk_kb
                 const ComplexMatrix *wfc_isp2_k = get_wfc(ispin, is2);
 
                 const int bad_source_local =
-                    is_source_rank && (wfc_isp1_k == nullptr || wfc_isp2_k == nullptr ||
-                                       wfc_isp1_k->nr != n_states || wfc_isp1_k->nc != n_basis ||
-                                       wfc_isp2_k->nr != n_states || wfc_isp2_k->nc != n_basis);
+                    wfc_size_local > 0 &&
+                    (wfc_isp1_k == nullptr || wfc_isp2_k == nullptr ||
+                     static_cast<std::size_t>(wfc_isp1_k->size) != wfc_size_local ||
+                     static_cast<std::size_t>(wfc_isp2_k->size) != wfc_size_local);
                 int bad_source = 0;
                 MPI_Allreduce(&bad_source_local, &bad_source, 1, MPI_INT, MPI_MAX,
                               wing_blacs_h.comm());
@@ -2018,7 +2238,9 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::rotate_Cs_nao2mnk_kb
                         "transform_Cs2mnk_kblacs: missing or inconsistent source eigenvector");
 
                 const complex<double> *wfc2_src =
-                    wfc_isp2_k == nullptr ? dummy_wfc.data() : wfc_isp2_k->c;
+                    wfc_isp2_k == nullptr || wfc_isp2_k->c == nullptr
+                        ? dummy_wfc.data()
+                        : wfc_isp2_k->c;
                 wfc_nao_nband_opt.zero_out();
                 ScalapackConnector::pgemr2d_f(n_basis, n_states, wfc2_src, 1, 1, desc_wfc_src.desc,
                                               wfc_nao_nband_opt.ptr(), 1, 1,
@@ -2033,7 +2255,9 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::rotate_Cs_nao2mnk_kb
                     desc_Mu_nband_opt.desc);
 
                 const complex<double> *wfc1_src =
-                    wfc_isp1_k == nullptr ? dummy_wfc.data() : wfc_isp1_k->c;
+                    wfc_isp1_k == nullptr || wfc_isp1_k->c == nullptr
+                        ? dummy_wfc.data()
+                        : wfc_isp1_k->c;
                 wfc_Mu_nband_opt.zero_out();
                 ScalapackConnector::pgemr2d_f(n_ao_Mu, n_states, wfc1_src,
                                               1 + atomic_basis_wfc_.get_part_range()[Mu], 1,

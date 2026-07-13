@@ -1293,8 +1293,11 @@ void read_headwing_input(const string &dir_path, bool need_wing)
         restore_mf.capture();
         read_scf_occ_eigenvalues(pyatb_dir + "band_out", mf, use_spinor_wfc,
                                   target_to_source_ik, static_cast<int>(kfrac_pyatb.size()));
+        const bool direct_headwing_kblacs_2d =
+            use_kpara_eigvec && driver::opts.parallel_routing == LIBRPA_ROUTING_LIBRI;
         std::vector<int> iks_headwing_eigvec_this;
-        if (use_kpara_eigvec && pds->scfk_blacs_ctxt.is_initialized())
+        if (use_kpara_eigvec && !direct_headwing_kblacs_2d &&
+            pds->scfk_blacs_ctxt.is_initialized())
         {
             if (pds->scfk_blacs_ctxt.n_kpoints() != mf.get_n_kpoints())
                 throw std::runtime_error(
@@ -1310,9 +1313,14 @@ void read_headwing_input(const string &dir_path, bool need_wing)
                 ? &iks_headwing_eigvec_this
                 : nullptr;
         const int ret_eigenvec =
-            read_eigenvector(pyatb_dir, mf, use_spinor_wfc, source_to_target_ik,
-                             source_iks_headwing_eigvec_selected,
-                             LegacyTextWfcOrder::SpinBasisBand);
+            direct_headwing_kblacs_2d
+                ? read_eigenvector_kblacs_2d(
+                      pyatb_dir, mf, use_spinor_wfc, pds->scfk_blacs_ctxt,
+                      pds->desc_wfc_kb, &source_to_target_ik,
+                      LegacyTextWfcOrder::SpinBasisBand)
+                : read_eigenvector(pyatb_dir, mf, use_spinor_wfc, source_to_target_ik,
+                                   source_iks_headwing_eigvec_selected,
+                                   LegacyTextWfcOrder::SpinBasisBand);
         if (ret_eigenvec != 0)
         {
             throw std::runtime_error("Failed to read pyatb head/wing eigenvectors from " +
@@ -1399,7 +1407,8 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     pds->p_headwing = std::make_unique<diele_func>(
         mf, velocity_matrix, pds->pbc.kfrac_list, pds->basis_wfc, headwing_basis_aux, freqs,
         n_basis, n_states, n_spin, headwing_basis_aux.nb_total, pds->pbc, pds->comm_h,
-        pds->blacs_h, use_kpara_eigvec, &pds->scfk_blacs_ctxt, &pds->desc_wfc_kb_full);
+        pds->blacs_h, use_kpara_eigvec, &pds->scfk_blacs_ctxt,
+        &(pds->eigvecs_kpara_2d_ready() ? pds->desc_wfc_kb : pds->desc_wfc_kb_full));
     pds->p_headwing->use_2d_dielectric = driver::get_bool(driver::opts.use_2d_dielectric);
     pds->p_headwing->use_soc = mf.get_n_spinor() > 1;
     pds->p_headwing->debug = librpa_int::global::should_output(LIBRPA_VERBOSE_DEBUG);
@@ -1932,7 +1941,10 @@ void read_band_meanfield_data(const string &dir_path)
 
     iks_band_eigvec_this.clear();
 
-    if (driver::get_bool(driver::opts.use_kpara_scf_eigvec))
+    const bool direct_kblacs_2d =
+        driver::get_bool(driver::opts.use_kpara_scf_eigvec) &&
+        driver::opts.parallel_routing == LIBRPA_ROUTING_LIBRI;
+    if (driver::get_bool(driver::opts.use_kpara_scf_eigvec) && !direct_kblacs_2d)
     {
         for (int ik = 0; ik < driver::n_kpoints_band; ik++)
         {
@@ -1974,6 +1986,121 @@ void read_band_meanfield_data(const string &dir_path)
         infile.close();
     }
     driver::h.set_band_occ_eigval(n_spins, n_kpoints_band, n_states, wskb.data(), eskb.data());
+
+    if (direct_kblacs_2d)
+    {
+        auto pds = librpa_int::api::get_dataset_instance(driver::h.get_c_handler());
+        pds->initialize_band_kblacs_wfc_layout();
+        auto &band_kctx = pds->bandk_blacs_ctxt;
+        const auto &desc_wfc = pds->desc_band_wfc_kb;
+        auto &mf_band = pds->mf_band;
+        if (!desc_wfc.is_row_consec() || !desc_wfc.is_col_consec())
+            throw LIBRPA_RUNTIME_ERROR(
+                "direct band eigenvector input requires contiguous local AO/band blocks");
+
+        iks_band_eigvec_this.clear();
+        if (band_kctx.comm_blacs_h.is_root())
+            iks_band_eigvec_this = band_kctx.kpoints_local();
+
+        profiler.start("driver_read_band_eigenvector_kblacs_2d");
+        mf_band.get_eigenvectors().clear();
+        const bool use_spinor_wfc = driver::driver_params.use_spinor_wfc;
+        const int n_soc = use_spinor_wfc ? 2 : 1;
+        const int local_count = desc_wfc.m_loc() * desc_wfc.n_loc();
+        std::vector<std::complex<double>> dummy(1, {0.0, 0.0});
+
+        for (const int ik : band_kctx.kpoints_local())
+        {
+            std::stringstream ss;
+            ss << dir_path << "band_KS_eigenvector_k_" << std::setfill('0') << std::setw(5)
+               << ik + 1 << ".txt";
+            const auto file_path = ss.str();
+            librpa_int::require_readable_file(file_path);
+            ofs_myid << "Loading local 2D band eigenvector block from " << file_path << endl;
+
+            MPI_File file = MPI_FILE_NULL;
+            if (MPI_File_open(band_kctx.comm_blacs_h.comm,
+                              const_cast<char *>(file_path.c_str()), MPI_MODE_RDONLY,
+                              MPI_INFO_NULL, &file) != MPI_SUCCESS)
+                throw LIBRPA_RUNTIME_ERROR("Fail to open band eigenvector file " + file_path);
+
+            MPI_Offset file_size = 0;
+            MPI_File_get_size(file, &file_size);
+            const MPI_Offset expected_size =
+                static_cast<MPI_Offset>(n_spins) * n_states * n_basis_ao * n_soc *
+                sizeof(std::complex<double>);
+            if (file_size < expected_size)
+            {
+                MPI_File_close(&file);
+                throw LIBRPA_RUNTIME_ERROR("Band eigenvector file is shorter than expected: " +
+                                          file_path);
+            }
+
+            int read_error = 0;
+            for (int ispin = 0; ispin != n_spins; ++ispin)
+            {
+                for (int ispinor = 0; ispinor != n_soc; ++ispinor)
+                {
+                    auto &wfc = mf_band.get_eigenvectors()[ispin][ispinor][ik];
+                    wfc.create(desc_wfc.n_loc(), desc_wfc.m_loc(), false);
+                    MPI_Datatype filetype = MPI_C_DOUBLE_COMPLEX;
+                    bool free_filetype = false;
+                    MPI_Offset displacement = 0;
+                    if (use_spinor_wfc)
+                    {
+                        const int global_sizes[3]{n_states, n_basis_ao, n_soc};
+                        const int local_sizes[3]{desc_wfc.n_loc(), desc_wfc.m_loc(), 1};
+                        const int starts[3]{
+                            desc_wfc.n_loc() == 0 ? 0 : desc_wfc.indx_l2g_c(0),
+                            desc_wfc.m_loc() == 0 ? 0 : desc_wfc.indx_l2g_r(0), ispinor};
+                        if (local_count > 0)
+                        {
+                            MPI_Type_create_subarray(3, global_sizes, local_sizes, starts,
+                                                     MPI_ORDER_C, MPI_C_DOUBLE_COMPLEX,
+                                                     &filetype);
+                            MPI_Type_commit(&filetype);
+                            free_filetype = true;
+                        }
+                    }
+                    else
+                    {
+                        const int global_sizes[2]{n_states, n_basis_ao};
+                        const int local_sizes[2]{desc_wfc.n_loc(), desc_wfc.m_loc()};
+                        const int starts[2]{
+                            desc_wfc.n_loc() == 0 ? 0 : desc_wfc.indx_l2g_c(0),
+                            desc_wfc.m_loc() == 0 ? 0 : desc_wfc.indx_l2g_r(0)};
+                        if (local_count > 0)
+                        {
+                            MPI_Type_create_subarray(2, global_sizes, local_sizes, starts,
+                                                     MPI_ORDER_C, MPI_C_DOUBLE_COMPLEX,
+                                                     &filetype);
+                            MPI_Type_commit(&filetype);
+                            free_filetype = true;
+                        }
+                        displacement = static_cast<MPI_Offset>(ispin) * n_states * n_basis_ao *
+                                       sizeof(std::complex<double>);
+                    }
+                    MPI_File_set_view(file, displacement, MPI_C_DOUBLE_COMPLEX, filetype,
+                                      const_cast<char *>("native"), MPI_INFO_NULL);
+                    MPI_Status status;
+                    auto *dst = wfc.c == nullptr ? dummy.data() : wfc.c;
+                    if (MPI_File_read_all(file, dst, local_count, MPI_C_DOUBLE_COMPLEX,
+                                          &status) != MPI_SUCCESS)
+                        read_error = 1;
+                    if (free_filetype) MPI_Type_free(&filetype);
+                }
+            }
+            MPI_File_close(&file);
+            MPI_Allreduce(MPI_IN_PLACE, &read_error, 1, MPI_INT, MPI_MAX,
+                          band_kctx.comm_blacs_h.comm);
+            if (read_error)
+                throw LIBRPA_RUNTIME_ERROR("Error reading local band eigenvector blocks from " +
+                                          file_path);
+        }
+        pds->mark_band_eigvecs_kpara_2d_ready();
+        profiler.stop("driver_read_band_eigenvector_kblacs_2d");
+        return;
+    }
 
     // Load eigenvectors
     for (int ik = 0; ik < n_kpoints_band; ik++)

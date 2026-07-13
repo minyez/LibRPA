@@ -1239,6 +1239,7 @@ void librpa_set_band_occ_eigval(LibrpaHandler* h, int n_spins, int n_kpts_band, 
     profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
 
     auto pds = librpa_int::api::get_dataset_instance(h);
+    pds->reset_band_eigvecs_kpara_state();
     const int n_basis = pds->mf.get_n_aos();
     const int n_spinor = pds->mf.get_n_spinor();
     const double efermi = pds->mf.get_efermi();
@@ -1395,6 +1396,7 @@ void librpa_reset_band_data(LibrpaHandler* h)
     pds->is_band_calc_done = false;
     pds->kfrac_band_list = {};
     pds->mf_band = librpa_int::MeanField();
+    pds->reset_band_eigvecs_kpara_state();
 
     profiler.stop(tname);
 }

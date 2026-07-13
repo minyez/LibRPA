@@ -35,6 +35,8 @@ private:
     bool comm_blacs_coul_initialized_;
     bool coul_blacs2ap_redistributed_;
     bool eigvecs_kpara_redistributed_;
+    bool eigvecs_kpara_2d_redistributed_;
+    bool band_eigvecs_kpara_2d_redistributed_;
 public:
     /* Member variables */
     // Environment control
@@ -54,6 +56,9 @@ public:
     //! Array descriptor for matrices of wave-function, N_ao x N_states (using scfk_blacs_ctxt.blacs_h)
     ArrayDesc desc_wfc_kb;
     ArrayDesc desc_wfc_kb_full; // For communication from k-distributed eigenvectors
+    //! Band-path counterparts using bandk_blacs_ctxt.blacs_h.
+    ArrayDesc desc_band_wfc_kb;
+    ArrayDesc desc_band_wfc_kb_full;
     //! Array descriptor for matrices of auxiliary basis set size (using blacs_h)
     ArrayDesc desc_abf;
     //! Array descriptor for compressed auxiliary basis set size (using blacs_h)
@@ -149,6 +154,24 @@ public:
 
     void redistribute_eigvecs_kpara();
     void redistribute_band_eigvecs_kpara();
+    void redistribute_eigvecs_kpara_2d();
+    void redistribute_band_eigvecs_kpara_2d();
+    void initialize_band_kblacs_wfc_layout();
+    void mark_eigvecs_kpara_2d_ready()
+    {
+        eigvecs_kpara_redistributed_ = true;
+        eigvecs_kpara_2d_redistributed_ = true;
+    }
+    void mark_band_eigvecs_kpara_2d_ready()
+    {
+        band_eigvecs_kpara_2d_redistributed_ = true;
+    }
+    bool eigvecs_kpara_2d_ready() const { return eigvecs_kpara_2d_redistributed_; }
+    bool band_eigvecs_kpara_2d_ready() const
+    {
+        return band_eigvecs_kpara_2d_redistributed_;
+    }
+    void reset_band_eigvecs_kpara_state();
 
     void invalidate_compute_objects();
 
