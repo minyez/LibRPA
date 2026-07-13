@@ -1021,6 +1021,67 @@ void test_kblacs_transform_matches_original_transform(const BlacsCtxtHandler &bl
     assert(override_changed == 1);
 }
 
+void test_kblacs_transform_uses_rectangular_opt_128_blocks()
+{
+    constexpr int n_basis = 320;
+    constexpr int n_states = 300;
+    constexpr int n_ao_Mu = 160;
+
+    const int nprocs = librpa_int::get_mpi_size(MPI_COMM_WORLD);
+    KPointBlacsProcessShape shape(1, nprocs, true);
+    KPointBlacsParallelContext kctx(shape, MPI_COMM_WORLD, 1);
+    const auto desc_wfc =
+        kctx.create_array_desc(n_basis, n_states, n_basis, n_states);
+
+    MeanField mf(1, 1, n_states, n_basis, 1);
+    auto &wfc = mf.get_eigenvectors()[0][0][0];
+    wfc.create(n_states, n_basis);
+    wfc.zero_out();
+    for (int ib = 0; ib != n_states; ++ib) wfc(ib, ib) = {1.0, 0.0};
+
+    librpa_int::velocity_matrix_t velocity;
+    librpa_int::initialize_velocity_matrix(velocity, 1, 1, n_states);
+    AtomicBasis basis_wfc(std::vector<std::size_t>{n_ao_Mu, n_basis - n_ao_Mu});
+    AtomicBasis basis_abf(std::vector<std::size_t>{1, 1});
+    PeriodicBoundaryData pbc;
+    const std::vector<Vector3_Order<double>> kfrac{{0.0, 0.0, 0.0}};
+    const std::vector<double> omega{0.5};
+
+    diele_func df(mf, velocity, kfrac, basis_wfc, basis_abf, omega, n_basis, n_states, 1,
+                  2, pbc, librpa_int::global::mpi_comm_global_h, kctx.blacs_h, true, &kctx,
+                  &desc_wfc);
+
+    auto tensor_data = std::make_shared<std::valarray<std::complex<double>>>(
+        std::complex<double>{0.0, 0.0}, static_cast<std::size_t>(n_ao_Mu) * n_ao_Mu);
+    for (int i = 0; i != n_ao_Mu; ++i)
+        (*tensor_data)[static_cast<std::size_t>(i) * n_ao_Mu + i] = {1.0, 0.0};
+
+    librpa_int::HeadwingCsIJKMap Cs_IJ_k;
+    Cs_IJ_k[0][{0, 0}] = RI::Tensor<std::complex<double>>(
+        {1UL, static_cast<std::size_t>(n_ao_Mu), static_cast<std::size_t>(n_ao_Mu)},
+        tensor_data);
+
+    const auto transformed =
+        df.transform_Cs2mnk_kblacs(0, 0, 0, Cs_IJ_k, kctx.blacs_h);
+    const auto &desc = transformed.first;
+    const auto &matrix = transformed.second;
+    assert(desc.m() == n_states && desc.n() == n_states);
+    assert(desc.mb() == 128 && desc.nb() == 128);
+
+    for (int ilo = 0; ilo != desc.m_loc(); ++ilo)
+    {
+        const int i = desc.indx_l2g_r(ilo);
+        for (int jlo = 0; jlo != desc.n_loc(); ++jlo)
+        {
+            const int j = desc.indx_l2g_c(jlo);
+            const std::complex<double> expected =
+                i == j && i < n_ao_Mu ? std::complex<double>{2.0, 0.0}
+                                       : std::complex<double>{0.0, 0.0};
+            assert_complex_close(matrix(ilo, jlo), expected, 1e-12);
+        }
+    }
+}
+
 void test_transform_Cs2mnk_can_keep_spin_channels_separate(const BlacsCtxtHandler &blacs_h)
 {
     const int nprocs = librpa_int::get_mpi_size(MPI_COMM_WORLD);
@@ -1504,6 +1565,7 @@ int main(int argc, char *argv[])
         test_headwing_direct_full_bz_wfc_selects_same_kstar_member();
         test_kblacs_transform_with_restored_wfc_matches_full_bz_atom_permutation(blacs_h);
         test_kblacs_transform_matches_original_transform(blacs_h);
+        test_kblacs_transform_uses_rectangular_opt_128_blocks();
         test_transform_Cs2mnk_can_keep_spin_channels_separate(blacs_h);
         test_head_initialization_does_not_require_coulomb_diagonalization(blacs_h);
         test_wq_to_wr_symmetry_reduced_q_matches_full_bz();

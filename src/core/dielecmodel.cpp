@@ -1949,19 +1949,40 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::rotate_Cs_nao2mnk_kb
     const int n_soc = meanfield_df.get_n_spinor();
     const int Mu = atomic_basis_abf_.get_i_atom(mu);
     const int n_ao_Mu = atomic_basis_wfc_.get_atom_nb(Mu);
-    ArrayDesc desc_nao_nband(wing_blacs_h);
-    desc_nao_nband.init_1b1p(n_basis, n_states, 0, 0);
-    ArrayDesc desc_Mu_nband(wing_blacs_h);
-    desc_Mu_nband.init_1b1p(n_ao_Mu, n_states, 0, 0);
-    ArrayDesc desc_nband_nband(wing_blacs_h);
-    desc_nband_nband.init_1b1p(n_states, n_states, 0, 0);
+    constexpr int block_size_cap = 128;
+    const auto capped_square_block_size = [&](const int dimension)
+    {
+        const int rows_per_process =
+            (dimension + wing_blacs_h.nprows - 1) / wing_blacs_h.nprows;
+        const int cols_per_process =
+            (dimension + wing_blacs_h.npcols - 1) / wing_blacs_h.npcols;
+        return std::max(1, std::min({block_size_cap, rows_per_process, cols_per_process}));
+    };
+    const int block_nao = capped_square_block_size(n_basis);
+    const int block_Mu = capped_square_block_size(n_ao_Mu);
+    const int block_nband = capped_square_block_size(n_states);
 
-    auto C_Mu_nband = init_local_mat<complex<double>>(desc_Mu_nband, MAJOR::COL);
-    auto C_nband_nband = init_local_mat<complex<double>>(desc_nband_nband, MAJOR::COL);
-    auto wfc_nao_nband = init_local_mat<complex<double>>(desc_nao_nband, MAJOR::COL);
-    auto wfc_Mu_nband = init_local_mat<complex<double>>(desc_Mu_nband, MAJOR::COL);
-    C_Mu_nband.zero_out();
-    C_nband_nband.zero_out();
+    ArrayDesc desc_Mu_nao_opt(wing_blacs_h);
+    desc_Mu_nao_opt.init(n_ao_Mu, n_basis, block_Mu, block_nao, 0, 0);
+    ArrayDesc desc_nao_nband_opt(wing_blacs_h);
+    desc_nao_nband_opt.init(n_basis, n_states, block_nao, block_nband, 0, 0);
+    ArrayDesc desc_Mu_nband_opt(wing_blacs_h);
+    desc_Mu_nband_opt.init(n_ao_Mu, n_states, block_Mu, block_nband, 0, 0);
+    ArrayDesc desc_nband_nband_opt(wing_blacs_h);
+    desc_nband_nband_opt.init(n_states, n_states, block_nband, block_nband, 0, 0);
+
+    auto C_Mu_nao_opt = init_local_mat<complex<double>>(desc_Mu_nao_opt, MAJOR::COL);
+    auto C_Mu_nband_opt = init_local_mat<complex<double>>(desc_Mu_nband_opt, MAJOR::COL);
+    auto C_nband_nband_opt = init_local_mat<complex<double>>(desc_nband_nband_opt, MAJOR::COL);
+    auto wfc_nao_nband_opt = init_local_mat<complex<double>>(desc_nao_nband_opt, MAJOR::COL);
+    auto wfc_Mu_nband_opt = init_local_mat<complex<double>>(desc_Mu_nband_opt, MAJOR::COL);
+    C_Mu_nband_opt.zero_out();
+    C_nband_nband_opt.zero_out();
+
+    ScalapackConnector::pgemr2d_f(
+        n_ao_Mu, n_basis, C_nao_nao.ptr(),
+        1 + atomic_basis_wfc_.get_part_range()[Mu], 1, desc_nao_nao.desc,
+        C_Mu_nao_opt.ptr(), 1, 1, desc_Mu_nao_opt.desc, wing_blacs_h.ictxt);
 
     const auto get_wfc = [&](const int ispin, const int ispinor) -> const ComplexMatrix *
     {
@@ -1998,40 +2019,44 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::rotate_Cs_nao2mnk_kb
 
                 const complex<double> *wfc2_src =
                     wfc_isp2_k == nullptr ? dummy_wfc.data() : wfc_isp2_k->c;
-                wfc_nao_nband.zero_out();
+                wfc_nao_nband_opt.zero_out();
                 ScalapackConnector::pgemr2d_f(n_basis, n_states, wfc2_src, 1, 1, desc_wfc_src.desc,
-                                              wfc_nao_nband.ptr(), 1, 1, desc_nao_nband.desc,
+                                              wfc_nao_nband_opt.ptr(), 1, 1,
+                                              desc_nao_nband_opt.desc,
                                               wing_blacs_h.ictxt);
 
-                C_Mu_nband.zero_out();
+                C_Mu_nband_opt.zero_out();
                 ScalapackConnector::pgemm_f(
-                    'N', 'N', n_ao_Mu, n_states, n_basis, 1.0, C_nao_nao.ptr(),
-                    1 + atomic_basis_wfc_.get_part_range()[Mu], 1, desc_nao_nao.desc,
-                    wfc_nao_nband.ptr(), 1, 1, desc_nao_nband.desc, 0.0, C_Mu_nband.ptr(), 1, 1,
-                    desc_Mu_nband.desc);
+                    'N', 'N', n_ao_Mu, n_states, n_basis, 1.0, C_Mu_nao_opt.ptr(), 1, 1,
+                    desc_Mu_nao_opt.desc, wfc_nao_nband_opt.ptr(), 1, 1,
+                    desc_nao_nband_opt.desc, 0.0, C_Mu_nband_opt.ptr(), 1, 1,
+                    desc_Mu_nband_opt.desc);
 
                 const complex<double> *wfc1_src =
                     wfc_isp1_k == nullptr ? dummy_wfc.data() : wfc_isp1_k->c;
-                wfc_Mu_nband.zero_out();
+                wfc_Mu_nband_opt.zero_out();
                 ScalapackConnector::pgemr2d_f(n_ao_Mu, n_states, wfc1_src,
                                               1 + atomic_basis_wfc_.get_part_range()[Mu], 1,
-                                              desc_wfc_src.desc, wfc_Mu_nband.ptr(), 1, 1,
-                                              desc_Mu_nband.desc, wing_blacs_h.ictxt);
+                                              desc_wfc_src.desc, wfc_Mu_nband_opt.ptr(), 1, 1,
+                                              desc_Mu_nband_opt.desc, wing_blacs_h.ictxt);
 
-                auto wfc_Mu_nband_conj = conj(wfc_Mu_nband);
-                ScalapackConnector::pgemm_f('T', 'N', n_states, n_states, n_ao_Mu, 1.0,
-                                            wfc_Mu_nband_conj.ptr(), 1, 1, desc_Mu_nband.desc,
-                                            C_Mu_nband.ptr(), 1, 1, desc_Mu_nband.desc, 1.0,
-                                            C_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
                 ScalapackConnector::pgemm_f('C', 'N', n_states, n_states, n_ao_Mu, 1.0,
-                                            C_Mu_nband.ptr(), 1, 1, desc_Mu_nband.desc,
-                                            wfc_Mu_nband.ptr(), 1, 1, desc_Mu_nband.desc, 1.0,
-                                            C_nband_nband.ptr(), 1, 1, desc_nband_nband.desc);
+                                            wfc_Mu_nband_opt.ptr(), 1, 1,
+                                            desc_Mu_nband_opt.desc, C_Mu_nband_opt.ptr(), 1, 1,
+                                            desc_Mu_nband_opt.desc, 1.0,
+                                            C_nband_nband_opt.ptr(), 1, 1,
+                                            desc_nband_nband_opt.desc);
+                ScalapackConnector::pgemm_f('C', 'N', n_states, n_states, n_ao_Mu, 1.0,
+                                            C_Mu_nband_opt.ptr(), 1, 1,
+                                            desc_Mu_nband_opt.desc, wfc_Mu_nband_opt.ptr(), 1, 1,
+                                            desc_Mu_nband_opt.desc, 1.0,
+                                            C_nband_nband_opt.ptr(), 1, 1,
+                                            desc_nband_nband_opt.desc);
             }
         }
     }
 
-    return std::make_pair(desc_nband_nband, C_nband_nband);
+    return std::make_pair(desc_nband_nband_opt, C_nband_nband_opt);
 }
 
 std::complex<double> diele_func::compute_wing(const int alpha, const int iomega, const int mu,
