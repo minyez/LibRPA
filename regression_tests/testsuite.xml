@@ -41,10 +41,12 @@
       />
     </testcase>
 
-    <testcase name="BN headwing symmetry shrink reader v1 (abacus input)" directory="rpa_abacus_BN_headwing_sym_shrink_v1_libri">
+    <testcase name="BN headwing symmetry kpara shrink reader v1 (abacus input)" directory="rpa_abacus_BN_headwing_sym_shrink_v1_libri">
+      <labels refhash="a23a66d28f419302e87acaaf863f961278384fd7"
+      />
       <build require_libri="true"
       />
-      <run ntasks_disable="none"
+      <run ntasks_disable="1"
            nthreads_disable="none"
            ntasks_enable="none"
            nthreads_enable="none"
