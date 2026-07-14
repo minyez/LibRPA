@@ -131,6 +131,38 @@
       />
     </testcase>
 
+    <testcase name="BN headwing symmetry kpara shrink reader v1 band (abacus input)" directory="g0w0_band_abacus_BN_headwing_sym_kpara_shrink_v1_libri">
+      <build require_libri="true"
+      />
+      <run ntasks_disable="1"
+           nthreads_disable="none"
+           ntasks_enable="none"
+           nthreads_enable="none"
+      />
+      <validate name="Analytic wing mu pure-imaginary diagnostic"
+                regex="Wing_mu diagnostics.*real_over_abs=\s*([-+0-9.Ee]+)"
+                comparison="cmp_float.abs_diff(1e-8)"
+      />
+      <validate name="Analytic wing lambda pure-imaginary diagnostic"
+                regex="Wing_lambda diagnostics.*real_over_abs=\s*([-+0-9.Ee]+)"
+                comparison="cmp_float.abs_diff(1e-8)"
+      />
+      <validate name="Quasi-particle energies on k-grid"
+                regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
+                headers="2"
+                rows="26"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="Non-SCF EXX band structure"
+                file="librpa/EXX_band_spin_*.dat"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+      <validate name="QP band structure"
+                file="librpa/GW_band_spin_*.dat"
+                comparison="cmp_table.abs_diff(1e-4)"
+      />
+    </testcase>
+
     <testcase name="BN shrink reader v1 (abacus input)" directory="g0w0_band_abacus_BN_shrink_v1_libri">
       <labels refhash="a56500a434d0f57e06eb8cfed2dacd3f66833f78"
       />
