@@ -1,5 +1,6 @@
 #include "exx.h"
 
+#include <algorithm>
 #include <omp.h>
 #include <cmath>
 #include <cstddef>
@@ -1141,21 +1142,30 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
 
     // opt block-size descriptors for better pgemm performance
     constexpr int block_size_cap = 128;
-    const int block_nao =
+    const int expected_block_nao =
         get_capped_blacs_block_size(n_aos, block_size_cap, rotation_blacs_h);
-    const int block_nband =
+    const int expected_block_nband =
         get_capped_blacs_block_size(n_bands, block_size_cap, rotation_blacs_h);
+    if (use_klocal_rotation &&
+        (desc_wfc_target.mb() != expected_block_nao ||
+         desc_wfc_target.nb() != expected_block_nband))
+        throw LIBRPA_RUNTIME_ERROR(
+            "EXX source wave functions do not use the permanent capped rectangular layout");
+    const int block_nao =
+        use_klocal_rotation ? desc_wfc_target.mb() : expected_block_nao;
+    const int block_nband =
+        use_klocal_rotation ? desc_wfc_target.nb() : expected_block_nband;
     ArrayDesc desc_nband_nao_opt(rotation_blacs_h), desc_nao_nao_opt(rotation_blacs_h);
-    ArrayDesc desc_nao_nband_opt(rotation_blacs_h), desc_nband_nband_opt(rotation_blacs_h);
+    ArrayDesc desc_wfc_device(rotation_blacs_h), desc_nband_nband_opt(rotation_blacs_h);
     desc_nband_nao_opt.init(n_bands, n_aos, block_nband, block_nao, 0, 0);
     desc_nao_nao_opt.init(n_aos, n_aos, block_nao, block_nao, 0, 0);
     desc_nband_nband_opt.init(n_bands, n_bands, block_nband, block_nband, 0, 0);
-    desc_nao_nband_opt.init(n_aos, n_bands, block_nao, block_nband, 0, 0);
+    desc_wfc_device.init(n_aos, n_bands, block_nao, block_nband,
+                         use_klocal_rotation ? desc_wfc_target.irsrc() : 0,
+                         use_klocal_rotation ? desc_wfc_target.icsrc() : 0);
 
     auto Hexx_nao_nao_opt = init_local_mat<complex<double>>(desc_nao_nao_opt, MAJOR::COL);
     auto Hexx_nband_nband_opt = init_local_mat<complex<double>>(desc_nband_nband_opt, MAJOR::COL);
-    auto wfc_bra_opt = init_local_mat<complex<double>>(desc_nao_nband_opt, MAJOR::COL);
-    auto wfc_ket_opt = init_local_mat<complex<double>>(desc_nao_nband_opt, MAJOR::COL);
     auto temp_nband_nao_opt = init_local_mat<complex<double>>(desc_nband_nao_opt, MAJOR::COL);
 
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
@@ -1163,25 +1173,25 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                          *d_hexx_nao = nullptr, *d_temp = nullptr,
                          *d_hexx_nband = nullptr;
     size_t size_wfc = 0, size_hexx_nao = 0, size_temp = 0, size_hexx_nband = 0;
-    if (use_gpu_replace_scalapack)
+    if (use_gpu_replace_scalapack && use_klocal_rotation)
     {
         auto &rotation_blacs_h_nc = const_cast<BlacsCtxtHandler &>(rotation_blacs_h);
         if (rotation_blacs_h_nc.ddla_handle == nullptr)
             rotation_blacs_h_nc.init_ddla_handle();
-        desc_nao_nband_opt.set_ddla_desc(rotation_blacs_h.ddla_handle);
+        desc_wfc_device.set_ddla_desc(rotation_blacs_h.ddla_handle);
         desc_nao_nao_opt.set_ddla_desc(rotation_blacs_h.ddla_handle);
         desc_nband_nao_opt.set_ddla_desc(rotation_blacs_h.ddla_handle);
         desc_nband_nband_opt.set_ddla_desc(rotation_blacs_h.ddla_handle);
 
-        size_wfc = static_cast<size_t>(desc_nao_nband_opt.m_loc()) * desc_nao_nband_opt.n_loc();
+        size_wfc = static_cast<size_t>(desc_wfc_device.m_loc()) * desc_wfc_device.n_loc();
         size_hexx_nao = static_cast<size_t>(desc_nao_nao_opt.m_loc()) * desc_nao_nao_opt.n_loc();
         size_temp = static_cast<size_t>(desc_nband_nao_opt.m_loc()) * desc_nband_nao_opt.n_loc();
         size_hexx_nband = static_cast<size_t>(desc_nband_nband_opt.m_loc()) * desc_nband_nband_opt.n_loc();
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_bra, size_wfc * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_ket, size_wfc * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_hexx_nao, size_hexx_nao * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_temp, size_temp * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
-        DEVICE_CHECK(deviceMallocAsync((void**)&d_hexx_nband, size_hexx_nband * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_bra, std::max<size_t>(size_wfc, 1) * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_wfc_ket, std::max<size_t>(size_wfc, 1) * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_hexx_nao, std::max<size_t>(size_hexx_nao, 1) * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_temp, std::max<size_t>(size_temp, 1) * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
+        DEVICE_CHECK(deviceMallocAsync((void**)&d_hexx_nband, std::max<size_t>(size_hexx_nband, 1) * sizeof(std::complex<double>), rotation_blacs_h.ddla_handle->stream));
     }
 #endif
 
@@ -1554,55 +1564,54 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
                         if (bad_wfc)
                             throw LIBRPA_RUNTIME_ERROR(
                                 "EXX local wave-function block is inconsistent with its descriptor");
-                        ScalapackConnector::pgemr2d_f(
-                            n_aos, n_bands,
-                            wfc_bra == nullptr ? dummy.data() : wfc_bra->c, 1, 1,
-                            desc_wfc_target.desc, wfc_bra_opt.ptr(), 1, 1,
-                            desc_nao_nband_opt.desc, rotation_blacs_h.ictxt);
-                        ScalapackConnector::pgemr2d_f(
-                            n_aos, n_bands,
-                            wfc_ket == nullptr ? dummy.data() : wfc_ket->c, 1, 1,
-                            desc_wfc_target.desc, wfc_ket_opt.ptr(), 1, 1,
-                            desc_nao_nband_opt.desc, rotation_blacs_h.ictxt);
+                        const auto *wfc_bra_ptr =
+                            wfc_bra == nullptr ? dummy.data() : wfc_bra->c;
+                        const auto *wfc_ket_ptr =
+                            wfc_ket == nullptr ? dummy.data() : wfc_ket->c;
                         release_free_mem();
 
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
                         if (use_gpu_replace_scalapack)
                         {
-                            DEVICE_CHECK(deviceMemcpyAsync(d_wfc_bra, wfc_bra_opt.ptr(), size_wfc * sizeof(std::complex<double>),
-                                                           deviceMemcpyHostToDevice, rotation_blacs_h.ddla_handle->stream));
-                            DEVICE_CHECK(deviceMemcpyAsync(d_wfc_ket, wfc_ket_opt.ptr(), size_wfc * sizeof(std::complex<double>),
-                                                           deviceMemcpyHostToDevice, rotation_blacs_h.ddla_handle->stream));
-                            DEVICE_CHECK(deviceMemcpyAsync(d_hexx_nao, Hexx_nao_nao_opt.ptr(), size_hexx_nao * sizeof(std::complex<double>),
-                                                           deviceMemcpyHostToDevice, rotation_blacs_h.ddla_handle->stream));
+                            if (size_wfc > 0)
+                            {
+                                DEVICE_CHECK(deviceMemcpyAsync(d_wfc_bra, wfc_bra_ptr, size_wfc * sizeof(std::complex<double>),
+                                                               deviceMemcpyHostToDevice, rotation_blacs_h.ddla_handle->stream));
+                                DEVICE_CHECK(deviceMemcpyAsync(d_wfc_ket, wfc_ket_ptr, size_wfc * sizeof(std::complex<double>),
+                                                               deviceMemcpyHostToDevice, rotation_blacs_h.ddla_handle->stream));
+                            }
+                            if (size_hexx_nao > 0)
+                                DEVICE_CHECK(deviceMemcpyAsync(d_hexx_nao, Hexx_nao_nao_opt.ptr(), size_hexx_nao * sizeof(std::complex<double>),
+                                                               deviceMemcpyHostToDevice, rotation_blacs_h.ddla_handle->stream));
                             LaConnector::pgemm(
                                 'C', 'N', n_bands, n_aos, n_aos, std::complex<double>{1.0, 0.0},
-                                d_wfc_bra, 1, 1, desc_nao_nband_opt,
+                                d_wfc_bra, 1, 1, desc_wfc_device,
                                 d_hexx_nao, 1, 1, desc_nao_nao_opt,
                                 std::complex<double>{0.0, 0.0},
                                 d_temp, 1, 1, desc_nband_nao_opt);
                             LaConnector::pgemm(
                                 'N', 'N', n_bands, n_bands, n_aos, std::complex<double>{-1.0, 0.0},
                                 d_temp, 1, 1, desc_nband_nao_opt,
-                                d_wfc_ket, 1, 1, desc_nao_nband_opt,
+                                d_wfc_ket, 1, 1, desc_wfc_device,
                                 std::complex<double>{0.0, 0.0},
                                 d_hexx_nband, 1, 1, desc_nband_nband_opt);
-                            DEVICE_CHECK(deviceMemcpyAsync(Hexx_nband_nband_opt.ptr(), d_hexx_nband,
-                                                           size_hexx_nband * sizeof(std::complex<double>),
-                                                           deviceMemcpyDeviceToHost, rotation_blacs_h.ddla_handle->stream));
+                            if (size_hexx_nband > 0)
+                                DEVICE_CHECK(deviceMemcpyAsync(Hexx_nband_nband_opt.ptr(), d_hexx_nband,
+                                                               size_hexx_nband * sizeof(std::complex<double>),
+                                                               deviceMemcpyDeviceToHost, rotation_blacs_h.ddla_handle->stream));
                             DEVICE_CHECK(deviceStreamSynchronize(rotation_blacs_h.ddla_handle->stream));
                         }
                         else
 #endif
                         {
                             ScalapackConnector::pgemm_f('C', 'N', n_bands, n_aos, n_aos, 1.0,
-                                                        wfc_bra_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
+                                                        wfc_bra_ptr, 1, 1, desc_wfc_target.desc,
                                                         Hexx_nao_nao_opt.ptr(), 1, 1, desc_nao_nao_opt.desc,
                                                         0.0,
                                                         temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc);
                             ScalapackConnector::pgemm_f('N', 'N', n_bands, n_bands, n_aos, -1.0,
                                                         temp_nband_nao_opt.ptr(), 1, 1, desc_nband_nao_opt.desc,
-                                                        wfc_ket_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
+                                                        wfc_ket_ptr, 1, 1, desc_wfc_target.desc,
                                                         0.0,
                                                         Hexx_nband_nband_opt.ptr(), 1, 1, desc_nband_nband_opt.desc);
                         }
@@ -1795,7 +1804,7 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
         }
     }
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
-    if (use_gpu_replace_scalapack)
+    if (use_gpu_replace_scalapack && use_klocal_rotation)
     {
         DEVICE_CHECK(deviceFreeAsync(d_wfc_bra, rotation_blacs_h.ddla_handle->stream));
         DEVICE_CHECK(deviceFreeAsync(d_wfc_ket, rotation_blacs_h.ddla_handle->stream));

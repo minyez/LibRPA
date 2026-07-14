@@ -12,6 +12,7 @@
 #include "../core/dielecmodel.h"
 #include "../core/epsilon.h"
 #include "../core/qpoint_view.h"
+#include "../core/meanfield_mpi.h"
 #include "../io/global_io.h"
 #include "../math/utils_matrix_m_mpi.h"
 #include "../mpi/base_blacs.h"
@@ -1030,14 +1031,25 @@ void test_kblacs_transform_uses_rectangular_opt_128_blocks()
     const int nprocs = librpa_int::get_mpi_size(MPI_COMM_WORLD);
     KPointBlacsProcessShape shape(1, nprocs, true);
     KPointBlacsParallelContext kctx(shape, MPI_COMM_WORLD, 1);
-    const auto desc_wfc =
+    const auto desc_wfc_full =
         kctx.create_array_desc(n_basis, n_states, n_basis, n_states);
+    const int block_ao =
+        librpa_int::get_capped_blacs_block_size(n_basis, 128, kctx.blacs_h);
+    const int block_band =
+        librpa_int::get_capped_blacs_block_size(n_states, 128, kctx.blacs_h);
+    const auto desc_wfc =
+        kctx.create_array_desc(n_basis, n_states, block_ao, block_band);
 
     MeanField mf(1, 1, n_states, n_basis, 1);
-    auto &wfc = mf.get_eigenvectors()[0][0][0];
-    wfc.create(n_states, n_basis);
-    wfc.zero_out();
-    for (int ib = 0; ib != n_states; ++ib) wfc(ib, ib) = {1.0, 0.0};
+    if (desc_wfc_full.is_src())
+    {
+        auto &wfc = mf.get_eigenvectors()[0][0][0];
+        wfc.create(n_states, n_basis);
+        wfc.zero_out();
+        for (int ib = 0; ib != n_states; ++ib) wfc(ib, ib) = {1.0, 0.0};
+    }
+    librpa_int::redistribute_meanfield_eigvecs_kblacs(
+        mf, kctx, desc_wfc_full, desc_wfc, "test headwing");
 
     librpa_int::velocity_matrix_t velocity;
     librpa_int::initialize_velocity_matrix(velocity, 1, 1, n_states);

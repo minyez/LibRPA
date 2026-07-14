@@ -53,9 +53,10 @@ public:
     ArrayDesc desc_coul_intra_q;
     //! Array descriptor for matrices of wave-function basis (using dataset.blacs_h)
     ArrayDesc desc_wfc;
-    //! Array descriptor for matrices of wave-function, N_ao x N_states (using scfk_blacs_ctxt.blacs_h)
+    //! Permanent capped rectangular compute layout, N_ao x N_states, on scfk_blacs_ctxt.blacs_h.
     ArrayDesc desc_wfc_kb;
-    ArrayDesc desc_wfc_kb_full; // For communication from k-distributed eigenvectors
+    //! Dense-root compatibility layout used only at API/input redistribution boundaries.
+    ArrayDesc desc_wfc_kb_full;
     //! Band-path counterparts using bandk_blacs_ctxt.blacs_h.
     ArrayDesc desc_band_wfc_kb;
     ArrayDesc desc_band_wfc_kb_full;

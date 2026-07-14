@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "../core/utils_atomic_basis_blacs.h"
+#include "../core/meanfield_mpi.h"
 #include "../math/scalapack_connector.h"
 #include "../math/utils_matrix_m_mpi.h"
 #include "../utils/profiler.h"
@@ -155,66 +156,6 @@ void redistribute_meanfield_eigvecs_kpara(MeanField &mf,
     comm_h.allreduce(&n_moved_local, &n_moved_total, 1, MPI_SUM);
     ofs_myid << "Redistributed " << n_moved_total << " " << label
              << " eigenvector matrix blocks to k-point BLACS roots" << std::endl;
-}
-
-void redistribute_meanfield_eigvecs_kpara_2d(
-    MeanField &mf, const MpiCommHandler &comm_h,
-    const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc,
-    const ArrayDesc &desc_wfc_full, const std::string &label, const int wfc_tag)
-{
-    if (!desc_wfc.is_initialized() || !desc_wfc_full.is_initialized())
-        throw LIBRPA_RUNTIME_ERROR(label + " wave-function descriptors are not initialized");
-    if (desc_wfc.ictxt() != kblacs_ctxt.blacs_h.ictxt ||
-        desc_wfc_full.ictxt() != kblacs_ctxt.blacs_h.ictxt)
-        throw LIBRPA_RUNTIME_ERROR(label + " wave-function descriptors use the wrong BLACS context");
-    if (desc_wfc.m() != mf.get_n_aos() || desc_wfc.n() != mf.get_n_states() ||
-        desc_wfc_full.m() != mf.get_n_aos() || desc_wfc_full.n() != mf.get_n_states())
-        throw LIBRPA_RUNTIME_ERROR(label + " wave-function descriptors have inconsistent dimensions");
-
-    // First retain the public-API compatibility behavior: locate the unique dense
-    // matrix and move it to the root of its owning k group.  The second step is a
-    // collective redistribution inside that group into the canonical local block.
-    redistribute_meanfield_eigvecs_kpara(mf, comm_h, kblacs_ctxt, label, wfc_tag);
-
-    using WfcMap = std::map<int, std::map<int, std::map<int, ComplexMatrix>>>;
-    WfcMap wfc_2d;
-    std::vector<cplxdb> dummy(1, cplxdb{0.0, 0.0});
-    const int n_spins = mf.get_n_spins();
-    const int n_spinor = mf.get_n_spinor();
-    const int n_aos = mf.get_n_aos();
-    const int n_states = mf.get_n_states();
-
-    for (int ispin = 0; ispin != n_spins; ++ispin)
-    {
-        for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
-        {
-            for (const int ik : kblacs_ctxt.kpoints_local())
-            {
-                const auto *wfc_dense = mf.find_wfc(ispin, ispinor, ik);
-                const int bad_root =
-                    desc_wfc_full.is_src() &&
-                    (wfc_dense == nullptr || wfc_dense->nr != n_states ||
-                     wfc_dense->nc != n_aos);
-                int bad_any = 0;
-                MPI_Allreduce(&bad_root, &bad_any, 1, MPI_INT, MPI_MAX,
-                              kblacs_ctxt.comm_blacs_h.comm);
-                if (bad_any)
-                    throw LIBRPA_RUNTIME_ERROR(label +
-                                              " dense wave function is missing on its k-group root");
-
-                ComplexMatrix local(desc_wfc.n_loc(), desc_wfc.m_loc(), false);
-                const auto *src = wfc_dense == nullptr ? dummy.data() : wfc_dense->c;
-                auto *dst = local.c == nullptr ? dummy.data() : local.c;
-                ScalapackConnector::pgemr2d_f(
-                    n_aos, n_states, src, 1, 1, desc_wfc_full.desc, dst, 1, 1,
-                    desc_wfc.desc, kblacs_ctxt.blacs_h.ictxt);
-                wfc_2d[ispin][ispinor][ik] = std::move(local);
-            }
-        }
-    }
-    mf.get_eigenvectors().swap(wfc_2d);
-    global::ofs_myid << "Redistributed " << label
-                     << " eigenvectors into local k-BLACS 2D blocks" << std::endl;
 }
 
 } // namespace
@@ -654,8 +595,13 @@ void Dataset::initialize_band_kblacs_wfc_layout()
         bandk_blacs_shape.favor_square_blacs_grid = true;
         bandk_blacs_ctxt.init(bandk_blacs_shape, comm_h.comm, n_kpoints);
     }
-    desc_band_wfc_kb =
-        bandk_blacs_ctxt.create_array_desc(mf_band.get_n_aos(), mf_band.get_n_states());
+    constexpr int wfc_block_cap = 128;
+    const int block_ao = get_capped_blacs_block_size(
+        mf_band.get_n_aos(), wfc_block_cap, bandk_blacs_ctxt.blacs_h);
+    const int block_band = get_capped_blacs_block_size(
+        mf_band.get_n_states(), wfc_block_cap, bandk_blacs_ctxt.blacs_h);
+    desc_band_wfc_kb = bandk_blacs_ctxt.create_array_desc(
+        mf_band.get_n_aos(), mf_band.get_n_states(), block_ao, block_band);
     desc_band_wfc_kb_full = bandk_blacs_ctxt.create_array_desc(
         mf_band.get_n_aos(), mf_band.get_n_states(), mf_band.get_n_aos(),
         mf_band.get_n_states());
@@ -673,8 +619,11 @@ void Dataset::redistribute_eigvecs_kpara_2d()
 {
     if (eigvecs_kpara_2d_redistributed_) return;
     global::profiler.start(__FUNCTION__);
-    redistribute_meanfield_eigvecs_kpara_2d(mf, comm_h, scfk_blacs_ctxt, desc_wfc_kb,
-                                            desc_wfc_kb_full, "SCF", 19319);
+    // Public C/API input remains dense. Move each matrix to its owning k-group
+    // root, then convert it once into the permanent compute layout.
+    redistribute_meanfield_eigvecs_kpara(mf, comm_h, scfk_blacs_ctxt, "SCF", 19319);
+    redistribute_meanfield_eigvecs_kblacs(
+        mf, scfk_blacs_ctxt, desc_wfc_kb_full, desc_wfc_kb, "SCF");
     eigvecs_kpara_redistributed_ = true;
     eigvecs_kpara_2d_redistributed_ = true;
     global::profiler.stop(__FUNCTION__);
@@ -685,9 +634,11 @@ void Dataset::redistribute_band_eigvecs_kpara_2d()
     if (band_eigvecs_kpara_2d_redistributed_) return;
     global::profiler.start(__FUNCTION__);
     initialize_band_kblacs_wfc_layout();
-    redistribute_meanfield_eigvecs_kpara_2d(
-        mf_band, comm_h, bandk_blacs_ctxt, desc_band_wfc_kb, desc_band_wfc_kb_full,
-        "band-path", 19320);
+    redistribute_meanfield_eigvecs_kpara(
+        mf_band, comm_h, bandk_blacs_ctxt, "band-path", 19320);
+    redistribute_meanfield_eigvecs_kblacs(
+        mf_band, bandk_blacs_ctxt, desc_band_wfc_kb_full, desc_band_wfc_kb,
+        "band-path");
     band_eigvecs_kpara_2d_redistributed_ = true;
     global::profiler.stop(__FUNCTION__);
 }

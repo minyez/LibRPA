@@ -193,7 +193,13 @@ void librpa_set_scf_dimension(LibrpaHandler* h, int nspins, int nkpts, int nstat
     ofs_myid << "k-point communicator : " << kbctxt.comm_kpoint_h.str() << endl;
     ofs_myid << "BLACS communicator   : " << kbctxt.comm_blacs_h.str() << endl;
 
-    pds->desc_wfc_kb = kbctxt.create_array_desc(nbasis, nstates);
+    constexpr int wfc_block_cap = 128;
+    const int block_ao =
+        get_capped_blacs_block_size(nbasis, wfc_block_cap, kbctxt.blacs_h);
+    const int block_band =
+        get_capped_blacs_block_size(nstates, wfc_block_cap, kbctxt.blacs_h);
+    pds->desc_wfc_kb =
+        kbctxt.create_array_desc(nbasis, nstates, block_ao, block_band);
     pds->desc_wfc_kb_full = kbctxt.create_array_desc(nbasis, nstates, nbasis, nstates);
     ofs_myid << "desc_wfc_kb      : " << pds->desc_wfc_kb.info_desc() << endl;
     ofs_myid << "desc_wfc_kb_full : " << pds->desc_wfc_kb_full.info_desc() << endl;

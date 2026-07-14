@@ -1,4 +1,5 @@
 #include "../api/dataset.h"
+#include "../core/meanfield_mpi.h"
 #include "../api/dataset_helper.h"
 
 #include "../mpi/global_mpi.h"
@@ -315,14 +316,19 @@ static void test_redistribute_eigvecs_kpara_2d_np4()
     constexpr int n_spins = 1;
     constexpr int n_spinor = 2;
     constexpr int n_kpoints = 3;
-    constexpr int n_states = 5;
-    constexpr int n_aos = 7;
+    constexpr int n_states = 193;
+    constexpr int n_aos = 263;
     const std::vector<int> initial_owner{3, 0, 1};
 
     Dataset ds(MPI_COMM_WORLD);
     ds.mf.set(n_spins, n_kpoints, n_states, n_aos, n_spinor);
     ds.scfk_blacs_ctxt.init({2, 2}, MPI_COMM_WORLD, n_kpoints);
-    ds.desc_wfc_kb = ds.scfk_blacs_ctxt.create_array_desc(n_aos, n_states);
+    const int block_ao =
+        get_capped_blacs_block_size(n_aos, 128, ds.scfk_blacs_ctxt.blacs_h);
+    const int block_state =
+        get_capped_blacs_block_size(n_states, 128, ds.scfk_blacs_ctxt.blacs_h);
+    ds.desc_wfc_kb = ds.scfk_blacs_ctxt.create_array_desc(
+        n_aos, n_states, block_ao, block_state);
     ds.desc_wfc_kb_full =
         ds.scfk_blacs_ctxt.create_array_desc(n_aos, n_states, n_aos, n_states);
 
@@ -345,6 +351,9 @@ static void test_redistribute_eigvecs_kpara_2d_np4()
     ds.redistribute_eigvecs_kpara_2d();
     ds.redistribute_eigvecs_kpara_2d();
     assert(ds.eigvecs_kpara_2d_ready());
+    assert(ds.desc_wfc_kb.mb() == block_ao);
+    assert(ds.desc_wfc_kb.nb() == block_state);
+    assert(ds.desc_wfc_kb.mb() <= 128 && ds.desc_wfc_kb.nb() <= 128);
 
     for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
     {
@@ -373,6 +382,72 @@ static void test_redistribute_eigvecs_kpara_2d_np4()
         }
     }
     ds.free();
+}
+
+static void test_redistribute_eigvecs_1b1p_to_opt_np4()
+{
+    using namespace librpa_int;
+
+    constexpr int n_spinor = 2;
+    constexpr int n_kpoints = 3;
+    constexpr int n_states = 193;
+    constexpr int n_aos = 263;
+    KPointBlacsParallelContext kctx({2, 2}, MPI_COMM_WORLD, n_kpoints);
+    const auto desc_io = kctx.create_array_desc(n_aos, n_states);
+    const int block_ao = get_capped_blacs_block_size(n_aos, 128, kctx.blacs_h);
+    const int block_state = get_capped_blacs_block_size(n_states, 128, kctx.blacs_h);
+    const auto desc_opt =
+        kctx.create_array_desc(n_aos, n_states, block_ao, block_state);
+    assert(desc_io.mb() != desc_opt.mb() || desc_io.nb() != desc_opt.nb());
+
+    MeanField mf(1, n_kpoints, n_states, n_aos, n_spinor);
+    for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+    {
+        for (const int ik : kctx.kpoints_local())
+        {
+            auto &wfc = mf.get_eigenvectors()[0][ispinor][ik];
+            wfc.create(desc_io.n_loc(), desc_io.m_loc(), false);
+            for (int jloc = 0; jloc != desc_io.n_loc(); ++jloc)
+            {
+                const int ib = desc_io.indx_l2g_c(jloc);
+                for (int iloc = 0; iloc != desc_io.m_loc(); ++iloc)
+                {
+                    const int iao = desc_io.indx_l2g_r(iloc);
+                    const double value = 1000.0 * ispinor + 100.0 * ik + ib + 0.001 * iao;
+                    wfc(jloc, iloc) = {value, -value};
+                }
+            }
+        }
+    }
+
+    redistribute_meanfield_eigvecs_kblacs(
+        mf, kctx, desc_io, desc_opt, "test 1b1p input");
+    for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+    {
+        for (int ik = 0; ik != n_kpoints; ++ik)
+        {
+            const auto *wfc = mf.find_wfc(0, ispinor, ik);
+            if (!kctx.owns_kpoint(ik))
+            {
+                assert(wfc == nullptr);
+                continue;
+            }
+            assert(wfc != nullptr);
+            assert(wfc->nr == desc_opt.n_loc());
+            assert(wfc->nc == desc_opt.m_loc());
+            for (int jloc = 0; jloc != desc_opt.n_loc(); ++jloc)
+            {
+                const int ib = desc_opt.indx_l2g_c(jloc);
+                for (int iloc = 0; iloc != desc_opt.m_loc(); ++iloc)
+                {
+                    const int iao = desc_opt.indx_l2g_r(iloc);
+                    const double value = 1000.0 * ispinor + 100.0 * ik + ib + 0.001 * iao;
+                    assert(fequal((*wfc)(jloc, iloc),
+                                  std::complex<double>(value, -value)));
+                }
+            }
+        }
+    }
 }
 
 static void setup_spinor_dataset(librpa_int::Dataset &ds)
@@ -515,8 +590,8 @@ static void test_redistribute_band_eigvecs_kpara_2d_np4()
 {
     using namespace librpa_int;
     constexpr int n_kpoints = 4;
-    constexpr int n_states = 3;
-    constexpr int n_aos = 5;
+    constexpr int n_states = 193;
+    constexpr int n_aos = 263;
 
     Dataset ds(MPI_COMM_WORLD);
     ds.mf_band.set(1, n_kpoints, n_states, n_aos, 1);
@@ -531,6 +606,8 @@ static void test_redistribute_band_eigvecs_kpara_2d_np4()
     }
     ds.redistribute_band_eigvecs_kpara_2d();
     assert(ds.band_eigvecs_kpara_2d_ready());
+    assert(ds.desc_band_wfc_kb.mb() == 128);
+    assert(ds.desc_band_wfc_kb.nb() == 128);
     for (int ik = 0; ik != n_kpoints; ++ik)
     {
         const auto *wfc = ds.mf_band.find_wfc(0, 0, ik);
@@ -575,6 +652,7 @@ int main (int argc, char *argv[])
     test_redistribute_blacs2ap_np4({10, 4, 5});
     test_redistribute_eigvecs_kpara_np4();
     test_redistribute_eigvecs_kpara_2d_np4();
+    test_redistribute_eigvecs_1b1p_to_opt_np4();
     test_redistribute_band_eigvecs_kpara_np4();
     test_redistribute_band_eigvecs_kpara_2d_np4();
     test_spinor_symmetry_speedup_rejected();

@@ -29,6 +29,79 @@
 namespace librpa_int
 {
 
+void redistribute_meanfield_eigvecs_kblacs(
+    MeanField &mf, const KPointBlacsParallelContext &kblacs_ctxt,
+    const ArrayDesc &desc_wfc_src, const ArrayDesc &desc_wfc_dst,
+    const std::string &label)
+{
+    global::profiler.start("redistribute_meanfield_eigvecs_kblacs_opt");
+    if (!kblacs_ctxt.is_initialized())
+        throw LIBRPA_RUNTIME_ERROR(label + " k-point BLACS context is not initialized");
+    if (!desc_wfc_src.is_initialized() || !desc_wfc_dst.is_initialized())
+        throw LIBRPA_RUNTIME_ERROR(label + " wave-function descriptors are not initialized");
+    if (desc_wfc_src.ictxt() != kblacs_ctxt.blacs_h.ictxt ||
+        desc_wfc_dst.ictxt() != kblacs_ctxt.blacs_h.ictxt)
+        throw LIBRPA_RUNTIME_ERROR(label + " wave-function descriptors use the wrong BLACS context");
+
+    const int n_spins = mf.get_n_spins();
+    const int n_spinor = mf.get_n_spinor();
+    const int n_kpoints = mf.get_n_kpoints();
+    const int n_aos = mf.get_n_aos();
+    const int n_states = mf.get_n_states();
+    if (n_spins <= 0 || n_spinor <= 0 || n_kpoints <= 0 || n_aos <= 0 ||
+        n_states <= 0)
+        throw LIBRPA_RUNTIME_ERROR(label + " mean-field dimensions are not initialized");
+    if (kblacs_ctxt.n_kpoints() != n_kpoints)
+        throw LIBRPA_RUNTIME_ERROR(label + " k-point BLACS context has inconsistent dimensions");
+    if (desc_wfc_src.m() != n_aos || desc_wfc_src.n() != n_states ||
+        desc_wfc_dst.m() != n_aos || desc_wfc_dst.n() != n_states)
+        throw LIBRPA_RUNTIME_ERROR(label + " wave-function descriptors have inconsistent dimensions");
+
+    using WfcMap = std::map<int, std::map<int, std::map<int, ComplexMatrix>>>;
+    WfcMap wfc_dst;
+    std::vector<cplxdb> dummy(1, C_ZERO);
+    const std::size_t src_size = static_cast<std::size_t>(desc_wfc_src.m_loc()) *
+                                 desc_wfc_src.n_loc();
+
+    for (int ispin = 0; ispin != n_spins; ++ispin)
+    {
+        for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+        {
+            for (const int ik : kblacs_ctxt.kpoints_local())
+            {
+                const auto *src = mf.find_wfc(ispin, ispinor, ik);
+                const int bad_local =
+                    (src_size > 0 && src == nullptr) ||
+                    (src != nullptr &&
+                     (src->nr != desc_wfc_src.n_loc() ||
+                      src->nc != desc_wfc_src.m_loc() ||
+                      static_cast<std::size_t>(src->size) != src_size));
+                int bad = 0;
+                MPI_Allreduce(&bad_local, &bad, 1, MPI_INT, MPI_MAX,
+                              kblacs_ctxt.comm_blacs_h.comm);
+                if (bad)
+                    throw LIBRPA_RUNTIME_ERROR(
+                        label + " source wave-function block is missing or inconsistent for k-point " +
+                        std::to_string(ik));
+
+                ComplexMatrix dst(desc_wfc_dst.n_loc(), desc_wfc_dst.m_loc(), false);
+                ScalapackConnector::pgemr2d_f(
+                    n_aos, n_states, src == nullptr ? dummy.data() : src->c, 1, 1,
+                    desc_wfc_src.desc, dst.c == nullptr ? dummy.data() : dst.c, 1, 1,
+                    desc_wfc_dst.desc, kblacs_ctxt.blacs_h.ictxt);
+                wfc_dst[ispin][ispinor][ik] = std::move(dst);
+            }
+        }
+    }
+
+    mf.get_eigenvectors().swap(wfc_dst);
+    global::ofs_myid << "Redistributed " << label
+                     << " eigenvectors into permanent k-BLACS blocks "
+                     << "(mb, nb) = (" << desc_wfc_dst.mb() << ", "
+                     << desc_wfc_dst.nb() << ")" << std::endl;
+    global::profiler.stop("redistribute_meanfield_eigvecs_kblacs_opt");
+}
+
 static void collect_Rs(const std::vector<Vector3_Order<int>> &Rs, std::vector<int> &n_Rs_all,
                        std::vector<int> &Rs_all, int &nR_max, const MpiCommHandler &comm_h)
 {
@@ -148,10 +221,8 @@ constexpr int wfc_gemm_block_size_opt = 128;
 
 struct WfcGemmWorkspace
 {
-    ArrayDesc desc_wfc_opt;
+    ArrayDesc desc_wfc_compute;
     ArrayDesc desc_out_opt;
-    Matz wfc_bra_opt;
-    Matz scaled_wfc_ket_opt;
     Matz out_opt;
 };
 
@@ -173,22 +244,25 @@ static WfcGemmWorkspace create_wfc_gemm_workspace(const ArrayDesc &desc_wfc,
     check_wfc_gemm_context(desc_wfc, desc_out, blacs_h);
 
     WfcGemmWorkspace workspace;
-    const int block_ao = get_capped_blacs_block_size(
+    const int expected_block_ao = get_capped_blacs_block_size(
         desc_wfc.m(), wfc_gemm_block_size_opt, blacs_h);
-    const int block_state = get_capped_blacs_block_size(
+    const int expected_block_state = get_capped_blacs_block_size(
         desc_wfc.n(), wfc_gemm_block_size_opt, blacs_h);
-    workspace.desc_wfc_opt = ArrayDesc(blacs_h);
-    workspace.desc_wfc_opt.init(desc_wfc.m(), desc_wfc.n(),
-                                block_ao, block_state,
-                                desc_wfc.irsrc(), desc_wfc.icsrc());
+    if (desc_wfc.mb() != expected_block_ao ||
+        desc_wfc.nb() != expected_block_state)
+        throw LIBRPA_RUNTIME_ERROR(
+            "WFC pgemm input must use the permanent capped rectangular layout");
+
+    // Keep an equivalent mutable descriptor for DDLA metadata. The matrix data
+    // itself stays in MeanField and is consumed directly.
+    workspace.desc_wfc_compute = ArrayDesc(blacs_h);
+    workspace.desc_wfc_compute.init(
+        desc_wfc.m(), desc_wfc.n(), desc_wfc.mb(), desc_wfc.nb(),
+        desc_wfc.irsrc(), desc_wfc.icsrc());
     workspace.desc_out_opt = ArrayDesc(blacs_h);
     workspace.desc_out_opt.init(desc_out.m(), desc_out.n(),
-                                block_ao, block_ao,
+                                desc_wfc.mb(), desc_wfc.mb(),
                                 desc_out.irsrc(), desc_out.icsrc());
-    workspace.wfc_bra_opt.resize(workspace.desc_wfc_opt.m_loc(),
-                                 workspace.desc_wfc_opt.n_loc(), MAJOR::COL);
-    workspace.scaled_wfc_ket_opt.resize(workspace.desc_wfc_opt.m_loc(),
-                                        workspace.desc_wfc_opt.n_loc(), MAJOR::COL);
     workspace.out_opt.resize(workspace.desc_out_opt.m_loc(),
                              workspace.desc_out_opt.n_loc(), MAJOR::COL);
     return workspace;
@@ -208,31 +282,35 @@ static void pgemm_wfc_scaled_wfc_h(const int n_aos, const int n_cols,
         throw LIBRPA_RUNTIME_ERROR("WFC pgemm matrix dimensions are inconsistent");
     if (n_cols < 0 || n_cols > desc_wfc.n())
         throw LIBRPA_RUNTIME_ERROR("WFC pgemm column count is inconsistent with descriptor");
-    if (!workspace.desc_wfc_opt.is_initialized() || !workspace.desc_out_opt.is_initialized() ||
-        workspace.desc_wfc_opt.ictxt() != blacs_h.ictxt ||
+    if (!workspace.desc_wfc_compute.is_initialized() || !workspace.desc_out_opt.is_initialized() ||
+        workspace.desc_wfc_compute.ictxt() != blacs_h.ictxt ||
         workspace.desc_out_opt.ictxt() != blacs_h.ictxt)
         throw LIBRPA_RUNTIME_ERROR("WFC pgemm workspace is not initialized on the active k-point BLACS context");
+    if (workspace.desc_wfc_compute.mb() != desc_wfc.mb() ||
+        workspace.desc_wfc_compute.nb() != desc_wfc.nb() ||
+        workspace.desc_wfc_compute.irsrc() != desc_wfc.irsrc() ||
+        workspace.desc_wfc_compute.icsrc() != desc_wfc.icsrc())
+        throw LIBRPA_RUNTIME_ERROR("WFC pgemm workspace layout differs from stored eigenvectors");
 
-    ScalapackConnector::pgemr2d_f(n_aos, n_cols,
-                                  wfc_bra_ptr, 1, 1, desc_wfc.desc,
-                                  workspace.wfc_bra_opt.ptr(), 1, 1,
-                                  workspace.desc_wfc_opt.desc, blacs_h.ictxt);
-    ScalapackConnector::pgemr2d_f(n_aos, n_cols,
-                                  scaled_wfc_ket_ptr, 1, 1, desc_wfc.desc,
-                                  workspace.scaled_wfc_ket_opt.ptr(), 1, 1,
-                                  workspace.desc_wfc_opt.desc, blacs_h.ictxt);
+    std::vector<cplxdb> dummy(1, C_ZERO);
+    const cplxdb *wfc_bra = wfc_bra_ptr == nullptr ? dummy.data() : wfc_bra_ptr;
+    const cplxdb *scaled_wfc_ket =
+        scaled_wfc_ket_ptr == nullptr ? dummy.data() : scaled_wfc_ket_ptr;
+    cplxdb *out_opt = workspace.out_opt.ptr() == nullptr
+                          ? dummy.data()
+                          : workspace.out_opt.ptr();
 
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     using namespace ddla;
     auto &blacs_h_nc = const_cast<BlacsCtxtHandler &>(blacs_h);
     if (blacs_h_nc.ddla_handle == nullptr)
         blacs_h_nc.init_ddla_handle();
-    workspace.desc_wfc_opt.set_ddla_desc(blacs_h_nc.ddla_handle);
+    workspace.desc_wfc_compute.set_ddla_desc(blacs_h_nc.ddla_handle);
     workspace.desc_out_opt.set_ddla_desc(blacs_h_nc.ddla_handle);
 
     auto handle = blacs_h_nc.ddla_handle;
-    const size_t size_ab = static_cast<size_t>(workspace.desc_wfc_opt.m_loc()) *
-                           workspace.desc_wfc_opt.n_loc();
+    const size_t size_ab = static_cast<size_t>(workspace.desc_wfc_compute.m_loc()) *
+                           workspace.desc_wfc_compute.n_loc();
     const size_t size_c  = static_cast<size_t>(workspace.desc_out_opt.m_loc()) *
                            workspace.desc_out_opt.n_loc();
     const size_t alloc_size_ab = std::max<size_t>(size_ab, 1);
@@ -243,19 +321,19 @@ static void pgemm_wfc_scaled_wfc_h(const int n_aos, const int n_cols,
     DEVICE_CHECK(deviceMallocAsync((void**)&d_C, alloc_size_c * sizeof(cplxdb), handle->stream));
     if (size_ab > 0)
     {
-        DEVICE_CHECK(deviceMemcpyAsync(d_A, workspace.wfc_bra_opt.ptr(),
+        DEVICE_CHECK(deviceMemcpyAsync(d_A, wfc_bra,
                                        size_ab * sizeof(cplxdb),
                                        deviceMemcpyHostToDevice, handle->stream));
-        DEVICE_CHECK(deviceMemcpyAsync(d_B, workspace.scaled_wfc_ket_opt.ptr(),
+        DEVICE_CHECK(deviceMemcpyAsync(d_B, scaled_wfc_ket,
                                        size_ab * sizeof(cplxdb),
                                        deviceMemcpyHostToDevice, handle->stream));
     }
     ddla::pgemm('N', 'C', n_aos, n_aos, n_cols, C_ONE,
-                d_A, workspace.desc_wfc_opt.ddla_desc(),
-                d_B, workspace.desc_wfc_opt.ddla_desc(),
+                d_A, workspace.desc_wfc_compute.ddla_desc(),
+                d_B, workspace.desc_wfc_compute.ddla_desc(),
                 C_ZERO, d_C, workspace.desc_out_opt.ddla_desc());
     if (size_c > 0)
-        DEVICE_CHECK(deviceMemcpyAsync(workspace.out_opt.ptr(), d_C,
+        DEVICE_CHECK(deviceMemcpyAsync(out_opt, d_C,
                                        size_c * sizeof(cplxdb),
                                        deviceMemcpyDeviceToHost, handle->stream));
     DEVICE_CHECK(deviceStreamSynchronize(handle->stream));
@@ -265,18 +343,19 @@ static void pgemm_wfc_scaled_wfc_h(const int n_aos, const int n_cols,
 #else
     global::profiler.start("pgemm", LIBRPA_VERBOSE_DEBUG);
     ScalapackConnector::pgemm_f('N', 'C', n_aos, n_aos, n_cols, C_ONE,
-                                workspace.wfc_bra_opt.ptr(), 1, 1,
-                                workspace.desc_wfc_opt.desc,
-                                workspace.scaled_wfc_ket_opt.ptr(), 1, 1,
-                                workspace.desc_wfc_opt.desc,
-                                C_ZERO, workspace.out_opt.ptr(), 1, 1,
+                                wfc_bra, 1, 1,
+                                workspace.desc_wfc_compute.desc,
+                                scaled_wfc_ket, 1, 1,
+                                workspace.desc_wfc_compute.desc,
+                                C_ZERO, out_opt, 1, 1,
                                 workspace.desc_out_opt.desc);
     global::profiler.stop("pgemm");
 #endif
     ScalapackConnector::pgemr2d_f(n_aos, n_aos,
-                                  workspace.out_opt.ptr(), 1, 1,
+                                  out_opt, 1, 1,
                                   workspace.desc_out_opt.desc,
-                                  out.ptr(), 1, 1, desc_out.desc,
+                                  out.ptr() == nullptr ? dummy.data() : out.ptr(),
+                                  1, 1, desc_out.desc,
                                   blacs_h.ictxt);
     global::profiler.stop(__FUNCTION__);
 }

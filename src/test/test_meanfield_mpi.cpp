@@ -19,6 +19,17 @@ using namespace std;
 using namespace librpa_int;
 using namespace librpa_int::global;
 
+static ArrayDesc make_permanent_wfc_desc(
+    const KPointBlacsParallelContext &context, const int nao, const int nstates)
+{
+    constexpr int block_cap = 128;
+    const int block_ao =
+        get_capped_blacs_block_size(nao, block_cap, context.blacs_h);
+    const int block_state =
+        get_capped_blacs_block_size(nstates, block_cap, context.blacs_h);
+    return context.create_array_desc(nao, nstates, block_ao, block_state);
+}
+
 static MeanField init_mf_pbc(int nk, int nb, int nocc, double gap,
                              std::vector<Vector3_Order<double>> &kfrac_list,
                              std::vector<Vector3_Order<int>> &Rs)
@@ -222,6 +233,7 @@ static void test_dmat_cplx_Rs_kblacs_para_full_wfc()
 
     KPointBlacsProcessShape shape(2, size_global / 2, false);
     KPointBlacsParallelContext context(shape, mpi_comm_global_h.comm, nk);
+    const auto desc_wfc = make_permanent_wfc_desc(context, nao, nb);
     const auto desc_wfc_full = context.create_array_desc(nao, nb, nao, nb);
     const auto desc_dm = context.create_array_desc(nao, nb);
 
@@ -232,13 +244,15 @@ static void test_dmat_cplx_Rs_kblacs_para_full_wfc()
         if (context.kpoint_blacs_root_global_rank(ik) != myid_global) continue;
         set_wfc(mf, ik);
     }
+    redistribute_meanfield_eigvecs_kblacs(
+        mf, context, desc_wfc_full, desc_wfc, "test density matrix");
 
     const std::vector<Vector3_Order<int>> Rs =
         context.comm_kpoint_h.myid == 0
             ? std::vector<Vector3_Order<int>>{{-1, 0, 0}, {0, 0, 0}}
             : std::vector<Vector3_Order<int>>{{1, 0, 0}};
     const auto dm_Rs = get_dmat_cplx_Rs_kblacs_para(
-        0, mf, kfrac_list, Rs, context, desc_wfc_full, desc_dm);
+        0, mf, kfrac_list, Rs, context, desc_wfc, desc_dm);
     assert(dm_Rs.size() == Rs.size());
 
     for (const auto &R: Rs)
@@ -302,6 +316,7 @@ static void test_gf_cplx_imagtimes_Rs_kblacs_para_full_wfc()
 
     KPointBlacsProcessShape shape(2, size_global / 2, false);
     KPointBlacsParallelContext context(shape, mpi_comm_global_h.comm, nk);
+    const auto desc_wfc = make_permanent_wfc_desc(context, nao, nb);
     const auto desc_wfc_full = context.create_array_desc(nao, nb, nao, nb);
     const auto desc_gf = context.create_array_desc(nao, nao);
 
@@ -312,6 +327,8 @@ static void test_gf_cplx_imagtimes_Rs_kblacs_para_full_wfc()
         if (context.kpoint_blacs_root_global_rank(ik) != myid_global) continue;
         set_wfc(mf, ik);
     }
+    redistribute_meanfield_eigvecs_kblacs(
+        mf, context, desc_wfc_full, desc_wfc, "test Green function");
 
     const std::vector<Vector3_Order<int>> Rs =
         context.comm_kpoint_h.myid == 0
@@ -320,7 +337,7 @@ static void test_gf_cplx_imagtimes_Rs_kblacs_para_full_wfc()
     std::vector<double> imagtimes{1.0, -0.5};
     const auto gf_ref = mf_ref.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_list, imagtimes, Rs);
     const auto gf_Rs = get_gf_cplx_imagtimes_Rs_kblacs_para(
-        0, mf, kfrac_list, imagtimes, Rs, context, desc_wfc_full, desc_gf);
+        0, mf, kfrac_list, imagtimes, Rs, context, desc_wfc, desc_gf);
     assert(gf_Rs.size() == imagtimes.size());
 
     for (const auto tau: imagtimes)
@@ -394,7 +411,7 @@ static void test_dm_gf_kblacs_para_redistributed_full_wfc()
 
     KPointBlacsProcessShape shape(1, size_global, false);
     KPointBlacsParallelContext context(shape, mpi_comm_global_h.comm, nk);
-    const auto desc_wfc = context.create_array_desc(nao, nb);
+    const auto desc_wfc = make_permanent_wfc_desc(context, nao, nb);
     const auto desc_wfc_full = context.create_array_desc(nao, nb, nao, nb);
     const auto desc_dm = context.create_array_desc(nao, nao);
 
@@ -406,24 +423,13 @@ static void test_dm_gf_kblacs_para_redistributed_full_wfc()
         set_wfc(mf, ik);
     }
 
-    MeanField mf_2d(1, nk, nb, nao);
-    set_common_mf_data(mf_2d);
-    std::vector<cplxdb> dummy(1, cplxdb{0.0, 0.0});
-    for (int ik = 0; ik != nk; ++ik)
-    {
-        const auto *wfc_full = mf.find_wfc(0, 0, ik);
-        ComplexMatrix wfc_local(desc_wfc.n_loc(), desc_wfc.m_loc(), false);
-        ScalapackConnector::pgemr2d_f(
-            nao, nb, wfc_full == nullptr ? dummy.data() : wfc_full->c, 1, 1,
-            desc_wfc_full.desc, wfc_local.c == nullptr ? dummy.data() : wfc_local.c, 1, 1,
-            desc_wfc.desc, context.blacs_h.ictxt);
-        mf_2d.get_eigenvectors()[0][0][ik] = std::move(wfc_local);
-    }
+    redistribute_meanfield_eigvecs_kblacs(
+        mf, context, desc_wfc_full, desc_wfc, "test rectangular WFC");
 
     const auto dm_Rs = get_dmat_cplx_Rs_kblacs_para(
-        0, mf_2d, kfrac_list, Rs, context, desc_wfc, desc_dm);
+        0, mf, kfrac_list, Rs, context, desc_wfc, desc_dm);
     const auto gf_Rs = get_gf_cplx_imagtimes_Rs_kblacs_para(
-        0, mf_2d, kfrac_list, imagtimes, Rs, context, desc_wfc, desc_dm);
+        0, mf, kfrac_list, imagtimes, Rs, context, desc_wfc, desc_dm);
 
     for (const auto &R: Rs)
     {

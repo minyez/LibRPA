@@ -884,15 +884,18 @@ static std::vector<std::vector<ComplexMatrix>> rotate_headwing_wfc_symmetry_kbla
         throw std::runtime_error("symmetric headwing source wave-function descriptor is invalid");
 
     constexpr int block_cap = 128;
-    const int block_ao = get_capped_blacs_block_size(n_aos, block_cap, blacs_h);
-    const int block_band = get_capped_blacs_block_size(n_states, block_cap, blacs_h);
+    const int expected_block_ao =
+        get_capped_blacs_block_size(n_aos, block_cap, blacs_h);
+    const int expected_block_band =
+        get_capped_blacs_block_size(n_states, block_cap, blacs_h);
+    if (desc_wfc_src.mb() != expected_block_ao ||
+        desc_wfc_src.nb() != expected_block_band)
+        throw std::runtime_error(
+            "symmetric headwing wave functions do not use the permanent capped layout");
+    const int block_ao = desc_wfc_src.mb();
     ArrayDesc desc_M_opt(blacs_h);
     desc_M_opt.init(n_aos, n_aos, block_ao, block_ao, 0, 0);
-    ArrayDesc desc_wfc_opt(blacs_h);
-    desc_wfc_opt.init(n_aos, n_states, block_ao, block_band, 0, 0);
     auto M_opt = init_local_mat<std::complex<double>>(desc_M_opt, MAJOR::COL);
-    auto wfc_ibz_opt = init_local_mat<std::complex<double>>(desc_wfc_opt, MAJOR::COL);
-    auto wfc_bz_opt = init_local_mat<std::complex<double>>(desc_wfc_opt, MAJOR::COL);
     fill_symmetry_ao_bloch_rotation_matrix_local(
         M_opt, desc_M_opt, ctx, member, wfc_layouts, atom_nw, k_ibz, k_bz_target);
 
@@ -916,21 +919,15 @@ static std::vector<std::vector<ComplexMatrix>> rotate_headwing_wfc_symmetry_kbla
                 throw std::runtime_error(
                     "symmetric headwing local wave-function block is inconsistent");
 
-            ScalapackConnector::pgemr2d_f(
-                n_aos, n_states, wfc_ibz == nullptr ? dummy.data() : wfc_ibz->c, 1, 1,
-                desc_wfc_src.desc, wfc_ibz_opt.ptr(), 1, 1, desc_wfc_opt.desc,
-                blacs_h.ictxt);
-            ScalapackConnector::pgemm_f(
-                'C', 'N', n_aos, n_states, n_aos, 1.0, M_opt.ptr(), 1, 1,
-                desc_M_opt.desc, wfc_ibz_opt.ptr(), 1, 1, desc_wfc_opt.desc, 0.0,
-                wfc_bz_opt.ptr(), 1, 1, desc_wfc_opt.desc);
-
+            const auto *wfc_ibz_ptr =
+                wfc_ibz == nullptr ? dummy.data() : wfc_ibz->c;
             auto &wfc_bz = result[ispin][ispinor];
             wfc_bz.create(desc_wfc_src.n_loc(), desc_wfc_src.m_loc(), false);
-            ScalapackConnector::pgemr2d_f(
-                n_aos, n_states, wfc_bz_opt.ptr(), 1, 1, desc_wfc_opt.desc,
+            ScalapackConnector::pgemm_f(
+                'C', 'N', n_aos, n_states, n_aos, 1.0, M_opt.ptr(), 1, 1,
+                desc_M_opt.desc, wfc_ibz_ptr, 1, 1, desc_wfc_src.desc, 0.0,
                 wfc_bz.c == nullptr ? dummy.data() : wfc_bz.c, 1, 1,
-                desc_wfc_src.desc, blacs_h.ictxt);
+                desc_wfc_src.desc);
         }
     }
     return result;
@@ -2187,12 +2184,19 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::rotate_Cs_nao2mnk_kb
     const int Mu = atomic_basis_abf_.get_i_atom(mu);
     const int n_ao_Mu = atomic_basis_wfc_.get_atom_nb(Mu);
     constexpr int block_size_cap = 128;
-    const int block_nao =
+    const int expected_block_nao =
         get_capped_blacs_block_size(n_basis, block_size_cap, wing_blacs_h);
     const int block_Mu =
         get_capped_blacs_block_size(n_ao_Mu, block_size_cap, wing_blacs_h);
-    const int block_nband =
+    const int expected_block_nband =
         get_capped_blacs_block_size(n_states, block_size_cap, wing_blacs_h);
+    const bool wfc_is_permanent_opt =
+        desc_wfc_src.mb() == expected_block_nao &&
+        desc_wfc_src.nb() == expected_block_nband;
+    const int block_nao =
+        wfc_is_permanent_opt ? desc_wfc_src.mb() : expected_block_nao;
+    const int block_nband =
+        wfc_is_permanent_opt ? desc_wfc_src.nb() : expected_block_nband;
 
     ArrayDesc desc_Mu_nao_opt(wing_blacs_h);
     desc_Mu_nao_opt.init(n_ao_Mu, n_basis, block_Mu, block_nao, 0, 0);
@@ -2255,17 +2259,24 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::rotate_Cs_nao2mnk_kb
                     wfc_isp2_k == nullptr || wfc_isp2_k->c == nullptr
                         ? dummy_wfc.data()
                         : wfc_isp2_k->c;
-                wfc_nao_nband_opt.zero_out();
-                ScalapackConnector::pgemr2d_f(n_basis, n_states, wfc2_src, 1, 1, desc_wfc_src.desc,
-                                              wfc_nao_nband_opt.ptr(), 1, 1,
-                                              desc_nao_nband_opt.desc,
-                                              wing_blacs_h.ictxt);
+                const complex<double> *wfc2_compute = wfc2_src;
+                const int *desc_wfc_compute = desc_wfc_src.desc;
+                if (!wfc_is_permanent_opt)
+                {
+                    wfc_nao_nband_opt.zero_out();
+                    ScalapackConnector::pgemr2d_f(
+                        n_basis, n_states, wfc2_src, 1, 1, desc_wfc_src.desc,
+                        wfc_nao_nband_opt.ptr(), 1, 1, desc_nao_nband_opt.desc,
+                        wing_blacs_h.ictxt);
+                    wfc2_compute = wfc_nao_nband_opt.ptr();
+                    desc_wfc_compute = desc_nao_nband_opt.desc;
+                }
 
                 C_Mu_nband_opt.zero_out();
                 ScalapackConnector::pgemm_f(
                     'N', 'N', n_ao_Mu, n_states, n_basis, 1.0, C_Mu_nao_opt.ptr(), 1, 1,
-                    desc_Mu_nao_opt.desc, wfc_nao_nband_opt.ptr(), 1, 1,
-                    desc_nao_nband_opt.desc, 0.0, C_Mu_nband_opt.ptr(), 1, 1,
+                    desc_Mu_nao_opt.desc, wfc2_compute, 1, 1,
+                    desc_wfc_compute, 0.0, C_Mu_nband_opt.ptr(), 1, 1,
                     desc_Mu_nband_opt.desc);
 
                 const complex<double> *wfc1_src =

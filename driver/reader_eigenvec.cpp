@@ -16,6 +16,7 @@
 #include "../src/io/fs.h"
 #include "../src/io/global_io.h"
 #include "../src/api/instance_manager.h"
+#include "../src/core/meanfield_mpi.h"
 #include "../src/utils/profiler.h"
 #include "driver.h"
 
@@ -343,9 +344,14 @@ void validate_kblacs_wfc_layout(const librpa_int::MeanField &mf,
         desc_wfc.m() != mf.get_n_aos() || desc_wfc.n() != mf.get_n_states() ||
         desc_wfc.ictxt() != kblacs_ctxt.blacs_h.ictxt)
         throw std::runtime_error("k-BLACS eigenvector reader got inconsistent dimensions");
-    if (!desc_wfc.is_row_consec() || !desc_wfc.is_col_consec())
+    constexpr int block_cap = 128;
+    const int block_ao = librpa_int::get_capped_blacs_block_size(
+        mf.get_n_aos(), block_cap, kblacs_ctxt.blacs_h);
+    const int block_band = librpa_int::get_capped_blacs_block_size(
+        mf.get_n_states(), block_cap, kblacs_ctxt.blacs_h);
+    if (desc_wfc.mb() != block_ao || desc_wfc.nb() != block_band)
         throw std::runtime_error(
-            "direct eigenvector input requires one contiguous AO/band block per BLACS rank");
+            "k-BLACS eigenvector target must use the permanent capped rectangular layout");
 }
 
 librpa_int::ComplexMatrix &prepare_local_wfc(
@@ -630,6 +636,11 @@ int read_eigenvector_kblacs_2d(
     const std::vector<int> *source_to_target_ik, const LegacyTextWfcOrder text_order)
 {
     validate_kblacs_wfc_layout(mf, kblacs_ctxt, desc_wfc);
+    const auto desc_wfc_io =
+        kblacs_ctxt.create_array_desc(mf.get_n_aos(), mf.get_n_states());
+    if (!desc_wfc_io.is_row_consec() || !desc_wfc_io.is_col_consec())
+        throw std::runtime_error(
+            "temporary direct eigenvector input descriptor must be contiguous");
     const int n_source_kpoints =
         source_to_target_ik == nullptr ? mf.get_n_kpoints()
                                        : static_cast<int>(source_to_target_ik->size());
@@ -670,10 +681,10 @@ int read_eigenvector_kblacs_2d(
 
         const int ret = version == 1
                             ? read_binary_v1_file_kblacs_2d(
-                                  file_path, mf, shape, kblacs_ctxt, desc_wfc,
+                                  file_path, mf, shape, kblacs_ctxt, desc_wfc_io,
                                   source_to_target_ik, target_hits_local)
                             : read_legacy_text_file_kblacs_2d(
-                                  file_path, mf, shape, kblacs_ctxt, desc_wfc,
+                                  file_path, mf, shape, kblacs_ctxt, desc_wfc_io,
                                   source_to_target_ik, target_hits_local, text_order);
         if (ret != 0) return ret;
         ++files_read;
@@ -686,6 +697,8 @@ int read_eigenvector_kblacs_2d(
                   kblacs_ctxt.comm_global_h.comm);
     for (std::size_t ik = 0; ik != target_hits.size(); ++ik)
         if (target_hits[ik] != expected_hits[ik]) return 1;
+    librpa_int::redistribute_meanfield_eigvecs_kblacs(
+        mf, kblacs_ctxt, desc_wfc_io, desc_wfc, "direct SCF");
     return 0;
 }
 

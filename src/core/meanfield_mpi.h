@@ -1,3 +1,7 @@
+#pragma once
+
+#include <string>
+
 #include "meanfield.h"
 
 #include "../math/matrix_m.h"
@@ -6,6 +10,13 @@
 
 namespace librpa_int
 {
+
+//! Redistribute every locally owned k-point wave function from one k-BLACS
+//! layout to another and replace MeanField::wfc with the destination blocks.
+void redistribute_meanfield_eigvecs_kblacs(
+    MeanField &mf, const KPointBlacsParallelContext &kblacs_ctxt,
+    const ArrayDesc &desc_wfc_src, const ArrayDesc &desc_wfc_dst,
+    const std::string &label);
 
 // ==================================================================
 // Density matrix and green's function calculation, MPI parallel (over k-points) version

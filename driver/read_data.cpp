@@ -42,6 +42,7 @@
 #include "../src/utils/constants.h"
 #include "../src/api/instance_manager.h"
 #include "../src/api/dataset_helper.h"
+#include "../src/core/meanfield_mpi.h"
 #include "../src/io/aux_basis_summary.h"
 #include "../src/io/fs.h"
 #include "../src/io/global_io.h"
@@ -1326,6 +1327,8 @@ void read_headwing_input(const string &dir_path, bool need_wing)
             throw std::runtime_error("Failed to read pyatb head/wing eigenvectors from " +
                                      pyatb_dir);
         }
+        if (direct_headwing_kblacs_2d)
+            pds->mark_eigvecs_kpara_2d_ready();
         read_velocity(pyatb_velocity, mf, velocity_matrix, source_to_target_ik,
                       static_cast<int>(kfrac_pyatb.size()));
         if (n_basis != mf.get_n_aos() || n_states != mf.get_n_states() ||
@@ -1994,9 +1997,10 @@ void read_band_meanfield_data(const string &dir_path)
         auto &band_kctx = pds->bandk_blacs_ctxt;
         const auto &desc_wfc = pds->desc_band_wfc_kb;
         auto &mf_band = pds->mf_band;
-        if (!desc_wfc.is_row_consec() || !desc_wfc.is_col_consec())
+        const auto desc_wfc_io = band_kctx.create_array_desc(n_basis_ao, n_states);
+        if (!desc_wfc_io.is_row_consec() || !desc_wfc_io.is_col_consec())
             throw LIBRPA_RUNTIME_ERROR(
-                "direct band eigenvector input requires contiguous local AO/band blocks");
+                "temporary direct band eigenvector input descriptor must be contiguous");
 
         iks_band_eigvec_this.clear();
         if (band_kctx.comm_blacs_h.is_root())
@@ -2006,7 +2010,7 @@ void read_band_meanfield_data(const string &dir_path)
         mf_band.get_eigenvectors().clear();
         const bool use_spinor_wfc = driver::driver_params.use_spinor_wfc;
         const int n_soc = use_spinor_wfc ? 2 : 1;
-        const int local_count = desc_wfc.m_loc() * desc_wfc.n_loc();
+        const int local_count = desc_wfc_io.m_loc() * desc_wfc_io.n_loc();
         std::vector<std::complex<double>> dummy(1, {0.0, 0.0});
 
         for (const int ik : band_kctx.kpoints_local())
@@ -2042,17 +2046,18 @@ void read_band_meanfield_data(const string &dir_path)
                 for (int ispinor = 0; ispinor != n_soc; ++ispinor)
                 {
                     auto &wfc = mf_band.get_eigenvectors()[ispin][ispinor][ik];
-                    wfc.create(desc_wfc.n_loc(), desc_wfc.m_loc(), false);
+                    wfc.create(desc_wfc_io.n_loc(), desc_wfc_io.m_loc(), false);
                     MPI_Datatype filetype = MPI_C_DOUBLE_COMPLEX;
                     bool free_filetype = false;
                     MPI_Offset displacement = 0;
                     if (use_spinor_wfc)
                     {
                         const int global_sizes[3]{n_states, n_basis_ao, n_soc};
-                        const int local_sizes[3]{desc_wfc.n_loc(), desc_wfc.m_loc(), 1};
+                        const int local_sizes[3]{desc_wfc_io.n_loc(), desc_wfc_io.m_loc(), 1};
                         const int starts[3]{
-                            desc_wfc.n_loc() == 0 ? 0 : desc_wfc.indx_l2g_c(0),
-                            desc_wfc.m_loc() == 0 ? 0 : desc_wfc.indx_l2g_r(0), ispinor};
+                            desc_wfc_io.n_loc() == 0 ? 0 : desc_wfc_io.indx_l2g_c(0),
+                            desc_wfc_io.m_loc() == 0 ? 0 : desc_wfc_io.indx_l2g_r(0),
+                            ispinor};
                         if (local_count > 0)
                         {
                             MPI_Type_create_subarray(3, global_sizes, local_sizes, starts,
@@ -2065,10 +2070,10 @@ void read_band_meanfield_data(const string &dir_path)
                     else
                     {
                         const int global_sizes[2]{n_states, n_basis_ao};
-                        const int local_sizes[2]{desc_wfc.n_loc(), desc_wfc.m_loc()};
+                        const int local_sizes[2]{desc_wfc_io.n_loc(), desc_wfc_io.m_loc()};
                         const int starts[2]{
-                            desc_wfc.n_loc() == 0 ? 0 : desc_wfc.indx_l2g_c(0),
-                            desc_wfc.m_loc() == 0 ? 0 : desc_wfc.indx_l2g_r(0)};
+                            desc_wfc_io.n_loc() == 0 ? 0 : desc_wfc_io.indx_l2g_c(0),
+                            desc_wfc_io.m_loc() == 0 ? 0 : desc_wfc_io.indx_l2g_r(0)};
                         if (local_count > 0)
                         {
                             MPI_Type_create_subarray(2, global_sizes, local_sizes, starts,
@@ -2097,6 +2102,8 @@ void read_band_meanfield_data(const string &dir_path)
                 throw LIBRPA_RUNTIME_ERROR("Error reading local band eigenvector blocks from " +
                                           file_path);
         }
+        redistribute_meanfield_eigvecs_kblacs(
+            mf_band, band_kctx, desc_wfc_io, desc_wfc, "direct band-path");
         pds->mark_band_eigvecs_kpara_2d_ready();
         profiler.stop("driver_read_band_eigenvector_kblacs_2d");
         return;
