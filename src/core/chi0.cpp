@@ -1370,7 +1370,7 @@ static void build_gf_Rt_libri_kblacs_para(
 {
     global::profiler.start("build_gf_Rt_libri_kblacs_para");
 
-    const auto atom_nw = build_atom_nw_map(atbasis_wfc);
+    const auto atom_nw = atbasis_wfc.get_atom_nb_map();
     const auto wfc_layouts = atbasis_wfc.has_l_shells()
         ? atbasis_wfc.build_species_basis_layouts(symmetry_context.atom_to_type)
         : std::vector<SpeciesBasisLayout>{};
