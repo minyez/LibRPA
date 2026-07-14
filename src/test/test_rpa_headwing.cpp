@@ -1131,6 +1131,55 @@ void test_wq_to_wr_symmetry_reduced_q_matches_full_bz()
     assert_wq_rspace_maps_close(actual, expected);
 }
 
+void test_wq_to_wr_symmetry_collective_handles_empty_local_rank()
+{
+    const auto pbc_full = make_wq_full_pbc();
+    const auto pbc_sym = make_wq_reduced_pbc();
+    auto ctx = make_two_atom_inversion_context(pbc_sym);
+
+    AtomicBasis basis_abf(std::vector<std::size_t>{1, 1});
+    basis_abf.set_l_shells({{0}, {0}});
+
+    atom_mapping<std::map<Vector3_Order<double>, matrix_m<std::complex<double>>>>::pair_t_old
+        wq_sym;
+    atom_mapping<std::map<Vector3_Order<double>, matrix_m<std::complex<double>>>>::pair_t_old
+        wq_full;
+    if (librpa_int::global::mpi_comm_global_h.is_root())
+    {
+        const auto gamma_blocks = scalar_wq_to_blocks({
+            {0, {{0, {1.5, 0.0}}, {1, {0.4, 0.0}}}},
+            {1, {{0, {0.4, 0.0}}, {1, {1.5, 0.0}}}}});
+        const auto rep_blocks = scalar_wq_to_blocks({
+            {0, {{0, {2.1, 0.0}}, {1, {-0.7, 0.5}}}},
+            {1, {{0, {-0.7, -0.5}}, {1, {1.4, 0.0}}}}});
+        const auto inversion_minus_blocks = scalar_wq_to_blocks({
+            {0, {{0, {1.4, 0.0}}, {1, {-0.7, -0.5}}}},
+            {1, {{0, {-0.7, 0.5}}, {1, {2.1, 0.0}}}}});
+
+        add_scalar_wq_blocks(wq_sym, pbc_sym.klist.at(0), gamma_blocks);
+        add_scalar_wq_blocks(wq_sym, pbc_sym.klist.at(1), rep_blocks);
+        add_scalar_wq_blocks(wq_full, pbc_full.klist.at(0), gamma_blocks);
+        add_scalar_wq_blocks(wq_full, pbc_full.klist.at(1), rep_blocks);
+        add_scalar_wq_blocks(wq_full, pbc_full.klist.at(2), inversion_minus_blocks);
+    }
+
+    const TFGrids dummy_tfg;
+    SymmetryContext no_symmetry;
+    const auto expected = librpa_int::FT_Wc_q2R(
+        librpa_int::global::mpi_comm_global_h, basis_abf, no_symmetry, wq_full,
+        dummy_tfg, pbc_full, pbc_full.Rlist, false, "", false);
+    const auto actual = librpa_int::FT_Wc_q2R(
+        librpa_int::global::mpi_comm_global_h, basis_abf, ctx, wq_sym,
+        dummy_tfg, pbc_sym, pbc_sym.Rlist, false, "", true);
+
+    assert_wq_rspace_maps_close(actual, expected);
+    if (!librpa_int::global::mpi_comm_global_h.is_root())
+    {
+        assert(expected.empty());
+        assert(actual.empty());
+    }
+}
+
 Matz dense_wq_from_scalar_blocks(const librpa_int::symmetry_atom_block_matrix_map_t &blocks,
                                  const ArrayDesc &desc)
 {
@@ -1270,6 +1319,7 @@ int main(int argc, char *argv[])
         test_transform_Cs2mnk_can_keep_spin_channels_separate(blacs_h);
         test_head_initialization_does_not_require_coulomb_diagonalization(blacs_h);
         test_wq_to_wr_symmetry_reduced_q_matches_full_bz();
+        test_wq_to_wr_symmetry_collective_handles_empty_local_rank();
         test_dense_wq_to_wr_symmetry_reduced_q_matches_full_bz(blacs_h);
     }
 
