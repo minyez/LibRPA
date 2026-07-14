@@ -363,10 +363,11 @@ static librpa_int::symmetry_atom_block_matrix_map_t build_symmetry_blocks_from_d
 }
 
 static librpa_int::symmetry_atom_block_matrix_map_t gather_symmetry_ibz_blocks_collective(
+    const MpiCommHandler& comm_h,
     const librpa_int::symmetry_atom_block_matrix_map_t& blocks_ibz_local,
     const std::map<atom_t, size_t>& atom_nabf)
 {
-    if (global::mpi_comm_global_h.nprocs <= 1)
+    if (comm_h.nprocs <= 1)
     {
         return blocks_ibz_local;
     }
@@ -374,7 +375,7 @@ static librpa_int::symmetry_atom_block_matrix_map_t gather_symmetry_ibz_blocks_c
     const auto dense_ibz_local =
         build_dense_symmetry_hermitian_matrix_from_local_blocks(blocks_ibz_local, atom_nabf);
     ComplexMatrix dense_ibz_global(dense_ibz_local.nr, dense_ibz_local.nc);
-    allreduce_ComplexMatrix(dense_ibz_local, dense_ibz_global, global::mpi_comm_global_h.comm);
+    allreduce_ComplexMatrix(dense_ibz_local, dense_ibz_global, comm_h.comm);
     return build_symmetry_blocks_from_dense_matrix(dense_ibz_global, atom_nabf);
 }
 
@@ -468,6 +469,7 @@ static bool can_symmetrize_symmetry_chi0_ibz_blocks(
 }
 
 static atom_mapping<ComplexMatrix>::pair_t_old symmetrize_symmetry_chi0_ibz_blocks_if_needed(
+    const MpiCommHandler& comm_h,
     const librpa_int::SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& abf_layouts,
     const atom_mapping<ComplexMatrix>::pair_t_old& blocks_ibz,
@@ -495,10 +497,11 @@ static atom_mapping<ComplexMatrix>::pair_t_old symmetrize_symmetry_chi0_ibz_bloc
 
     auto blocks_for_symmetrization = to_ordered_symmetry_blocks(blocks_ibz);
     auto output_atom_pairs = collect_symmetry_atom_pairs(blocks_for_symmetrization);
-    if (global::mpi_comm_global_h.nprocs > 1)
+    if (comm_h.nprocs > 1)
     {
         blocks_for_symmetrization =
-            gather_symmetry_ibz_blocks_collective(blocks_for_symmetrization, atom_nabf);
+            gather_symmetry_ibz_blocks_collective(
+                comm_h, blocks_for_symmetrization, atom_nabf);
         output_atom_pairs = collect_all_upper_atom_pairs(atom_nabf);
     }
 
@@ -513,6 +516,7 @@ static atom_mapping<ComplexMatrix>::pair_t_old symmetrize_symmetry_chi0_ibz_bloc
 }
 
 static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
+    const MpiCommHandler& comm_h,
     const librpa_int::SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& abf_layouts,
     const abf_qspace_complex_block_map_t& Wc_q,
@@ -521,7 +525,7 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
     const std::map<atom_t, size_t>& atom_nabf)
 {
     const auto local_target_pairs = collect_local_target_atom_pairs_from_qspace(Wc_q);
-    if (local_target_pairs.empty() || ctx.kstar_grid_mapping.empty())
+    if (ctx.kstar_grid_mapping.empty())
     {
         return {};
     }
@@ -540,8 +544,9 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
         const auto q_ibz_frac = pbc.kfrac_list.at(static_cast<std::size_t>(star_mapping.iq_ibz));
         const auto blocks_ibz_local =
             collect_symmetry_abf_ibz_blocks_for_q(Wc_q, q_ibz_internal);
-        auto blocks_ibz = gather_symmetry_ibz_blocks_collective(blocks_ibz_local, atom_nabf);
-        if (blocks_ibz.empty())
+        auto blocks_ibz =
+            gather_symmetry_ibz_blocks_collective(comm_h, blocks_ibz_local, atom_nabf);
+        if (local_target_pairs.empty() || blocks_ibz.empty())
         {
             continue;
         }
@@ -2677,7 +2682,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         chi0.atbasis_abf.build_species_basis_layouts(chi0.symmetry_context.atom_to_type);
     const bool use_symmetry_dense_chi0_collect =
         chi0.use_symmetry_context
-        && global::mpi_comm_global_h.nprocs > 1
+        && comm_h.nprocs > 1
         && can_symmetrize_symmetry_chi0_ibz_blocks(
             chi0.symmetry_context, abf_layouts, atom_nabf, chi0.pbc);
 
@@ -2935,13 +2940,15 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     if (chi0.use_symmetry_context)
                     {
                         chi0_wq = symmetrize_symmetry_chi0_ibz_blocks_if_needed(
-                            chi0.symmetry_context, abf_layouts, chi0_wq, q, chi0.pbc, atom_nabf);
+                            comm_h, chi0.symmetry_context, abf_layouts, chi0_wq, q,
+                            chi0.pbc, atom_nabf);
                     }
                 }
                 else if (use_symmetry_dense_chi0_collect)
                 {
                     chi0_wq = symmetrize_symmetry_chi0_ibz_blocks_if_needed(
-                        chi0.symmetry_context, abf_layouts, chi0_wq, q, chi0.pbc, atom_nabf);
+                        comm_h, chi0.symmetry_context, abf_layouts, chi0_wq, q,
+                        chi0.pbc, atom_nabf);
                 }
 
                 if (use_symmetry_dense_chi0_collect)
@@ -4398,7 +4405,7 @@ atom_mapping<std::map<Vector3_Order<int>, matrix_m<complex<double>>>>::pair_t_ol
         lib_printf_root(
             "GW symmetry accumulates full `W(R)` directly from IBZ q-stars\n");
         Wc_R = accumulate_symmetry_full_wr_from_ibz_q(
-            symmetry_context, abf_layouts, Wc_q, pbc, Rlist, atom_nabf);
+            comm_h, symmetry_context, abf_layouts, Wc_q, pbc, Rlist, atom_nabf);
         comm_h.barrier();
         lib_printf_root("Done converting Wc q -> R\n");
         return Wc_R;

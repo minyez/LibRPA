@@ -3,6 +3,7 @@
  * @brief utilities for handling with Coulomb matrix
  */
 #pragma once
+#include "../mpi/base_mpi.h"
 #include "atomic_basis.h"
 #include "symmetry_context.h"
 #include "pbc.h"
@@ -12,6 +13,7 @@ namespace librpa_int {
 
 /*!
  * @brief perform Fourier transform of q/k-space Coulomb matrix to R-space
+ * @param comm_h communicator used for distributed symmetry collection
  * @param coulmat  q/k-space Coulomb matrix by atom-pair index
  * @param Rlist  vectors of R where the R-space Coulomb matrix should be computed
  * @param return_ordered_atom_pair  ensure that the returned type
@@ -19,7 +21,8 @@ namespace librpa_int {
  *        i.e. there always exists map[I][J] and map[J][I] for I not equal to J
  * @return  atpair_R_mat_t
  */
-atpair_R_mat_t FT_Vq(const AtomicBasis &basis_abf,
+atpair_R_mat_t FT_Vq(const MpiCommHandler &comm_h,
+                     const AtomicBasis &basis_abf,
                      const SymmetryContext &symmetry_context,
                      const atpair_k_cplx_mat_t &coulmat_k,
                      const PeriodicBoundaryData &pbc,

@@ -194,10 +194,11 @@ static librpa_int::symmetry_atom_block_matrix_map_t build_symmetry_blocks_from_d
 }
 
 static librpa_int::symmetry_atom_block_matrix_map_t gather_symmetry_ibz_blocks_collective(
+    const MpiCommHandler& comm_h,
     const librpa_int::symmetry_atom_block_matrix_map_t& blocks_ibz_local,
     const std::map<atom_t, size_t>& atom_nabf)
 {
-    if (global::mpi_comm_global_h.nprocs <= 1)
+    if (comm_h.nprocs <= 1)
     {
         return blocks_ibz_local;
     }
@@ -205,7 +206,7 @@ static librpa_int::symmetry_atom_block_matrix_map_t gather_symmetry_ibz_blocks_c
     const auto dense_local =
         build_dense_symmetry_hermitian_matrix_from_local_blocks(blocks_ibz_local, atom_nabf);
     ComplexMatrix dense_global(dense_local.nr, dense_local.nc);
-    allreduce_ComplexMatrix(dense_local, dense_global, global::mpi_comm_global_h.comm);
+    allreduce_ComplexMatrix(dense_local, dense_global, comm_h.comm);
     return build_symmetry_blocks_from_dense_matrix(dense_global, atom_nabf);
 }
 
@@ -255,6 +256,7 @@ static std::complex<double> build_ft_vq_phase(const PeriodicBoundaryData& pbc,
 }
 
 static atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
+    const MpiCommHandler& comm_h,
     const SymmetryContext& ctx,
     const AtomicBasis& basis_abf,
     const atpair_k_cplx_mat_t& blocks_by_q_ibz,
@@ -297,7 +299,7 @@ static atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
         const auto q_ibz_internal = pbc.klist.at(static_cast<std::size_t>(star_mapping.iq_ibz));
         auto blocks_ibz =
             collect_symmetry_abf_ibz_blocks_for_q(blocks_by_q_ibz, q_ibz_internal);
-        blocks_ibz = gather_symmetry_ibz_blocks_collective(blocks_ibz, atom_nabf);
+        blocks_ibz = gather_symmetry_ibz_blocks_collective(comm_h, blocks_ibz, atom_nabf);
         if (blocks_ibz.empty())
         {
             continue;
@@ -374,7 +376,8 @@ static atpair_R_mat_t accumulate_symmetry_abf_irreducible_sector_vr(
 static bool can_use_symmetry_irreducible_sector_ft_vq(const SymmetryContext& ctx,
                                                       const AtomicBasis& basis_abf,
                                                       const atpair_k_cplx_mat_t& coulmat_k,
-                                                      const PeriodicBoundaryData& pbc)
+                                                      const PeriodicBoundaryData& pbc,
+                                                      const MpiCommHandler& comm_h)
 {
     const auto atom_nabf = build_atom_nabf_map(basis_abf);
     const auto abf_layouts = basis_abf.build_species_basis_layouts(ctx.atom_to_type);
@@ -383,7 +386,7 @@ static bool can_use_symmetry_irreducible_sector_ft_vq(const SymmetryContext& ctx
         return false;
     }
     const bool has_complete_or_distributed_coverage =
-        global::mpi_comm_global_h.nprocs > 1
+        comm_h.nprocs > 1
         || has_complete_symmetry_abf_ibz_coverage(coulmat_k, atom_nabf, pbc);
     return ctx.available
            && !ctx.kstars.empty()
@@ -397,7 +400,8 @@ static bool can_use_symmetry_irreducible_sector_ft_vq(const SymmetryContext& ctx
            && !ctx.rspace_operations.empty();
 }
 
-atpair_R_mat_t FT_Vq(const AtomicBasis &basis_abf,
+atpair_R_mat_t FT_Vq(const MpiCommHandler &comm_h,
+                     const AtomicBasis &basis_abf,
                      const SymmetryContext &symmetry_context,
                      const atpair_k_cplx_mat_t &coulmat_k,
                      const PeriodicBoundaryData &pbc,
@@ -412,11 +416,13 @@ atpair_R_mat_t FT_Vq(const AtomicBasis &basis_abf,
     const auto n_k_points = pbc.get_n_cells_bvk();
 
     if (use_symmetry_context
-        && can_use_symmetry_irreducible_sector_ft_vq(symmetry_context, basis_abf, coulmat_k, pbc))
+        && can_use_symmetry_irreducible_sector_ft_vq(
+            symmetry_context, basis_abf, coulmat_k, pbc, comm_h))
     {
         global::lib_printf_root(
             "EXX symmetry accumulates irreducible-sector `V(R)` directly from IBZ q-stars\n");
-        return accumulate_symmetry_abf_irreducible_sector_vr(symmetry_context, basis_abf, coulmat_k, pbc);
+        return accumulate_symmetry_abf_irreducible_sector_vr(
+            comm_h, symmetry_context, basis_abf, coulmat_k, pbc);
     }
 
     for (auto R: Rlist)

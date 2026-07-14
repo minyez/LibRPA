@@ -716,7 +716,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
         const auto &coul = opts.use_fullcoul_exx ? pds->vq : pds->vq_cut;
         profiler.start("ft_vq_cut", "Fourier transform truncated Coulomb");
         const auto VR = librpa_int::FT_Vq(
-            basis_aux_exx, pds->symmetry_context, coul, pds->pbc, true,
+            pds->comm_h, basis_aux_exx, pds->symmetry_context, coul, pds->pbc, true,
             opts.use_symmetry_exx == LIBRPA_SWITCH_ON);
         profiler.stop("ft_vq_cut");
 
