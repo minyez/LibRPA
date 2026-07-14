@@ -6,5 +6,6 @@ replace_w_head = t
 parallel_routing = libri
 vq_threshold = 0
 sqrt_coulomb_threshold = 0
+use_kpara_scf_eigvec = t
 
 output_level = debug
