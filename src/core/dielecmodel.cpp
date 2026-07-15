@@ -709,6 +709,28 @@ const ComplexMatrix &direct_full_bz_wfc_for_kstar_member(
     return *wfc;
 }
 
+ComplexMatrix localize_direct_full_bz_wfc(const ComplexMatrix &wfc_full,
+                                          const ArrayDesc &desc_wfc)
+{
+    if (!desc_wfc.is_initialized() || wfc_full.nr != desc_wfc.n() ||
+        wfc_full.nc != desc_wfc.m())
+    {
+        throw std::runtime_error("direct full-BZ WFC descriptor is inconsistent");
+    }
+
+    ComplexMatrix wfc_local(desc_wfc.n_loc(), desc_wfc.m_loc(), false);
+    for (int jloc = 0; jloc != desc_wfc.n_loc(); ++jloc)
+    {
+        const int iband = desc_wfc.indx_l2g_c(jloc);
+        for (int iloc = 0; iloc != desc_wfc.m_loc(); ++iloc)
+        {
+            const int iao = desc_wfc.indx_l2g_r(iloc);
+            wfc_local(jloc, iloc) = wfc_full(iband, iao);
+        }
+    }
+    return wfc_local;
+}
+
 static std::vector<int> build_headwing_atom_offsets(const std::map<atom_t, size_t>& atom_nw)
 {
     std::vector<int> offsets(atom_nw.size() + 1, 0);
@@ -1781,7 +1803,6 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
     if (symmetry_context_ == nullptr)
         throw std::runtime_error("cal_wing_symmetric: symmetry context is not set");
     const auto &ctx = *symmetry_context_;
-    const auto wfc_layouts = atomic_basis_wfc_.build_species_basis_layouts(ctx.atom_to_type);
     const auto member_targets =
         librpa_int::build_symmetry_kstar_member_kfrac_targets(ctx, pbc_);
     const auto fourier_targets = build_headwing_symmetry_fourier_targets(ctx, pbc_, kfrac_band);
@@ -1843,38 +1864,27 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
 
             std::vector<std::vector<ComplexMatrix>> wfc_bz_storage(n_spin);
             std::vector<std::vector<const ComplexMatrix *>> wfc_bz_ptrs(n_spin);
-            if (use_kblacs)
-            {
-                profiler.start("headwing_rotate_wfc_sym_kblacs");
-                wfc_bz_storage = rotate_headwing_wfc_symmetry_kblacs(
-                    meanfield_df, ik_ibz, *desc_wfc_kblacs_, wing_blacs_h, ctx, member,
-                    wfc_layouts, atom_nw, k_ibz, &k_bz);
-                profiler.stop("headwing_rotate_wfc_sym_kblacs");
-            }
-            else
-            {
-                for (int ispin = 0; ispin != n_spin; ++ispin)
-                {
-                    wfc_bz_storage[ispin].resize(n_spinor);
-                    if (source_rank)
-                    {
-                        const auto M_full = build_symmetry_ao_bloch_rotation_matrix_full(
-                            ctx, member, wfc_layouts, atom_nw, k_ibz, &k_bz);
-                        const ComplexMatrix M_full_conj = conj(M_full);
-                        for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
-                        {
-                            const auto *C_ibz = meanfield_df.find_wfc(ispin, ispinor, ik_ibz);
-                            if (C_ibz == nullptr) continue;
-                            wfc_bz_storage[ispin][ispinor] = (*C_ibz) * M_full_conj;
-                        }
-                    }
-                }
-            }
             for (int ispin = 0; ispin != n_spin; ++ispin)
             {
+                wfc_bz_storage[ispin].resize(n_spinor);
                 wfc_bz_ptrs[ispin].resize(n_spinor, nullptr);
                 for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
-                    wfc_bz_ptrs[ispin][ispinor] = &wfc_bz_storage[ispin][ispinor];
+                {
+                    if (!use_kblacs && !source_rank) continue;
+                    const auto &wfc_full = direct_full_bz_wfc_for_kstar_member(
+                        direct_full_bz_wfc_, direct_full_bz_velocity_member_source_ik_,
+                        ispin, ispinor, ik_ibz, imember);
+                    if (use_kblacs)
+                    {
+                        wfc_bz_storage[ispin][ispinor] =
+                            localize_direct_full_bz_wfc(wfc_full, *desc_wfc_kblacs_);
+                        wfc_bz_ptrs[ispin][ispinor] = &wfc_bz_storage[ispin][ispinor];
+                    }
+                    else
+                    {
+                        wfc_bz_ptrs[ispin][ispinor] = &wfc_full;
+                    }
+                }
             }
 
             for (int mu = 0; mu != n_abf; ++mu)

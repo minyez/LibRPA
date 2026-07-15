@@ -98,6 +98,8 @@ const ComplexMatrix &direct_full_bz_wfc_for_kstar_member(
     int ispinor,
     int ik_ibz,
     std::size_t imember);
+ComplexMatrix localize_direct_full_bz_wfc(const ComplexMatrix &wfc_full,
+                                          const ArrayDesc &desc_wfc);
 
 using HeadwingIJKAtomKey = std::size_t;
 using HeadwingIJKKey = std::pair<HeadwingIJKAtomKey, int>;

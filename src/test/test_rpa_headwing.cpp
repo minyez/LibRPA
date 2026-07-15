@@ -827,6 +827,29 @@ void test_headwing_direct_full_bz_wfc_selects_same_kstar_member()
     assert_complex_close(wfc(0, 0), {0.0, 1.0}, 1e-12);
 }
 
+void test_headwing_direct_full_bz_wfc_local_block(const BlacsCtxtHandler &blacs_h)
+{
+    ComplexMatrix wfc_full(5, 7);
+    for (int iband = 0; iband != wfc_full.nr; ++iband)
+        for (int iao = 0; iao != wfc_full.nc; ++iao)
+            wfc_full(iband, iao) = {100.0 * iband + iao, iband - 0.1 * iao};
+
+    ArrayDesc desc_wfc(blacs_h);
+    desc_wfc.init(7, 5, 2, 3, 0, 0);
+    const auto wfc_local = librpa_int::localize_direct_full_bz_wfc(wfc_full, desc_wfc);
+    assert(wfc_local.nr == desc_wfc.n_loc());
+    assert(wfc_local.nc == desc_wfc.m_loc());
+    for (int jloc = 0; jloc != desc_wfc.n_loc(); ++jloc)
+    {
+        const int iband = desc_wfc.indx_l2g_c(jloc);
+        for (int iloc = 0; iloc != desc_wfc.m_loc(); ++iloc)
+        {
+            const int iao = desc_wfc.indx_l2g_r(iloc);
+            assert_complex_close(wfc_local(jloc, iloc), wfc_full(iband, iao), 1e-12);
+        }
+    }
+}
+
 RI::Tensor<double> make_single_value_tensor(const double value)
 {
     auto data = std::make_shared<std::valarray<double>>(1);
@@ -1575,6 +1598,7 @@ int main(int argc, char *argv[])
         test_headwing_velocity_restore_uses_inverse_spatial_route();
         test_headwing_direct_full_bz_velocity_selects_kstar_member();
         test_headwing_direct_full_bz_wfc_selects_same_kstar_member();
+        test_headwing_direct_full_bz_wfc_local_block(blacs_h);
         test_kblacs_transform_with_restored_wfc_matches_full_bz_atom_permutation(blacs_h);
         test_kblacs_transform_matches_original_transform(blacs_h);
         test_kblacs_transform_uses_rectangular_opt_128_blocks();
