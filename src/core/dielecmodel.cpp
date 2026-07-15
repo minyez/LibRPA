@@ -26,6 +26,7 @@
 #include "../utils/profiler.h"
 #include "../utils/utils_mem.h"
 #include "atomic_basis.h"
+#include "meanfield_mpi.h"
 #include "pbc.h"
 #include "ri.h"
 #ifdef LIBRPA_USE_LIBRI
@@ -905,11 +906,10 @@ static std::vector<std::vector<ComplexMatrix>> rotate_headwing_wfc_symmetry_kbla
         desc_wfc_src.n() != n_states || desc_wfc_src.ictxt() != blacs_h.ictxt)
         throw std::runtime_error("symmetric headwing source wave-function descriptor is invalid");
 
-    constexpr int block_cap = 128;
     const int expected_block_ao =
-        get_capped_blacs_block_size(n_aos, block_cap, blacs_h);
+        get_capped_blacs_block_size(n_aos, wfc_gemm_block_size_opt, blacs_h);
     const int expected_block_band =
-        get_capped_blacs_block_size(n_states, block_cap, blacs_h);
+        get_capped_blacs_block_size(n_states, wfc_gemm_block_size_opt, blacs_h);
     if (desc_wfc_src.mb() != expected_block_ao ||
         desc_wfc_src.nb() != expected_block_band)
         throw std::runtime_error(
@@ -2193,13 +2193,12 @@ std::pair<ArrayDesc, matrix_m<complex<double>>> diele_func::rotate_Cs_nao2mnk_kb
     const int n_soc = meanfield_df.get_n_spinor();
     const int Mu = atomic_basis_abf_.get_i_atom(mu);
     const int n_ao_Mu = atomic_basis_wfc_.get_atom_nb(Mu);
-    constexpr int block_size_cap = 128;
     const int expected_block_nao =
-        get_capped_blacs_block_size(n_basis, block_size_cap, wing_blacs_h);
+        get_capped_blacs_block_size(n_basis, wfc_gemm_block_size_opt, wing_blacs_h);
     const int block_Mu =
-        get_capped_blacs_block_size(n_ao_Mu, block_size_cap, wing_blacs_h);
+        get_capped_blacs_block_size(n_ao_Mu, wfc_gemm_block_size_opt, wing_blacs_h);
     const int expected_block_nband =
-        get_capped_blacs_block_size(n_states, block_size_cap, wing_blacs_h);
+        get_capped_blacs_block_size(n_states, wfc_gemm_block_size_opt, wing_blacs_h);
     const bool wfc_is_permanent_opt =
         desc_wfc_src.mb() == expected_block_nao &&
         desc_wfc_src.nb() == expected_block_nband;

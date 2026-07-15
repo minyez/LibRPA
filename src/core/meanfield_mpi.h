@@ -11,6 +11,9 @@
 namespace librpa_int
 {
 
+//! Shared block-size cap for permanent k-BLACS WFC layouts and their GEMM workspaces.
+constexpr int wfc_gemm_block_size_opt = 128;
+
 //! Redistribute every locally owned k-point wave function from one k-BLACS
 //! layout to another and replace MeanField::wfc with the destination blocks.
 void redistribute_meanfield_eigvecs_kblacs(

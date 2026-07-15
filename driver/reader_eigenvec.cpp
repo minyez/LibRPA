@@ -344,11 +344,10 @@ void validate_kblacs_wfc_layout(const librpa_int::MeanField &mf,
         desc_wfc.m() != mf.get_n_aos() || desc_wfc.n() != mf.get_n_states() ||
         desc_wfc.ictxt() != kblacs_ctxt.blacs_h.ictxt)
         throw std::runtime_error("k-BLACS eigenvector reader got inconsistent dimensions");
-    constexpr int block_cap = 128;
     const int block_ao = librpa_int::get_capped_blacs_block_size(
-        mf.get_n_aos(), block_cap, kblacs_ctxt.blacs_h);
+        mf.get_n_aos(), librpa_int::wfc_gemm_block_size_opt, kblacs_ctxt.blacs_h);
     const int block_band = librpa_int::get_capped_blacs_block_size(
-        mf.get_n_states(), block_cap, kblacs_ctxt.blacs_h);
+        mf.get_n_states(), librpa_int::wfc_gemm_block_size_opt, kblacs_ctxt.blacs_h);
     if (desc_wfc.mb() != block_ao || desc_wfc.nb() != block_band)
         throw std::runtime_error(
             "k-BLACS eigenvector target must use the permanent capped rectangular layout");

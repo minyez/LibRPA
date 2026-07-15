@@ -1057,9 +1057,11 @@ void test_kblacs_transform_uses_rectangular_opt_128_blocks()
     const auto desc_wfc_full =
         kctx.create_array_desc(n_basis, n_states, n_basis, n_states);
     const int block_ao =
-        librpa_int::get_capped_blacs_block_size(n_basis, 128, kctx.blacs_h);
+        librpa_int::get_capped_blacs_block_size(
+            n_basis, librpa_int::wfc_gemm_block_size_opt, kctx.blacs_h);
     const int block_band =
-        librpa_int::get_capped_blacs_block_size(n_states, 128, kctx.blacs_h);
+        librpa_int::get_capped_blacs_block_size(
+            n_states, librpa_int::wfc_gemm_block_size_opt, kctx.blacs_h);
     const auto desc_wfc =
         kctx.create_array_desc(n_basis, n_states, block_ao, block_band);
 
@@ -1101,7 +1103,8 @@ void test_kblacs_transform_uses_rectangular_opt_128_blocks()
     const auto &desc = transformed.first;
     const auto &matrix = transformed.second;
     assert(desc.m() == n_states && desc.n() == n_states);
-    assert(desc.mb() == 128 && desc.nb() == 128);
+    assert(desc.mb() == librpa_int::wfc_gemm_block_size_opt &&
+           desc.nb() == librpa_int::wfc_gemm_block_size_opt);
 
     for (int ilo = 0; ilo != desc.m_loc(); ++ilo)
     {

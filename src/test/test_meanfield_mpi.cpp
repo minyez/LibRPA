@@ -22,11 +22,10 @@ using namespace librpa_int::global;
 static ArrayDesc make_permanent_wfc_desc(
     const KPointBlacsParallelContext &context, const int nao, const int nstates)
 {
-    constexpr int block_cap = 128;
     const int block_ao =
-        get_capped_blacs_block_size(nao, block_cap, context.blacs_h);
+        get_capped_blacs_block_size(nao, wfc_gemm_block_size_opt, context.blacs_h);
     const int block_state =
-        get_capped_blacs_block_size(nstates, block_cap, context.blacs_h);
+        get_capped_blacs_block_size(nstates, wfc_gemm_block_size_opt, context.blacs_h);
     return context.create_array_desc(nao, nstates, block_ao, block_state);
 }
 

@@ -595,11 +595,10 @@ void Dataset::initialize_band_kblacs_wfc_layout()
         bandk_blacs_shape.favor_square_blacs_grid = true;
         bandk_blacs_ctxt.init(bandk_blacs_shape, comm_h.comm, n_kpoints);
     }
-    constexpr int wfc_block_cap = 128;
     const int block_ao = get_capped_blacs_block_size(
-        mf_band.get_n_aos(), wfc_block_cap, bandk_blacs_ctxt.blacs_h);
+        mf_band.get_n_aos(), wfc_gemm_block_size_opt, bandk_blacs_ctxt.blacs_h);
     const int block_band = get_capped_blacs_block_size(
-        mf_band.get_n_states(), wfc_block_cap, bandk_blacs_ctxt.blacs_h);
+        mf_band.get_n_states(), wfc_gemm_block_size_opt, bandk_blacs_ctxt.blacs_h);
     desc_band_wfc_kb = bandk_blacs_ctxt.create_array_desc(
         mf_band.get_n_aos(), mf_band.get_n_states(), block_ao, block_band);
     desc_band_wfc_kb_full = bandk_blacs_ctxt.create_array_desc(

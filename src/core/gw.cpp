@@ -2119,11 +2119,10 @@ void G0W0::build_sigc_matrix_KS_blacs(const std::map<int, std::map<int, std::map
     ArrayDesc desc_nband_nband(rotation_blacs_h);
     desc_nband_nband.init_1b1p(n_bands, n_bands, 0, 0);
 
-    constexpr int block_size_cap = 128;
     const int expected_block_nao =
-        get_capped_blacs_block_size(n_aos, block_size_cap, rotation_blacs_h);
+        get_capped_blacs_block_size(n_aos, wfc_gemm_block_size_opt, rotation_blacs_h);
     const int expected_block_nband =
-        get_capped_blacs_block_size(n_bands, block_size_cap, rotation_blacs_h);
+        get_capped_blacs_block_size(n_bands, wfc_gemm_block_size_opt, rotation_blacs_h);
     if (use_klocal_rotation &&
         (desc_wfc_target.mb() != expected_block_nao ||
          desc_wfc_target.nb() != expected_block_nband))

@@ -217,8 +217,6 @@ static Matz complex_matrix_to_colmajor_matz(const ComplexMatrix &block)
     return mat;
 }
 
-constexpr int wfc_gemm_block_size_opt = 128;
-
 struct WfcGemmWorkspace
 {
     ArrayDesc desc_wfc_compute;
@@ -244,15 +242,6 @@ static WfcGemmWorkspace create_wfc_gemm_workspace(const ArrayDesc &desc_wfc,
     check_wfc_gemm_context(desc_wfc, desc_out, blacs_h);
 
     WfcGemmWorkspace workspace;
-    const int expected_block_ao = get_capped_blacs_block_size(
-        desc_wfc.m(), wfc_gemm_block_size_opt, blacs_h);
-    const int expected_block_state = get_capped_blacs_block_size(
-        desc_wfc.n(), wfc_gemm_block_size_opt, blacs_h);
-    if (desc_wfc.mb() != expected_block_ao ||
-        desc_wfc.nb() != expected_block_state)
-        throw LIBRPA_RUNTIME_ERROR(
-            "WFC pgemm input must use the permanent capped rectangular layout");
-
     // Keep an equivalent mutable descriptor for DDLA metadata. The matrix data
     // itself stays in MeanField and is consumed directly.
     workspace.desc_wfc_compute = ArrayDesc(blacs_h);

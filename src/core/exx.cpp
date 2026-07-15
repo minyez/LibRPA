@@ -1141,11 +1141,10 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
     auto temp_nband_nao = init_local_mat<complex<double>>(desc_nband_nao, MAJOR::COL);
 
     // opt block-size descriptors for better pgemm performance
-    constexpr int block_size_cap = 128;
     const int expected_block_nao =
-        get_capped_blacs_block_size(n_aos, block_size_cap, rotation_blacs_h);
+        get_capped_blacs_block_size(n_aos, wfc_gemm_block_size_opt, rotation_blacs_h);
     const int expected_block_nband =
-        get_capped_blacs_block_size(n_bands, block_size_cap, rotation_blacs_h);
+        get_capped_blacs_block_size(n_bands, wfc_gemm_block_size_opt, rotation_blacs_h);
     if (use_klocal_rotation &&
         (desc_wfc_target.mb() != expected_block_nao ||
          desc_wfc_target.nb() != expected_block_nband))

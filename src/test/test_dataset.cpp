@@ -324,9 +324,10 @@ static void test_redistribute_eigvecs_kpara_2d_np4()
     ds.mf.set(n_spins, n_kpoints, n_states, n_aos, n_spinor);
     ds.scfk_blacs_ctxt.init({2, 2}, MPI_COMM_WORLD, n_kpoints);
     const int block_ao =
-        get_capped_blacs_block_size(n_aos, 128, ds.scfk_blacs_ctxt.blacs_h);
+        get_capped_blacs_block_size(n_aos, wfc_gemm_block_size_opt, ds.scfk_blacs_ctxt.blacs_h);
     const int block_state =
-        get_capped_blacs_block_size(n_states, 128, ds.scfk_blacs_ctxt.blacs_h);
+        get_capped_blacs_block_size(n_states, wfc_gemm_block_size_opt,
+                                    ds.scfk_blacs_ctxt.blacs_h);
     ds.desc_wfc_kb = ds.scfk_blacs_ctxt.create_array_desc(
         n_aos, n_states, block_ao, block_state);
     ds.desc_wfc_kb_full =
@@ -353,7 +354,8 @@ static void test_redistribute_eigvecs_kpara_2d_np4()
     assert(ds.eigvecs_kpara_2d_ready());
     assert(ds.desc_wfc_kb.mb() == block_ao);
     assert(ds.desc_wfc_kb.nb() == block_state);
-    assert(ds.desc_wfc_kb.mb() <= 128 && ds.desc_wfc_kb.nb() <= 128);
+    assert(ds.desc_wfc_kb.mb() <= wfc_gemm_block_size_opt &&
+           ds.desc_wfc_kb.nb() <= wfc_gemm_block_size_opt);
 
     for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
     {
@@ -394,8 +396,10 @@ static void test_redistribute_eigvecs_1b1p_to_opt_np4()
     constexpr int n_aos = 263;
     KPointBlacsParallelContext kctx({2, 2}, MPI_COMM_WORLD, n_kpoints);
     const auto desc_io = kctx.create_array_desc(n_aos, n_states);
-    const int block_ao = get_capped_blacs_block_size(n_aos, 128, kctx.blacs_h);
-    const int block_state = get_capped_blacs_block_size(n_states, 128, kctx.blacs_h);
+    const int block_ao =
+        get_capped_blacs_block_size(n_aos, wfc_gemm_block_size_opt, kctx.blacs_h);
+    const int block_state =
+        get_capped_blacs_block_size(n_states, wfc_gemm_block_size_opt, kctx.blacs_h);
     const auto desc_opt =
         kctx.create_array_desc(n_aos, n_states, block_ao, block_state);
     assert(desc_io.mb() != desc_opt.mb() || desc_io.nb() != desc_opt.nb());
@@ -606,8 +610,8 @@ static void test_redistribute_band_eigvecs_kpara_2d_np4()
     }
     ds.redistribute_band_eigvecs_kpara_2d();
     assert(ds.band_eigvecs_kpara_2d_ready());
-    assert(ds.desc_band_wfc_kb.mb() == 128);
-    assert(ds.desc_band_wfc_kb.nb() == 128);
+    assert(ds.desc_band_wfc_kb.mb() == wfc_gemm_block_size_opt);
+    assert(ds.desc_band_wfc_kb.nb() == wfc_gemm_block_size_opt);
     for (int ik = 0; ik != n_kpoints; ++ik)
     {
         const auto *wfc = ds.mf_band.find_wfc(0, 0, ik);
