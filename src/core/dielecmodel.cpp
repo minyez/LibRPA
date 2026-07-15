@@ -1844,26 +1844,40 @@ void diele_func::cal_wing_symmetric(const Cs_LRI &Cs_data, double coulomb_eigen_
                     ik_ibz, imember);
             }
 
+            std::vector<std::vector<ComplexMatrix>> wfc_bz_storage(n_spin);
             std::vector<std::vector<const ComplexMatrix *>> wfc_bz_ptrs(n_spin);
-            for (int ispin = 0; ispin != n_spin; ++ispin)
+            if (use_kblacs)
             {
-                wfc_bz_ptrs[ispin].assign(n_spinor, nullptr);
+                profiler.start("headwing_rotate_wfc_sym_kblacs");
+                wfc_bz_storage = rotate_headwing_wfc_symmetry_kblacs(
+                    meanfield_df, ik_ibz, *desc_wfc_kblacs_, wing_blacs_h, ctx, member,
+                    wfc_layouts, atom_nw, k_ibz, &k_bz);
+                profiler.stop("headwing_rotate_wfc_sym_kblacs");
             }
-            if (source_rank)
+            else
             {
                 for (int ispin = 0; ispin != n_spin; ++ispin)
                 {
-                    for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+                    wfc_bz_storage[ispin].resize(n_spinor);
+                    if (source_rank)
                     {
-                        wfc_bz_ptrs[ispin][ispinor] = &direct_full_bz_wfc_for_kstar_member(
-                            direct_full_bz_wfc_, direct_full_bz_velocity_member_source_ik_,
-                            ispin, ispinor, ik_ibz, imember);
+                        const auto M_full = build_symmetry_ao_bloch_rotation_matrix_full(
+                            ctx, member, wfc_layouts, atom_nw, k_ibz, &k_bz);
+                        const ComplexMatrix M_full_conj = conj(M_full);
+                        for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+                        {
+                            const auto *C_ibz = meanfield_df.find_wfc(ispin, ispinor, ik_ibz);
+                            if (C_ibz == nullptr) continue;
+                            wfc_bz_storage[ispin][ispinor] = (*C_ibz) * M_full_conj;
+                        }
                     }
                 }
-                if (is_wing_wfc_probe_kpoint(k_bz) && !wfc_bz_ptrs.empty() &&
-                    !wfc_bz_ptrs.front().empty())
-                    print_wing_wfc_probe(ik_ibz, k_ibz, member, k_bz,
-                                         *wfc_bz_ptrs.front().front());
+            }
+            for (int ispin = 0; ispin != n_spin; ++ispin)
+            {
+                wfc_bz_ptrs[ispin].resize(n_spinor, nullptr);
+                for (int ispinor = 0; ispinor != n_spinor; ++ispinor)
+                    wfc_bz_ptrs[ispin][ispinor] = &wfc_bz_storage[ispin][ispinor];
             }
 
             for (int mu = 0; mu != n_abf; ++mu)
