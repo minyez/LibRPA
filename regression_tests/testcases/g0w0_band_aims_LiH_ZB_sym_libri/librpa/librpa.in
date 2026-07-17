@@ -4,6 +4,7 @@ input_dir = ../dataset
 # API runtime
 replace_w_head = t
 parallel_routing = libri
+use_real_dense_gw_wc = t
 use_kpara_scf_eigvec = t
 use_symmetry_exx = t
 use_symmetry_rpa = t
