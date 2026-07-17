@@ -92,6 +92,16 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
     const SymmetryQPointView *qpoint_view = nullptr,
     const SymmetryContext *symmetry_context = nullptr);
 
+//! Dense Wc(q,iw) -> real Wc(R,tau), consuming Wc_freq_q.
+std::map<double, std::map<Vector3_Order<int>, Matd>> CT_FT_Wc_freq_q_real(
+    const MpiCommHandler &comm_h,
+    std::map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
+    const PeriodicBoundaryData &pbc, const TFGrids &tfg,
+    const ArrayDesc *ad_Wc = nullptr,
+    const AtomicBasis *atbasis_Wc = nullptr,
+    const SymmetryQPointView *qpoint_view = nullptr,
+    const SymmetryContext *symmetry_context = nullptr);
+
 // @brief Fourier transform screened Coulomb Wc(q,w) -> Wc(R,w) -> W(R,t)
 // @details transform step by step to output Wc_freq_R, and return full atom-pair matrix
 // @attention CT_FT_Wc_freq_q only return upper atom-pair, but final Wc_libri should be same

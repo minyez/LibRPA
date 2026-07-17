@@ -3575,18 +3575,82 @@ static std::map<Vector3_Order<double>, Matz> restore_symmetry_dense_wq_map(
     return Wq_full_map;
 }
 
-std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
-    const MpiCommHandler &comm_h, map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
+using dense_wc_freq_r_complex_t = std::map<double, std::map<Vector3_Order<int>, Matz>>;
+using dense_wc_freq_r_real_t = std::map<double, std::map<Vector3_Order<int>, Matd>>;
+
+struct DenseWcRealResidual
+{
+    double max_abs_real = 0.0;
+    double max_abs_imag = 0.0;
+    double worst_freq = 0.0;
+    Vector3_Order<int> worst_R{0, 0, 0};
+    std::size_t worst_local_index = 0;
+    bool has_nonfinite = false;
+};
+
+static void validate_dense_wc_real_residual(const MpiCommHandler &comm_h,
+                                            const DenseWcRealResidual &local)
+{
+    constexpr double abs_tol = 1e-12;
+    constexpr double rel_tol = 1e-10;
+
+    const double local_maxima[2] = {local.max_abs_real, local.max_abs_imag};
+    double global_maxima[2] = {0.0, 0.0};
+    MPI_Allreduce(local_maxima, global_maxima, 2, MPI_DOUBLE, MPI_MAX, comm_h.comm);
+
+    int nonfinite_local = local.has_nonfinite ? 1 : 0;
+    int nonfinite_global = 0;
+    MPI_Allreduce(&nonfinite_local, &nonfinite_global, 1, MPI_INT, MPI_MAX, comm_h.comm);
+
+    struct
+    {
+        double value;
+        int rank;
+    } local_maxloc{local.max_abs_imag, comm_h.myid}, global_maxloc{0.0, 0};
+    MPI_Allreduce(&local_maxloc, &global_maxloc, 1, MPI_DOUBLE_INT, MPI_MAXLOC, comm_h.comm);
+
+    double worst_freq = local.worst_freq;
+    int worst_R[3] = {local.worst_R.x, local.worst_R.y, local.worst_R.z};
+    unsigned long long worst_local_index = local.worst_local_index;
+    MPI_Bcast(&worst_freq, 1, MPI_DOUBLE, global_maxloc.rank, comm_h.comm);
+    MPI_Bcast(worst_R, 3, MPI_INT, global_maxloc.rank, comm_h.comm);
+    MPI_Bcast(&worst_local_index, 1, MPI_UNSIGNED_LONG_LONG, global_maxloc.rank, comm_h.comm);
+
+    const double allowed = abs_tol + rel_tol * global_maxima[0];
+    global::lib_printf_root(
+        "Dense Wc real projection residual: max|Re|=%15.8e max|Im|=%15.8e "
+        "allowed=%15.8e worst_rank=%d freq=%15.8e R=(%d,%d,%d) local_index=%llu\n",
+        global_maxima[0], global_maxima[1], allowed, global_maxloc.rank, worst_freq,
+        worst_R[0], worst_R[1], worst_R[2], worst_local_index);
+
+    if (nonfinite_global != 0)
+        throw LIBRPA_RUNTIME_ERROR("Dense Wc real projection found a non-finite value");
+    if (global_maxima[1] > allowed)
+        throw LIBRPA_RUNTIME_ERROR(
+            "Dense Wc real projection imaginary residual exceeds the development tolerance");
+}
+
+static void FT_Wc_freq_q_into(
+    const MpiCommHandler &comm_h,
+    map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
     const PeriodicBoundaryData &pbc, bool remove_freq_q,
     const SymmetryQPointView *qpoint_view,
     const SymmetryContext *symmetry_context,
     const AtomicBasis *atbasis_Wc,
-    const ArrayDesc *ad_Wc)
+    const ArrayDesc *ad_Wc,
+    dense_wc_freq_r_complex_t *Wc_freq_R_complex,
+    dense_wc_freq_r_real_t *Wc_freq_R_real,
+    DenseWcRealResidual *real_residual)
 {
     using librpa_int::global::ofs_myid;
     using librpa_int::global::lib_printf;
 
-    map<double, std::map<Vector3_Order<int>, Matz>> Wc_freq_R;
+    const bool use_real_output = Wc_freq_R_real != nullptr;
+    if ((Wc_freq_R_complex == nullptr) == (Wc_freq_R_real == nullptr))
+        throw LIBRPA_RUNTIME_ERROR("Dense Wc Fourier transform needs exactly one destination");
+    if (use_real_output && real_residual == nullptr)
+        throw LIBRPA_RUNTIME_ERROR("Dense real Wc Fourier transform needs residual storage");
+
     if (comm_h.is_root())
         lib_printf("Converting Wc q,w -> R,t\n");
     comm_h.barrier();
@@ -3594,7 +3658,7 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
     const auto &Rlist = pbc.Rlist;
 
     // quick return if empty
-    if (Wc_freq_q.size() == 0) return Wc_freq_R;
+    if (Wc_freq_q.size() == 0) return;
     // For single k-point (Gamma only), there is no need to transform: just remap and return
     if (n_k_points == 1)
     {
@@ -3607,7 +3671,36 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
             for (auto it_q = map_q_mat.begin(); it_q != map_q_mat.end(); )
             {
                 const Vector3_Order<int> center{0, 0, 0};
-                Wc_freq_R[freq][center] = it_q->second;
+                if (use_real_output)
+                {
+                    const auto &source = it_q->second;
+                    Matd target(source.nr(), source.nc(), source.major());
+                    for (std::size_t i = 0; i != source.size(); ++i)
+                    {
+                        const auto value = source.ptr()[i];
+                        if (!std::isfinite(value.real()) || !std::isfinite(value.imag()))
+                            real_residual->has_nonfinite = true;
+                        else
+                        {
+                            real_residual->max_abs_real =
+                                std::max(real_residual->max_abs_real, std::abs(value.real()));
+                            const double abs_imag = std::abs(value.imag());
+                            if (abs_imag > real_residual->max_abs_imag)
+                            {
+                                real_residual->max_abs_imag = abs_imag;
+                                real_residual->worst_freq = freq;
+                                real_residual->worst_R = center;
+                                real_residual->worst_local_index = i;
+                            }
+                        }
+                        target.ptr()[i] = value.real();
+                    }
+                    (*Wc_freq_R_real)[freq][center] = std::move(target);
+                }
+                else
+                {
+                    (*Wc_freq_R_complex)[freq][center] = it_q->second;
+                }
                 if (remove_freq_q)
                 {
                     it_q = map_q_mat.erase(it_q);
@@ -3619,13 +3712,13 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
             }
         }
         if (remove_freq_q) Wc_freq_q.clear();
-        return Wc_freq_R;
+        return;
     }
 
     // check major and size of the matrix to transform
-    MAJOR major_orig;
-    int nr, nc;
-    size_t size;
+    MAJOR major_orig = MAJOR::AUTO;
+    int nr = 0, nc = 0;
+    size_t size = 0;
     for (const auto &[freq, map_q_mat] : Wc_freq_q)
     {
         if (map_q_mat.cbegin() != map_q_mat.cend())
@@ -3638,6 +3731,8 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
             break;
         }
     }
+    if (major_orig == MAJOR::AUTO)
+        throw LIBRPA_RUNTIME_ERROR("Dense Wc Fourier transform input has no matrices");
 
     const auto &latvec = pbc.latvec;
     const auto &klist_full = pbc.klist_full;
@@ -3711,7 +3806,10 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
         // initialize
         for (const auto &R: Rlist)
         {
-            Wc_freq_R[freq][R] = Matz(nr, nc, major_orig);
+            if (use_real_output)
+                (*Wc_freq_R_real)[freq][R] = Matd(nr, nc, major_orig);
+            else
+                (*Wc_freq_R_complex)[freq][R] = Matz(nr, nc, major_orig);
         }
         for (size_t i_data_batch = 0; i_data_batch < n_data_batches; i_data_batch++)
         {
@@ -3773,11 +3871,72 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
                                         1.0, kmat.data(), size_batch_max, coeff_k2r.ptr() + n_k_points * displ_r, n_k_points,
                                         0.0, rmat.data(), size_batch_max);
                 // Add to the mapping
-                #pragma omp parallel for schedule(dynamic)
-                for (size_t ir_this = 0; ir_this < n_r_this_batch; ir_this++)
+                if (use_real_output)
                 {
-                    auto ir = displ_r + ir_this;
-                    memcpy(Wc_freq_R[freq][Rlist[ir]].ptr() + displ_data, rmat.data() + size_batch_max * ir_this, sizeof(cplxdb) * size_this_batch);
+                    std::vector<double *> dest_ptrs(n_r_this_batch);
+                    std::vector<double> batch_max_real(n_r_this_batch, 0.0);
+                    std::vector<double> batch_max_imag(n_r_this_batch, 0.0);
+                    std::vector<std::size_t> batch_worst_index(n_r_this_batch, 0);
+                    std::vector<int> batch_has_nonfinite(n_r_this_batch, 0);
+                    for (std::size_t ir_this = 0; ir_this != n_r_this_batch; ++ir_this)
+                    {
+                        const auto ir = displ_r + ir_this;
+                        dest_ptrs[ir_this] =
+                            Wc_freq_R_real->at(freq).at(Rlist[ir]).ptr() + displ_data;
+                    }
+
+                    #pragma omp parallel for schedule(static)
+                    for (size_t ir_this = 0; ir_this < n_r_this_batch; ir_this++)
+                    {
+                        const auto *source = rmat.data() + size_batch_max * ir_this;
+                        auto *target = dest_ptrs[ir_this];
+                        for (std::size_t i = 0; i != size_this_batch; ++i)
+                        {
+                            const auto value = source[i];
+                            target[i] = value.real();
+                            if (!std::isfinite(value.real()) || !std::isfinite(value.imag()))
+                            {
+                                batch_has_nonfinite[ir_this] = 1;
+                                continue;
+                            }
+                            batch_max_real[ir_this] =
+                                std::max(batch_max_real[ir_this], std::abs(value.real()));
+                            const double abs_imag = std::abs(value.imag());
+                            if (abs_imag > batch_max_imag[ir_this])
+                            {
+                                batch_max_imag[ir_this] = abs_imag;
+                                batch_worst_index[ir_this] = i;
+                            }
+                        }
+                    }
+
+                    for (std::size_t ir_this = 0; ir_this != n_r_this_batch; ++ir_this)
+                    {
+                        real_residual->max_abs_real =
+                            std::max(real_residual->max_abs_real, batch_max_real[ir_this]);
+                        real_residual->has_nonfinite =
+                            real_residual->has_nonfinite || batch_has_nonfinite[ir_this] != 0;
+                        if (batch_max_imag[ir_this] > real_residual->max_abs_imag)
+                        {
+                            const auto ir = displ_r + ir_this;
+                            real_residual->max_abs_imag = batch_max_imag[ir_this];
+                            real_residual->worst_freq = freq;
+                            real_residual->worst_R = Rlist[ir];
+                            real_residual->worst_local_index =
+                                displ_data + batch_worst_index[ir_this];
+                        }
+                    }
+                }
+                else
+                {
+                    #pragma omp parallel for schedule(dynamic)
+                    for (size_t ir_this = 0; ir_this < n_r_this_batch; ir_this++)
+                    {
+                        auto ir = displ_r + ir_this;
+                        memcpy((*Wc_freq_R_complex)[freq][Rlist[ir]].ptr() + displ_data,
+                               rmat.data() + size_batch_max * ir_this,
+                               sizeof(cplxdb) * size_this_batch);
+                    }
                 }
             }
         }
@@ -3797,7 +3956,36 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
         lib_printf("Done converting Wc(q,w) -> Wc(R,w)\n");
     }
     comm_h.barrier();
+}
 
+std::map<double, std::map<Vector3_Order<int>, Matz>> FT_Wc_freq_q(
+    const MpiCommHandler &comm_h, map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
+    const PeriodicBoundaryData &pbc, bool remove_freq_q,
+    const SymmetryQPointView *qpoint_view,
+    const SymmetryContext *symmetry_context,
+    const AtomicBasis *atbasis_Wc,
+    const ArrayDesc *ad_Wc)
+{
+    dense_wc_freq_r_complex_t Wc_freq_R;
+    FT_Wc_freq_q_into(comm_h, Wc_freq_q, pbc, remove_freq_q, qpoint_view,
+                      symmetry_context, atbasis_Wc, ad_Wc, &Wc_freq_R, nullptr, nullptr);
+    return Wc_freq_R;
+}
+
+static dense_wc_freq_r_real_t FT_Wc_freq_q_real(
+    const MpiCommHandler &comm_h,
+    map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
+    const PeriodicBoundaryData &pbc,
+    const SymmetryQPointView *qpoint_view,
+    const SymmetryContext *symmetry_context,
+    const AtomicBasis *atbasis_Wc,
+    const ArrayDesc *ad_Wc)
+{
+    dense_wc_freq_r_real_t Wc_freq_R;
+    DenseWcRealResidual residual;
+    FT_Wc_freq_q_into(comm_h, Wc_freq_q, pbc, true, qpoint_view, symmetry_context,
+                      atbasis_Wc, ad_Wc, nullptr, &Wc_freq_R, &residual);
+    validate_dense_wc_real_residual(comm_h, residual);
     return Wc_freq_R;
 }
 
@@ -4051,6 +4239,160 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> CT_FT_Wc_freq_q(
     librpa_int::global::lib_printf_root("Done converting Wc q,w -> R,t\n");
     comm_h.barrier();
 
+    return Wc_tau_R;
+}
+
+std::map<double, std::map<Vector3_Order<int>, Matd>> CT_FT_Wc_freq_q_real(
+    const MpiCommHandler &comm_h,
+    std::map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,
+    const PeriodicBoundaryData &pbc, const TFGrids &tfg,
+    const ArrayDesc *ad_Wc, const AtomicBasis *atbasis_Wc,
+    const SymmetryQPointView *qpoint_view,
+    const SymmetryContext *symmetry_context)
+{
+    std::map<double, std::map<Vector3_Order<int>, Matd>> Wc_tau_R;
+    if (Wc_freq_q.empty()) return Wc_tau_R;
+    if (!tfg.has_time_grids())
+        throw LIBRPA_RUNTIME_ERROR("TFGrids object does not have time grids");
+
+    const auto n_freq = tfg.get_n_grids();
+    const auto freq_nodes = tfg.get_freq_nodes();
+    const auto time_nodes = tfg.get_time_nodes();
+    const auto &Rlist = pbc.Rlist;
+    const auto n_k_points = pbc.get_n_cells_bvk();
+
+    global::lib_printf_root("Converting Wc(q,w) -> real W(R,t)\n");
+    comm_h.barrier();
+    auto Wc_freq_R = FT_Wc_freq_q_real(comm_h, Wc_freq_q, pbc, qpoint_view,
+                                       symmetry_context, atbasis_Wc, ad_Wc);
+
+    MAJOR major_orig = MAJOR::AUTO;
+    int nr = 0, nc = 0;
+    std::size_t size = 0;
+    for (const auto &[freq, map_R_mat] : Wc_freq_R)
+    {
+        if (!map_R_mat.empty())
+        {
+            const auto &mat = map_R_mat.begin()->second;
+            nr = mat.nr();
+            nc = mat.nc();
+            major_orig = mat.major();
+            size = mat.size();
+            break;
+        }
+    }
+    if (major_orig == MAJOR::AUTO)
+        throw LIBRPA_RUNTIME_ERROR("Dense real Wc cosine transform input has no matrices");
+
+    std::map<Vector3_Order<int>, std::map<double, Matd>> Wc_R_freq;
+    for (auto &[freq, Wc_R] : Wc_freq_R)
+        for (auto &[R, Wc] : Wc_R)
+            Wc_R_freq[R].emplace(freq, std::move(Wc));
+    Wc_freq_R.clear();
+
+    if (size == 0)
+    {
+        for (const auto &tau : time_nodes)
+            for (const auto &R : Rlist)
+                Wc_tau_R[tau][R] = Matd(nr, nc, major_orig);
+        Wc_R_freq.clear();
+        global::lib_printf_root("Done converting Wc q,w -> real R,t\n");
+        comm_h.barrier();
+        return Wc_tau_R;
+    }
+
+    Matd coeff_f2t(n_freq, n_freq, MAJOR::COL);
+    for (std::size_t itau = 0; itau != n_freq; ++itau)
+        for (std::size_t ifreq = 0; ifreq != n_freq; ++ifreq)
+            coeff_f2t(ifreq, itau) = tfg.get_costrans_f2t()(itau, ifreq);
+
+    const auto maxbytes_tmpmat = gbytes;
+    std::size_t size_batch_max = 0, n_data_batches = 0;
+    std::size_t n_r_batch_max = 0, n_r_batches = 0;
+    const auto n_r_batches_with_whole_size =
+        maxbytes_tmpmat / sizeof(double) / size / n_freq;
+    if (n_r_batches_with_whole_size < 1)
+    {
+        n_r_batch_max = 1;
+        n_r_batches = n_k_points;
+        size_batch_max = std::max<std::size_t>(
+            1, std::min(maxbytes_tmpmat / sizeof(double) / n_freq, size));
+        n_data_batches = ceil_div(size, size_batch_max);
+    }
+    else
+    {
+        size_batch_max = size;
+        n_data_batches = 1;
+        n_r_batch_max = std::min(
+            maxbytes_tmpmat / sizeof(double) / n_freq / size, as_size(n_k_points));
+        n_r_batches = ceil_div(as_size(n_k_points), n_r_batch_max);
+    }
+
+    const std::size_t row_max = size_batch_max * n_r_batch_max;
+    std::vector<double> fmat(row_max * n_freq);
+    std::vector<double> tmat(row_max * n_freq);
+
+    global::ofs_myid << "real size_batch_max/n_r_batch_max " << size_batch_max << " "
+                     << n_r_batch_max << std::endl;
+    global::ofs_myid << "real n_data_batches/n_r_batches " << n_data_batches << " "
+                     << n_r_batches << std::endl;
+    global::ofs_myid << "real row_max " << row_max << std::endl;
+
+    for (std::size_t i_r_batch = 0; i_r_batch != n_r_batches; ++i_r_batch)
+    {
+        const std::size_t disp_r = i_r_batch * n_r_batch_max;
+        const std::size_t n_r_this_batch =
+            std::min(n_r_batch_max, as_size(n_k_points) - disp_r);
+
+        for (std::size_t ir_this = 0; ir_this != n_r_this_batch; ++ir_this)
+        {
+            const auto &R = Rlist[disp_r + ir_this];
+            for (const auto &tau : time_nodes)
+                Wc_tau_R[tau][R] = Matd(nr, nc, major_orig);
+        }
+
+        for (std::size_t i_data_batch = 0; i_data_batch != n_data_batches; ++i_data_batch)
+        {
+            const std::size_t displ_data = i_data_batch * size_batch_max;
+            const std::size_t size_this_batch =
+                std::min(size_batch_max, size - displ_data);
+            const std::size_t row_this = size_this_batch * n_r_this_batch;
+
+            #pragma omp parallel for collapse(2) schedule(static)
+            for (std::size_t ir_this = 0; ir_this < n_r_this_batch; ++ir_this)
+            {
+                for (std::size_t ifreq = 0; ifreq < n_freq; ++ifreq)
+                {
+                    const auto &R = Rlist[disp_r + ir_this];
+                    const auto &mat = Wc_R_freq.at(R).at(freq_nodes[ifreq]);
+                    memcpy(fmat.data() + ifreq * row_max + ir_this * size_this_batch,
+                           mat.ptr() + displ_data, size_this_batch * sizeof(double));
+                }
+            }
+
+            LapackConnector::gemm_f('N', 'N', row_this, n_freq, n_freq,
+                                    1.0, fmat.data(), row_max, coeff_f2t.ptr(), n_freq,
+                                    0.0, tmat.data(), row_max);
+
+            #pragma omp parallel for collapse(2) schedule(static)
+            for (std::size_t itau = 0; itau < n_freq; ++itau)
+            {
+                for (std::size_t ir_this = 0; ir_this < n_r_this_batch; ++ir_this)
+                {
+                    const auto &R = Rlist[disp_r + ir_this];
+                    memcpy(Wc_tau_R.at(time_nodes[itau]).at(R).ptr() + displ_data,
+                           tmat.data() + itau * row_max + ir_this * size_this_batch,
+                           size_this_batch * sizeof(double));
+                }
+            }
+        }
+
+        for (std::size_t ir_this = 0; ir_this != n_r_this_batch; ++ir_this)
+            Wc_R_freq.erase(Rlist[disp_r + ir_this]);
+    }
+
+    global::lib_printf_root("Done converting Wc q,w -> real R,t\n");
+    comm_h.barrier();
     return Wc_tau_R;
 }
 

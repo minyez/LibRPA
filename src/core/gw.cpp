@@ -28,6 +28,7 @@
 #include "../math/utils_matrix_mpi.h"
 #include "../mpi/global_mpi.h"
 #include "../utils/constants.h"
+#include "../utils/dev_options.h"
 #include "../utils/error.h"
 #include "../utils/libri_utils.h"
 #include "../utils/profiler.h"
@@ -1228,6 +1229,99 @@ static void build_gf_libri_kblacs_para(
 
     global::profiler.stop("g0w0_build_gf_libri_kblacs_para");
 }
+
+template <typename Tout, typename Tin>
+static RI::Tensor<Tout> make_dense_wc_libri_tensor(matrix_m<Tin> &mat,
+                                                    const std::size_t nr,
+                                                    const std::size_t nc)
+{
+    if constexpr (std::is_same_v<Tout, Tin>)
+    {
+        return RI::Tensor<Tout>({nr, nc}, mat.sptr());
+    }
+    else
+    {
+        static_assert(std::is_same_v<Tout, double> && std::is_same_v<Tin, cplxdb>);
+        auto real = mat.get_real();
+        return RI::Tensor<Tout>({nr, nc}, real.sptr());
+    }
+}
+
+template <typename Tout, typename Tin>
+static void prepare_dense_wc_libri(
+    std::map<double, std::map<Vector3_Order<int>, matrix_m<Tin>>> &Wc_tau_R_blacs,
+    std::map<double,
+             std::map<int,
+                      std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tout>>>>
+        &tau_Wc_libri,
+    const AtomicBasis &atbasis_abf, const ArrayDesc &ad_Wc)
+{
+    global::profiler.start("g0w0_build_spacetime_get_ap",
+                           "Compute balance atom-pairs distribution");
+    const auto map_atpairs_balanced =
+        get_balanced_ap_distribution_for_consec_descriptor(atbasis_abf, atbasis_abf, ad_Wc);
+    const auto it_ap_myid = map_atpairs_balanced.find(ad_Wc.myid());
+    if (it_ap_myid != map_atpairs_balanced.cend())
+        global::ofs_myid << it_ap_myid->second << std::endl;
+    else
+        global::ofs_myid << "No atom pairs for Wc on this process" << std::endl;
+    global::profiler.stop("g0w0_build_spacetime_get_ap");
+
+    int wc_major_mask = 0;
+    for (const auto &[tau, map_R_mat] : Wc_tau_R_blacs)
+    {
+        for (const auto &[R, mat_blacs] : map_R_mat)
+        {
+            if (mat_blacs.major() == MAJOR::ROW)
+                wc_major_mask |= 1;
+            else if (mat_blacs.major() == MAJOR::COL)
+                wc_major_mask |= 2;
+            else
+                wc_major_mask |= 4;
+        }
+    }
+    MPI_Allreduce(MPI_IN_PLACE, &wc_major_mask, 1, mpi_datatype<int>::value, MPI_BOR,
+                  ad_Wc.comm());
+
+    MAJOR wc_major = MAJOR::AUTO;
+    if (wc_major_mask == 1)
+        wc_major = MAJOR::ROW;
+    else if (wc_major_mask == 2)
+        wc_major = MAJOR::COL;
+    else if (wc_major_mask == 0)
+        throw LIBRPA_RUNTIME_ERROR("Wc(R,t) is empty");
+    else
+        throw LIBRPA_RUNTIME_ERROR("Inconsistent storage order among Wc(R,t) blocks");
+
+    global::ofs_myid << "wc_major == MAJOR::ROW ? " << std::boolalpha
+                     << (wc_major == MAJOR::ROW) << std::endl;
+
+    IndexScheduler sched;
+    sched.init(map_atpairs_balanced, atbasis_abf, atbasis_abf, ad_Wc,
+               wc_major == MAJOR::ROW);
+    for (auto &[tau, map_R_mat] : Wc_tau_R_blacs)
+    {
+        global::profiler.start("g0w0_build_spacetime_prep_Wc_all",
+                               "Prepare LibRI Wc object");
+        for (auto &[R, mat_blacs] : map_R_mat)
+        {
+            auto pair_mat = get_ap_map_from_blacs_dist_scheduler(
+                mat_blacs, sched, atbasis_abf, atbasis_abf, ad_Wc);
+            for (auto &[pair, mat_ap] : pair_mat)
+            {
+                const auto I = as_int(pair.first);
+                const auto J = as_int(pair.second);
+                const auto nabf_I = atbasis_abf.get_atom_nb(I);
+                const auto nabf_J = atbasis_abf.get_atom_nb(J);
+                if (mat_ap.is_col_major()) mat_ap.swap_to_row_major();
+                tau_Wc_libri[tau][I][{J, {R.x, R.y, R.z}}] =
+                    make_dense_wc_libri_tensor<Tout>(mat_ap, nabf_I, nabf_J);
+            }
+            mat_blacs.clear();
+        }
+        global::profiler.stop("g0w0_build_spacetime_prep_Wc_all");
+    }
+}
 #endif
 
 void G0W0::build_spacetime(
@@ -1423,83 +1517,42 @@ void G0W0::build_spacetime(
     else // !use_atom_pair_Wc
     {
         // Transform from frequency/reciprocal to time/real-space
-        profiler.start("g0w0_build_spacetime_ct_ft_wc", "Tranform Wc (q,w) -> (R,t)");
+        profiler.start("g0w0_build_spacetime_ct_ft_wc", "Transform Wc (q,w) -> (R,t)");
+        const bool use_real_dense_wc = global::dev_opts.use_real_dense_gw_wc
+                                       && !use_complex_tensor && !output_wc_rf;
+        if (global::dev_opts.use_real_dense_gw_wc && !use_real_dense_wc)
+        {
+            lib_printf_root(
+                "Developer real dense Wc path disabled for %s\n",
+                use_complex_tensor ? "complex/spinor tensors" : "output_wc_rf");
+        }
+
         profiler.start("g0w0_build_spacetime_ct_ft_real_work", "Perform transformation");
-        auto Wc_tau_R_blacs = CT_FT_Wc_freq_q(
-            comm_h, Wc_freq_q, pbc, tfg, true, output_wc_rf, ifreq_output_wc_start,
-            ifreq_output_wc_end, output_wc_rf_atom_pair, output_dir, &ad_Wc, &atbasis_abf,
-            &qpoint_view, &symmetry_context);
-        release_free_mem();
-        profiler.stop("g0w0_build_spacetime_ct_ft_real_work");
-
-        // NOTE: for case of a few atoms, some process may have much more memory load than others
-        profiler.start("g0w0_build_spacetime_get_ap", "Compute balance atom-pairs distribution");
-        const auto map_atpairs_balanced = get_balanced_ap_distribution_for_consec_descriptor(
-            atbasis_abf, atbasis_abf, ad_Wc);
-        const auto it_ap_myid = map_atpairs_balanced.find(ad_Wc.myid());
-        if (it_ap_myid != map_atpairs_balanced.cend())
-            ofs_myid << it_ap_myid->second << std::endl;
-        else
-            ofs_myid << "No atom pairs for Wc on this process" << std::endl;
-        profiler.stop("g0w0_build_spacetime_get_ap");
-
-        int wc_major_mask = 0;
-        for (const auto &[tau, map_R_mat]: Wc_tau_R_blacs)
+        if (use_real_dense_wc)
         {
-            for (const auto &[R, mat_blacs]: map_R_mat)
-            {
-                if (mat_blacs.major() == MAJOR::ROW)
-                    wc_major_mask |= 1;
-                else if (mat_blacs.major() == MAJOR::COL)
-                    wc_major_mask |= 2;
-                else
-                    wc_major_mask |= 4;
-            }
-        }
-        MPI_Allreduce(MPI_IN_PLACE, &wc_major_mask, 1, mpi_datatype<int>::value, MPI_BOR, ad_Wc.comm());
-
-        MAJOR wc_major = MAJOR::AUTO;
-        if (wc_major_mask == 1)
-            wc_major = MAJOR::ROW;
-        else if (wc_major_mask == 2)
-            wc_major = MAJOR::COL;
-        else if (wc_major_mask == 0)
-        {
-            throw LIBRPA_RUNTIME_ERROR("Wc(R,t) is empty");
+            lib_printf_root("Using developer real-storage dense Wc CT/FT path\n");
+            auto Wc_tau_R_blacs = CT_FT_Wc_freq_q_real(
+                comm_h, Wc_freq_q, pbc, tfg, &ad_Wc, &atbasis_abf,
+                &qpoint_view, &symmetry_context);
+            release_free_mem();
+            profiler.stop("g0w0_build_spacetime_ct_ft_real_work");
+            prepare_dense_wc_libri<double>(Wc_tau_R_blacs, tau_Wc_libri,
+                                           atbasis_abf, ad_Wc);
         }
         else
         {
-            throw LIBRPA_RUNTIME_ERROR("Inconsistent storage order among Wc(R,t) blocks");
-        }
-
-        ofs_myid << "wc_major == MAJOR::ROW ? " << std::boolalpha << (wc_major == MAJOR::ROW) << std::endl;
-
-        IndexScheduler sched;
-        // The scheduler indexes the existing BLACS buffers, so this must match Wc_tau_R_blacs.
-        // LibRI's row-major requirement is handled below when each atom-pair block is wrapped.
-        sched.init(map_atpairs_balanced, atbasis_abf, atbasis_abf, ad_Wc, wc_major == MAJOR::ROW);
-        for (auto &[tau, map_R_mat]: Wc_tau_R_blacs)
-        {
-            profiler.start("g0w0_build_spacetime_prep_Wc_all", "Prepare LibRI Wc object");
-            for (auto &[R, mat_blacs]: map_R_mat)
-            {
-                auto pair_mat = get_ap_map_from_blacs_dist_scheduler(mat_blacs, sched, atbasis_abf, atbasis_abf, ad_Wc);
-                for (auto &[pair, mat_ap]: pair_mat)
-                {
-                    const auto &I = as_int(pair.first);
-                    const auto &J = as_int(pair.second);
-                    const auto &nabf_I = atbasis_abf.get_atom_nb(I);
-                    const auto &nabf_J = atbasis_abf.get_atom_nb(J);
-                    // LibRI Tensor is fixed to row major
-                    if (mat_ap.is_col_major()) mat_ap.swap_to_row_major();
-                    if (use_complex_tensor)
-                        tau_Wc_libri_cplx[tau][I][{J, {R.x, R.y, R.z}}] = RI::Tensor<cplxdb>({nabf_I, nabf_J}, mat_ap.sptr());
-                    else
-                        tau_Wc_libri[tau][I][{J, {R.x, R.y, R.z}}] = RI::Tensor<double>({nabf_I, nabf_J}, mat_ap.get_real().sptr());
-                }
-                mat_blacs.clear();
-            }
-            profiler.stop("g0w0_build_spacetime_prep_Wc_all");
+            auto Wc_tau_R_blacs = CT_FT_Wc_freq_q(
+                comm_h, Wc_freq_q, pbc, tfg, true, output_wc_rf,
+                ifreq_output_wc_start, ifreq_output_wc_end, output_wc_rf_atom_pair,
+                output_dir, &ad_Wc, &atbasis_abf, &qpoint_view, &symmetry_context);
+            release_free_mem();
+            profiler.stop("g0w0_build_spacetime_ct_ft_real_work");
+            if (use_complex_tensor)
+                prepare_dense_wc_libri<cplxdb>(Wc_tau_R_blacs, tau_Wc_libri_cplx,
+                                               atbasis_abf, ad_Wc);
+            else
+                prepare_dense_wc_libri<double>(Wc_tau_R_blacs, tau_Wc_libri,
+                                                atbasis_abf, ad_Wc);
         }
         profiler.stop("g0w0_build_spacetime_ct_ft_wc");
     }

@@ -151,6 +151,7 @@ void parse_inputfile_to_params(const std::string &fn)
     // Only for prototyping, testing and debugging in C++
     _parse_bool(dev_opts, use_chi0_q_uhap_split);
     _parse_bool(dev_opts, use_delayed_ft_shrink);
+    _parse_bool(dev_opts, use_real_dense_gw_wc);
 
     // general runtime parameters
     parser.parse_string("output_dir", stmp, flag);

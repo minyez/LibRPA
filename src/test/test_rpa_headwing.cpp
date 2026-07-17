@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <string>
 #include <valarray>
 
 #include "../core/chi0.h"
@@ -1564,6 +1565,86 @@ void test_dense_wq_to_wr_symmetry_reduced_q_matches_full_bz(const BlacsCtxtHandl
     assert_dense_wq_rspace_maps_close(actual, expected);
 }
 
+void test_dense_wc_real_ct_matches_legacy_real_part()
+{
+    const auto pbc = make_wq_full_pbc();
+    TFGrids tfg(2);
+    tfg.generate_evenspaced_tf(0.1, 0.2, 0.3, 0.4);
+
+    std::map<double, std::map<Vector3_Order<double>, Matz>> input;
+    const auto freq_nodes = tfg.get_freq_nodes();
+    for (std::size_t ifreq = 0; ifreq != freq_nodes.size(); ++ifreq)
+    {
+        for (std::size_t iq = 0; iq != pbc.klist.size(); ++iq)
+        {
+            Matz mat(2, 2, MAJOR::COL);
+            for (std::size_t i = 0; i != mat.size(); ++i)
+            {
+                const double real = 1.0 + ifreq + 0.1 * i;
+                const double imag = 0.2 + 0.05 * i;
+                if (iq == 0)
+                    mat.ptr()[i] = {real, 0.0};
+                else if (iq == 1)
+                    mat.ptr()[i] = {real, imag};
+                else
+                    mat.ptr()[i] = {real, -imag};
+            }
+            input[freq_nodes[ifreq]][pbc.klist[iq]] = std::move(mat);
+        }
+    }
+
+    auto legacy_input = input;
+    auto real_input = input;
+    const auto legacy = librpa_int::CT_FT_Wc_freq_q(
+        librpa_int::global::mpi_comm_global_h, legacy_input, pbc, tfg, true);
+    const auto actual = librpa_int::CT_FT_Wc_freq_q_real(
+        librpa_int::global::mpi_comm_global_h, real_input, pbc, tfg);
+    assert(legacy_input.empty());
+    assert(real_input.empty());
+
+    for (const auto &[tau, expected_Rs] : legacy)
+    {
+        assert(actual.count(tau) != 0);
+        for (const auto &[R, expected] : expected_Rs)
+        {
+            assert(actual.at(tau).count(R) != 0);
+            const auto &result = actual.at(tau).at(R);
+            assert(result.major() == expected.major());
+            assert(result.size() == expected.size());
+            for (std::size_t i = 0; i != result.size(); ++i)
+                assert(std::abs(result.ptr()[i] - expected.ptr()[i].real()) < 1e-12);
+        }
+    }
+}
+
+void test_dense_wc_real_ct_rejects_large_imaginary_residual()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    pbc.set_kgrids_kvec(1, 1, 1, {0.0, 0.0, 0.0});
+    TFGrids tfg(1);
+    tfg.generate_evenspaced_tf(0.1, 0.1, 0.2, 0.1);
+
+    std::map<double, std::map<Vector3_Order<double>, Matz>> input;
+    Matz gamma(1, 1, MAJOR::COL);
+    gamma(0, 0) = {1.0, 1e-4};
+    input[tfg.get_freq_nodes().front()][pbc.klist.front()] = std::move(gamma);
+
+    bool rejected = false;
+    try
+    {
+        static_cast<void>(librpa_int::CT_FT_Wc_freq_q_real(
+            librpa_int::global::mpi_comm_global_h, input, pbc, tfg));
+    }
+    catch (const std::runtime_error &error)
+    {
+        rejected = std::string(error.what()).find("imaginary residual") != std::string::npos;
+    }
+    assert(rejected);
+}
+
 }  // namespace
 
 int main(int argc, char *argv[])
@@ -1610,6 +1691,8 @@ int main(int argc, char *argv[])
         test_wq_to_wr_symmetry_reduced_q_matches_full_bz();
         test_wq_to_wr_symmetry_collective_handles_empty_local_rank();
         test_dense_wq_to_wr_symmetry_reduced_q_matches_full_bz(blacs_h);
+        test_dense_wc_real_ct_matches_legacy_real_part();
+        test_dense_wc_real_ct_rejects_large_imaginary_residual();
     }
 
     librpa_int::global::finalize_global_io();

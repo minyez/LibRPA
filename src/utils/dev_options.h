@@ -12,6 +12,7 @@ struct DevOptions
 {
     bool use_chi0_q_uhap_split;
     bool use_delayed_ft_shrink;
+    bool use_real_dense_gw_wc;
 
     DevOptions();
 };
