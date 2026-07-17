@@ -1319,6 +1319,8 @@ static void prepare_dense_wc_libri(
             }
             mat_blacs.clear();
         }
+        map_R_mat.clear();
+        release_free_mem();
         global::profiler.stop("g0w0_build_spacetime_prep_Wc_all");
     }
 }
