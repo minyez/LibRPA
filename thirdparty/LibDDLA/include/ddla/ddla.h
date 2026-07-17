@@ -181,16 +181,56 @@ void pgetrf(
  * @param n        Number of columns of A.
  * @param d_A      Device pointer to matrix A (input/output -- L+U factors).
  * @param array_descA  DdlaDesc for A (mb == nb required).
- * @param ipiv     Host pivot array (output, 1-based, length >= m_loc).
- * @param info     0 on success, >0 if singular.
+ * @param ipiv     device pivot array (output, 1-based, length >= m_loc).
+ * @param info     host info 0 on success, >0 if singular. 
  */
 template <typename T>
-void pgetrf_bpiv(
-    const int& m, const int& n,
-    T* d_A, const DdlaDesc& array_descA,
-    int* d_ipiv, // device
-    int& info  // host
-);
+void pgetrf_bpiv(const int& m, const int& n, T* d_A, const DdlaDesc& array_descA, int* d_ipiv, int& info);
+
+/**
+ * @brief Distributed LU factorization without pivoting.
+ *
+ * Factors a distributed m-by-n matrix A in-place as A = L * U without
+ * pivoting.  L has implicit unit diagonal and is stored strictly below the
+ * diagonal; U is stored on and above the diagonal.
+ *
+ * Uses a right-looking block algorithm: at each step the nb×nb diagonal
+ * block is factored with the local getrf_nopiv, the right/lower panels are
+ * computed via trsm, and the trailing submatrix is updated via gemm.  The
+ * communication pattern mirrors pgetrf_bpiv, but no row pivots are applied.
+ *
+ * @tparam T   Scalar type.
+ * @param m        Number of rows of A.
+ * @param n        Number of columns of A.
+ * @param d_A      Device pointer to matrix A (input/output -- L+U factors).
+ * @param array_descA  DdlaDesc for A (mb == nb required).
+ * @param info     host info: 0 on success, >0 if U(k,k) is exactly zero.
+ */
+template <typename T>
+void pgetrf_nopiv(const int& m, const int& n, T* d_A, const DdlaDesc& array_descA, int& info);
+
+/**
+ * @brief Local LU factorization without pivoting.
+ *
+ * Factors a local (single-process, single-GPU) m-by-n matrix A in-place:
+ * A = L * U.  L has implicit unit diagonal, stored strictly below diagonal.
+ * U is stored on and above diagonal.
+ *
+ * Uses a right-looking block algorithm with block size nb=32:
+ *   1. Panel factorization via custom getf2_nopiv_kernel.
+ *   2. Solve for U panel via deblasTrsm.
+ *   3. Update trailing submatrix via deblasGemm.
+ *
+ * @tparam T   Scalar type.
+ * @param m        Number of rows of A.
+ * @param n        Number of columns of A.
+ * @param d_A      Device pointer to matrix A (input/output -- L+U factors).
+ * @param lda      Leading dimension of A.
+ * @param d_info      Device pointer to info (0 on success, k > 0 if U(k,k) is exactly zero).
+ * @param ddla_handle DDLA handle (provides stream and BLAS handle).
+ */
+template <typename T>
+void getrf_nopiv(int m, int n, T* d_A, int lda, int* d_info, const DdlaHandle_t& ddla_handle);
 
 /**
  * @brief Distributed LU solve: solve A * X = B using the factors from pgetrf.
@@ -217,6 +257,29 @@ void pgetrs(
 );
 
 /**
+ * @brief Distributed LU solve without pivoting.
+ *
+ * Solves A * X = B using the LU factors produced by pgetrf_nopiv.
+ * Because no pivoting is used, the solution is obtained by two triangular
+ * solves: L * Y = B followed by U * X = Y.  Only trans='N' is supported.
+ *
+ * @tparam T   Scalar type.
+ * @param trans   'N' -- no transpose (only 'N' supported).
+ * @param n       Order of matrix A.
+ * @param nrhs    Number of right-hand sides.
+ * @param d_A     Device pointer to LU factors (from pgetrf_nopiv).
+ * @param array_descA  DdlaDesc for A.
+ * @param d_B     Device pointer to RHS / solution B (input/output).
+ * @param array_descB  DdlaDesc for B.
+ */
+template <typename T>
+void pgetrs_nopiv(
+    const char& trans, const int& n, const int& nrhs,
+    T* d_A, const DdlaDesc& array_descA,
+    T* d_B, const DdlaDesc& array_descB
+);
+
+/**
  * @brief Distributed linear-system solver (driver): solve A * X = B.
  *
  * Convenience wrapper: pgetrf (LU) + pgetrs (solve).  Corresponds to
@@ -239,6 +302,28 @@ void pgesv(
 );
 
 /**
+ * @brief Distributed linear-system solver without pivoting (driver).
+ *
+ * Convenience wrapper: pgetrf_nopiv (LU) + pgetrs_nopiv (solve).
+ * Solves A * X = B without pivoting.
+ *
+ * @tparam T   Scalar type.
+ * @param n       Order of square matrix A.
+ * @param nrhs    Number of right-hand sides.
+ * @param d_A     Device pointer to A (input: coefficient; output: LU factors).
+ * @param array_descA  DdlaDesc for A.
+ * @param d_B     Device pointer to RHS / solution B (input/output).
+ * @param array_descB  DdlaDesc for B.
+ * @throws std::runtime_error if LU factorization fails (info != 0).
+ */
+template <typename T>
+void pgesv_nopiv(
+    const int& n, const int& nrhs,
+    T* d_A, const DdlaDesc& array_descA,
+    T* d_B, const DdlaDesc& array_descB
+);
+
+/**
  * @brief Distributed matrix-matrix multiplication:
  *        C := alpha * op(A) * op(B) + beta * C.
  *
@@ -249,8 +334,9 @@ void pgesv(
  *   - 'T': op(X) = X^T
  *   - 'C': op(X) = X^H  (conjugate-transpose)
  *
- * When transa or transb is not 'N', the process grid must be square
- * (nprows == npcols).
+ * When transa or transb is not 'N', the descriptors must be
+ * ScaLAPACK-compatible (e.g. for A^T, mb(C) == nb(A) and irsrc(C) == icsrc(A)).
+ * The process grid may be rectangular.
  *
  * @tparam T    Scalar type.
  * @param transa   Operation applied to A ('N','T','C').
@@ -312,20 +398,41 @@ void pgeadd(
 );
 
 /**
- * @brief Distributed Cholesky factorization: A = L * L^H  (uplo='L').
+ * @brief Add a scalar to the diagonal of a distributed square matrix.
+ *
+ * For every global diagonal element A(i,i) with 0 <= i < n, add alpha.
+ * Only the locally owned portion of the 2D block-cyclic distribution is
+ * updated; no inter-process communication is required.
+ *
+ * Supported combinations match LibRPA's DeviceConnector::pdam:
+ *   (float,float), (double,double),
+ *   (float, complex<float>), (complex<float>, complex<float>),
+ *   (double, complex<double>), (complex<double>, complex<double>).
+ *
+ * @tparam T1  Scalar type of the value to add.
+ * @tparam T2  Element type of the distributed matrix A.
+ * @param alpha  Scalar to add to each diagonal element.
+ * @param d_A    Device pointer to distributed matrix A (input/output).
+ * @param array_descA  DdlaDesc for A (must be square).
+ */
+template <typename T1, typename T2>
+void pdam(const T1& alpha, T2* d_A, const DdlaDesc& array_descA);
+
+/**
+ * @brief Distributed Cholesky factorization.
  *
  * Factors a Hermitian positive-definite distributed matrix using GPU solver
  * libraries (cusolverDn / hipsolver).  Algorithm: factor diagonal block
  * (potrf), broadcast factor, solve off-diagonal (trsm), update trailing
- * submatrix via batched gemm or herk.
+ * submatrix via gemm/herk.  With uplo='L', computes A = L * L^H.
+ * With uplo='U', computes A = U^H * U.
  *
- * @note Only uplo='L' (lower) is supported.  Only complex<float> and
- *       complex<double> are instantiated.
+ * @note Only complex<float> and complex<double> are instantiated.
  *
  * @tparam T   Scalar type (complex<float> or complex<double>).
- * @param uplo     'L' -- lower triangle of A is stored and factored.
+ * @param uplo     'L' or 'U' -- triangle of A to store and factor.
  * @param n        Order of A.
- * @param A        Device pointer to A (input: Hermitian pos-def; output: L).
+ * @param A        Device pointer to A (input: Hermitian pos-def; output: Cholesky factor).
  * @param ia       Global starting row (1-based).
  * @param ja       Global starting col (1-based).
  * @param array_descA  DdlaDesc for A (mb == nb required).
@@ -344,19 +451,65 @@ bool ppotrf(
 );
 
 /**
+ * @brief Single-GPU Cholesky factorization from the bottom-right corner.
+ *
+ * With uplo='U', computes A = U * U^H and overwrites the upper triangle with
+ * U.  With uplo='L', computes A = L^H * L and overwrites the lower triangle
+ * with L.  In either mode the opposite triangle is not referenced or written.
+ * These are bottom-right factorizations and therefore reverse the product
+ * order used by the corresponding standard LAPACK POTRF convention.
+ *
+ * @tparam T      Scalar type (float, double, complex<float>, complex<double>).
+ * @param uplo    'U' for A = U * U^H or 'L' for A = L^H * L.
+ * @param n       Order of A.
+ * @param d_A     Device pointer to A.
+ * @param lda     Leading dimension of A.
+ * @param info    0 on success; i > 0 identifies the failed reverse pivot.
+ * @param handle  DDLA handle providing the GPU stream and BLAS handle.
+ */
+template <typename T>
+void potrf_bottom_right(
+    const char& uplo, const int& n, T* d_A, const int& lda,
+    int& info, const DdlaHandle_t& handle
+);
+
+/**
+ * @brief Distributed Cholesky factorization from the bottom-right corner.
+ *
+ * With uplo='U', computes A = U * U^H and overwrites the upper triangle with
+ * U.  With uplo='L', computes A = L^H * L and overwrites the lower triangle
+ * with L.  The matrix descriptor must use square blocks on a square process
+ * grid; row and column source processes may differ.
+ *
+ * @tparam T            Scalar type (float, double, complex<float>,
+ *                      complex<double>).
+ * @param uplo          'U' for A = U * U^H or 'L' for A = L^H * L.
+ * @param n             Order of A.
+ * @param d_A           Device pointer to the local block-cyclic storage of A.
+ * @param array_descA   Descriptor for the distributed matrix A.
+ * @param info          0 on success; i > 0 identifies the failed global pivot.
+ */
+template <typename T>
+void ppotrf_bottom_right(
+    const char& uplo, const int& n, T* d_A,
+    const DdlaDesc& array_descA, int& info
+);
+
+/**
  * @brief Distributed solve using Cholesky factorization: A * X = B.
  *
- * Solves a Hermitian positive-definite system using the factor L from
- * ppotrf.  Two triangular solves:  forward (L*Y=B), backward (L^H*X=Y).
+ * Solves a Hermitian positive-definite system using the factor from
+ * ppotrf.  For uplo='L' it applies L then L^H; for uplo='U' it applies
+ * U^H then U.
  * Only side='L' and trans='N' are supported.
  *
  * @tparam T   Scalar type.
  * @param side     'L' (left) -- solve A*X = B.
- * @param uplo     'L' (lower) -- factor is lower triangular.
+ * @param uplo     'L' or 'U' -- triangle containing the Cholesky factor.
  * @param trans    'N' (no transpose).
  * @param n        Order of A.
  * @param nrhs     Number of right-hand sides.
- * @param d_A      Device pointer to Cholesky factor L (from ppotrf).
+ * @param d_A      Device pointer to Cholesky factor (from ppotrf).
  * @param array_descA  DdlaDesc for A.
  * @param d_B      Device pointer to RHS / solution B (input/output).
  * @param array_descB  DdlaDesc for B.
@@ -380,11 +533,11 @@ void ppotrs(
  *
  * @tparam T   Scalar type.
  * @param side     'L' -- solve A*X = B.
- * @param uplo     'L' -- lower triangle of A is stored.
+ * @param uplo     'L' or 'U' -- triangle of A to store and factor.
  * @param trans    'N' -- no transpose.
  * @param n        Order of A.
  * @param nrhs     Number of right-hand sides.
- * @param d_A      Device pointer to A (input: pos-def; output: Cholesky L).
+ * @param d_A      Device pointer to A (input: pos-def; output: Cholesky factor).
  * @param ia       Global starting row of A (1-based).
  * @param ja       Global starting col of A (1-based).
  * @param array_descA  DdlaDesc for A.

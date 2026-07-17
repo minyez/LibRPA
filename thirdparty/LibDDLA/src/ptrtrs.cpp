@@ -60,6 +60,8 @@ void ptrtrs(
         trans_device = DEBLAS_OP_C;
     }
     deblasSideMode_t side_device = (side == 'L') ? DEBLAS_SIDE_LEFT : DEBLAS_SIDE_RIGHT;
+    const bool solve_backward = (uplo == 'U' && trans == 'N') || (uplo == 'L' && trans != 'N');
+    const char panel_direction = (trans == 'N') ? 'C' : 'R';
     
     // double start_time = MPI_Wtime();
     T* d_block_diag,*d_block_A,*d_block_B;
@@ -73,7 +75,7 @@ void ptrtrs(
 
     int mm_row_start, mm_col_start, mm_row_step, mm_col_step;
     int n_s_start,n_s_end,n_s_step;
-    if((uplo == 'U' && trans == 'N') || (uplo == 'L' && trans != 'N')){
+    if(solve_backward){
         int m_loc = array_descA.m_loc();
         n_s_start = m % nb == 0 ? m - nb : m - m % nb;
         n_s_end = -nb;
@@ -128,18 +130,7 @@ void ptrtrs(
                 d_block_diag, nb_real,
                 d_B + mm_row_start, lldB
             ));
-            // DEVICE_CHECK(deviceMemcpy2DAsync(
-            //     d_block_B, nb_real * sizeof(T),
-            //     d_B + mm_row_start, lldB * sizeof(T),
-            //     nb_real * sizeof(T), array_descB.n_loc(),
-            //     deviceMemcpyDeviceToDevice, stream
-            // ));
         }
-        // #ifdef DDLA_USE_GPU_CPU_TUNNEL
-        // MPI_CHECK(cclBcast(h_temp.data(), d_block_B, nb_real * array_descB.n_loc(), owner_row, ddla_handle->col_comm, stream));
-        // #else
-        // CCL_CHECK(cclBcast(d_block_B, nb_real * array_descB.n_loc(), owner_row, col_comm, stream));
-        // #endif
         transport_block(
             'R', 'N', 
             nb_real, array_descB.n(),
@@ -159,26 +150,12 @@ void ptrtrs(
                 g_n = n_s;
                 g_ja = 0;
             }else{
+                // U^H solve: gather the row panel to the right of the diagonal.
                 A_offset = mm_row_start + (mm_col_start + mm_col_step) * array_descA.lld();
                 length_block_A = array_descA.n_loc() - mm_col_start - mm_col_step;
                 g_n = array_descA.n() - n_s - nb_real;
                 g_ja = n_s + nb_real;
             }
-            // if(length_block_A > 0){
-            //     if(array_descA.myprow() == owner_row){
-            //         DEVICE_CHECK(deviceMemcpy2DAsync(
-            //             d_block_A, nb_real * sizeof(T),
-            //             d_A + A_offset, array_descA.lld() * sizeof(T),
-            //             nb_real * sizeof(T), length_block_A,
-            //             deviceMemcpyDeviceToDevice, ddla_handle->stream
-            //         ));
-            //         if(array_descA.myprow() != array_descA.mypcol())
-            //             CCL_CHECK(cclSend(d_block_A, nb_real * length_block_A, array_descA.mypcol(), col_comm, stream));
-            //     }else if(array_descA.myprow() == array_descA.mypcol()){
-            //         CCL_CHECK(cclRecv(d_block_A, nb_real * length_block_A, owner_row, col_comm, stream));
-            //     }
-            // }
-            // source_col = array_descA.myprow();
         }else{
             g_ja = n_s;
             g_n = nb_real;
@@ -188,28 +165,20 @@ void ptrtrs(
                 g_m = array_descA.m() - n_s - nb_real;
                 g_ia = n_s + nb_real;
             }else{
+                // U solve: gather the column panel above the diagonal.
                 length_block_A = mm_row_start;
                 A_offset = mm_col_start * array_descA.lld();
                 g_m = n_s;
                 g_ia = 0;
             }
-            // if(array_descA.mypcol() == owner_col && length_block_A > 0){
-            //     DEVICE_CHECK(deviceMemcpy2DAsync(
-            //         d_block_A, length_block_A * sizeof(T),
-            //         d_A + A_offset, lldA * sizeof(T),
-            //         length_block_A * sizeof(T), nb_real,
-            //         deviceMemcpyDeviceToDevice, stream
-            //     ));
-            // }
-            // source_col = owner_col;
         }
         transport_block(
-            trans == 'N' ? 'C' : 'R', trans,
+            panel_direction, trans,
             g_m, g_n,
             d_A, g_ia, g_ja, array_descA,
             d_block_A
         );
-        if((uplo == 'U' && trans == 'N') || (uplo == 'L' && trans != 'N')){
+        if(solve_backward){
             length_block_A = mm_row_start;
             B_offset = 0;
         }else{
@@ -218,11 +187,6 @@ void ptrtrs(
         }
         DEVICE_CHECK(deviceStreamSynchronize(stream));
         if(length_block_A > 0){
-            // #ifdef DDLA_USE_GPU_CPU_TUNNEL
-            // MPI_CHECK(cclBcast(h_temp.data(), d_block_A, length_block_A * nb_real, source_col, ddla_handle->row_comm, stream));
-            // #else
-            // CCL_CHECK(cclBcast(d_block_A, length_block_A * nb_real, source_col, row_comm, stream));
-            // #endif
             BLAS_CHECK(deblasGemm(
                 blasH, trans_device, DEBLAS_OP_N, 
                 length_block_A, array_descB.n_loc(), nb_real,

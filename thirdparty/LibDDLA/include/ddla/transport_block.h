@@ -14,6 +14,16 @@ void transport_block(
     T* d_block_A
 );
 
+template <typename T>
+void transport_block(
+    const char& sData, const char& trans,
+    const int& m, const int& n,
+    const T* d_A, const int& ia, const int& ja,
+    const DdlaDesc& array_descA,
+    const DdlaDesc& target_desc,
+    T* d_block_A
+);
+
 }
 
 #endif // TRANSPORT_BLOCK_H

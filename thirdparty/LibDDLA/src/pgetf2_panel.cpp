@@ -52,12 +52,7 @@ void pgetf2_panel(
     T *d_temp_U;
     DEVICE_CHECK(deviceMallocAsync(&d_temp_U, sizeof(T)*nb_real*panel, stream));
 
-    DEVICE_CHECK(deviceStreamSynchronize(stream));
-
-    double time_for_pgetf2 = 0.0;
-    double time_for_other = 0.0;
-
-    double start_time;
+    info = 0;
 
     int i_s = array_descA.indx_g2l_r(n_start);
     int j_s = array_descA.indx_g2l_c(n_start);
@@ -71,16 +66,16 @@ void pgetf2_panel(
 
         owner_row = indxg2p(n_s, nb, array_descA.irsrc(), nprows);
         // start pgetf2
-        start_time = MPI_Wtime();
         pgetf2(
             m, panel_real,
             d_A, n_s, array_descA,
             ipiv, info
         );
+        if(info != 0){
+            DEVICE_CHECK(deviceFreeAsync(d_temp_U, stream));
+            return;
+        }
         // finish pgetf2
-        DEVICE_CHECK(deviceStreamSynchronize(stream));
-        time_for_pgetf2 += MPI_Wtime() - start_time;
-        start_time = MPI_Wtime();
         // update trailing matrix
         if(i_loc>=0)
             mm_row_start +=panel; // update row start   
@@ -117,13 +112,9 @@ void pgetf2_panel(
                 d_A + mm_row_start + mm_col_start * lld, lld
             ));
         }
-        DEVICE_CHECK(deviceStreamSynchronize(stream));
-        time_for_other += MPI_Wtime() - start_time;
     }
     info = 0;
     DEVICE_CHECK(deviceFreeAsync(d_temp_U, stream));
-    DEVICE_CHECK(deviceStreamSynchronize(stream));
-    // printf("myid:%d, pzgetrf time_for_pgetf2:%lf, time_for_other:%lf\n",ddla_handle->myid,time_for_pgetf2,time_for_other);
 
 }
 

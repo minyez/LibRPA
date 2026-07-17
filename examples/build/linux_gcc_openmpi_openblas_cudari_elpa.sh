@@ -9,10 +9,13 @@
 #SBATCH --output=../log_cuda
 #SBATCH --error=../err_cuda
 
+set -e
+
 ulimit -s unlimited
 ulimit -c unlimited
 
 unset CPATH
+unset LIBDDLA_PATH
 module purge
 
 module load gcc/11.3.0

@@ -74,9 +74,6 @@ void pgetrf_bpiv(
     T* d_temp_U;
     DEVICE_CHECK(deviceMallocAsync(&d_temp_U, sizeof(T) * nb * n_loc, stream));
 
-    DEVICE_CHECK(deviceStreamSynchronize(stream));
-    MPI_Barrier(MPI_COMM_WORLD);
-
     int* d_info = nullptr;
     DEVICE_CHECK(deviceMallocAsync(&d_info, sizeof(int), stream));
 

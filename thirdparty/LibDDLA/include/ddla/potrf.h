@@ -14,7 +14,7 @@ inline desolverStatus_t desolverPotrf(
     int *devInfo
 )
 {
-    std::complex<double> *Workspace;
+    std::complex<double> *Workspace = nullptr;
     int Lwork;
 
     deviceStream_t stream;
@@ -28,14 +28,18 @@ inline desolverStatus_t desolverPotrf(
     throw std::runtime_error("not ENABLE CUDA and ENABLE HIP\n");
     #endif
 
-    DEVICE_CHECK(deviceMallocAsync(&Workspace, Lwork*sizeof(std::complex<double>), stream));
+    if(Lwork > 0)
+        DEVICE_CHECK(deviceMallocAsync(&Workspace, Lwork*sizeof(std::complex<double>), stream));
 
     #if defined(DDLA_USE_CUDA)
-    return cusolverDnZpotrf(handle, uplo, n, (cuDoubleComplex*)A, lda, (cuDoubleComplex*)Workspace, Lwork, devInfo);
+    desolverStatus_t status = cusolverDnZpotrf(handle, uplo, n, (cuDoubleComplex*)A, lda, (cuDoubleComplex*)Workspace, Lwork, devInfo);
     #elif defined(DDLA_USE_HIP)
-    return hipsolverZpotrf(handle, uplo, n, (hipDoubleComplex*)A, lda, (hipDoubleComplex*)Workspace, Lwork, devInfo);
+    desolverStatus_t status = hipsolverZpotrf(handle, uplo, n, (hipDoubleComplex*)A, lda, (hipDoubleComplex*)Workspace, Lwork, devInfo);
     #endif
 
+    if(Lwork > 0)
+        DEVICE_CHECK(deviceFreeAsync(Workspace, stream));
+    return status;
 }
 
 inline desolverStatus_t desolverPotrf(
@@ -47,7 +51,7 @@ inline desolverStatus_t desolverPotrf(
     int *devInfo
 )
 {
-    std::complex<float> *Workspace;
+    std::complex<float> *Workspace = nullptr;
     int Lwork;
 
     deviceStream_t stream;
@@ -61,14 +65,18 @@ inline desolverStatus_t desolverPotrf(
     throw std::runtime_error("not ENABLE CUDA and ENABLE HIP\n");
     #endif
 
-    DEVICE_CHECK(deviceMallocAsync(&Workspace, Lwork*sizeof(std::complex<float>), stream));
+    if(Lwork > 0)
+        DEVICE_CHECK(deviceMallocAsync(&Workspace, Lwork*sizeof(std::complex<float>), stream));
 
     #if defined(DDLA_USE_CUDA)
-    return cusolverDnCpotrf(handle, uplo, n, (cuFloatComplex*)A, lda, (cuFloatComplex*)Workspace, Lwork, devInfo);
+    desolverStatus_t status = cusolverDnCpotrf(handle, uplo, n, (cuFloatComplex*)A, lda, (cuFloatComplex*)Workspace, Lwork, devInfo);
     #elif defined(DDLA_USE_HIP)
-    return hipsolverCpotrf(handle, uplo, n, (hipFloatComplex*)A, lda, (hipFloatComplex*)Workspace, Lwork, devInfo);
+    desolverStatus_t status = hipsolverCpotrf(handle, uplo, n, (hipFloatComplex*)A, lda, (hipFloatComplex*)Workspace, Lwork, devInfo);
     #endif
 
+    if(Lwork > 0)
+        DEVICE_CHECK(deviceFreeAsync(Workspace, stream));
+    return status;
 }
 
 inline desolverStatus_t desolverPotrf(
@@ -80,7 +88,7 @@ inline desolverStatus_t desolverPotrf(
     int *devInfo
 )
 {
-    float *Workspace;
+    float *Workspace = nullptr;
     int Lwork;
 
     deviceStream_t stream;
@@ -94,14 +102,18 @@ inline desolverStatus_t desolverPotrf(
     throw std::runtime_error("not ENABLE CUDA and ENABLE HIP\n");
     #endif
 
-    DEVICE_CHECK(deviceMallocAsync(&Workspace, Lwork*sizeof(float), stream));
+    if(Lwork > 0)
+        DEVICE_CHECK(deviceMallocAsync(&Workspace, Lwork*sizeof(float), stream));
 
     #if defined(DDLA_USE_CUDA)
-    return cusolverDnSpotrf(handle, uplo, n, A, lda, Workspace, Lwork, devInfo);
+    desolverStatus_t status = cusolverDnSpotrf(handle, uplo, n, A, lda, Workspace, Lwork, devInfo);
     #elif defined(DDLA_USE_HIP)
-    return hipsolverSpotrf(handle, uplo, n, A, lda, Workspace, Lwork, devInfo);
+    desolverStatus_t status = hipsolverSpotrf(handle, uplo, n, A, lda, Workspace, Lwork, devInfo);
     #endif
 
+    if(Lwork > 0)
+        DEVICE_CHECK(deviceFreeAsync(Workspace, stream));
+    return status;
 }
 
 inline desolverStatus_t desolverPotrf(
@@ -113,7 +125,7 @@ inline desolverStatus_t desolverPotrf(
     int *devInfo
 )
 {
-    double *Workspace;
+    double *Workspace = nullptr;
     int Lwork;
 
     deviceStream_t stream;
@@ -127,14 +139,18 @@ inline desolverStatus_t desolverPotrf(
     throw std::runtime_error("not ENABLE CUDA and ENABLE HIP\n");
     #endif
 
-    DEVICE_CHECK(deviceMallocAsync(&Workspace, Lwork*sizeof(double), stream));
+    if(Lwork > 0)
+        DEVICE_CHECK(deviceMallocAsync(&Workspace, Lwork*sizeof(double), stream));
 
     #if defined(DDLA_USE_CUDA)
-    return cusolverDnDpotrf(handle, uplo, n, A, lda, Workspace, Lwork, devInfo);
+    desolverStatus_t status = cusolverDnDpotrf(handle, uplo, n, A, lda, Workspace, Lwork, devInfo);
     #elif defined(DDLA_USE_HIP)
-    return hipsolverDpotrf(handle, uplo, n, A, lda, Workspace, Lwork, devInfo);
+    desolverStatus_t status = hipsolverDpotrf(handle, uplo, n, A, lda, Workspace, Lwork, devInfo);
     #endif
 
+    if(Lwork > 0)
+        DEVICE_CHECK(deviceFreeAsync(Workspace, stream));
+    return status;
 }
 
 }

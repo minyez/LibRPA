@@ -3,10 +3,10 @@
 ##SBATCH --nodelist j14r3n06
 #SBATCH -J test
 ##SBATCH -A xgren
-#SBATCH --nodes=4
-#SBATCH --gres=dcu:1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=7
+#SBATCH --nodes=2
+#SBATCH --gres=dcu:4
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=15
 #SBATCH --output=../../log_hip
 #SBATCH --error=../../err_hip
 
@@ -61,15 +61,25 @@ files=(
     # "test_pgeadd"
     # "test_potrf_solvermp"
     # "test_potrf_potrs"
-    test_pgetrf_bpiv
+    # test_pgetrf_bpiv
+    test_pzgemm
+    test_getrf_nopiv
 )
 
 # 遍历数组中的每一个文件
 for FILENAME in "${files[@]}"; do
-    rm ../../${FILENAME}
-    
+    rm -f ../../${FILENAME}
+
     echo "================================================="
     echo "🚀 Processing: ${FILENAME}"
+
+    # 计算进程数
+    if [ "${FILENAME}" == "test_pzgemm" ]; then
+        np=6
+    else
+        np=$((SLURM_NTASKS_PER_NODE * SLURM_NNODES))
+    fi
+    echo "📊 NP: $np"
 
     # 2. 编译阶段 (注意源文件路径加了 ./)
     echo "⏳ Compiling..."
@@ -79,10 +89,6 @@ for FILENAME in "${files[@]}"; do
         echo "❌ ERROR: Failed to compile ${FILENAME}"
         continue # 如果编译失败，跳过本次循环，继续下一个
     fi
-
-    # 3. 计算进程数 (沿用你原来的逻辑)
-    np=$((SLURM_NTASKS_PER_NODE * SLURM_NNODES))
-    echo "📊 NP: $np"
 
     # 4. 运行阶段
     echo "▶️ Running..."
@@ -99,4 +105,3 @@ echo "================================================="
 echo "All tests finished."
 
 echo End Time: `date`
-

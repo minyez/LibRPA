@@ -56,22 +56,7 @@ void pgetrf(
     T *d_temp_U;
     DEVICE_CHECK(deviceMallocAsync(&d_temp_U, sizeof(T)*nb*n_loc, stream));
 
-    DEVICE_CHECK(deviceStreamSynchronize(stream));
-    
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    double time_for_pgetf2 = 0.0;
-    double time_for_other = 0.0;
-    // double time_for_max = 0.0;
-    // double time_for_swap = 0.0;
-    // double time_for_scal = 0.0;
-    // double time_for_geru = 0.0;
-    // double time_for_local_max = 0.0;
-    // double time_for_global_max = 0.0;
-    // double time_for_allreduce_device = 0.0;
-    // double time_for_allreduce_host = 0.0;
-
-    double start_time;
+    info = 0;
 
     for(int n_s=0;n_s<std::min(m,n);n_s+=nb){
         nb_real = std::min(nb, std::min(m,n)-n_s);
@@ -82,19 +67,18 @@ void pgetrf(
         owner_row = indxg2p(n_s, nb, array_descA.irsrc(), nprows);
         owner_col = indxg2p(n_s, nb, array_descA.icsrc(), npcols);
 
-        
+
         // start pgetf2
 
-        start_time = MPI_Wtime();
-        pgetf2(
+        pgetf2_panel(
             m, nb_real,
             d_A, n_s, array_descA,
             ipiv, info
         );
         // finish pgetf2
-        DEVICE_CHECK(deviceStreamSynchronize(stream));
-        time_for_pgetf2 += MPI_Wtime() - start_time;
-        start_time = MPI_Wtime();
+        if(info != 0){
+            break;
+        }
         // update trailing matrix
         if(i_loc>=0)
             mm_row_start +=nb; // update row start   
@@ -154,15 +138,11 @@ void pgetrf(
                 d_A + mm_row_start + mm_col_start * lld, lld
             ));
         }
-        DEVICE_CHECK(deviceStreamSynchronize(stream));
-        time_for_other += MPI_Wtime() - start_time;
     }
-    info = 0;
     DEVICE_CHECK(deviceFreeAsync(d_temp_block, stream));
     DEVICE_CHECK(deviceFreeAsync(d_temp_L, stream));
     DEVICE_CHECK(deviceFreeAsync(d_temp_U, stream));
     DEVICE_CHECK(deviceStreamSynchronize(stream));
-    printf("myid:%d, pzgetrf time_for_pgetf2:%lf, time_for_other:%lf\n",ddla_handle->myid,time_for_pgetf2,time_for_other);
 
 }
 

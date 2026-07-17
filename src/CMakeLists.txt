@@ -35,19 +35,15 @@ if(LIBRPA_BUNDLED_ELPA_PROJECT_TARGET)
   add_dependencies(rpa_lib ${LIBRPA_BUNDLED_ELPA_PROJECT_TARGET})
 endif()
 
-if(LIBRPA_USE_CUDA OR LIBRPA_USE_HIP)
-  if(NOT LIBDDLA_PATH AND NOT "$ENV{LIBDDLA_PATH}" STREQUAL "")
-    # External LibDDLA from environment variable
-    target_include_directories(rpa_lib PUBLIC $ENV{LIBDDLA_PATH}/include)
-  elseif(LIBDDLA_PATH)
-    # External LibDDLA from CMake variable
-    target_include_directories(rpa_lib PUBLIC ${LIBDDLA_PATH}/include)
-  else()
-    # Bundled LibDDLA from thirdparty/
-    target_include_directories(rpa_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/LibDDLA/include)
-    target_link_libraries(rpa_lib PRIVATE ddla_lib)
-    set(LIBDDLA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/LibDDLA)
-  endif()
+if(LIBRPA_DDLA_TARGET)
+  # Internal headers used by the driver and tests include DDLA declarations,
+  # so preserve the previous public include-path contract through the target.
+  target_link_libraries(rpa_lib PUBLIC ${LIBRPA_DDLA_TARGET})
+endif()
+if(LIBRPA_BUNDLED_DDLA_PROJECT_TARGET)
+  # The child CMake build installs LibDDLA and its public headers before any
+  # LibRPA source that includes those headers is compiled.
+  add_dependencies(rpa_lib ${LIBRPA_BUNDLED_DDLA_PROJECT_TARGET})
 endif()
 
 target_include_directories(rpa_lib

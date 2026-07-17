@@ -10,10 +10,13 @@
 #SBATCH --output=../log_hip
 #SBATCH --error=../err_hip
 
+set -e
+
 ulimit -s unlimited
 ulimit -c unlimited
 
 unset CPATH
+unset LIBDDLA_PATH
 module purge
 
 module load compiler/rocm/dtk/25.04.3
@@ -33,13 +36,6 @@ source $SETUP_DIR/setup_cereal_extern
 
 
 source /public/home/hbchen/app/elpa/260611/setup_elpa
-
-LibDDLA_PATH=/public/home/hbchen/app/LibDDLA/260603/LibDDLA_install
-export CPATH=$LibDDLA_PATH/include:$CPATH
-export LIBRARY_PATH=$LibDDLA_PATH/lib:$LIBRARY_PATH
-export LD_LIBRARY_PATH=$LibDDLA_PATH/lib:$LD_LIBRARY_PATH
-
-
 
 PREFIX=./
 LAPACK=$INSTALL_DIR/openblas-0.3.29/lib
@@ -88,10 +84,9 @@ cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
         -DLIBRPA_USE_EXTERNAL_ELPA=ON \
         -DEXTERNAL_ELPA_DIR=${ELPA_DIR} \
         -DUSE_GREENX_API=ON \
-        -DLIBDDLA_PATH=${LibDDLA_PATH}
+        -DCMAKE_HIP_FLAGS="-g -O2 -fopenmp -fgpu-rdc -Wno-return-type"
 
 
-        # -DCMAKE_HIP_FLAGS="-g -O2 -fopenmp -fgpu-rdc -Wno-return-type"
         # -DLIBCOMM_INCLUDE_DIR=$LIBCOMM/include \
 
 

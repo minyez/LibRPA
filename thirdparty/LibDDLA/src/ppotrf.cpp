@@ -1,10 +1,12 @@
 #include <ddla/ddla.h>
 #include <cassert>
+#include <cstddef>
 #include <ddla/ddla_connector.h>
 #include <ddla/ddla_stream.h>
 #include <vector>
 #include <type_traits>
 #include <cmath>
+#include <algorithm>
 #include <ddla/trsm.h>
 #include <ddla/potrf.h>
 #include <ddla/gemmBatched.h>
@@ -23,7 +25,7 @@ bool ppotrf(
 )
 {
     bool is_nega = false;
-    assert(uplo == 'L');
+    assert(uplo == 'L' || uplo == 'U');
     assert(array_descA.mb() == array_descA.nb());
     assert(n > 0);
     DdlaHandle_t ddla_handle = array_descA.ddla_handle();
@@ -66,12 +68,32 @@ bool ppotrf(
     deblasOperation_t trans_device = DEBLAS_OP_C;
     deblasSideMode_t side_device = (uplo == 'U') ?DEBLAS_SIDE_LEFT : DEBLAS_SIDE_RIGHT;
 
-    T* d_block_diag, *d_block_row, *d_block_col;
-    DEVICE_CHECK(deviceMallocAsync((void**)&d_block_diag, nb * nb * sizeof(T), stream));
-    DEVICE_CHECK(deviceMallocAsync((void**)&d_block_row, nb * array_descA.n_loc() * sizeof(T), stream));
-    DEVICE_CHECK(deviceMallocAsync((void**)&d_block_col, nb * array_descA.m_loc() * sizeof(T), stream));
-    int *d_info;
-    DEVICE_CHECK(deviceMallocAsync((void**)&d_info, sizeof(int), stream));
+    auto device_malloc_if_nonzero = [&](void** ptr, const std::size_t bytes)
+    {
+        if(bytes == 0){
+            *ptr = nullptr;
+            return;
+        }
+        DEVICE_CHECK(deviceMallocAsync(ptr, bytes, stream));
+    };
+    auto device_free_if_nonnull = [&](void* ptr)
+    {
+        if(ptr != nullptr){
+            DEVICE_CHECK(deviceFreeAsync(ptr, stream));
+        }
+    };
+
+    T* d_block_diag = nullptr;
+    T* d_block_row = nullptr;
+    T* d_block_col = nullptr;
+    device_malloc_if_nonzero((void**)&d_block_diag,
+                             static_cast<std::size_t>(nb) * nb * sizeof(T));
+    device_malloc_if_nonzero((void**)&d_block_row,
+                             static_cast<std::size_t>(nb) * array_descA.n_loc() * sizeof(T));
+    device_malloc_if_nonzero((void**)&d_block_col,
+                             static_cast<std::size_t>(nb) * array_descA.m_loc() * sizeof(T));
+    int *d_info = nullptr;
+    device_malloc_if_nonzero((void**)&d_info, sizeof(int));
 
     #ifdef DDLA_USE_GPU_CPU_TUNNEL
     std::vector<T> h_temp(nb * std::max(array_descA.n_loc(), array_descA.m_loc()));
@@ -85,12 +107,26 @@ bool ppotrf(
     int num_col_block = array_descA.n_loc() / nb;
     int batchCount = num_row_block * num_col_block;
 
-    T** d_A_array, ** d_B_array, ** d_C_array;
+    T** d_A_array = nullptr;
+    T** d_B_array = nullptr;
+    T** d_C_array = nullptr;
     std::vector<T*> h_A_array(batchCount), h_B_array(batchCount), h_C_array(batchCount);
 
-    DEVICE_CHECK(deviceMallocAsync((void**)&d_A_array, batchCount * sizeof(T*), stream));
-    DEVICE_CHECK(deviceMallocAsync((void**)&d_B_array, batchCount * sizeof(T*), stream));
-    DEVICE_CHECK(deviceMallocAsync((void**)&d_C_array, batchCount * sizeof(T*), stream));
+    const std::size_t pointer_buffer_bytes = static_cast<std::size_t>(batchCount) * sizeof(T*);
+    device_malloc_if_nonzero((void**)&d_A_array, pointer_buffer_bytes);
+    device_malloc_if_nonzero((void**)&d_B_array, pointer_buffer_bytes);
+    device_malloc_if_nonzero((void**)&d_C_array, pointer_buffer_bytes);
+    auto cleanup_device_buffers = [&]()
+    {
+        device_free_if_nonnull(d_A_array);
+        device_free_if_nonnull(d_B_array);
+        device_free_if_nonnull(d_C_array);
+        device_free_if_nonnull(d_block_diag);
+        device_free_if_nonnull(d_block_row);
+        device_free_if_nonnull(d_block_col);
+        device_free_if_nonnull(d_info);
+        DEVICE_CHECK(deviceStreamSynchronize(stream));
+    };
     int h_info;
     int i_batch_count, row_s, col_s, row_remain, col_remain, length_row, length_col;
     for(int n_s = 0; n_s < array_descA.m(); n_s += nb)
@@ -108,18 +144,33 @@ bool ppotrf(
             if(n_s + nb_real == array_descA.m() && is_head){
                 if(nb_real > 1){
                     SOLVER_CHECK(desolverPotrf(solverH, uplo_device, nb_real - 1, A + mm_row_start + mm_col_start * lldA, lldA, d_info));
-                    BLAS_CHECK(deblasTrsm(
-                        blasH, side_device, uplo_device, trans_device, diag_device,
-                        1, nb_real - 1, (T)1.0, 
-                        A + mm_row_start + mm_col_start * lldA, lldA,
-                        A + mm_row_start + nb_real - 1 + mm_col_start * lldA, lldA
-                    ));
-                    BLAS_CHECK(deblasHerk(
-                        blasH, uplo_device, DEBLAS_OP_N,
-                        1, nb_real - 1,
-                        -1.0, A + mm_row_start + nb_real - 1 + mm_col_start * lldA, lldA,
-                        1.0, A + mm_row_start + nb_real - 1 + (mm_col_start + nb_real - 1) * lldA, lldA
-                    ));
+                    if(uplo == 'L'){
+                        BLAS_CHECK(deblasTrsm(
+                            blasH, side_device, uplo_device, trans_device, diag_device,
+                            1, nb_real - 1, (T)1.0, 
+                            A + mm_row_start + mm_col_start * lldA, lldA,
+                            A + mm_row_start + nb_real - 1 + mm_col_start * lldA, lldA
+                        ));
+                        BLAS_CHECK(deblasHerk(
+                            blasH, uplo_device, DEBLAS_OP_N,
+                            1, nb_real - 1,
+                            -1.0, A + mm_row_start + nb_real - 1 + mm_col_start * lldA, lldA,
+                            1.0, A + mm_row_start + nb_real - 1 + (mm_col_start + nb_real - 1) * lldA, lldA
+                        ));
+                    }else{
+                        BLAS_CHECK(deblasTrsm(
+                            blasH, side_device, uplo_device, trans_device, diag_device,
+                            nb_real - 1, 1, (T)1.0, 
+                            A + mm_row_start + mm_col_start * lldA, lldA,
+                            A + mm_row_start + (mm_col_start + nb_real - 1) * lldA, lldA
+                        ));
+                        BLAS_CHECK(deblasHerk(
+                            blasH, uplo_device, DEBLAS_OP_C,
+                            1, nb_real - 1,
+                            -1.0, A + mm_row_start + (mm_col_start + nb_real - 1) * lldA, lldA,
+                            1.0, A + mm_row_start + nb_real - 1 + (mm_col_start + nb_real - 1) * lldA, lldA
+                        ));
+                    }
                 }
                 T last_value;
                 DEVICE_CHECK(deviceMemcpyAsync(&last_value, A + mm_row_start + nb_real - 1 + (mm_col_start + nb_real - 1) * lldA, sizeof(T), deviceMemcpyDeviceToHost, stream));
@@ -156,8 +207,10 @@ bool ppotrf(
         if(info != 0){
             info = info + n_s;
             printf("the matrix is not positive definite myid:%d, info:%d\n", ddla_handle->myid, info);
+            cleanup_device_buffers();
             return false;
         }
+        if(uplo == 'L'){
         if(myprow == owner_row)
             mm_row_start += nb_real;
         length_row = array_descA.m_loc() - mm_row_start;
@@ -311,17 +364,146 @@ bool ppotrf(
             
             DEVICE_CHECK(deviceStreamSynchronize(ddla_handle->stream));
         }
+        }else{
+            if(mypcol == owner_col)
+                mm_col_start += nb_real;
+            length_col = array_descA.n_loc() - mm_col_start;
+            if(myprow == owner_row){
+                #ifdef DDLA_USE_GPU_CPU_TUNNEL
+                MPI_CHECK(cclBcast(h_temp.data(), d_block_diag, nb_real * nb_real, owner_col, ddla_handle->row_comm, ddla_handle->stream));
+                #else
+                CCL_CHECK(cclBcast(d_block_diag, nb_real * nb_real, owner_col, row_comm, stream));
+                #endif
+                if(length_col > 0){
+                    BLAS_CHECK(deblasTrsm(
+                        blasH, side_device, uplo_device, trans_device, diag_device,
+                        nb_real, length_col, (T)1.0,
+                        d_block_diag, nb_real,
+                        A + mm_row_start + mm_col_start * lldA, lldA
+                    ));
+                    DEVICE_CHECK(deviceMemcpy2DAsync(
+                        d_block_row, nb_real * sizeof(T),
+                        A + mm_row_start + mm_col_start * lldA, lldA * sizeof(T),
+                        nb_real * sizeof(T), length_col,
+                        deviceMemcpyDeviceToDevice, stream
+                    ));
+                }
+            }
+            if(myprow == owner_row)
+                mm_row_start += nb_real;
+            length_row = array_descA.m_loc() - mm_row_start;
+            if(length_col > 0){
+                #ifdef DDLA_USE_GPU_CPU_TUNNEL
+                MPI_CHECK(cclBcast(h_temp.data(), d_block_row, nb_real * length_col, owner_row, ddla_handle->col_comm, ddla_handle->stream));
+                #else
+                CCL_CHECK(cclBcast(d_block_row, nb_real * length_col, owner_row, col_comm, stream));
+                #endif
+            }
+            if(myprow == mypcol){
+                if(length_row > 0)
+                    DEVICE_CHECK(deviceMemcpyAsync(d_block_col, d_block_row, nb_real * length_row * sizeof(T), deviceMemcpyDeviceToDevice, stream));
+            }
+            if(length_row > 0){
+                #ifdef DDLA_USE_GPU_CPU_TUNNEL
+                MPI_CHECK(cclBcast(h_temp.data(), d_block_col, nb_real * length_row, myprow, ddla_handle->row_comm, ddla_handle->stream));
+                #else
+                CCL_CHECK(cclBcast(d_block_col, nb_real * length_row, myprow, row_comm, stream));
+                #endif
+            }
+            if(myprow == mypcol){
+                if(length_col > 0)
+                    BLAS_CHECK(deblasHerk(
+                        blasH, uplo_device, DEBLAS_OP_C,
+                        length_col, nb_real,
+                        -1.0, d_block_row, nb_real,
+                        1.0, A + mm_row_start + mm_col_start * lldA, lldA
+                    ));
+            }else{
+                if(length_row <= 0 || length_col <= 0)
+                    continue;
+
+                const int row_full = length_row / nb * nb;
+                const int col_full = length_col / nb * nb;
+                const int row_remain = length_row - row_full;
+                const int col_remain = length_col - col_full;
+
+                if(row_remain != 0){
+                    const int row_offset = row_full;
+                    const int row_loc = mm_row_start + row_offset;
+                    const int g_row = array_descA.indx_l2g_r(row_loc);
+                    for(int col_offset = 0; col_offset < length_col; col_offset += nb){
+                        const int col_loc = mm_col_start + col_offset;
+                        const int col_len = std::min(nb, length_col - col_offset);
+                        const int g_col = array_descA.indx_l2g_c(col_loc);
+                        if(g_row >= g_col)
+                            continue;
+                        BLAS_CHECK(deblasGemm(
+                            blasH, DEBLAS_OP_C, DEBLAS_OP_N,
+                            row_remain, col_len, nb_real,
+                            (T)-1.0,
+                            d_block_col + row_offset * nb_real, nb_real,
+                            d_block_row + col_offset * nb_real, nb_real,
+                            (T)1.0,
+                            A + row_loc + col_loc * lldA, lldA
+                        ));
+                    }
+                }
+
+                if(col_remain != 0){
+                    const int col_offset = col_full;
+                    const int col_loc = mm_col_start + col_offset;
+                    const int g_col = array_descA.indx_l2g_c(col_loc);
+                    for(int row_offset = 0; row_offset < row_full; row_offset += nb){
+                        const int row_loc = mm_row_start + row_offset;
+                        const int g_row = array_descA.indx_l2g_r(row_loc);
+                        if(g_row >= g_col)
+                            continue;
+                        BLAS_CHECK(deblasGemm(
+                            blasH, DEBLAS_OP_C, DEBLAS_OP_N,
+                            nb, col_remain, nb_real,
+                            (T)-1.0,
+                            d_block_col + row_offset * nb_real, nb_real,
+                            d_block_row + col_offset * nb_real, nb_real,
+                            (T)1.0,
+                            A + row_loc + col_loc * lldA, lldA
+                        ));
+                    }
+                }
+
+                i_batch_count = 0;
+                for(int row_offset = 0; row_offset < row_full; row_offset += nb){
+                    const int row_loc = mm_row_start + row_offset;
+                    const int g_row = array_descA.indx_l2g_r(row_loc);
+                    for(int col_offset = 0; col_offset < col_full; col_offset += nb){
+                        const int col_loc = mm_col_start + col_offset;
+                        const int g_col = array_descA.indx_l2g_c(col_loc);
+                        if(g_row >= g_col)
+                            continue;
+                        h_A_array[i_batch_count] = d_block_col + row_offset * nb_real;
+                        h_B_array[i_batch_count] = d_block_row + col_offset * nb_real;
+                        h_C_array[i_batch_count] = A + row_loc + col_loc * lldA;
+                        i_batch_count++;
+                    }
+                }
+                if(i_batch_count > 0){
+                    DEVICE_CHECK(deviceMemcpyAsync(d_A_array, h_A_array.data(), i_batch_count * sizeof(T*), deviceMemcpyHostToDevice, stream));
+                    DEVICE_CHECK(deviceMemcpyAsync(d_B_array, h_B_array.data(), i_batch_count * sizeof(T*), deviceMemcpyHostToDevice, stream));
+                    DEVICE_CHECK(deviceMemcpyAsync(d_C_array, h_C_array.data(), i_batch_count * sizeof(T*), deviceMemcpyHostToDevice, stream));
+                    BLAS_CHECK(deblasGemmBatched(
+                        blasH, DEBLAS_OP_C, DEBLAS_OP_N,
+                        nb, nb, nb_real, -1.0,
+                        d_A_array, nb_real,
+                        d_B_array, nb_real,
+                        1.0, d_C_array, lldA,
+                        i_batch_count
+                    ));
+                }
+            }
+        }
         DEVICE_CHECK(deviceStreamSynchronize(ddla_handle->stream));
     }
     // printf("myid:%d, end\n", ddla_handle->myid);
-    DEVICE_CHECK(deviceFreeAsync(d_A_array, stream));
-    DEVICE_CHECK(deviceFreeAsync(d_B_array, stream));
-    DEVICE_CHECK(deviceFreeAsync(d_C_array, stream));
-    DEVICE_CHECK(deviceFreeAsync(d_block_diag, stream));
-    DEVICE_CHECK(deviceFreeAsync(d_block_row, stream));
-    DEVICE_CHECK(deviceFreeAsync(d_block_col, stream));
-    DEVICE_CHECK(deviceFreeAsync(d_info, stream));
-    DEVICE_CHECK(deviceStreamSynchronize(stream));
+    cleanup_device_buffers();
     return is_nega;
 
 }

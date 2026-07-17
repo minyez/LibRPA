@@ -1,15 +1,29 @@
 #include <ddla/ddla.h>
-#include <cassert>
-#include <vector>
+#include <complex>
 #include <ddla/ddla_connector.h>
 #include <ddla/ddla_stream.h>
-#include <ddla/scal.h>
-#include <ddla/geru.h>
 #include <ddla/ddla_comm.h>
-#include <ddla/iamax.h>
 #include <ddla/swap.h>
 
+#include "pgetf2_kernels.h"
+
 namespace ddla{
+
+namespace {
+
+struct MaxLoc {
+    double value;
+    int index;
+};
+
+template <typename T>
+struct PivotBroadcast {
+    int max_row = 0;
+    int max_prow = 0;
+    T max_value = T{};
+};
+
+} // namespace
 
 // now implement only support m=matrix_m, n = nb_real(<=nb), the the column block must belong to one process in a row
 template <typename T>
@@ -20,6 +34,7 @@ void pgetf2(
     int& info  // host
 )
 {
+    (void)m;
     DdlaHandle_t ddla_handle = array_descA.ddla_handle();
 
     MPI_Comm row_comm = ddla_handle->row_comm;
@@ -45,27 +60,20 @@ void pgetf2(
     
     int max_row;
     int max_prow;
-    T max_value;
+    T max_value{};
 
     T *d_temp;
-    DEVICE_CHECK(deviceMallocAsync(&d_temp, sizeof(T)*n_loc, stream));
+    const size_t row_buffer_elems = static_cast<size_t>(n_loc > 0 ? n_loc : 1);
+    DEVICE_CHECK(deviceMallocAsync(&d_temp, sizeof(T)*row_buffer_elems, stream));
 
-    std::vector<int> h_id_max(nprows,0); // host
-
-    T *d_max;
-    DEVICE_CHECK(deviceMallocAsync(&d_max, sizeof(T)*nprows, stream));
-
-    #ifdef DDLA_USE_DEBUG
-    double time_for_max = 0.0;
-    double time_for_swap = 0.0;
-    double time_for_scal = 0.0;
-    double time_for_geru = 0.0;
-    double time_for_local_max = 0.0;
-    double time_for_global_max = 0.0;
-    double time_for_allreduce_device = 0.0;
-    double time_for_allreduce_host = 0.0;
-    double start_time;
+    T *d_temp_peer = nullptr;
+    #ifdef DDLA_USE_CCL
+    DEVICE_CHECK(deviceMallocAsync(&d_temp_peer, sizeof(T)*row_buffer_elems, stream));
     #endif
+
+    void* d_pivot_workspace = nullptr;
+    DEVICE_CHECK(deviceMallocAsync(
+        &d_pivot_workspace, detail::pgetf2_pivot_workspace_size<T>(), stream));
     
 
     int i_loc = array_descA.indx_g2l_r(n_s);
@@ -77,18 +85,8 @@ void pgetf2(
     int mm_row_start = num_loc(n_s, nb, myprow, array_descA.irsrc(), nprows);
     int mm_col_start = num_loc(n_s, nb, mypcol, array_descA.icsrc(), npcols);
 
-    // start pgetf2
-    #ifdef DDLA_USE_DEBUG
-    start_time = MPI_Wtime();
-    #endif
-    // printf("start tf2, nprows:%d, npcols:%d\n",nprows, npcols);
+    info = 0;
     for(int i_tf2 = 0; i_tf2 < nb_real; i_tf2++){
-        #ifdef DDLA_USE_DEBUG
-        double start_time_tf2 = MPI_Wtime();
-        #endif
-        DEVICE_CHECK(deviceMemsetAsync(d_max,0,nprows*sizeof(T),stream));
-        memset(h_id_max.data(),0,nprows*sizeof(int));
-        
         // find max_rows and value
         int i_panel, j_panel;
         if(i_loc >= 0)
@@ -100,74 +98,44 @@ void pgetf2(
         else
             j_panel = mm_col_start;
         if(j_loc >= 0){
-            #ifdef DDLA_USE_DEBUG
-            double start_time_local_max = MPI_Wtime();
-            #endif
+            MaxLoc local_max{-1.0, -1};
+            MaxLoc global_max{-1.0, -1};
+            T local_max_value{};
             if(i_panel<m_loc){
-                BLAS_CHECK(deblasIamax(
-                    blasH, m_loc-i_panel,
-                    d_A + j_panel * lld + i_panel,1,
-                    h_id_max.data()+myprow
-                ));
-                DEVICE_CHECK(deviceMemcpyAsync(
-                    d_max+myprow, d_A + (i_panel + (h_id_max[myprow]-1) + j_panel * lld), sizeof(T),
-                    deviceMemcpyDeviceToDevice, stream
-                ));
+                int local_max_index = 0;
+                detail::pgetf2_find_local_pivot(
+                    d_A + j_panel * lld + i_panel, m_loc - i_panel,
+                    d_pivot_workspace, stream,
+                    local_max.value, local_max_index, local_max_value);
+                const int local_row = i_panel + local_max_index;
+                local_max.index = array_descA.indx_l2g_r(local_row);
             }
-            #ifdef DDLA_USE_DEBUG
-            DEVICE_CHECK(deviceStreamSynchronize(stream));
-            time_for_local_max += MPI_Wtime() - start_time_local_max;
-            double start_time_allreduce = MPI_Wtime();
-            #endif
-            DEVICE_CHECK(deviceStreamSynchronize(stream));
-            // printf("before nccl all reduce\n");
-            CCL_CHECK(cclAllReduce(d_max, d_max, nprows, cclSum, col_nccl_comm, stream));
-            // printf("after nccl all reduce\n");
-            DEVICE_CHECK(deviceStreamSynchronize(stream));
-            #ifdef DDLA_USE_DEBUG
-            
-            time_for_allreduce_device += MPI_Wtime() - start_time_allreduce;
-            double start_time_global_max = MPI_Wtime();
-            #endif
-            // printf("before get max after synchronize\n");
-            BLAS_CHECK(deblasIamax(blasH, nprows, d_max, 1, &max_prow));
-            
-            DEVICE_CHECK(deviceStreamSynchronize(stream));
-            // printf("after get max\n");
-            #ifdef DDLA_USE_DEBUG
-            
-            time_for_global_max += MPI_Wtime() - start_time_global_max;
-            double start_time_allreduce_host = MPI_Wtime();
-            #endif
-            max_prow--;
-            h_id_max[myprow]=array_descA.indx_l2g_r(i_panel+h_id_max[myprow]-1);
-            // printf("before mpi all reduce\n");
-            MPI_Allreduce(MPI_IN_PLACE,h_id_max.data(),nprows,MPI_INT,MPI_SUM,col_comm);
-            #ifdef DDLA_USE_DEBUG
-            time_for_allreduce_host += MPI_Wtime() - start_time_allreduce_host;
-            #endif
-            max_row = h_id_max[max_prow];
-            
-            DEVICE_CHECK(deviceMemcpyAsync(
-                &max_value, d_max+max_prow, sizeof(T),
-                deviceMemcpyDeviceToHost, stream
-            ));
+            MPI_CHECK(MPI_Allreduce(&local_max, &global_max, 1,
+                                    MPI_DOUBLE_INT, MPI_MAXLOC, col_comm));
+            max_row = global_max.index;
+            max_prow = indxg2p(max_row, nb, array_descA.irsrc(), nprows);
+            if(myprow == max_prow){
+                max_value = local_max_value;
+            }
+            MPI_CHECK(MPI_Bcast(&max_value, static_cast<int>(sizeof(T)), MPI_BYTE,
+                                max_prow, col_comm));
         }
-        #ifdef DDLA_USE_DEBUG
-        DEVICE_CHECK(deviceStreamSynchronize(stream));
-        time_for_max += MPI_Wtime() - start_time_tf2;
-        #endif
-        // printf("before mpi bcast 1\n");
-        MPI_Bcast(&max_row, 1, MPI_INT, owner_col, row_comm);
+
+        PivotBroadcast<T> pivot;
+        if(mypcol == owner_col){
+            pivot.max_row = max_row;
+            pivot.max_prow = max_prow;
+            pivot.max_value = max_value;
+        }
+        MPI_CHECK(MPI_Bcast(&pivot, static_cast<int>(sizeof(pivot)), MPI_BYTE, owner_col, row_comm));
+        max_row = pivot.max_row;
+        max_prow = pivot.max_prow;
+        max_value = pivot.max_value;
+
         int max_loc_row = array_descA.indx_g2l_r(max_row);
         if(myprow == owner_row){
             ipiv[i_panel] = max_row + 1; // 1-based index like fortran
         }
-        // printf("before mpi bcast 2\n");
-        MPI_Bcast(&max_prow, 1, MPI_INT, owner_col, row_comm);
-        #ifdef DDLA_USE_DEBUG
-        start_time_tf2 = MPI_Wtime();
-        #endif
         // exchange rows
         if(owner_row == max_prow){
             if(myprow == owner_row && max_loc_row != i_panel)
@@ -184,11 +152,25 @@ void pgetf2(
                     sizeof(T), n_loc,
                     deviceMemcpyDeviceToDevice, stream
                 ));
-                // printf("before ccl owner_row send 1\n");
+                #ifdef DDLA_USE_CCL
+                CCL_CHECK(ncclGroupStart());
                 CCL_CHECK(
                     cclSend(d_temp, n_loc, max_prow, col_nccl_comm, stream)
                 );
-                // printf("before ccl owner_row recv 1\n");
+                CCL_CHECK(
+                    cclRecv(d_temp_peer, n_loc, max_prow, col_nccl_comm, stream)
+                );
+                CCL_CHECK(ncclGroupEnd());
+                DEVICE_CHECK(deviceMemcpy2DAsync(
+                    d_A + i_panel, lld * sizeof(T),
+                    d_temp_peer, sizeof(T),
+                    sizeof(T), n_loc,
+                    deviceMemcpyDeviceToDevice, stream
+                ));
+                #else
+                CCL_CHECK(
+                    cclSend(d_temp, n_loc, max_prow, col_nccl_comm, stream)
+                );
                 CCL_CHECK(
                     cclRecv(d_temp, n_loc, max_prow, col_nccl_comm, stream)
                 );
@@ -197,9 +179,31 @@ void pgetf2(
                     d_A + i_panel, lld,
                     d_temp, 1
                 ));
+                #endif
                 
             }else if(myprow == max_prow){
-                // printf("before ccl max_prow send 1\n");
+                #ifdef DDLA_USE_CCL
+                DEVICE_CHECK(deviceMemcpy2DAsync(
+                    d_temp, sizeof(T),
+                    d_A + max_loc_row, lld * sizeof(T),
+                    sizeof(T), n_loc,
+                    deviceMemcpyDeviceToDevice, stream
+                ));
+                CCL_CHECK(ncclGroupStart());
+                CCL_CHECK(
+                    cclSend(d_temp, n_loc, owner_row, col_nccl_comm, stream)
+                );
+                CCL_CHECK(
+                    cclRecv(d_temp_peer, n_loc, owner_row, col_nccl_comm, stream)
+                );
+                CCL_CHECK(ncclGroupEnd());
+                DEVICE_CHECK(deviceMemcpy2DAsync(
+                    d_A + max_loc_row, lld * sizeof(T),
+                    d_temp_peer, sizeof(T),
+                    sizeof(T), n_loc,
+                    deviceMemcpyDeviceToDevice, stream
+                ));
+                #else
                 CCL_CHECK(
                     cclRecv(d_temp, n_loc, owner_row, col_nccl_comm, stream)
                 );
@@ -208,28 +212,19 @@ void pgetf2(
                     d_A + max_loc_row, lld,
                     d_temp, 1
                 ));
-                // printf("before ccl max_prow recv 1\n");
                 CCL_CHECK(
                     cclSend(d_temp, n_loc, owner_row, col_nccl_comm, stream)
                 );
+                #endif
                 
             }
         }
-        #ifdef DDLA_USE_DEBUG
-        DEVICE_CHECK(deviceStreamSynchronize(stream));
-        time_for_swap += MPI_Wtime() - start_time_tf2;
-        start_time_tf2 = MPI_Wtime();
-        #endif
-        // printf("before get max value\n");
-        // finish exchange rows
-        MPI_Bcast(&max_value, sizeof(T), MPI_BYTE, owner_col, row_comm);
-        if(std::abs(max_value)<1e-10){
+        if(std::abs(max_value) == 0.0){
             info = n_s+i_tf2+1;
-            return;
+            break;
         }
-        // start reduce columns
         if(j_loc>=0){
-            max_value = (T)1.0 / max_value; // inverse
+            const T inverse_pivot = T(1.0) / max_value;
             int64_t a_off;
             int length_row;
             
@@ -240,20 +235,8 @@ void pgetf2(
                 a_off = mm_row_start + j_panel * lld;
                 length_row = m_loc - mm_row_start;
             }
-            if(length_row>0){
-                BLAS_CHECK(deblasScal(
-                    blasH, length_row,
-                    max_value,
-                    d_A + a_off, 1
-                ));
-            }
-            #ifdef DDLA_USE_DEBUG
-            DEVICE_CHECK(deviceStreamSynchronize(stream));
-            time_for_scal += MPI_Wtime() - start_time_tf2;
-            start_time_tf2 = MPI_Wtime();
-            #endif
             int length_col = nb_real - i_tf2 - 1;
-            if(myprow == owner_row){
+            if(myprow == owner_row && length_col>0){
                 DEVICE_CHECK(deviceMemcpy2DAsync(
                     d_temp, 1 * sizeof(T),
                     d_A + i_panel + (j_panel + 1) * lld, lld * sizeof(T),
@@ -262,36 +245,21 @@ void pgetf2(
                 ));
             }
             if(length_col>0)
-                cclBcast(d_temp, length_col, owner_row, col_nccl_comm, stream);
-            // finish reduce columns
-            // start update trailing matrix
-            
-            if(length_row>0&&length_row>0){
-                BLAS_CHECK(deblasGeru(
-                    blasH, length_row, length_col,
-                    -1.0,
-                    d_A + a_off, 1,
-                    d_temp, 1,
-                    d_A + a_off + lld, lld
-                ));
-            }
-            #ifdef DDLA_USE_DEBUG
-            DEVICE_CHECK(deviceStreamSynchronize(stream));
-            time_for_geru += MPI_Wtime() - start_time_tf2;
-            #endif
+                CCL_CHECK(cclBcast(d_temp, length_col, owner_row, col_nccl_comm, stream));
+            T* d_trailing = length_col > 0 ? d_A + a_off + lld : d_A + a_off;
+            detail::pgetf2_scale_update(
+                length_row, length_col, inverse_pivot,
+                d_A + a_off, d_temp, d_trailing, lld, stream);
         }
-
+    }
+    DEVICE_CHECK(deviceFreeAsync(d_temp, stream));
+    #ifdef DDLA_USE_CCL
+    DEVICE_CHECK(deviceFreeAsync(d_temp_peer, stream));
+    #endif
+    DEVICE_CHECK(deviceFreeAsync(d_pivot_workspace, stream));
+    if(info != 0){
         DEVICE_CHECK(deviceStreamSynchronize(stream));
     }
-    // #ifdef DDLA_USE_DEBUG
-    // printf("myid:%d, max:%f, swap:%f, scal:%f, geru:%f, local max:%f,"
-    //         "global max:%f, reduce device:%f, reduce host:%f\n",
-    //         ddla_handle->myid, time_for_max, time_for_swap, time_for_geru, time_for_scal,
-    //         time_for_local_max, time_for_global_max, time_for_allreduce_device, time_for_allreduce_host);
-    // #endif
-    // finish pgetf2
-    DEVICE_CHECK(deviceFreeAsync(d_temp, stream));
-    DEVICE_CHECK(deviceFreeAsync(d_max, stream));
 }
 
 template void pgetf2<float>(

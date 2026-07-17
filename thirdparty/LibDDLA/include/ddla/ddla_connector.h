@@ -23,6 +23,7 @@
 #endif
 
 #include <cmath>
+#include <cstddef>
 #include <complex>
 
 namespace ddla{
@@ -39,6 +40,7 @@ using deviceStream_t = cudaStream_t;
 using deviceError_t = cudaError_t;
 constexpr auto deviceSuccess = deviceError_t::cudaSuccess;
 #define deviceGetErrorString cudaGetErrorString
+#define deviceGetLastError cudaGetLastError
 using deblasStatus_t = cublasStatus_t;
 constexpr auto DEBLAS_STATUS_SUCCESS = deblasStatus_t::CUBLAS_STATUS_SUCCESS;
 using deblasHandle_t = cublasHandle_t;
@@ -49,11 +51,12 @@ constexpr auto DESOLVER_STATUS_SUCCESS = desolverStatus_t::CUSOLVER_STATUS_SUCCE
 #define deviceMemcpyAsync cudaMemcpyAsync
 #define deviceMemcpy cudaMemcpy
 #define deviceMemcpy2DAsync cudaMemcpy2DAsync
-#define deviceMallocAsync cudaMallocAsync
-#define deviceMalloc cudaMalloc
 #define deviceMemsetAsync cudaMemsetAsync
-#define deviceFreeAsync cudaFreeAsync
-#define deviceFree cudaFree
+using deviceEvent_t = cudaEvent_t;
+#define deviceEventCreate cudaEventCreate
+#define deviceEventDestroy cudaEventDestroy
+#define deviceEventRecord cudaEventRecord
+#define deviceStreamWaitEvent cudaStreamWaitEvent
 using deviceDataType_t = cudaDataType_t;
 constexpr auto DEVICE_R_64F = deviceDataType_t::CUDA_R_64F;
 constexpr auto DEVICE_C_64F = deviceDataType_t::CUDA_C_64F;
@@ -90,6 +93,7 @@ using deviceStream_t = hipStream_t;
 using deviceError_t = hipError_t;
 constexpr auto deviceSuccess = hipError_t::hipSuccess;
 #define deviceGetErrorString hipGetErrorString
+#define deviceGetLastError hipGetLastError
 using deblasStatus_t = hipblasStatus_t;
 constexpr auto DEBLAS_STATUS_SUCCESS = deblasStatus_t::HIPBLAS_STATUS_SUCCESS;
 using deblasHandle_t = hipblasHandle_t;
@@ -100,11 +104,12 @@ constexpr auto DESOLVER_STATUS_SUCCESS = desolverStatus_t::HIPSOLVER_STATUS_SUCC
 #define deviceMemcpyAsync hipMemcpyAsync
 #define deviceMemcpy hipMemcpy
 #define deviceMemcpy2DAsync hipMemcpy2DAsync
-#define deviceMallocAsync hipMallocAsync
-#define deviceMalloc hipMalloc
 #define deviceMemsetAsync hipMemsetAsync
-#define deviceFreeAsync hipFreeAsync
-#define deviceFree hipFree
+using deviceEvent_t = hipEvent_t;
+#define deviceEventCreate hipEventCreate
+#define deviceEventDestroy hipEventDestroy
+#define deviceEventRecord hipEventRecord
+#define deviceStreamWaitEvent hipStreamWaitEvent
 using deviceDataType_t = hipDataType;
 constexpr auto DEVICE_R_64F = deviceDataType_t::HIP_R_64F;
 constexpr auto DEVICE_C_64F = deviceDataType_t::HIP_C_64F;
@@ -148,6 +153,68 @@ constexpr auto deviceMemcpyHostToDevice = deviceMemcpyKind::hipMemcpyHostToDevic
 constexpr auto deviceMemcpyDeviceToHost = deviceMemcpyKind::hipMemcpyDeviceToHost;
 constexpr auto deviceMemcpyDeviceToDevice = deviceMemcpyKind::hipMemcpyDeviceToDevice;
 #endif
+
+[[maybe_unused]] static inline deviceError_t deviceMalloc(void** ptr, std::size_t bytes)
+{
+    if(bytes == 0 && ptr != nullptr){
+        *ptr = nullptr;
+        return deviceSuccess;
+    }
+#ifdef DDLA_USE_CUDA
+    return cudaMalloc(reinterpret_cast<void**>(ptr), bytes);
+#else
+    return hipMalloc(reinterpret_cast<void**>(ptr), bytes);
+#endif
+}
+
+template <typename T>
+static inline deviceError_t deviceMalloc(T** ptr, std::size_t bytes)
+{
+    return deviceMalloc(reinterpret_cast<void**>(ptr), bytes);
+}
+
+[[maybe_unused]] static inline deviceError_t deviceMallocAsync(void** ptr, std::size_t bytes, deviceStream_t stream)
+{
+    if(bytes == 0 && ptr != nullptr){
+        *ptr = nullptr;
+        return deviceSuccess;
+    }
+#ifdef DDLA_USE_CUDA
+    return cudaMallocAsync(reinterpret_cast<void**>(ptr), bytes, stream);
+#else
+    return hipMallocAsync(reinterpret_cast<void**>(ptr), bytes, stream);
+#endif
+}
+
+template <typename T>
+static inline deviceError_t deviceMallocAsync(T** ptr, std::size_t bytes, deviceStream_t stream)
+{
+    return deviceMallocAsync(reinterpret_cast<void**>(ptr), bytes, stream);
+}
+
+[[maybe_unused]] static inline deviceError_t deviceFree(void* ptr)
+{
+    if(ptr == nullptr){
+        return deviceSuccess;
+    }
+#ifdef DDLA_USE_CUDA
+    return cudaFree(ptr);
+#else
+    return hipFree(ptr);
+#endif
+}
+
+[[maybe_unused]] static inline deviceError_t deviceFreeAsync(void* ptr, deviceStream_t stream)
+{
+    if(ptr == nullptr){
+        return deviceSuccess;
+    }
+#ifdef DDLA_USE_CUDA
+    return cudaFreeAsync(ptr, stream);
+#else
+    return hipFreeAsync(ptr, stream);
+#endif
+}
 
 
 

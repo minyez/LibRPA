@@ -9,10 +9,13 @@
 #SBATCH --output=../log_cuda
 #SBATCH --error=../err_cuda
 
+set -e
+
 ulimit -s unlimited
 ulimit -c unlimited
 
 unset CPATH
+unset LIBDDLA_PATH
 module purge
 
 module load gcc/11.3.0
@@ -28,11 +31,6 @@ source $SETUP_DIR/setup_openblas_extern
 source $SETUP_DIR/setup_scalapack_extern
 source $SETUP_DIR/setup_cereal_extern
 source $SETUP_DIR/setup_elpa_extern
-
-LibDDLA_PATH=~/app/github/LibDDLA_install
-export CPATH=$LibDDLA_PATH/include:$CPATH
-export LIBRARY_PATH=$LibDDLA_PATH/lib:$LIBRARY_PATH
-export LD_LIBRARY_PATH=$LibDDLA_PATH/lib:$LD_LIBRARY_PATH
 
 PREFIX=./
 LAPACK=$INSTALL_DIR/openblas-0.3.29/lib
@@ -80,8 +78,7 @@ cmake -B $BUILD_DIR -DCMAKE_INSTALL_PREFIX=$PREFIX \
         -DLIBRPA_USE_EXTERNAL_ELPA=ON \
         -DEXTERNAL_ELPA_DIR=${ELPA_DIR} \
         -DCMAKE_CUDA_SEPARABLE_COMPILATION=ON \
-        -DCMAKE_Fortran_FLAGS="$FCFLAGS" \
-        -DLIBDDLA_PATH=${LibDDLA_PATH}
+        -DCMAKE_Fortran_FLAGS="$FCFLAGS"
 
 
 cmake --build $BUILD_DIR -j 8

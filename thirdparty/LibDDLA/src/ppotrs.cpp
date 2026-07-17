@@ -16,6 +16,9 @@ void ppotrs(
     assert(location == -1);
     assert(trans == 'N');
     assert(side == 'L');
+    assert(uplo == 'L' || uplo == 'U');
+    const char first_trans = (uplo == 'L') ? 'N' : 'C';
+    const char second_trans = (uplo == 'L') ? 'C' : 'N';
     double start_time = MPI_Wtime();
     // if(is_nega){
     //     int i_loc = array_descA.indx_g2l_r(n - 1);
@@ -30,7 +33,7 @@ void ppotrs(
     //     }
     // }
     ptrtrs(
-        side, uplo, uplo == 'L' ? 'N' : 'C', 'N', n, nrhs,
+        side, uplo, first_trans, 'N', n, nrhs,
         d_A, array_descA,
         d_B, array_descB
     );
@@ -47,7 +50,7 @@ void ppotrs(
         }
     }
     ptrtrs(
-        side, uplo, uplo == 'L' ? 'C' : 'N', 'N', n, nrhs,
+        side, uplo, second_trans, 'N', n, nrhs,
         d_A, array_descA,
         d_B, array_descB
     );

@@ -1,4 +1,5 @@
 # Build artifacts
+build*/*
 build/
 *.o
 *.so
@@ -31,7 +32,10 @@ AGENTS.md
 cache/
 # Logs
 *.log
+*.err
 # Hook markers
 .dirty
 .codegraph/
 
+CLAUDE.md
+CODE_REVIEW.md

@@ -14,7 +14,7 @@ void pgesv(
 )
 {
     std::vector<int> ipiv(array_descA.m_loc());
-    int info = 1;
+    int info = 0;
     pgetrf(
         n, n,
         d_A, array_descA,

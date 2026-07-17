@@ -6,122 +6,194 @@
 #include <cstdlib>
 #include <vector>
 #include <complex>
-#include <string>
-#include <ddla.h>
-#include <ddla_connector.h>
+#include <ddla/ddla.h>
+#include <ddla/ddla_connector.h>
 #include <random>
-#include <ddla_stream.h>
-using namespace DDLA;
+#include <ddla/ddla_stream.h>
 
-#include <ddla.h>
-#include <cassert>
-#include <ddla_connector.h>
-#include <ddla_utils.h>
-#include <ddla_stream.h>
-#include <vector>
-namespace DDLA{
+using namespace ddla;
 
-}
-void check_pzgetrf(int n, const DdlaHandle_t& ddla_handle)
+namespace {
+
+std::complex<double> op_value(char trans, const std::vector<std::complex<double>>& mat,
+                              int m, int n, int i, int j)
 {
-
-    DDLA::DdlaDesc matrix_desc(ddla_handle);
-    matrix_desc.init_square_blk(n, n, 0, 0);
-    int nb = std::min(10, matrix_desc.mb());
-    matrix_desc.init(n, n, nb, nb, 0, 0);
-
-    int myid = matrix_desc.mypcol() + matrix_desc.myprow()*matrix_desc.npcols();
-    printf("myid:%d, m_loc:%d, n_loc:%d, mb:%d, nb:%d, m:%d, n:%d\n", myid, matrix_desc.m_loc(), matrix_desc.n_loc(), matrix_desc.mb(), matrix_desc.nb(), matrix_desc.m(), matrix_desc.n());
-    bool verbose = true;
-    
-    std::vector<std::complex<double>> a(matrix_desc.m_loc()*matrix_desc.n_loc());
-
-    std::complex<double>* d_A,* d_A_copy,* d_identity;
-    std::vector<std::complex<double>> h_identity(matrix_desc.m_loc()*matrix_desc.n_loc());
-    memset(h_identity.data(),0,sizeof(std::complex<double>)*matrix_desc.m_loc()*matrix_desc.n_loc());
-    for(int i=0;i<matrix_desc.m();i++){
-        int i_loc = matrix_desc.indx_g2l_r(i);
-        if(i_loc<0) continue;
-        int j_loc = matrix_desc.indx_g2l_c(i);
-        if(j_loc<0) continue;
-        h_identity[i_loc+j_loc*matrix_desc.lld()] = {1.0, 0.0};
+    // mat is stored column-major, m rows x n cols
+    if(trans == 'N'){
+        return mat[i + j * m];
+    }else if(trans == 'T'){
+        return mat[j + i * m];
+    }else{ // 'C'
+        return std::conj(mat[j + i * m]);
     }
-    DEVICE_CHECK(deviceStreamSynchronize(ddla_handle->stream));
-    ddla_handle->check_memory();
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    const size_t size = matrix_desc.m_loc()*matrix_desc.n_loc()*sizeof(std::complex<double>);
-
-    DEVICE_CHECK(deviceMallocAsync((void**)&d_A, size, ddla_handle->stream));
-    DEVICE_CHECK(deviceMallocAsync((void**)&d_A_copy, size, ddla_handle->stream));
-    DEVICE_CHECK(deviceMallocAsync((void**)&d_identity, size, ddla_handle->stream));
-    
-    DEVICE_CHECK(deviceStreamSynchronize(ddla_handle->stream));
-    ddla_handle->check_memory();
-    MPI_Barrier(MPI_COMM_WORLD);
-    DDLA::random_generator(d_A, matrix_desc.m_loc()*matrix_desc.n_loc(),DEVICE_C_64F);
-    
-    DEVICE_CHECK(deviceMemcpyAsync(d_A_copy, d_A, sizeof(std::complex<double>)*matrix_desc.m_loc()*matrix_desc.n_loc(), deviceMemcpyDeviceToDevice, ddla_handle->stream));
-    DEVICE_CHECK(deviceMemcpyAsync(a.data(), d_A, matrix_desc.m_loc() * matrix_desc.n_loc()* sizeof(std::complex<double>), deviceMemcpyDeviceToHost, ddla_handle->stream));
-    DEVICE_CHECK(deviceMemcpyAsync(d_identity, h_identity.data(), sizeof(std::complex<double>)*matrix_desc.m_loc()*matrix_desc.n_loc(), deviceMemcpyHostToDevice, ddla_handle->stream));
-    
-    std::vector<int> ipiv(n);
-
-    if(verbose)
-    {
-        std::string filename = "before_gemm_myid_";
-        filename += std::to_string(myid);
-        filename += ".txt";
-        DDLA::write_matrix(a.data(), matrix_desc.m_loc(), matrix_desc.n_loc(), filename.c_str());
-    }
-    DEVICE_CHECK(deviceStreamSynchronize(ddla_handle->stream));
-    MPI_Barrier(MPI_COMM_WORLD);
-    printf("myid:%d, start gemm:\n",myid);
-    DEVICE_CHECK(deviceStreamSynchronize(ddla_handle->stream));
-    MPI_Barrier(MPI_COMM_WORLD);
-    double start_time_gemm = MPI_Wtime();
-    pgemm(
-        'N', 'C',
-        n, n, n,
-        {1.0,0.0},
-        d_identity, matrix_desc,
-        d_A_copy, matrix_desc,
-        {0.0,0.0},
-        d_A, matrix_desc
-    );
-    DEVICE_CHECK(deviceStreamSynchronize(ddla_handle->stream));
-    double end_time_gemm = MPI_Wtime();
-    printf("myid:%d, pzgemm time:%lf\n",myid,end_time_gemm-start_time_gemm);
-    if(verbose)
-    { 
-        DEVICE_CHECK(deviceMemcpyAsync(a.data(), d_A, sizeof(std::complex<double>)*matrix_desc.m_loc()*matrix_desc.n_loc(), deviceMemcpyDeviceToHost, ddla_handle->stream));
-        DEVICE_CHECK(deviceStreamSynchronize(ddla_handle->stream));
-        std::string filename = "after_gemm_myid_";
-        filename += std::to_string(myid);
-        filename += ".txt";
-        DDLA::write_matrix(a.data(), matrix_desc.m_loc(), matrix_desc.n_loc(), filename.c_str());
-    }
-    DEVICE_CHECK(deviceFreeAsync(d_identity, ddla_handle->stream));
-    DEVICE_CHECK(deviceFreeAsync(d_A, ddla_handle->stream));
-    DEVICE_CHECK(deviceFreeAsync(d_A_copy, ddla_handle->stream));
-    DEVICE_CHECK(deviceStreamSynchronize(ddla_handle->stream));
 }
-int main(int argc, char* argv[]) {  
-    MPI_Init(&argc, &argv);
-    printf("before stream init\n");
-    DdlaHandle_t ddla_handle;
-    ddla_init(ddla_handle);
-    ddla_set(ddla_handle);
 
-    printf("after stream init\n");
-    check_pzgetrf(100, ddla_handle);
-    // for(int i=10000;i<=20000;i+=10000){
-    //     DEVICE_CHECK(deviceStreamSynchronize(ddla_handle->stream));
-    //     MPI_Barrier(MPI_COMM_WORLD);
-    //     printf("testing matrix size: %d\n",i);
-    //     check_pzgetrf(i,ddla_handle);
-    // }
-    ddla_destroy(ddla_handle);
+void check_pgemm(char transa, char transb,
+                 int m, int n, int k, int nb,
+                 const DdlaHandle_t& ddla_handle)
+{
+    DdlaDesc descA(ddla_handle);
+    descA.init(m, k, nb, nb, 0, 0);
+    DdlaDesc descB(ddla_handle);
+    descB.init(k, n, nb, nb, 0, 0);
+    DdlaDesc descC(ddla_handle);
+    descC.init(m, n, nb, nb, 0, 0);
+
+    int myid = descC.mypcol() + descC.myprow() * descC.npcols();
+
+    std::vector<std::complex<double>> h_A(descA.m_loc() * descA.n_loc());
+    std::vector<std::complex<double>> h_B(descB.m_loc() * descB.n_loc());
+    std::vector<std::complex<double>> h_C(descC.m_loc() * descC.n_loc());
+
+    std::mt19937 gen(42 + myid);
+    std::uniform_real_distribution<double> dist(-1.0, 1.0);
+    for(auto& v : h_A) v = std::complex<double>(dist(gen), dist(gen));
+    for(auto& v : h_B) v = std::complex<double>(dist(gen), dist(gen));
+    for(auto& v : h_C) v = std::complex<double>(dist(gen), dist(gen));
+
+    std::complex<double>* d_A;
+    std::complex<double>* d_B;
+    std::complex<double>* d_C;
+    DEVICE_CHECK(deviceMalloc(&d_A, sizeof(std::complex<double>) * h_A.size()));
+    DEVICE_CHECK(deviceMalloc(&d_B, sizeof(std::complex<double>) * h_B.size()));
+    DEVICE_CHECK(deviceMalloc(&d_C, sizeof(std::complex<double>) * h_C.size()));
+
+    DEVICE_CHECK(deviceMemcpy(d_A, h_A.data(), sizeof(std::complex<double>) * h_A.size(), deviceMemcpyHostToDevice));
+    DEVICE_CHECK(deviceMemcpy(d_B, h_B.data(), sizeof(std::complex<double>) * h_B.size(), deviceMemcpyHostToDevice));
+    DEVICE_CHECK(deviceMemcpy(d_C, h_C.data(), sizeof(std::complex<double>) * h_C.size(), deviceMemcpyHostToDevice));
+
+    std::complex<double> alpha(1.0, 0.0);
+    std::complex<double> beta(0.0, 0.0);
+
+    double start = MPI_Wtime();
+    pgemm(transa, transb, m, n, k, alpha, d_A, descA, d_B, descB, beta, d_C, descC);
+    DEVICE_CHECK(deviceStreamSynchronize(ddla_handle->stream));
+    double elapsed = MPI_Wtime() - start;
+
+    std::vector<std::complex<double>> h_C_out(descC.m_loc() * descC.n_loc());
+    DEVICE_CHECK(deviceMemcpy(h_C_out.data(), d_C, sizeof(std::complex<double>) * h_C_out.size(), deviceMemcpyDeviceToHost));
+
+    int nprocs;
+    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+
+    auto gather_global = [&](const DdlaDesc& desc, const std::vector<std::complex<double>>& local)->std::vector<std::complex<double>>{
+        int mg = desc.m();
+        int ng = desc.n();
+        std::vector<std::complex<double>> global(mg * ng);
+        std::vector<int> recvcounts(nprocs);
+        std::vector<int> displs(nprocs);
+        int loc_size = local.size();
+        MPI_Allgather(&loc_size, 1, MPI_INT, recvcounts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+        displs[0] = 0;
+        for(int i=1;i<nprocs;i++) displs[i] = displs[i-1] + recvcounts[i-1];
+        std::vector<std::complex<double>> all_local(displs[nprocs-1] + recvcounts[nprocs-1]);
+        MPI_Allgatherv(local.data(), loc_size, MPI_C_DOUBLE_COMPLEX,
+                       all_local.data(), recvcounts.data(), displs.data(), MPI_C_DOUBLE_COMPLEX,
+                       MPI_COMM_WORLD);
+        int npcols = desc.npcols();
+        for(int src=0; src<nprocs; src++){
+            int prow = src / npcols;
+            int pcol = src % npcols;
+            int offset = displs[src];
+            int count = recvcounts[src];
+            if(count == 0) continue;
+            int m_loc = num_loc(mg, desc.mb(), prow, desc.irsrc(), desc.nprows());
+            int n_loc = num_loc(ng, desc.nb(), pcol, desc.icsrc(), desc.npcols());
+            if(m_loc * n_loc != count) continue;
+            for(int j_loc=0; j_loc<n_loc; j_loc++){
+                int j_g = indxl2g(j_loc, desc.nb(), pcol, desc.icsrc(), desc.npcols());
+                for(int i_loc=0; i_loc<m_loc; i_loc++){
+                    int i_g = indxl2g(i_loc, desc.mb(), prow, desc.irsrc(), desc.nprows());
+                    global[i_g + j_g * mg] = all_local[offset + i_loc + j_loc * m_loc];
+                }
+            }
+        }
+        return global;
+    };
+
+    std::vector<std::complex<double>> g_A = gather_global(descA, h_A);
+    std::vector<std::complex<double>> g_B = gather_global(descB, h_B);
+    std::vector<std::complex<double>> g_C = gather_global(descC, h_C_out);
+
+    int ma = (transa == 'N') ? m : k;
+    int na = (transa == 'N') ? k : m;
+    int mb_ = (transb == 'N') ? k : n;
+    int nb_ = (transb == 'N') ? n : k;
+
+    double max_err = 0.0;
+    for(int j=0; j<n; j++){
+        for(int i=0; i<m; i++){
+            std::complex<double> ref(0.0, 0.0);
+            for(int l=0; l<k; l++){
+                ref += alpha * op_value(transa, g_A, ma, na, i, l) * op_value(transb, g_B, mb_, nb_, l, j);
+            }
+            std::complex<double> diff = g_C[i + j * m] - ref;
+            max_err = std::max(max_err, std::abs(diff));
+        }
+    }
+
+    double global_max_err;
+    MPI_Reduce(&max_err, &global_max_err, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+    if(myid == 0){
+        std::cout << "pgemm(" << transa << "," << transb << ") "
+                  << m << "x" << n << "x" << k
+                  << " grid " << descC.nprows() << "x" << descC.npcols()
+                  << " time " << elapsed << "s"
+                  << " max_err " << global_max_err << std::endl;
+    }
+
+    if(global_max_err > 1e-10){
+        std::cerr << "FAIL: pgemm(" << transa << "," << transb << ") error too large" << std::endl;
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    DEVICE_CHECK(deviceFree(d_A));
+    DEVICE_CHECK(deviceFree(d_B));
+    DEVICE_CHECK(deviceFree(d_C));
+}
+
+} // anonymous namespace
+
+int main(int argc, char* argv[])
+{
+    MPI_Init(&argc, &argv);
+
+    int nprocs;
+    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+
+    std::vector<std::pair<int,int>> grids;
+    if(nprocs == 4){
+        grids = {{1,4}, {2,2}, {4,1}};
+    }else if(nprocs == 6){
+        grids = {{2,3}, {3,2}};
+    }else if(nprocs == 8){
+        grids = {{2,4}, {4,2}};
+    }else{
+        grids = {{-1,-1}};
+    }
+
+    for(const auto& grid : grids){
+        DdlaHandle_t ddla_handle;
+        ddla_init(ddla_handle);
+        if(grid.first < 0){
+            ddla_set(ddla_handle);
+        }else{
+            ddla_set(ddla_handle, MPI_COMM_WORLD, grid.first, grid.second);
+        }
+
+        int m = 100, n = 100, k = 100;
+        int nb = 16;
+        std::vector<char> trans_opts = {'N', 'T', 'C'};
+        for(char transa : trans_opts){
+            for(char transb : trans_opts){
+                check_pgemm(transa, transb, m, n, k, nb, ddla_handle);
+            }
+        }
+
+        ddla_destroy(ddla_handle);
+    }
+
     MPI_Finalize();
     return 0;
 }

@@ -27,6 +27,9 @@ communication.
 | `pgetrf`   | LU factorization with partial (row) pivoting |
 | `pgetrs`   | Triangular solve using LU factors |
 | `pgesv`    | Linear-system solver (driver: LU + solve) |
+| `pgetrf_nopiv` | LU factorization without pivoting (multi-process) |
+| `pgetrs_nopiv` | Triangular solve using LU factors without pivoting |
+| `pgesv_nopiv`  | Linear-system solver without pivoting (driver) |
 | `ptrtrs`   | Distributed triangular solve |
 | `pgemm`    | Matrix multiplication: C = alpha*op(A)*op(B) + beta*C |
 | `pgeadd`   | Matrix addition: C = alpha*op(A) + beta*op(B) |
@@ -103,6 +106,80 @@ In the distributed implementation `pgetrs` first applies the pivot permutation `
 This is the driver routine that composes the two steps above:
 
 $$AX = B \xrightarrow{\text{pgetrf}} PA = LU \xrightarrow{\text{plapiv}} PB \xrightarrow{\text{ptrtrs}(L)} Y \xrightarrow{\text{ptrtrs}(U)} X$$
+
+---
+
+### No-Pivot LU Variants (`pgetrf_nopiv`, `pgetrs_nopiv`, `pgesv_nopiv`)
+
+For matrices that are known to be diagonally dominant or otherwise structurally
+safe without pivoting, LibDDLA provides no-pivot counterparts to the LU family.
+The algorithms are identical to the pivoted versions except that the row
+permutation $P$ is omitted, which removes the distributed pivot search, the
+row swaps, and the pivot bookkeeping.
+
+#### `pgetrf_nopiv` — LU Factorization without Pivoting
+
+Given a square matrix $A$, we seek a unit lower-triangular matrix $L$ and an
+upper-triangular matrix $U$ such that
+
+$$A = LU$$
+
+Partition the current trailing submatrix at step $k$ as
+
+$$A = \begin{pmatrix} A_{11} & A_{12} \\ A_{21} & A_{22} \end{pmatrix}$$
+
+where $A_{11}$ is the $nb \times nb$ diagonal panel.  The right-looking block
+algorithm proceeds in four stages:
+
+1. **Diagonal panel factorization** (local single-GPU `getrf_nopiv`):
+   $$A_{11} = L_{11} U_{11}$$
+
+2. **Broadcast the factored panel** to the owning process row and column via
+   NCCL/RCCL row/column communicators, so that every process holding $A_{12}$
+   or $A_{21}$ receives the updated $A_{11} = L_{11} U_{11}$.
+
+3. **Trailing-submatrix update** (triangular solve, `trsm`):
+   $$U_{12} = L_{11}^{-1} A_{12}$$
+   $$L_{21} = A_{21} U_{11}^{-1}$$
+
+4. **Schur-complement update** (matrix multiply, `gemm`):
+   $$A_{22} \leftarrow A_{22} - L_{21} U_{12}$$
+
+The updated $A_{22}$ becomes the new trailing matrix for the next step, i.e.
+$A_{22} = L_{22} U_{22}$ is factored recursively.  Because no pivoting is
+performed, the panel factorization can use a large block size (up to the size
+that fits on a single GPU), which reduces the number of communication rounds
+and yields higher throughput than the pivoted variants for numerically stable
+inputs.
+
+#### `pgetrs_nopiv` — Solve Using LU Factors without Pivoting
+
+With $A = LU$ already computed, solve $AX = B$:
+
+Substitute $A = LU$:
+
+$$LU X = B$$
+
+Introduce the intermediate $Y = UX$:
+
+1. **Forward substitution** (unit lower triangular):
+   $$LY = B$$
+
+2. **Backward substitution** (upper triangular):
+   $$UX = Y$$
+
+In the distributed implementation `pgetrs_nopiv` calls `ptrtrs` twice: first
+with the lower-triangular factor $L$ (unit diagonal, no transpose), then with
+the upper-triangular factor $U$ (no transpose).  No pivot permutation is
+applied.
+
+#### `pgesv_nopiv` — Linear System Solver without Pivoting (Driver)
+
+This is the no-pivot driver routine that composes the two steps above:
+
+$$AX = B \xrightarrow{\text{pgetrf_nopiv}} A = LU
+       \xrightarrow{\text{ptrtrs}(L)} Y
+       \xrightarrow{\text{ptrtrs}(U)} X$$
 
 ---
 
@@ -292,6 +369,14 @@ cmake .. -DDDLA_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES="gfx90a"
 make -j
 ```
 
+> **Note:** `install_scripts/install_cuda.sh` currently sets `CMAKE_CUDA_ARCHITECTURES=80` by default (A100 / SM80). If you run on V100 (SM70) or other GPUs, make sure the architecture matches the target device, e.g.:
+>
+> ```bash
+> cmake .. -DDDLA_USE_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="70"
+> ```
+>
+> Mismatched architecture (e.g. building SM80 and running on V100) can cause kernel launch failures or silent numerical errors such as `log-determinant mismatch` in the tests.
+
 ---
 
 ## Architecture
@@ -404,7 +489,7 @@ $$S = P_2^{-1} L_2 U_2$$
 
 Absorb $P_2$ into the global permutation and write the final factorization:
 
-$$\begin{pmatrix} P_1^{-1} & 0 \\ 0 & P_2^{-1} \end{pmatrix} \begin{pmatrix} L_1 & 0 \\ P_2 C U_1^{-1} & L_2 \end{pmatrix} \begin{pmatrix} U_1 & L_1^{-1} P_1 B \\ 0 & U_2 \end{pmatrix}$$
+$$\begin{pmatrix} P_1^{-1} & 0 \\ 0 & I \end{pmatrix} \begin{pmatrix} L_1 & 0 \\ C U_1^{-1} & I \end{pmatrix}\begin{pmatrix} I & 0 \\ 0 & P_2^{-1} \end{pmatrix} \begin{pmatrix} I & 0 \\ 0 & L_2\end{pmatrix}\begin{pmatrix} U_1 & L_1^{-1} P_1 B \\ 0 & U_2 \end{pmatrix}$$
 
 **Summary of the right-looking block algorithm (one step).**
 
@@ -429,6 +514,69 @@ The updated $D$ becomes the new trailing matrix for the next recursive step.
 
 ---
 ---
+
+## Benchmarks
+
+The following table shows single-GPU `zgetrf_nopiv` timings on an NVIDIA V100
+(SM70) using `v100g32fat`.  The test matrix is a random complex matrix with a
+diagonal shift to keep it non-singular.  Timings include device synchronization.
+
+| n     | LibDDLA `getrf_nopiv` (s) | MAGMA `zgetrf_nopiv_gpu` (s) | cuSOLVER `zgetrf` (s) | diff(L/R) | diff(M/R) | diff(L/M) |
+|------:|--------------------------:|-----------------------------:|----------------------:|----------:|----------:|----------:|
+| 100   | 7.18e-03                  | 2.42e-01                     | 1.68e-03              | 1.42e-14  | 0.00e+00  | 1.42e-14  |
+| 500   | 1.88e-03                  | 4.89e-03                     | 5.93e-03              | 5.68e-14  | 0.00e+00  | 5.68e-14  |
+| 1000  | 4.39e-03                  | 1.31e-02                     | 8.77e-03              | 0.00e+00  | 1.14e-13  | 1.14e-13  |
+| 5000  | 9.60e-02                  | 4.24e-01                     | 9.92e-02              | 4.55e-13  | 0.00e+00  | 4.55e-13  |
+| 10000 | 6.02e-01                  | 2.32e+00                     | 5.12e-01              | 1.82e-12  | 1.82e-12  | 0.00e+00  |
+
+Notes:
+- LibDDLA and cuSOLVER stay on the GPU for the whole factorization.
+- MAGMA's `magma_zgetrf_nopiv_gpu` is a **hybrid** routine: it copies each
+  panel to the CPU, factors it with OpenBLAS, and copies it back.  This
+  explains the higher run time, especially for small matrices where the
+  CPU-panel overhead dominates.
+- The `log|det|` values agree to floating-point round-off in all cases.
+
+### Multi-Process No-Pivot LU Benchmarks
+
+The following tables summarize 4-MPI-rank / 4-GPU runs on a single HPC3 node,
+using complex double precision (`zgetrf_nopiv` / `zgesv_nopiv`) and block size
+$nb = 128$.
+
+#### Factorization comparison: `pgetrf` vs `pgetrf_bpiv` vs `pgetrf_nopiv`
+
+| n     | `pgetrf` (s) | `pgetrf_bpiv` (s) | `pgetrf_nopiv` (s) | ln_det                 | `|ln_det_nopiv - ln_det_pgetrf|` | `|ln_det_nopiv - ln_det_bpiv|` |
+|------:|-------------:|------------------:|-------------------:|:-----------------------|---------------------------------:|-------------------------------:|
+| 500   | 6.44e-02     | 7.02e-03          | 3.23e-03           | 346.270152+i-0.745968  | 0.00e+00                         | 0.00e+00                       |
+| 1000  | 9.82e-02     | 6.27e-03          | 5.76e-03           | 692.104913+i-1.882746  | 2.22e-16                         | 2.22e-16                       |
+| 5000  | 5.39e-01     | 5.49e-02          | 5.15e-02           | 3456.164522+i-11.786721| 9.09e-13                         | 0.00e+00                       |
+| 10000 | 1.16e+00     | 1.88e-01          | 1.80e-01           | 6910.034013+i-24.275085| 9.13e-13                         | 9.13e-13                       |
+| 15000 | 1.96e+00     | 4.86e-01          | 4.80e-01           | 10363.707884+i-36.828523| 1.82e-12                        | 0.00e+00                       |
+| 20000 | 3.05e+00     | 1.03e+00          | 1.02e+00           | 13817.180801+i-49.299152| 1.82e-12                        | 3.65e-12                       |
+
+`pgetrf_nopiv` matches the `log|det|` values of both pivoting variants to
+floating-point round-off.  Because the block LU algorithm does not perform any
+row interchanges, the panel factorization uses the local single-GPU
+`getrf_nopiv` kernel with a large block size, and the dominant cost is the
+Schur-complement `gemm` update.
+
+#### Driver solve accuracy: `pgesv_nopiv` solving $AX = I$
+
+The test generates a random diagonally-shifted matrix $A$, solves $AX = I$ with
+`pgesv_nopiv`, multiplies $A \cdot X$ locally with `pgemm`, and checks the
+maximum entrywise deviation from the identity matrix.  The global max error is
+obtained via `MPI_Reduce(MPI_MAX, ...)`.
+
+| n     | `pgesv_nopiv` (s) | verification `pgemm` (s) | global max error |
+|------:|------------------:|-------------------------:|:----------------:|
+| 500   | 3.19e-02          | 6.30e-04                 | 2.11e-15         |
+| 1000  | 1.03e-02          | 1.65e-03                 | 3.55e-15         |
+| 5000  | 1.33e-01          | 5.98e-02                 | 3.77e-15         |
+| 10000 | 5.95e-01          | 3.56e-01                 | 4.22e-15         |
+
+The global max error stays at the level of machine epsilon for complex double
+precision, confirming that the no-pivot LU factors can reconstruct the inverse
+with full numerical accuracy for this class of test matrices.
 
 ## License
 

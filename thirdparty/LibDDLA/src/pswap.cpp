@@ -51,7 +51,8 @@ void pswap(
         assert(length_v == Nb_loc - ib_loc);
         if(length_v > 0){
             if(owner_col_A == owner_col_B){
-                BLAS_CHECK(deblasSwap(ddla_handle->blasH, length_v, A + a_offset, 1, B + b_offset, 1));
+                if(mypcol == owner_col_A)
+                    BLAS_CHECK(deblasSwap(ddla_handle->blasH, length_v, A + a_offset, 1, B + b_offset, 1));
             }else{
                 if(mypcol == owner_col_A){
                     DEVICE_CHECK(deviceMemcpy2DAsync(
