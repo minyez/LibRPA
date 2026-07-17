@@ -70,7 +70,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(
     auto ddla_handle = ad_A.ddla_desc().ddla_handle();
     T* d_W;
     if(use_gpu_replace_scalapack){
-        ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_W, n * sizeof(T), ddla_handle->stream));
+        ddla::DEVICE_CHECK(ddla::deviceMallocAsync((void**)&d_W, n * sizeof(T), ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, A_local.ptr(), A_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_Z, Z_local.ptr(), Z_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_W, W, n * sizeof(T), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
@@ -147,7 +147,7 @@ matrix_m<std::complex<T>> power_hemat_elpa(
     std::complex<T> *C;
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
     if(use_gpu_replace_scalapack){
-        ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_C, A_local.size() * sizeof(std::complex<T>), ddla_handle->stream));
+        ddla::DEVICE_CHECK(ddla::deviceMallocAsync((void**)&d_C, A_local.size() * sizeof(std::complex<T>), ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
         C = d_C;
     }else
@@ -168,8 +168,8 @@ matrix_m<std::complex<T>> power_hemat_elpa(
     if(use_gpu_replace_scalapack){
         ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled.ptr(), A, scaled.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local.ptr(), C, A_local.size() * sizeof(std::complex<T>), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-        ddla::DEVICE_CHECK(deviceFreeAsync(d_C, ddla_handle->stream));
-        ddla::DEVICE_CHECK(deviceFreeAsync(d_W, ddla_handle->stream));
+        ddla::DEVICE_CHECK(ddla::deviceFreeAsync(d_C, ddla_handle->stream));
+        ddla::DEVICE_CHECK(ddla::deviceFreeAsync(d_W, ddla_handle->stream));
         ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
     }
 #endif
@@ -215,7 +215,7 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
     T *d_W;
     if(use_gpu_replace_scalapack)
     {
-        ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_W, n * sizeof(T), ddla_handle->stream));
+        ddla::DEVICE_CHECK(ddla::deviceMallocAsync((void**)&d_W, n * sizeof(T), ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, A_local_real.ptr(), A_local_real.size() * sizeof(T), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
         A = d_A;
         Z = d_Z;
@@ -293,7 +293,7 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
     if(use_gpu_replace_scalapack)
     {
-        ddla::DEVICE_CHECK(deviceMallocAsync((void**)&d_C, A_local_real.size() * sizeof(T), ddla_handle->stream));
+        ddla::DEVICE_CHECK(ddla::deviceMallocAsync((void**)&d_C, A_local_real.size() * sizeof(T), ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, d_Z, Z_local_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToDevice, ddla_handle->stream));
         C = d_C;
     }else
@@ -317,8 +317,8 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
     if(use_gpu_replace_scalapack){
         ddla::DEVICE_CHECK(deviceMemcpyAsync(scaled_real.ptr(), A, scaled_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(A_local_real.ptr(), C, A_local_real.size() * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
-        ddla::DEVICE_CHECK(deviceFreeAsync(d_W, ddla_handle->stream));
-        ddla::DEVICE_CHECK(deviceFreeAsync(d_C, ddla_handle->stream));
+        ddla::DEVICE_CHECK(ddla::deviceFreeAsync(d_W, ddla_handle->stream));
+        ddla::DEVICE_CHECK(ddla::deviceFreeAsync(d_C, ddla_handle->stream));
         ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
     }
 #endif
