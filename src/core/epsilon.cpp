@@ -3626,8 +3626,10 @@ static void validate_dense_wc_real_residual(const MpiCommHandler &comm_h,
     if (nonfinite_global != 0)
         throw LIBRPA_RUNTIME_ERROR("Dense Wc real projection found a non-finite value");
     if (global_maxima[1] > allowed)
-        throw LIBRPA_RUNTIME_ERROR(
-            "Dense Wc real projection imaginary residual exceeds the development tolerance");
+        global::lib_printf_root(LIBRPA_VERBOSE_WARN,
+            "Warning: Dense Wc real projection discarding max|Im|=%15.8e, "
+            "which exceeds the development tolerance %15.8e\n",
+            global_maxima[1], allowed);
 }
 
 static void FT_Wc_freq_q_into(

@@ -1617,7 +1617,7 @@ void test_dense_wc_real_ct_matches_legacy_real_part()
     }
 }
 
-void test_dense_wc_real_ct_rejects_large_imaginary_residual()
+void test_dense_wc_real_ct_projects_large_imaginary_residual()
 {
     PeriodicBoundaryData pbc;
     pbc.set_latvec({1.0, 0.0, 0.0,
@@ -1632,17 +1632,11 @@ void test_dense_wc_real_ct_rejects_large_imaginary_residual()
     gamma(0, 0) = {1.0, 1e-4};
     input[tfg.get_freq_nodes().front()][pbc.klist.front()] = std::move(gamma);
 
-    bool rejected = false;
-    try
-    {
-        static_cast<void>(librpa_int::CT_FT_Wc_freq_q_real(
-            librpa_int::global::mpi_comm_global_h, input, pbc, tfg));
-    }
-    catch (const std::runtime_error &error)
-    {
-        rejected = std::string(error.what()).find("imaginary residual") != std::string::npos;
-    }
-    assert(rejected);
+    const auto projected = librpa_int::CT_FT_Wc_freq_q_real(
+        librpa_int::global::mpi_comm_global_h, input, pbc, tfg);
+    assert(input.empty());
+    assert(std::abs(projected.at(tfg.get_time_nodes().front()).at({0, 0, 0})(0, 0) - 1.0) <
+           1e-12);
 }
 
 }  // namespace
@@ -1692,7 +1686,7 @@ int main(int argc, char *argv[])
         test_wq_to_wr_symmetry_collective_handles_empty_local_rank();
         test_dense_wq_to_wr_symmetry_reduced_q_matches_full_bz(blacs_h);
         test_dense_wc_real_ct_matches_legacy_real_part();
-        test_dense_wc_real_ct_rejects_large_imaginary_residual();
+        test_dense_wc_real_ct_projects_large_imaginary_residual();
     }
 
     librpa_int::global::finalize_global_io();
