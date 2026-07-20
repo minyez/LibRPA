@@ -2875,8 +2875,163 @@ void diele_func::test_wing()
     // std::exit(0);
 };
 
+void invert_headwing_body_with_identity_solve(
+    matrix_m<std::complex<double>> &body, ArrayDesc &desc_body,
+    const BlacsCtxtHandler &blacs_h, const bool use_cholesky, const bool use_device)
+{
+    using global::profiler;
+
+    if (!desc_body.is_initialized() || desc_body.m() != desc_body.n() ||
+        body.nr() != desc_body.m_loc() || body.nc() != desc_body.n_loc())
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "Head/wing body inverse expects a square distributed matrix matching its descriptor");
+    }
+    if (desc_body.ictxt() != blacs_h.ictxt)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "Head/wing body inverse descriptor and BLACS context do not match");
+    }
+
+    const int n_body = desc_body.m();
+    auto body_factor = body.copy();
+    body.zero_out();
+    for (int i = 0; i != n_body; ++i)
+    {
+        const int ilo = desc_body.indx_g2l_r(i);
+        const int jlo = desc_body.indx_g2l_c(i);
+        if (ilo >= 0 && jlo >= 0) body(ilo, jlo) = 1.0;
+    }
+
+    int info = 0;
+#if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
+    if (use_device)
+    {
+        if (blacs_h.ddla_handle == nullptr)
+        {
+            throw LIBRPA_RUNTIME_ERROR(
+                "Head/wing body inverse requested DDLA before its BLACS handle was initialized");
+        }
+        desc_body.set_ddla_desc(blacs_h.ddla_handle);
+
+        const std::size_t local_size = body.size();
+        const std::size_t allocation_size = std::max<std::size_t>(local_size, 1);
+        std::complex<double> *d_body_factor = nullptr;
+        std::complex<double> *d_body_inverse = nullptr;
+        ddla::DEVICE_CHECK(ddla::deviceMallocAsync(
+            reinterpret_cast<void **>(&d_body_factor),
+            allocation_size * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
+        ddla::DEVICE_CHECK(ddla::deviceMallocAsync(
+            reinterpret_cast<void **>(&d_body_inverse),
+            allocation_size * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
+
+        const auto release_device_buffers = [&]() {
+            ddla::DEVICE_CHECK(
+                ddla::deviceFreeAsync(d_body_factor, blacs_h.ddla_handle->stream));
+            ddla::DEVICE_CHECK(
+                ddla::deviceFreeAsync(d_body_inverse, blacs_h.ddla_handle->stream));
+        };
+
+        try
+        {
+            profiler.start("headwing_body_inverse_transfer");
+            if (local_size > 0)
+            {
+                ddla::DEVICE_CHECK(deviceMemcpyAsync(
+                    d_body_factor, body_factor.ptr(),
+                    local_size * sizeof(std::complex<double>), ddla::deviceMemcpyHostToDevice,
+                    blacs_h.ddla_handle->stream));
+                ddla::DEVICE_CHECK(deviceMemcpyAsync(
+                    d_body_inverse, body.ptr(), local_size * sizeof(std::complex<double>),
+                    ddla::deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
+            }
+            ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(blacs_h.ddla_handle->stream));
+            profiler.stop("headwing_body_inverse_transfer");
+
+            profiler.start("headwing_body_inverse_trf_trs");
+            if (use_cholesky)
+            {
+                LaConnector::pposv('L', 'L', 'N', n_body, n_body, d_body_factor, 1, 1,
+                                   desc_body, d_body_inverse, 1, 1, desc_body, info);
+            }
+            else
+            {
+                LaConnector::pgesv(n_body, n_body, d_body_factor, 1, 1, desc_body,
+                                   d_body_inverse, 1, 1, desc_body, info);
+            }
+            profiler.stop("headwing_body_inverse_trf_trs");
+
+            if (info != 0)
+            {
+                std::ostringstream oss;
+                oss << "Head/wing body "
+                    << (use_cholesky ? "Cholesky" : "LU")
+                    << " identity solve failed with info=" << info;
+                throw LIBRPA_RUNTIME_ERROR(oss.str());
+            }
+
+            profiler.start("headwing_body_inverse_transfer");
+            if (local_size > 0)
+            {
+                ddla::DEVICE_CHECK(deviceMemcpyAsync(
+                    body.ptr(), d_body_inverse, local_size * sizeof(std::complex<double>),
+                    ddla::deviceMemcpyDeviceToHost, blacs_h.ddla_handle->stream));
+            }
+            ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(blacs_h.ddla_handle->stream));
+            profiler.stop("headwing_body_inverse_transfer");
+        }
+        catch (...)
+        {
+            release_device_buffers();
+            ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(blacs_h.ddla_handle->stream));
+            throw;
+        }
+
+        release_device_buffers();
+        return;
+    }
+#else
+    if (use_device)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "Head/wing DDLA body inverse requested in a CPU-only build");
+    }
+#endif
+
+    profiler.start("headwing_body_inverse_trf_trs");
+    try
+    {
+        if (use_cholesky)
+        {
+            LaConnector::pposv('L', 'L', 'N', n_body, n_body, body_factor.ptr(), 1, 1,
+                               desc_body, body.ptr(), 1, 1, desc_body, info);
+        }
+        else
+        {
+            LaConnector::pgesv(n_body, n_body, body_factor.ptr(), 1, 1, desc_body,
+                               body.ptr(), 1, 1, desc_body, info);
+        }
+    }
+    catch (const std::exception &error)
+    {
+        profiler.stop("headwing_body_inverse_trf_trs");
+        throw LIBRPA_RUNTIME_ERROR(
+            std::string("Head/wing body identity solve failed: ") + error.what());
+    }
+    profiler.stop("headwing_body_inverse_trf_trs");
+
+    if (info != 0)
+    {
+        std::ostringstream oss;
+        oss << "Head/wing body " << (use_cholesky ? "Cholesky" : "LU")
+            << " identity solve failed with info=" << info;
+        throw LIBRPA_RUNTIME_ERROR(oss.str());
+    }
+}
+
 ArrayDesc diele_func::get_body_inv(matrix_m<std::complex<double>> &chi0_block,
-                                   ArrayDesc &desc_nabf_nabf_opt)
+                                   ArrayDesc &desc_nabf_nabf_opt,
+                                   const bool use_cholesky, const bool use_device)
 {
     using global::profiler;
 
@@ -2901,7 +3056,8 @@ ArrayDesc diele_func::get_body_inv(matrix_m<std::complex<double>> &chi0_block,
     ScalapackConnector::pgemr2d_f(n_nonsingular - 1, n_nonsingular - 1, chi0_block.ptr(), 2, 2,
                                   desc_nabf_nabf_opt.desc, this->body_inv.ptr(), 1, 1,
                                   desc_body.desc, blacs_h.ictxt);
-    invert_scalapack(this->body_inv, desc_body);
+    invert_headwing_body_with_identity_solve(this->body_inv, desc_body, blacs_h,
+                                             use_cholesky, use_device);
 
     if (debug)
     {
@@ -3761,9 +3917,11 @@ void replace_rpa_response_head_only(matrix_m<std::complex<double>> &response_blo
 }
 
 void diele_func::rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
-                             ArrayDesc &desc_nabf_nabf_opt)
+                             ArrayDesc &desc_nabf_nabf_opt, const bool use_cholesky,
+                             const bool use_device)
 {
-    auto desc_body = get_body_inv(chi0_block, desc_nabf_nabf_opt);
+    auto desc_body =
+        get_body_inv(chi0_block, desc_nabf_nabf_opt, use_cholesky, use_device);
     cal_eps(ifreq, desc_nabf_nabf_opt, desc_body);
     assign_chi0(chi0_block, desc_nabf_nabf_opt);
     // this->chi0.clear();

@@ -3088,7 +3088,9 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                     // TODO: check location of "head" term
                     if (df_headwing == nullptr)
                         throw LIBRPA_RUNTIME_ERROR("Head/wing dielectric function is not initialized");
-                    df_headwing->rewrite_eps(chi0_block, ifreq, desc_nabf_nabf_opt);
+                    df_headwing->rewrite_eps(chi0_block, ifreq, desc_nabf_nabf_opt,
+                                             use_cholesky_gw_wc,
+                                             use_gpu_replace_scalapack);
                     
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
                 if (use_gpu_replace_scalapack)

@@ -77,6 +77,87 @@ void require_double_close(const double actual, const double expected, const doub
     }
 }
 
+void fill_distributed_matrix(
+    matrix_m<std::complex<double>> &matrix, const ArrayDesc &desc,
+    const std::vector<std::vector<std::complex<double>>> &values)
+{
+    assert(static_cast<int>(values.size()) == desc.m());
+    for (int i = 0; i != desc.m(); ++i)
+    {
+        assert(static_cast<int>(values[i].size()) == desc.n());
+        const int ilo = desc.indx_g2l_r(i);
+        if (ilo < 0) continue;
+        for (int j = 0; j != desc.n(); ++j)
+        {
+            const int jlo = desc.indx_g2l_c(j);
+            if (jlo >= 0) matrix(ilo, jlo) = values[i][j];
+        }
+    }
+}
+
+void verify_distributed_inverse(
+    const std::vector<std::vector<std::complex<double>>> &values,
+    const BlacsCtxtHandler &blacs_h, const int block_size, const bool use_cholesky,
+    const bool expect_empty_local_rank)
+{
+    const int n = static_cast<int>(values.size());
+    ArrayDesc desc(blacs_h);
+    desc.init(n, n, block_size, block_size, 0, 0);
+
+    auto original = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+    fill_distributed_matrix(original, desc, values);
+    auto inverse = original.copy();
+
+    int local_is_empty = inverse.size() == 0 ? 1 : 0;
+    int any_empty = 0;
+    MPI_Allreduce(&local_is_empty, &any_empty, 1, MPI_INT, MPI_MAX, desc.comm());
+    if (expect_empty_local_rank) assert(any_empty == 1);
+
+    librpa_int::invert_headwing_body_with_identity_solve(
+        inverse, desc, blacs_h, use_cholesky, false);
+
+    auto product = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+    librpa_int::ScalapackConnector::pgemm_f(
+        'N', 'N', n, n, n, std::complex<double>{1.0, 0.0}, original.ptr(), 1, 1,
+        desc.desc, inverse.ptr(), 1, 1, desc.desc, std::complex<double>{0.0, 0.0},
+        product.ptr(), 1, 1, desc.desc);
+
+    double local_max_error = 0.0;
+    for (int ilo = 0; ilo != desc.m_loc(); ++ilo)
+    {
+        const int i = desc.indx_l2g_r(ilo);
+        for (int jlo = 0; jlo != desc.n_loc(); ++jlo)
+        {
+            const int j = desc.indx_l2g_c(jlo);
+            const std::complex<double> expected = i == j ? 1.0 : 0.0;
+            local_max_error =
+                std::max(local_max_error, std::abs(product(ilo, jlo) - expected));
+        }
+    }
+    double max_error = 0.0;
+    MPI_Allreduce(&local_max_error, &max_error, 1, MPI_DOUBLE, MPI_MAX, desc.comm());
+    require_double_close(max_error, 0.0, 1.0e-10);
+}
+
+void test_headwing_body_inverse_uses_identity_solve(const BlacsCtxtHandler &square_blacs_h)
+{
+    const std::vector<std::vector<std::complex<double>>> pivoting_matrix{
+        {{0.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}},
+        {{1.0, 0.0}, {4.0, 0.0}, {1.0, 0.2}, {0.0, 0.0}},
+        {{0.0, 0.0}, {1.0, -0.2}, {5.0, 0.0}, {1.0, 0.0}},
+        {{0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}, {6.0, 0.0}}};
+    verify_distributed_inverse(pivoting_matrix, square_blacs_h, 1, false, false);
+
+    BlacsCtxtHandler horizontal_blacs_h(MPI_COMM_WORLD);
+    horizontal_blacs_h.init();
+    horizontal_blacs_h.set_horizontal_grid();
+    const std::vector<std::vector<std::complex<double>>> positive_definite_matrix{
+        {{4.0, 0.0}, {1.0, 1.0}},
+        {{1.0, -1.0}, {3.0, 0.0}}};
+    verify_distributed_inverse(positive_definite_matrix, horizontal_blacs_h, 2, true,
+                               horizontal_blacs_h.nprocs > 1);
+}
+
 RI::Tensor<double> make_scalar_cs_tensor(const double value)
 {
     auto data = std::make_shared<std::valarray<double>>(1);
@@ -1166,6 +1247,7 @@ int main(int argc, char *argv[])
         blacs_h.init();
         blacs_h.set_square_grid();
 
+        test_headwing_body_inverse_uses_identity_solve(blacs_h);
         test_replace_rpa_response_headwing_replaces_only_singular_channels(blacs_h);
         test_rspace_symmetry_requires_complete_band_space();
         test_kpoint_coordinate_mapping_selects_active_klist_from_full_source();

@@ -142,6 +142,10 @@ HeadwingCsIJKMap redistribute_headwing_cs_ijk(
     const std::vector<int> &owner_iks_local, const ArrayDesc &desc_nao_nao,
     const MpiCommHandler &comm_h);
 
+void invert_headwing_body_with_identity_solve(
+    matrix_m<std::complex<double>> &body, ArrayDesc &desc_body,
+    const BlacsCtxtHandler &blacs_h, bool use_cholesky, bool use_device);
+
 // All calculation in unit: Bohr and Ha.
 class diele_func
 {
@@ -380,7 +384,8 @@ public:
     matrix_m<std::complex<double>> get_rpa_chi0v_wing(const int ifreq) const;
 
     ArrayDesc get_body_inv(matrix_m<std::complex<double>> &chi0_block,
-                           ArrayDesc &desc_nabf_nabf_opt);
+                           ArrayDesc &desc_nabf_nabf_opt, bool use_cholesky,
+                           bool use_device);
     void construct_L(const int ifreq, ArrayDesc &desc_body);
     void construct_rpa_trace_log_schur(const int ifreq, ArrayDesc &desc_body,
                                        int wing_row_offset = 0);
@@ -403,7 +408,8 @@ public:
     // std::complex<double> compute_chi0_inv_00(const int ifreq);
     // std::complex<double> compute_chi0_inv_ij(const int ifreq, int i, int j);
     void rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
-                     ArrayDesc &desc_nabf_nabf_opt);
+                     ArrayDesc &desc_nabf_nabf_opt, bool use_cholesky,
+                     bool use_device);
     std::complex<double> compute_rpa_trace_log_average(
         matrix_m<std::complex<double>> &response_block, const int ifreq, ArrayDesc &desc_response,
         const RpaHeadwingSettings &settings);

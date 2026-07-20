@@ -1,7 +1,6 @@
 #include <ddla/ddla.h>
 #include <cassert>
 #include <vector>
-#include <ddla/ddla_stream.h>
 namespace ddla{
 
 template<typename T>
@@ -12,14 +11,10 @@ void pgetrs(
     T* d_B, const DdlaDesc& array_descB
 )
 {
-    DdlaHandle_t ddla_handle = array_descA.ddla_handle();
-    
     assert(trans == 'N');
     char direc = 'F';
     char rowcol = 'R';
     char pivroc='C';
-    printf("myid:%d, start pzlapiv\n",ddla_handle->myid);
-    double start_time_swap = MPI_Wtime();
     plapiv(
         direc, rowcol, pivroc,
         n, nrhs,
@@ -27,8 +22,6 @@ void pgetrs(
         ipiv, array_descA,
         nullptr
     );
-    printf("myid:%d, pzlapiv time:%lf\n",ddla_handle->myid,MPI_Wtime()-start_time_swap);
-    double start_time = MPI_Wtime();
     ptrtrs(
         'L', 'L', 'N', 'U', n, nrhs,
         d_A, array_descA,
@@ -39,8 +32,6 @@ void pgetrs(
         d_A, array_descA,
         d_B, array_descB
     );
-    printf("myid:%d 2xtrtrs time:%lf\n",ddla_handle->myid,MPI_Wtime()-start_time);
-
 }
 
 template void pgetrs<double>(
