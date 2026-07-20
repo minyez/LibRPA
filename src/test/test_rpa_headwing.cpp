@@ -1,5 +1,6 @@
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <complex>
 #include <cstdlib>
 #include <iostream>
@@ -11,6 +12,9 @@
 
 #include "../core/chi0.h"
 #include "../core/dielecmodel.h"
+#include "../core/epsilon.h"
+#include "../core/qpoint_view.h"
+#include "../gpu/la_connector.h"
 #include "../core/meanfield_mpi.h"
 #include "../io/global_io.h"
 #include "../math/utils_matrix_m_mpi.h"
@@ -95,6 +99,22 @@ void fill_distributed_matrix(
     }
 }
 
+void fill_distributed_matrix(
+    matrix_m<std::complex<double>> &matrix, const ArrayDesc &desc,
+    const matrix_m<std::complex<double>> &values)
+{
+    assert(values.nr() == desc.m() && values.nc() == desc.n());
+    for (int i_local = 0; i_local != desc.m_loc(); ++i_local)
+    {
+        const int i_global = desc.indx_l2g_r(i_local);
+        for (int j_local = 0; j_local != desc.n_loc(); ++j_local)
+        {
+            const int j_global = desc.indx_l2g_c(j_local);
+            matrix(i_local, j_local) = values(i_global, j_global);
+        }
+    }
+}
+
 void verify_distributed_inverse(
     const std::vector<std::vector<std::complex<double>>> &values,
     const BlacsCtxtHandler &blacs_h, const int block_size, const bool use_cholesky,
@@ -156,6 +176,237 @@ void test_headwing_body_inverse_uses_identity_solve(const BlacsCtxtHandler &squa
         {{1.0, -1.0}, {3.0, 0.0}}};
     verify_distributed_inverse(positive_definite_matrix, horizontal_blacs_h, 2, true,
                                horizontal_blacs_h.nprocs > 1);
+}
+
+void test_gamma_head_rank_one_matches_coulomb_basis_overwrite(
+    const BlacsCtxtHandler &blacs_h)
+{
+    constexpr int n = 4;
+    const double half = 0.5;
+    const matrix_m<std::complex<double>> eigenvectors(
+        {{{half, 0.0}, {half, 0.0}, {half, 0.0}, {half, 0.0}},
+         {{half, 0.0}, {-half, 0.0}, {half, 0.0}, {-half, 0.0}},
+         {{half, 0.0}, {half, 0.0}, {-half, 0.0}, {-half, 0.0}},
+         {{half, 0.0}, {-half, 0.0}, {-half, 0.0}, {half, 0.0}}},
+        MAJOR::COL);
+    const std::array<double, n> eigenvalues{{9.0, 4.0, 1.0, 0.0}};
+    const matrix_m<std::complex<double>> response(
+        {{{0.13, 0.0}, {0.02, 0.03}, {-0.01, 0.02}, {0.04, -0.01}},
+         {{0.02, -0.03}, {0.18, 0.0}, {0.03, -0.02}, {-0.02, 0.01}},
+         {{-0.01, -0.02}, {0.03, 0.02}, {0.16, 0.0}, {0.01, 0.04}},
+         {{0.04, 0.01}, {-0.02, -0.01}, {0.01, -0.04}, {0.11, 0.0}}},
+        MAJOR::COL);
+    const std::complex<double> corrected_head{2.35, -0.015};
+
+    const auto eigenvectors_h = eigenvectors.get_transpose(true);
+    auto scaled_eigenvectors = eigenvectors.copy();
+    for (int i = 0; i != n; ++i)
+        scaled_eigenvectors.scale_col(i, std::sqrt(eigenvalues.at(i)));
+    const auto sqrt_coulomb = scaled_eigenvectors * eigenvectors_h;
+
+    auto epsilon_direct = sqrt_coulomb * response * sqrt_coulomb;
+    epsilon_direct *= -1.0;
+    for (int i = 0; i != n; ++i) epsilon_direct(i, i) += 1.0;
+
+    const auto epsilon_eigenbasis = eigenvectors_h * epsilon_direct * eigenvectors;
+    const auto uncorrected_head_reference = epsilon_eigenbasis(0, 0);
+    auto response_eigenbasis = eigenvectors_h * response * eigenvectors;
+    for (int i = 0; i != n; ++i)
+    {
+        for (int j = 0; j != n; ++j)
+        {
+            response_eigenbasis(i, j) *=
+                -std::sqrt(eigenvalues.at(i) * eigenvalues.at(j));
+        }
+    }
+    response_eigenbasis(0, 0) = corrected_head - 1.0;
+    auto epsilon_reference = eigenvectors * response_eigenbasis * eigenvectors_h;
+    for (int i = 0; i != n; ++i) epsilon_reference(i, i) += 1.0;
+
+    ArrayDesc desc(blacs_h);
+    desc.init(n, n, 1, 2, 0, 0);
+    auto eigen_local = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+    auto epsilon_local = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+    auto scratch_local = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+    fill_distributed_matrix(eigen_local, desc, eigenvectors);
+    fill_distributed_matrix(epsilon_local, desc, epsilon_direct);
+
+    ArrayDesc desc_1x1(blacs_h);
+    desc_1x1.init(1, 1, 2, 2, 0, 0);
+    auto h_local = init_local_mat<std::complex<double>>(desc_1x1, MAJOR::COL);
+    if (desc_1x1.m_loc() == 0 || desc_1x1.n_loc() == 0) h_local.resize(1, 1);
+    if (desc_1x1.m_loc() != 0 && desc_1x1.n_loc() != 0) h_local(0, 0) = {0.0, 0.0};
+
+    // y = epsilon0 * x1
+    librpa_int::LaConnector::pgemm(
+        'N', 'N', n, 1, n, std::complex<double>{1.0, 0.0},
+        epsilon_local.ptr(), 1, 1, desc,
+        eigen_local.ptr(), 1, 1, desc,
+        std::complex<double>{0.0, 0.0},
+        scratch_local.ptr(), 1, 1, desc);
+
+    // h = x1^H * y
+    librpa_int::LaConnector::pgemm(
+        'C', 'N', 1, 1, n, std::complex<double>{1.0, 0.0},
+        eigen_local.ptr(), 1, 1, desc,
+        scratch_local.ptr(), 1, 1, desc,
+        std::complex<double>{0.0, 0.0},
+        h_local.ptr(), 1, 1, desc_1x1);
+
+    std::complex<double> h_scalar{0.0, 0.0};
+    if (desc_1x1.is_src()) h_scalar = h_local(0, 0);
+    const int h_root = blacs_h.get_pnum(0, 0);
+    MPI_Bcast(&h_scalar, 1, MPI_CXX_DOUBLE_COMPLEX, h_root, desc_1x1.comm());
+
+    assert_complex_close(h_scalar, uncorrected_head_reference, 1.0e-12);
+
+    // epsilon += (H - h) * x1 * x1^H
+    const std::complex<double> coeff = corrected_head - h_scalar;
+    librpa_int::LaConnector::pgemm(
+        'N', 'C', n, n, 1, coeff,
+        eigen_local.ptr(), 1, 1, desc,
+        eigen_local.ptr(), 1, 1, desc,
+        std::complex<double>{1.0, 0.0},
+        epsilon_local.ptr(), 1, 1, desc);
+
+    double local_max_error = 0.0;
+    for (int i_local = 0; i_local != desc.m_loc(); ++i_local)
+    {
+        const int i_global = desc.indx_l2g_r(i_local);
+        for (int j_local = 0; j_local != desc.n_loc(); ++j_local)
+        {
+            const int j_global = desc.indx_l2g_c(j_local);
+            local_max_error = std::max(
+                local_max_error,
+                std::abs(epsilon_local(i_local, j_local)
+                         - epsilon_reference(i_global, j_global)));
+        }
+    }
+    double max_error = 0.0;
+    MPI_Allreduce(&local_max_error, &max_error, 1, MPI_DOUBLE, MPI_MAX, desc.comm());
+    require_double_close(max_error, 0.0, 1.0e-11);
+
+    // Verify that modifying eigenvector columns other than column zero
+    // cannot affect h or the rank-one update.
+    auto eigen_modified = eigen_local.copy();
+    for (int col = 1; col != n; ++col)
+    {
+        const int col_local = desc.indx_g2l_c(col);
+        if (col_local < 0) continue;
+        for (int i_local = 0; i_local != desc.m_loc(); ++i_local)
+            eigen_modified(i_local, col_local) *= std::complex<double>{0.0, 2.0};
+    }
+    auto epsilon_modified = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+    fill_distributed_matrix(epsilon_modified, desc, epsilon_direct);
+    auto scratch2 = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+    auto h2_local = init_local_mat<std::complex<double>>(desc_1x1, MAJOR::COL);
+    if (desc_1x1.m_loc() == 0 || desc_1x1.n_loc() == 0) h2_local.resize(1, 1);
+    if (desc_1x1.m_loc() != 0 && desc_1x1.n_loc() != 0) h2_local(0, 0) = {0.0, 0.0};
+
+    librpa_int::LaConnector::pgemm(
+        'N', 'N', n, 1, n, std::complex<double>{1.0, 0.0},
+        epsilon_modified.ptr(), 1, 1, desc,
+        eigen_modified.ptr(), 1, 1, desc,
+        std::complex<double>{0.0, 0.0},
+        scratch2.ptr(), 1, 1, desc);
+    librpa_int::LaConnector::pgemm(
+        'C', 'N', 1, 1, n, std::complex<double>{1.0, 0.0},
+        eigen_modified.ptr(), 1, 1, desc,
+        scratch2.ptr(), 1, 1, desc,
+        std::complex<double>{0.0, 0.0},
+        h2_local.ptr(), 1, 1, desc_1x1);
+
+    std::complex<double> h2_scalar{0.0, 0.0};
+    if (desc_1x1.is_src()) h2_scalar = h2_local(0, 0);
+    MPI_Bcast(&h2_scalar, 1, MPI_CXX_DOUBLE_COMPLEX, h_root, desc_1x1.comm());
+    assert_complex_close(h2_scalar, h_scalar, 1.0e-12);
+
+    librpa_int::LaConnector::pgemm(
+        'N', 'C', n, n, 1, coeff,
+        eigen_modified.ptr(), 1, 1, desc,
+        eigen_modified.ptr(), 1, 1, desc,
+        std::complex<double>{1.0, 0.0},
+        epsilon_modified.ptr(), 1, 1, desc);
+
+    double local_mod_error = 0.0;
+    for (int i_local = 0; i_local != desc.m_loc(); ++i_local)
+    {
+        for (int j_local = 0; j_local != desc.n_loc(); ++j_local)
+        {
+            local_mod_error = std::max(
+                local_mod_error,
+                std::abs(epsilon_modified(i_local, j_local)
+                         - epsilon_local(i_local, j_local)));
+        }
+    }
+    double mod_error = 0.0;
+    MPI_Allreduce(&local_mod_error, &mod_error, 1, MPI_DOUBLE, MPI_MAX, desc.comm());
+    require_double_close(mod_error, 0.0, 1.0e-11);
+}
+
+void test_gamma_head_rank_one_handles_empty_local_blocks(const BlacsCtxtHandler &blacs_h)
+{
+    ArrayDesc desc(blacs_h);
+    desc.init(1, 1, 1, 1, 0, 0);
+    auto eigen_local = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+    auto epsilon_local = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+    auto scratch_local = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+    if (desc.m_loc() == 0 || desc.n_loc() == 0)
+    {
+        eigen_local.resize(1, 1);
+        epsilon_local.resize(1, 1);
+        scratch_local.resize(1, 1);
+    }
+    if (desc.m_loc() != 0 && desc.n_loc() != 0)
+    {
+        eigen_local(0, 0) = 1.0;
+        epsilon_local(0, 0) = 0.8;
+    }
+
+    ArrayDesc desc_1x1(blacs_h);
+    desc_1x1.init(1, 1, 1, 1, 0, 0);
+    auto h_local = init_local_mat<std::complex<double>>(desc_1x1, MAJOR::COL);
+    if (desc_1x1.m_loc() == 0 || desc_1x1.n_loc() == 0) h_local.resize(1, 1);
+    if (desc_1x1.m_loc() != 0 && desc_1x1.n_loc() != 0) h_local(0, 0) = {0.0, 0.0};
+
+    // y = epsilon0 * x1
+    librpa_int::LaConnector::pgemm(
+        'N', 'N', 1, 1, 1, std::complex<double>{1.0, 0.0},
+        epsilon_local.ptr(), 1, 1, desc,
+        eigen_local.ptr(), 1, 1, desc,
+        std::complex<double>{0.0, 0.0},
+        scratch_local.ptr(), 1, 1, desc);
+
+    // h = x1^H * y
+    librpa_int::LaConnector::pgemm(
+        'C', 'N', 1, 1, 1, std::complex<double>{1.0, 0.0},
+        eigen_local.ptr(), 1, 1, desc,
+        scratch_local.ptr(), 1, 1, desc,
+        std::complex<double>{0.0, 0.0},
+        h_local.ptr(), 1, 1, desc_1x1);
+
+    std::complex<double> h_scalar{0.0, 0.0};
+    if (desc_1x1.is_src()) h_scalar = h_local(0, 0);
+    const int h_root = blacs_h.get_pnum(0, 0);
+    MPI_Bcast(&h_scalar, 1, MPI_CXX_DOUBLE_COMPLEX, h_root, desc_1x1.comm());
+
+    assert_complex_close(h_scalar, std::complex<double>{0.8, 0.0}, 1.0e-12);
+
+    // epsilon += (2.1 - h) * x1 * x1^H
+    const std::complex<double> coeff = std::complex<double>{2.1, 0.0} - h_scalar;
+    librpa_int::LaConnector::pgemm(
+        'N', 'C', 1, 1, 1, coeff,
+        eigen_local.ptr(), 1, 1, desc,
+        eigen_local.ptr(), 1, 1, desc,
+        std::complex<double>{1.0, 0.0},
+        epsilon_local.ptr(), 1, 1, desc);
+
+    int local_is_empty = (desc.m_loc() == 0 || desc.n_loc() == 0) ? 1 : 0;
+    int any_empty = 0;
+    MPI_Allreduce(&local_is_empty, &any_empty, 1, MPI_INT, MPI_MAX, desc.comm());
+    if (desc.nprocs() > 1) assert(any_empty == 1);
+    if (desc.m_loc() != 0 && desc.n_loc() != 0)
+        assert_complex_close(epsilon_local(0, 0), std::complex<double>{2.1, 0.0}, 1.0e-12);
 }
 
 RI::Tensor<double> make_scalar_cs_tensor(const double value)
@@ -1249,6 +1500,8 @@ int main(int argc, char *argv[])
 
         test_headwing_body_inverse_uses_identity_solve(blacs_h);
         test_replace_rpa_response_headwing_replaces_only_singular_channels(blacs_h);
+        test_gamma_head_rank_one_matches_coulomb_basis_overwrite(blacs_h);
+        test_gamma_head_rank_one_handles_empty_local_blocks(blacs_h);
         test_rspace_symmetry_requires_complete_band_space();
         test_kpoint_coordinate_mapping_selects_active_klist_from_full_source();
         test_kstar_velocity_mapping_preserves_member_order_and_periodic_gauge();
