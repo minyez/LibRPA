@@ -3036,9 +3036,6 @@ ArrayDesc diele_func::get_body_inv(matrix_m<std::complex<double>> &chi0_block,
     using global::profiler;
 
     comm_h.barrier();
-    ArrayDesc desc_nabf_nabf(blacs_h);
-    desc_nabf_nabf.init_square_blk(n_nonsingular - 1, n_nonsingular - 1, 0, 0);
-    this->body_inv = init_local_mat<complex<double>>(desc_nabf_nabf, MAJOR::COL);
     profiler.start("get_inverse_body_of_chi0");
     comm_h.barrier();
 
@@ -3046,13 +3043,6 @@ ArrayDesc diele_func::get_body_inv(matrix_m<std::complex<double>> &chi0_block,
     desc_body.init_square_blk(n_nonsingular - 1, n_nonsingular - 1, 0, 0);
     this->body_inv = init_local_mat<complex<double>>(desc_body, MAJOR::COL);
 
-    /* for (int ilambda = 0; ilambda < n_nonsingular - 1; ilambda++)
-    {
-        for (int jlambda = 0; jlambda < n_nonsingular - 1; jlambda++)
-        {
-            body_inv(ilambda, jlambda) = chi0_block(1 + ilambda, 1 + jlambda);
-        }
-    } */
     ScalapackConnector::pgemr2d_f(n_nonsingular - 1, n_nonsingular - 1, chi0_block.ptr(), 2, 2,
                                   desc_nabf_nabf_opt.desc, this->body_inv.ptr(), 1, 1,
                                   desc_body.desc, blacs_h.ictxt);
