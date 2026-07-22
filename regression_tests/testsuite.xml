@@ -145,10 +145,6 @@
                 regex="Wing_mu diagnostics.*real_over_abs=\s*([-+0-9.Ee]+)"
                 comparison="cmp_float.abs_diff(1e-8)"
       />
-      <validate name="Analytic wing lambda pure-imaginary diagnostic"
-                regex="Wing_lambda diagnostics.*real_over_abs=\s*([-+0-9.Ee]+)"
-                comparison="cmp_float.abs_diff(1e-8)"
-      />
       <validate name="Quasi-particle energies on k-grid"
                 regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
                 headers="2"

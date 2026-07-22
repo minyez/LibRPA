@@ -1484,6 +1484,344 @@ void test_head_initialization_does_not_require_coulomb_diagonalization(
     assert(df.get_head_vec().size() == 1);
 }
 
+// Dense old Coulomb-basis averaged inverse dielectric reference. sqrt(V) is an
+// independent fixed input; U supplies the Coulomb eigenvectors (x1 = U[:,0] and
+// the rotation back to the ABF basis). Returns eps_inv in the ABF basis.
+Matz coulomb_basis_eps_inv_reference(
+    const Matz &U, const Matz &sqrtV, const Matz &chi0,
+    const Matz &wing_mu, const Matz &head,
+    const std::vector<std::array<double, 3>> &q_pts, const std::vector<double> &q_rho)
+{
+    const int n = U.nr();
+    const int nl = n - 1;
+
+    // sqrtveig = sqrt(V) * U  (= U * diag(sqrt(lambda)) when consistent)
+    const auto sqrtveig = sqrtV * U;
+
+    // E_coul = I - sqrtveig^H * chi0 * sqrtveig = U^H * E_abf * U
+    auto E_coul = sqrtveig.get_transpose(true) * chi0 * sqrtveig;
+    E_coul *= -1.0;
+    for (int i = 0; i < n; ++i) E_coul(i, i) += 1.0;
+
+    if (nl == 0)
+    {
+        // No body channels: L = H and the averaged inverse is a0 * P with
+        // P = x1*x1^H. Avoids a zero-dimensional LAPACK inversion.
+        const auto L00 = head(0, 0), L01 = head(0, 1), L02 = head(0, 2);
+        const auto L10 = head(1, 0), L11 = head(1, 1), L12 = head(1, 2);
+        const auto L20 = head(2, 0), L21 = head(2, 1), L22 = head(2, 2);
+        std::complex<double> a0 = 0.0;
+        for (std::size_t ileb = 0; ileb < q_pts.size(); ++ileb)
+        {
+            const double qx = q_pts[ileb][0], qy = q_pts[ileb][1], qz = q_pts[ileb][2];
+            const auto qLq = qx * (qx * L00 + qy * L01 + qz * L02) +
+                             qy * (qx * L10 + qy * L11 + qz * L12) +
+                             qz * (qx * L20 + qy * L21 + qz * L22);
+            a0 += q_rho[ileb] / qLq;
+        }
+        Matz x1(n, 1, MAJOR::COL);
+        for (int i = 0; i < n; ++i) x1(i, 0) = U(i, 0);
+        return a0 * (x1 * x1.get_transpose(true));
+    }
+
+    // body = E_coul[1:,1:], invert it via LU
+    Matz body(nl, nl, MAJOR::COL);
+    for (int i = 0; i < nl; ++i)
+        for (int j = 0; j < nl; ++j)
+            body(i, j) = E_coul(i + 1, j + 1);
+    auto body_inv = body.copy();
+    std::vector<int> ipiv(static_cast<std::size_t>(nl));
+    std::vector<std::complex<double>> work(static_cast<std::size_t>(nl * nl));
+    int info = 0;
+    librpa_int::LapackConnector::getrf_f(
+        nl, nl, body_inv.ptr(), nl, ipiv.data(), info);
+    assert(info == 0);
+    const int lwork = nl * nl;
+    librpa_int::LapackConnector::getri_f(
+        nl, body_inv.ptr(), nl, ipiv.data(), work.data(), lwork, info);
+    assert(info == 0);
+
+    // wing = sqrtveig[:,1:]^H * wing_mu  (nl x 3)
+    Matz wing(nl, 3, MAJOR::COL);
+    for (int i = 0; i < nl; ++i)
+        for (int j = 0; j < 3; ++j)
+        {
+            std::complex<double> s = 0.0;
+            for (int k = 0; k < n; ++k)
+                s += std::conj(sqrtveig(k, i + 1)) * wing_mu(k, j);
+            wing(i, j) = s;
+        }
+
+    auto Lind = head - wing.get_transpose(true) * body_inv * wing;
+    auto bw = body_inv * wing;
+    auto wb = wing.get_transpose(true) * body_inv;
+
+    const auto L00 = Lind(0, 0), L01 = Lind(0, 1), L02 = Lind(0, 2);
+    const auto L10 = Lind(1, 0), L11 = Lind(1, 1), L12 = Lind(1, 2);
+    const auto L20 = Lind(2, 0), L21 = Lind(2, 1), L22 = Lind(2, 2);
+
+    const int nleb = static_cast<int>(q_pts.size());
+    Matz eps_inv_coul(n, n, MAJOR::COL);
+    eps_inv_coul.zero_out();
+    for (int ileb = 0; ileb < nleb; ++ileb)
+    {
+        const double qx = q_pts[ileb][0], qy = q_pts[ileb][1], qz = q_pts[ileb][2];
+        const auto qLq = qx * (qx * L00 + qy * L01 + qz * L02) +
+                         qy * (qx * L10 + qy * L11 + qz * L12) +
+                         qz * (qx * L20 + qy * L21 + qz * L22);
+        const auto w = q_rho[ileb] / qLq;
+        eps_inv_coul(0, 0) += w;
+        for (int i = 1; i < n; ++i)
+            for (int j = 1; j < n; ++j)
+            {
+                const auto bwq = bw(i - 1, 0) * qx + bw(i - 1, 1) * qy + bw(i - 1, 2) * qz;
+                const auto qwb = qx * wb(0, j - 1) + qy * wb(1, j - 1) + qz * wb(2, j - 1);
+                eps_inv_coul(i, j) += w * bwq * qwb;
+            }
+    }
+    for (int i = 1; i < n; ++i)
+        for (int j = 1; j < n; ++j)
+            eps_inv_coul(i, j) += body_inv(i - 1, j - 1);
+
+    return U * eps_inv_coul * U.get_transpose(true);
+}
+
+// Run the production ABF-space helper on distributed matrices and compare to
+// the dense old Coulomb-basis reference.
+void run_abf_case(const BlacsCtxtHandler &blacs_h, int n, int block_size,
+                  const Matz &U, const Matz &sqrtV,
+                  const Matz &chi0, const Matz &wing_mu,
+                  const Matz &head,
+                  const std::vector<std::array<double, 3>> &q_pts,
+                  const std::vector<double> &q_rho, bool use_cholesky, double tol)
+{
+    const auto ref = coulomb_basis_eps_inv_reference(U, sqrtV, chi0, wing_mu, head,
+                                                     q_pts, q_rho);
+    // E = I - sqrt(V) * chi0 * sqrt(V)
+    auto E = sqrtV * chi0 * sqrtV;
+    E *= -1.0;
+    for (int i = 0; i < n; ++i) E(i, i) += 1.0;
+
+    ArrayDesc desc(blacs_h);
+    desc.init(n, n, block_size, block_size, 0, 0);
+    auto E_dist = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+    auto sqrtV_dist = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+    auto U_dist = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+    fill_distributed_matrix(E_dist, desc, E);
+    fill_distributed_matrix(sqrtV_dist, desc, sqrtV);
+    fill_distributed_matrix(U_dist, desc, U);
+
+    std::vector<double> qx(q_pts.size()), qy(q_pts.size()), qz(q_pts.size());
+    for (std::size_t i = 0; i < q_pts.size(); ++i)
+    {
+        qx[i] = q_pts[i][0];
+        qy[i] = q_pts[i][1];
+        qz[i] = q_pts[i][2];
+    }
+
+    librpa_int::rewrite_eps_abf_space(E_dist, sqrtV_dist, U_dist, head, wing_mu, qx, qy,
+                                      qz, q_rho, desc, blacs_h,
+                                      static_cast<std::size_t>(n), 0.0, use_cholesky, false);
+
+    double local_max_err = 0.0;
+    for (int ilo = 0; ilo != desc.m_loc(); ++ilo)
+    {
+        const int ig = desc.indx_l2g_r(ilo);
+        for (int jlo = 0; jlo != desc.n_loc(); ++jlo)
+        {
+            const int jg = desc.indx_l2g_c(jlo);
+            local_max_err =
+                std::max(local_max_err, std::abs(E_dist(ilo, jlo) - ref(ig, jg)));
+        }
+    }
+    double max_err = 0.0;
+    MPI_Allreduce(&local_max_err, &max_err, 1, MPI_DOUBLE, MPI_MAX, desc.comm());
+    require_double_close(max_err, 0.0, tol);
+}
+
+void test_abf_space_wing_rewrite_matches_coulomb_basis(const BlacsCtxtHandler &blacs_h)
+{
+    // 3D quadrature: 6 points on the unit sphere.
+    const std::vector<std::array<double, 3>> q3d{
+        {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    std::vector<double> rho3d(6);
+    for (auto &r : rho3d) r = (4.0 * M_PI / 6.0) / 3.0;
+
+    // 2D quadrature: 4 points on the unit circle.
+    const std::vector<std::array<double, 3>> q2d{
+        {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}};
+    std::vector<double> rho2d(4);
+    for (auto &r : rho2d) r = (2.0 * M_PI / 4.0) / 2.0;
+
+    constexpr int n = 4;
+    const double half = 0.5;
+    const Matz U(
+        {{{half, 0.0}, {half, 0.0}, {half, 0.0}, {half, 0.0}},
+         {{half, 0.0}, {-half, 0.0}, {half, 0.0}, {-half, 0.0}},
+         {{half, 0.0}, {half, 0.0}, {-half, 0.0}, {-half, 0.0}},
+         {{half, 0.0}, {-half, 0.0}, {-half, 0.0}, {half, 0.0}}},
+        MAJOR::COL);
+    const std::array<double, n> lambda{{9.0, 4.0, 1.0, 0.25}};
+    Matz sqrtveig(n, n, MAJOR::COL);
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j)
+            sqrtveig(i, j) = U(i, j) * std::sqrt(lambda[static_cast<size_t>(j)]);
+    const auto sqrtV = sqrtveig * U.get_transpose(true);
+
+    // Negative-semidefinite chi0 = -v v^H so E (and hence M) is Hermitian
+    // positive definite and Cholesky is valid.
+    Matz chi0(n, n, MAJOR::COL);
+    {
+        const std::array<std::complex<double>, n> v{{
+            {0.20, 0.0}, {0.10, 0.05}, {-0.15, 0.0}, {0.05, -0.10}}};
+        for (int i = 0; i < n; ++i)
+            for (int j = 0; j < n; ++j)
+                chi0(i, j) = -v[static_cast<size_t>(i)] * std::conj(v[static_cast<size_t>(j)]);
+    }
+
+    const Matz wing_mu(
+        {{{0.11, 0.01}, {0.12, 0.02}, {0.13, 0.03}},
+         {{0.21, 0.04}, {0.22, 0.05}, {0.23, 0.06}},
+         {{0.31, 0.07}, {0.32, 0.08}, {0.33, 0.09}},
+         {{0.41, 0.10}, {0.42, 0.11}, {0.43, 0.12}}},
+        MAJOR::COL);
+    Matz zero_wing_mu(n, 3, MAJOR::COL);
+    zero_wing_mu.zero_out();
+
+    const Matz head(
+        {{{2.0, 0.0}, {0.2, 0.1}, {0.3, -0.1}},
+         {{0.2, -0.1}, {2.2, 0.0}, {0.4, 0.2}},
+         {{0.3, 0.1}, {0.4, -0.2}, {2.4, 0.0}}},
+        MAJOR::COL);
+
+    // LU and Cholesky, 3D and 2D, nonzero and zero wing (square grid).
+    run_abf_case(blacs_h, n, 1, U, sqrtV, chi0, wing_mu, head, q3d, rho3d, false, 1e-10);
+    run_abf_case(blacs_h, n, 2, U, sqrtV, chi0, wing_mu, head, q3d, rho3d, true, 1e-10);
+    run_abf_case(blacs_h, n, 1, U, sqrtV, chi0, wing_mu, head, q2d, rho2d, false, 1e-10);
+    run_abf_case(blacs_h, n, 2, U, sqrtV, chi0, wing_mu, head, q2d, rho2d, true, 1e-10);
+    run_abf_case(blacs_h, n, 1, U, sqrtV, chi0, zero_wing_mu, head, q3d, rho3d, false, 1e-10);
+    run_abf_case(blacs_h, n, 2, U, sqrtV, chi0, zero_wing_mu, head, q3d, rho3d, true, 1e-10);
+
+    // Wing with a deliberately large component parallel to x1 in each
+    // Cartesian column. The Direct-Z path (A = D*Z, no explicit projection)
+    // must still match the Coulomb-basis reference because D*x1 = 0.
+    {
+        auto wing_mu_large_x1 = wing_mu.copy();
+        for (int alpha = 0; alpha != 3; ++alpha)
+            for (int mu = 0; mu != n; ++mu)
+                wing_mu_large_x1(mu, alpha) += 100.0 * U(mu, 0);
+        run_abf_case(blacs_h, n, 1, U, sqrtV, chi0, wing_mu_large_x1, head, q3d, rho3d,
+                     false, 1e-10);
+        run_abf_case(blacs_h, n, 2, U, sqrtV, chi0, wing_mu_large_x1, head, q3d, rho3d,
+                     true, 1e-10);
+    }
+
+    // Rectangular (horizontal) CPU BLACS grid; exercises empty thin local
+    // blocks on ranks that own no rows/columns of the thin descriptors.
+    {
+        BlacsCtxtHandler horizontal_blacs_h(MPI_COMM_WORLD);
+        horizontal_blacs_h.init();
+        horizontal_blacs_h.set_horizontal_grid();
+        run_abf_case(horizontal_blacs_h, n, 1, U, sqrtV, chi0, wing_mu, head, q3d, rho3d,
+                     false, 1e-10);
+        run_abf_case(horizontal_blacs_h, n, 1, U, sqrtV, chi0, wing_mu, head, q3d, rho3d,
+                     true, 1e-10);
+    }
+
+    // n_abf == 1 exercises the n-by-1 thin descriptors at the minimal size.
+    {
+        Matz U1(1, 1, MAJOR::COL);
+        U1(0, 0) = {1.0, 0.0};
+        Matz sqrtV1(1, 1, MAJOR::COL);
+        sqrtV1(0, 0) = {3.0, 0.0};
+        Matz chi01(1, 1, MAJOR::COL);
+        chi01(0, 0) = {-0.04, 0.0};
+        Matz wing_mu1(1, 3, MAJOR::COL);
+        wing_mu1(0, 0) = {0.10, 0.01};
+        wing_mu1(0, 1) = {0.11, 0.02};
+        wing_mu1(0, 2) = {0.12, 0.03};
+        run_abf_case(blacs_h, 1, 1, U1, sqrtV1, chi01, wing_mu1, head, q3d, rho3d, false,
+                     1e-10);
+    }
+
+    // Full-basis guard failure: n_nonsingular != n_abf must throw a diagnostic
+    // that reports n_nonsingular, n_abf and the sqrt_coulomb_threshold context.
+    {
+        ArrayDesc desc(blacs_h);
+        desc.init(n, n, 1, 1, 0, 0);
+        auto E_dist = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+        auto sqrtV_dist = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+        auto U_dist = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+        std::vector<double> qx{1.0}, qy{0.0}, qz{0.0}, rho{1.0};
+        bool threw = false;
+        std::string message;
+        try
+        {
+            librpa_int::rewrite_eps_abf_space(
+                E_dist, sqrtV_dist, U_dist, head, wing_mu, qx, qy, qz, rho, desc, blacs_h,
+                static_cast<std::size_t>(n - 1), 0.5, false, false);
+        }
+        catch (const std::exception &error)
+        {
+            threw = true;
+            message = error.what();
+        }
+        assert(threw);
+        assert(message.find("n_nonsingular") != std::string::npos);
+        assert(message.find("n_abf") != std::string::npos);
+        assert(message.find("sqrt_coulomb_threshold") != std::string::npos);
+    }
+
+    // Invariance: with E and sqrt(V) held fixed, changing Coulomb eigenvector
+    // columns other than x1 must not change the ABF-space result.
+    {
+        auto U_mod = U.copy();
+        for (int col = 1; col < n; ++col)
+            for (int row = 0; row < n; ++row)
+                U_mod(row, col) *= std::complex<double>{0.0, 2.0};
+
+        auto E = sqrtV * chi0 * sqrtV;
+        E *= -1.0;
+        for (int i = 0; i < n; ++i) E(i, i) += 1.0;
+
+        ArrayDesc desc(blacs_h);
+        desc.init(n, n, 1, 1, 0, 0);
+        auto E1 = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+        auto E2 = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+        auto sqrtV_dist = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+        auto U_orig_dist = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+        auto U_mod_dist = init_local_mat<std::complex<double>>(desc, MAJOR::COL);
+        fill_distributed_matrix(E1, desc, E);
+        fill_distributed_matrix(E2, desc, E);
+        fill_distributed_matrix(sqrtV_dist, desc, sqrtV);
+        fill_distributed_matrix(U_orig_dist, desc, U);
+        fill_distributed_matrix(U_mod_dist, desc, U_mod);
+
+        std::vector<double> qx(6), qy(6), qz(6);
+        for (std::size_t i = 0; i < q3d.size(); ++i)
+        {
+            qx[i] = q3d[i][0];
+            qy[i] = q3d[i][1];
+            qz[i] = q3d[i][2];
+        }
+
+        librpa_int::rewrite_eps_abf_space(E1, sqrtV_dist, U_orig_dist, head, wing_mu, qx, qy,
+                                          qz, rho3d, desc, blacs_h,
+                                          static_cast<std::size_t>(n), 0.0, false, false);
+        librpa_int::rewrite_eps_abf_space(E2, sqrtV_dist, U_mod_dist, head, wing_mu, qx, qy,
+                                          qz, rho3d, desc, blacs_h,
+                                          static_cast<std::size_t>(n), 0.0, false, false);
+
+        double local_max_err = 0.0;
+        for (int ilo = 0; ilo != desc.m_loc(); ++ilo)
+            for (int jlo = 0; jlo != desc.n_loc(); ++jlo)
+                local_max_err =
+                    std::max(local_max_err, std::abs(E1(ilo, jlo) - E2(ilo, jlo)));
+        double max_err = 0.0;
+        MPI_Allreduce(&local_max_err, &max_err, 1, MPI_DOUBLE, MPI_MAX, desc.comm());
+        require_double_close(max_err, 0.0, 1e-10);
+    }
+}
 }  // namespace
 
 int main(int argc, char *argv[])
@@ -1529,6 +1867,7 @@ int main(int argc, char *argv[])
         test_kblacs_transform_uses_rectangular_opt_128_blocks();
         test_transform_Cs2mnk_can_keep_spin_channels_separate(blacs_h);
         test_head_initialization_does_not_require_coulomb_diagonalization(blacs_h);
+        test_abf_space_wing_rewrite_matches_coulomb_basis(blacs_h);
     }
 
     librpa_int::global::finalize_global_io();

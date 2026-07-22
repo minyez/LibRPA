@@ -2408,8 +2408,11 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
     if (this->n_nonsingular < 2)
         throw std::logic_error("Head/wing Coulomb subspace has no regular channels");
     int n_lambda = this->n_nonsingular - 1;
+    // Keep the contracted n_abf dimension aligned with sqrt(V)'s column
+    // distribution.  A unit block is sufficient for the three Cartesian
+    // columns and keeps all subsequent thin PGEMMs mutually aligned.
     ArrayDesc desc_wing_mu(blacs_h);
-    desc_wing_mu.init_square_blk(n_abf, 3, 0, 0);
+    desc_wing_mu.init(n_abf, 3, desc_nabf_nabf_opt.nb(), 1, 0, 0);
     ArrayDesc desc_wing(blacs_h);
     desc_wing.init_square_blk(n_nonsingular - 1, 3, 0, 0);
     ArrayDesc desc_body(blacs_h);
@@ -3029,109 +3032,6 @@ void invert_headwing_body_with_identity_solve(
     }
 }
 
-ArrayDesc diele_func::get_body_inv(matrix_m<std::complex<double>> &chi0_block,
-                                   ArrayDesc &desc_nabf_nabf_opt,
-                                   const bool use_cholesky, const bool use_device)
-{
-    using global::profiler;
-
-    comm_h.barrier();
-    profiler.start("get_inverse_body_of_chi0");
-    comm_h.barrier();
-
-    ArrayDesc desc_body(blacs_h);
-    desc_body.init_square_blk(n_nonsingular - 1, n_nonsingular - 1, 0, 0);
-    this->body_inv = init_local_mat<complex<double>>(desc_body, MAJOR::COL);
-
-    ScalapackConnector::pgemr2d_f(n_nonsingular - 1, n_nonsingular - 1, chi0_block.ptr(), 2, 2,
-                                  desc_nabf_nabf_opt.desc, this->body_inv.ptr(), 1, 1,
-                                  desc_body.desc, blacs_h.ictxt);
-    invert_headwing_body_with_identity_solve(this->body_inv, desc_body, blacs_h,
-                                             use_cholesky, use_device);
-
-    if (debug)
-    {
-        const int ilo = desc_body.indx_g2l_r(0);
-        const int jlo = desc_body.indx_g2l_c(0);
-        if (ilo >= 0 && jlo >= 0) std::cout << "inv_body(0,0)=" << body_inv(ilo, jlo) << std::endl;
-    }
-
-    // std::cout << "* Success: get inverse body of chi0.\n";
-    profiler.stop("get_inverse_body_of_chi0");
-    return desc_body;
-};
-
-void diele_func::construct_L(const int ifreq, ArrayDesc &desc_body)
-{
-    using global::profiler;
-
-    const int n_lambda = as_int(n_nonsingular) - 1;
-    profiler.start("cal_L");
-    this->Lind.resize(3, 3, MAJOR::COL);
-    this->bw.resize(n_lambda, 3, MAJOR::COL);
-    this->wb.resize(3, n_lambda, MAJOR::COL);
-    ArrayDesc desc_wing(blacs_h);
-    desc_wing.init_square_blk(n_lambda, 3, 0, 0);
-    // opt descriptor for wing
-    ArrayDesc desc_wing_opt(blacs_h);
-    desc_wing_opt.init(n_lambda, 3, desc_body.mb(), desc_wing.nb(), 0, 0);
-
-    ArrayDesc desc_lam_3(blacs_h);
-    desc_lam_3.init_square_blk(n_lambda, 3, 0, 0);
-
-    ArrayDesc desc_3_lam(blacs_h);
-    desc_3_lam.init_square_blk(3, n_lambda, 0, 0);
-
-    ArrayDesc desc_3_3(blacs_h);
-    desc_3_3.init_square_blk(3, 3, 0, 0);
-
-    auto lam_3 = init_local_mat<complex<double>>(desc_lam_3, MAJOR::COL);
-    auto _3_lam = init_local_mat<complex<double>>(desc_3_lam, MAJOR::COL);
-    auto Lind_loc = init_local_mat<complex<double>>(desc_3_3, MAJOR::COL);
-    // tmp = head.at(ifreq) - transpose(wing.at(ifreq), true) * body_inv * wing.at(ifreq);
-    ScalapackConnector::pgemm_f('N', 'N', n_lambda, 3, n_lambda, 1.0, body_inv.ptr(), 1, 1,
-                                desc_body.desc, wing.at(ifreq).ptr(), 1, 1, desc_wing_opt.desc, 0.0,
-                                lam_3.ptr(), 1, 1, desc_lam_3.desc);
-    ScalapackConnector::pgemm_f('C', 'N', 3, 3, n_lambda, 1.0, wing.at(ifreq).ptr(), 1, 1,
-                                desc_wing_opt.desc, lam_3.ptr(), 1, 1, desc_lam_3.desc, 0.0,
-                                Lind_loc.ptr(), 1, 1, desc_3_3.desc);
-    ScalapackConnector::pgemm_f('C', 'N', 3, n_lambda, n_lambda, 1.0, wing.at(ifreq).ptr(), 1, 1,
-                                desc_wing_opt.desc, body_inv.ptr(), 1, 1, desc_body.desc, 0.0,
-                                _3_lam.ptr(), 1, 1, desc_3_lam.desc);
-
-    for (int i = 0; i != 3; i++)
-    {
-        auto loc_i = desc_3_3.indx_g2l_r(i);
-        for (int ilambda = 0; ilambda < n_lambda; ilambda++)
-        {
-            auto loc_ilambda = desc_lam_3.indx_g2l_r(ilambda);
-            auto loc_ibw = desc_lam_3.indx_g2l_c(i);
-            if (loc_ibw >= 0 && loc_ilambda >= 0)
-                this->bw(ilambda, i) = lam_3(loc_ilambda, loc_ibw);
-
-            loc_ilambda = desc_3_lam.indx_g2l_c(ilambda);
-            auto loc_iwb = desc_3_lam.indx_g2l_r(i);
-            if (loc_iwb >= 0 && loc_ilambda >= 0)
-                this->wb(i, ilambda) = _3_lam(loc_iwb, loc_ilambda);
-
-            MPI_Allreduce(MPI_IN_PLACE, &bw(ilambda, i), 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
-                          comm_h.comm);
-            MPI_Allreduce(MPI_IN_PLACE, &wb(i, ilambda), 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
-                          comm_h.comm);
-        }
-
-        for (int j = 0; j != 3; j++)
-        {
-            auto loc_j = desc_3_3.indx_g2l_c(j);
-            if (loc_j >= 0 && loc_i >= 0)
-                this->Lind(i, j) = head.at(ifreq)(i, j) - Lind_loc(loc_i, loc_j);
-            MPI_Allreduce(MPI_IN_PLACE, &Lind(i, j), 1, MPI_DOUBLE_COMPLEX, MPI_SUM, comm_h.comm);
-        }
-    }
-
-    profiler.stop("cal_L");
-};
-
 void diele_func::construct_rpa_trace_log_schur(const int ifreq, ArrayDesc &desc_body,
                                                const int wing_row_offset)
 {
@@ -3355,366 +3255,6 @@ void diele_func::calculate_q_gamma_2d()
     }
 };
 
-/**
- * Compute
- * I(q1) = ∫_0^{q1} q / (1 - exp(-q L / 2)) dq
- * using the analytic series representation.
- *
- * Numerically stable for small q1*L.
- */
-double diele_func::I_q_series(const double q_gamma, const double L, const int nmax)
-{
-    // trivial cases
-    assert(q_gamma >= 0.0);
-    assert(L > 0.0);
-
-    const double pref = 4.0 / (L * L);
-
-    double sum = 0.0;
-    for (int n = 1; n <= nmax; ++n)
-    {
-        double x = 0.5 * n * L * q_gamma;
-
-        // expm1(-x) = exp(-x) - 1, stable for small x
-        double em1 = std::expm1(-x);
-
-        // term = 1 - (1 + x) * exp(-x)
-        //       = -em1 - x * (em1 + 1)
-        double term = -em1 - x * (em1 + 1.0);
-
-        sum += pref * term / (n * n);
-    }
-
-    // n = 0 contribution
-    return 0.5 * q_gamma * q_gamma + sum;
-}
-
-inline std::complex<double> diele_func::integrand_head(double q, double L, std::complex<double> qLq)
-{
-    double x = -0.5 * q * L;
-    // 1 - exp(-qL/2) = -expm1(-qL/2)
-    return q / (1.0 + (qLq - 1.0) * (-std::expm1(x)));
-}
-
-inline std::complex<double> diele_func::integrand_wing(double q, double L, std::complex<double> qLq)
-{
-    double x = -0.5 * q * L;
-    // 1 - exp(-qL/2) = -expm1(-qL/2)
-    return q * (-std::expm1(x)) / (1.0 + (qLq - 1.0) * (-std::expm1(x)));
-}
-
-std::complex<double> diele_func::I_q_simpson_head(double q1, double L, std::complex<double> qLq,
-                                                  int N)
-{
-    // N must be even
-    if (N % 2 != 0) ++N;
-
-    double h = q1 / N;
-    std::complex<double> sum = integrand_head(0.0, L, qLq) + integrand_head(q1, L, qLq);
-
-    // odd
-    for (int i = 1; i < N; i += 2)
-    {
-        double q = i * h;
-        sum += 4.0 * integrand_head(q, L, qLq);
-    }
-
-    // even
-    for (int i = 2; i < N; i += 2)
-    {
-        double q = i * h;
-        sum += 2.0 * integrand_head(q, L, qLq);
-    }
-
-    return sum * h / 3.0;
-}
-
-std::complex<double> diele_func::I_q_simpson_wing(double q1, double L, std::complex<double> qLq,
-                                                  int N)
-{
-    // N must be even
-    if (N % 2 != 0) ++N;
-
-    double h = q1 / N;
-    std::complex<double> sum = integrand_wing(0.0, L, qLq) + integrand_wing(q1, L, qLq);
-
-    // odd
-    for (int i = 1; i < N; i += 2)
-    {
-        double q = i * h;
-        sum += 4.0 * integrand_wing(q, L, qLq);
-    }
-
-    // even
-    for (int i = 2; i < N; i += 2)
-    {
-        double q = i * h;
-        sum += 2.0 * integrand_wing(q, L, qLq);
-    }
-
-    return sum * h / 3.0;
-}
-
-void diele_func::cal_eps(const int ifreq, ArrayDesc &desc_nabf_nabf_opt, ArrayDesc &desc_body)
-{
-    using global::mpi_comm_global_h;
-    using global::profiler;
-
-    profiler.start("cal_inverse_dielectric_matrix");
-    this->chi0 = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
-    this->vol_gamma = rpa_headwing_gamma_cell_volume(pbc_, use_2d_dielectric);
-    double vol_gamma_numeric = 0.0;
-    const int nleb = qw_leb.size();
-
-    if (ifreq == 0 && mpi_comm_global_h.is_root())
-    {
-        if (use_2d_dielectric)
-        {
-            std::cout << "Using 2D average inverse dielectric matrix." << std::endl;
-            std::cout << "Height is " << std::abs(pbc_.latvec.e33) << " Bohr." << std::endl;
-            for (int ileb = 0; ileb != nleb; ileb++)
-            {
-                vol_gamma_numeric += qw_leb[ileb] * std::pow(q_gamma[ileb], 2) / 2.0;
-            }
-        }
-        else
-        {
-            for (int ileb = 0; ileb != nleb; ileb++)
-            {
-                vol_gamma_numeric += qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / 3.0;
-            }
-        }
-        std::cout << "Number of angular grids for average inverse dielectric matrix: "
-                  << qw_leb.size() << std::endl;
-        std::cout << "vol_gamma_numeric/vol_gamma: " << vol_gamma_numeric << ", " << vol_gamma
-                  << std::endl;
-        std::cout << "Angular quadrature accuracy for volume: " << vol_gamma_numeric / vol_gamma
-                  << " (should be close to 1)" << std::endl;
-    }
-    /*std::cout << "major of Matz: " << wing[0].is_row_major() << "," << body_inv.is_row_major()
-              << "," << transpose(wing.at(0), true).is_row_major() << "," << Lind.is_row_major()
-              << std::endl;*/
-    construct_L(ifreq, desc_body);
-
-    profiler.start("precompute_q_data");
-
-    std::vector<std::complex<double>> weights;
-    // std::vector<std::complex<double>> weights_head;
-    // std::vector<std::complex<double>> weights_wing;
-    //  if (use_2d_dielectric)
-    //  {
-    //      weights_head.resize(nleb);
-    //      weights_wing.resize(nleb);
-    //  }
-    //  else
-    weights.resize(nleb);
-
-    std::vector<std::array<double, 3>> q_vectors(nleb);
-
-    const auto L00 = Lind(0, 0), L01 = Lind(0, 1), L02 = Lind(0, 2);
-    const auto L10 = Lind(1, 0), L11 = Lind(1, 1), L12 = Lind(1, 2);
-    const auto L20 = Lind(2, 0), L21 = Lind(2, 1), L22 = Lind(2, 2);
-
-#pragma omp parallel for schedule(static)
-    for (int ileb = 0; ileb < nleb; ++ileb)
-    {
-        const double qx = qx_leb[ileb];
-        const double qy = qy_leb[ileb];
-        const double qz = qz_leb[ileb];
-
-        q_vectors[ileb] = {qx, qy, qz};
-
-        const auto qLq = qx * (qx * L00 + qy * L01 + qz * L02) +
-                         qy * (qx * L10 + qy * L11 + qz * L12) +
-                         qz * (qx * L20 + qy * L21 + qz * L22);
-
-        if (use_2d_dielectric)
-        {
-            weights[ileb] = qw_leb[ileb] * std::pow(q_gamma[ileb], 2) / (2.0 * vol_gamma) / qLq;
-            // Assume z-direction e33 is the vaccum height
-            // weights_head[ileb] = qw_leb[ileb] *
-            //                      I_q_simpson_head(q_gamma[ileb], std::abs(latvec.e33), qLq) /
-            //                      vol_gamma;
-            // weights_wing[ileb] = qw_leb[ileb] *
-            //                      I_q_simpson_wing(q_gamma[ileb], std::abs(latvec.e33), qLq) /
-            //                      vol_gamma;
-        }
-        else
-            weights[ileb] = qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / (3.0 * vol_gamma) / qLq;
-    }
-    profiler.stop("precompute_q_data");
-
-    profiler.start("cal_inverse_dielectric_matrix_ij");
-    int i_start = 0, i_end = n_nonsingular;
-    int j_start = 0, j_end = n_nonsingular;
-#pragma omp parallel for schedule(dynamic, 4) collapse(2)
-    for (int i = i_start; i != i_end; i++)
-    {
-        for (int j = j_start; j != j_end; j++)
-        {
-            const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
-            if (ilo < 0) continue;
-            const int jlo = desc_nabf_nabf_opt.indx_g2l_c(j);
-            if (jlo < 0) continue;
-
-            complex<double> result = 0.0;
-
-            if (i == 0 && j == 0)
-            {
-                for (int ileb = 0; ileb < nleb; ++ileb)
-                {
-                    result += weights[ileb];
-                }
-                // if (use_2d_dielectric)
-                // {
-                //     for (int ileb = 0; ileb < nleb; ++ileb)
-                //     {
-                //         result += weights_head[ileb];
-                //     }
-                // }
-                // else
-                // {
-                //     for (int ileb = 0; ileb < nleb; ++ileb)
-                //     {
-                //         result += weights[ileb];
-                //     }
-                // }
-            }
-            else if (i == 0 || j == 0)
-            {
-                result = 0.0;
-            }
-            else
-            {
-                const int idx_i = i - 1, idx_j = j - 1;
-
-                const auto bw_i0 = bw(idx_i, 0), bw_i1 = bw(idx_i, 1), bw_i2 = bw(idx_i, 2);
-                const auto wb_j0 = wb(0, idx_j), wb_j1 = wb(1, idx_j), wb_j2 = wb(2, idx_j);
-
-                for (int ileb = 0; ileb < nleb; ++ileb)
-                {
-                    const auto &q_vector = q_vectors[ileb];
-                    const auto qx = q_vector[0];
-                    const auto qy = q_vector[1];
-                    const auto qz = q_vector[2];
-                    const auto bwq = bw_i0 * qx + bw_i1 * qy + bw_i2 * qz;
-                    const auto qwb = qx * wb_j0 + qy * wb_j1 + qz * wb_j2;
-
-                    result += weights[ileb] * bwq * qwb;
-
-                    // result += use_2d_dielectric ? weights_wing[ileb] * bwq * qwb
-                    //                                     : weights[ileb] * bwq * qwb;
-                }
-            }
-            chi0(ilo, jlo) = result;
-        }
-    }
-    // auto identity = init_local_mat<complex<double>>(desc_body, MAJOR::COL);
-    // for (int i = 0; i < n_nonsingular - 1; i++)
-    // {
-    //     const int ilo = desc_body.indx_g2l_r(i);
-    //     if (ilo < 0) continue;
-    //     for (int j = 0; j < n_nonsingular - 1; j++)
-    //     {
-    //         const int jlo = desc_body.indx_g2l_c(j);
-    //         if (jlo < 0) continue;
-    //         if (i == j)
-    //             identity(ilo, jlo) = 1.0;
-    //         else
-    //             identity(ilo, jlo) = 0.0;
-    //     }
-    // }
-    // ScalapackConnector::pgemm_f('N', 'N', n_nonsingular - 1, n_nonsingular - 1, n_nonsingular -
-    // 1,
-    //                             1.0, body_inv.ptr(), 1, 1, desc_body.desc, identity.ptr(), 1, 1,
-    //                             desc_body.desc, 1.0, chi0.ptr(), 2, 2, desc_nabf_nabf_opt.desc);
-    ScalapackConnector::pgeadd_f('N', n_nonsingular - 1, n_nonsingular - 1, 1.0, body_inv.ptr(), 1,
-                                 1, desc_body.desc, 1.0, chi0.ptr(), 2, 2, desc_nabf_nabf_opt.desc);
-    profiler.stop("cal_inverse_dielectric_matrix_ij");
-    if (mpi_comm_global_h.is_root())
-        std::cout << "* Success: calculate average inverse dielectric matrix no." << ifreq + 1
-                  << "." << std::endl;
-    profiler.stop("cal_inverse_dielectric_matrix");
-};
-
-/*std::complex<double> diele_func::compute_chi0_inv_00(const int ifreq)
-{
-    std::complex<double> total = 0.0;
-    std::vector<std::complex<double>> partial_sum(qw_leb.size(), 0.0);
-#pragma omp parallel for schedule(dynamic)
-    for (int ileb = 0; ileb != qw_leb.size(); ileb++)
-    {
-        matrix_m<std::complex<double>> q_unit(3, 1, MAJOR::COL);
-        q_unit(0, 0) = qx_leb[ileb];
-        q_unit(1, 0) = qy_leb[ileb];
-        q_unit(2, 0) = qz_leb[ileb];
-
-        auto den = transpose(q_unit, false) * Lind * q_unit;
-        // total += qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / den(0, 0);
-        partial_sum[ileb] = qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / den(0, 0);
-    }
-    total = std::accumulate(partial_sum.begin(), partial_sum.end(), std::complex<double>(0.0,
-0.0)); total *= 1.0 / 3.0 / vol_gamma;
-
-    return total;
-};
-
-std::complex<double> diele_func::compute_chi0_inv_ij(const int ifreq, int i, int j)
-{
-    const std::complex<double> bw_i0 = this->bw(i, 0);
-    const std::complex<double> bw_i1 = this->bw(i, 1);
-    const std::complex<double> bw_i2 = this->bw(i, 2);
-    const std::complex<double> wb_j0 = this->wb(0, j);
-    const std::complex<double> wb_j1 = this->wb(1, j);
-    const std::complex<double> wb_j2 = this->wb(2, j);
-
-    const std::complex<double> L00 = Lind(0, 0);
-    const std::complex<double> L01 = Lind(0, 1);
-    const std::complex<double> L02 = Lind(0, 2);
-    const std::complex<double> L10 = Lind(1, 0);
-    const std::complex<double> L11 = Lind(1, 1);
-    const std::complex<double> L12 = Lind(1, 2);
-    const std::complex<double> L20 = Lind(2, 0);
-    const std::complex<double> L21 = Lind(2, 1);
-    const std::complex<double> L22 = Lind(2, 2);
-
-    std::complex<double> total = 0.0;
-
-    const size_t nleb = qw_leb.size();
-
-#pragma omp parallel for reduction(+ : total)
-    for (int ileb = 0; ileb < nleb; ++ileb)
-    {
-        const double qx = qx_leb[ileb];
-        const double qy = qy_leb[ileb];
-        const double qz = qz_leb[ileb];
-
-        const std::complex<double> qLq = qx * (qx * L00 + qy * L01 + qz * L02) +
-                                         qy * (qx * L10 + qy * L11 + qz * L12) +
-                                         qz * (qx * L20 + qy * L21 + qz * L22);
-
-        const std::complex<double> bwq = bw_i0 * qx + bw_i1 * qy + bw_i2 * qz;
-        const std::complex<double> qwb = qx * wb_j0 + qy * wb_j1 + qz * wb_j2;
-
-        total += qw_leb[ileb] * std::pow(q_gamma[ileb], 3) * bwq * qwb / qLq;
-    }
-
-    return total * (1.0 / (3.0 * vol_gamma));
-}*/
-
-void diele_func::assign_chi0(matrix_m<std::complex<double>> &chi0_block,
-                             ArrayDesc &desc_nabf_nabf_opt)
-{
-    using global::profiler;
-    profiler.start("assign_chi0");
-    comm_h.barrier();
-
-    ScalapackConnector::pgemr2d_f(n_abf, n_abf, this->chi0.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                                  chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, blacs_h.ictxt);
-
-    profiler.stop("assign_chi0");
-}
-
 int rpa_headwing_regular_body_start_channel(const RpaHeadwingSettings &settings)
 {
     if (settings.rpa_headwing_body_start < 0)
@@ -3906,18 +3446,298 @@ void replace_rpa_response_head_only(matrix_m<std::complex<double>> &response_blo
     }
 }
 
-void diele_func::rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
-                             ArrayDesc &desc_nabf_nabf_opt, const bool use_cholesky,
-                             const bool use_device)
+void rewrite_eps_abf_space(
+    matrix_m<std::complex<double>> &eps_block,
+    const matrix_m<std::complex<double>> &sqrtv_block,
+    const matrix_m<std::complex<double>> &coul_eigen_block,
+    const matrix_m<std::complex<double>> &head,
+    const matrix_m<std::complex<double>> &wing_mu,
+    const std::vector<double> &qx, const std::vector<double> &qy,
+    const std::vector<double> &qz, const std::vector<double> &rho,
+    const ArrayDesc &desc_nabf_nabf_opt, const BlacsCtxtHandler &blacs_h,
+    const std::size_t n_nonsingular,
+    const double sqrt_coulomb_threshold, const bool use_cholesky, const bool use_device)
 {
-    auto desc_body =
-        get_body_inv(chi0_block, desc_nabf_nabf_opt, use_cholesky, use_device);
-    cal_eps(ifreq, desc_nabf_nabf_opt, desc_body);
-    assign_chi0(chi0_block, desc_nabf_nabf_opt);
-    // this->chi0.clear();
-    this->Lind.clear();
-    this->body_inv.clear();
-};
+    using global::profiler;
+
+    if (!desc_nabf_nabf_opt.is_initialized())
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "ABF-space wing rewrite expects an initialized distributed descriptor");
+    }
+    const int n_abf = desc_nabf_nabf_opt.m();
+    if (n_abf <= 0)
+    {
+        std::ostringstream oss;
+        oss << "ABF-space wing rewrite expects a positive basis dimension, got n_abf=" << n_abf;
+        throw LIBRPA_RUNTIME_ERROR(oss.str());
+    }
+    if (desc_nabf_nabf_opt.n() != n_abf)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "ABF-space wing rewrite expects a square distributed descriptor");
+    }
+    if (n_nonsingular != static_cast<std::size_t>(n_abf))
+    {
+        std::ostringstream oss;
+        oss << "ABF-space wing rewrite requires n_nonsingular == n_abf "
+               "(sqrt_coulomb_threshold must be disabled): sqrt_coulomb_threshold="
+            << sqrt_coulomb_threshold << ", n_nonsingular=" << n_nonsingular
+            << ", n_abf=" << n_abf;
+        throw LIBRPA_RUNTIME_ERROR(oss.str());
+    }
+    if (desc_nabf_nabf_opt.ictxt() != blacs_h.ictxt)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "ABF-space wing rewrite descriptor and BLACS context do not match");
+    }
+    if (eps_block.nr() != desc_nabf_nabf_opt.m_loc() ||
+        eps_block.nc() != desc_nabf_nabf_opt.n_loc())
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "ABF-space wing rewrite E matrix does not match its distributed descriptor");
+    }
+    if (sqrtv_block.nr() != desc_nabf_nabf_opt.m_loc() ||
+        sqrtv_block.nc() != desc_nabf_nabf_opt.n_loc() ||
+        coul_eigen_block.nr() != desc_nabf_nabf_opt.m_loc() ||
+        coul_eigen_block.nc() != desc_nabf_nabf_opt.n_loc())
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "ABF-space wing rewrite sqrt(V)/eigenvector blocks do not match the descriptor");
+    }
+    if (head.nr() != 3 || head.nc() != 3)
+    {
+        throw LIBRPA_RUNTIME_ERROR("ABF-space wing rewrite expects a 3x3 head");
+    }
+    if (wing_mu.nr() != n_abf || wing_mu.nc() != 3)
+    {
+        throw LIBRPA_RUNTIME_ERROR("ABF-space wing rewrite expects an n_abf x 3 wing_mu");
+    }
+    if (qx.size() != qy.size() || qx.size() != qz.size() || qx.size() != rho.size())
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "ABF-space wing rewrite angular quadrature arrays have inconsistent lengths");
+    }
+
+    // x1 = U[:,0], the first Coulomb eigenvector column (1-based ja=1).
+    // Thin projector operations use host ScaLAPACK with dedicated n-by-1
+    // descriptors so they remain valid for any n_abf >= 1.
+    profiler.start("epsilon_headwing_abf_build_M");
+
+    ArrayDesc desc_nabf_1(blacs_h);
+    desc_nabf_1.init(n_abf, 1, desc_nabf_nabf_opt.mb(), desc_nabf_nabf_opt.nb(), 0, 0);
+    auto y = init_local_mat<complex<double>>(desc_nabf_1, MAJOR::COL);
+    auto z = init_local_mat<complex<double>>(desc_nabf_1, MAJOR::COL);
+    if (desc_nabf_1.m_loc() == 0 || desc_nabf_1.n_loc() == 0)
+    {
+        y.resize(1, 1);
+        z.resize(1, 1);
+    }
+
+    // y = E * x1
+    ScalapackConnector::pgemm_f('N', 'N', n_abf, 1, n_abf, 1.0,
+                                eps_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                0.0, y.ptr(), 1, 1, desc_nabf_1.desc);
+    // z = E^H * x1
+    ScalapackConnector::pgemm_f('C', 'N', n_abf, 1, n_abf, 1.0,
+                                eps_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                0.0, z.ptr(), 1, 1, desc_nabf_1.desc);
+
+    // h = x1^H * y  (scalar)
+    ArrayDesc desc_1x1(blacs_h);
+    desc_1x1.init(1, 1, desc_nabf_nabf_opt.mb(), desc_nabf_nabf_opt.nb(), 0, 0);
+    auto h_local = init_local_mat<complex<double>>(desc_1x1, MAJOR::COL);
+    if (desc_1x1.m_loc() == 0 || desc_1x1.n_loc() == 0) h_local.resize(1, 1);
+    if (desc_1x1.m_loc() != 0 && desc_1x1.n_loc() != 0) h_local(0, 0) = {0.0, 0.0};
+    ScalapackConnector::pgemm_f('C', 'N', 1, 1, n_abf, 1.0,
+                                coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                y.ptr(), 1, 1, desc_nabf_1.desc,
+                                0.0, h_local.ptr(), 1, 1, desc_1x1.desc);
+    std::complex<double> h_scalar{0.0, 0.0};
+    if (desc_1x1.is_src()) h_scalar = h_local(0, 0);
+    const int h_root = blacs_h.get_pnum(0, 0);
+    MPI_Bcast(&h_scalar, 1, MPI_CXX_DOUBLE_COMPLEX, h_root, desc_1x1.comm());
+
+    // M = E - y*x1^H - x1*z^H + (1+h)*x1*x1^H  (overwrite eps_block)
+    ScalapackConnector::pgemm_f('N', 'C', n_abf, n_abf, 1, -1.0,
+                                y.ptr(), 1, 1, desc_nabf_1.desc,
+                                coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                1.0, eps_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+    ScalapackConnector::pgemm_f('N', 'C', n_abf, n_abf, 1, -1.0,
+                                coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                z.ptr(), 1, 1, desc_nabf_1.desc,
+                                1.0, eps_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+    const std::complex<double> one_plus_h = 1.0 + h_scalar;
+    ScalapackConnector::pgemm_f('N', 'C', n_abf, n_abf, 1, one_plus_h,
+                                coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                1.0, eps_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+
+    profiler.stop("epsilon_headwing_abf_build_M");
+
+    // Invert M in-place; then D = M^-1 - P.
+    profiler.start("epsilon_headwing_abf_inverse");
+    // ArrayDesc owns its ELPA handle, so copying it would duplicate ownership.
+    // Recreate only the BLACS layout needed by the identity solve.
+    ArrayDesc desc_invert(blacs_h);
+    desc_invert.init(desc_nabf_nabf_opt.m(), desc_nabf_nabf_opt.n(),
+                     desc_nabf_nabf_opt.mb(), desc_nabf_nabf_opt.nb(),
+                     desc_nabf_nabf_opt.irsrc(), desc_nabf_nabf_opt.icsrc());
+    invert_headwing_body_with_identity_solve(eps_block, desc_invert, blacs_h,
+                                             use_cholesky, use_device);
+    ScalapackConnector::pgemm_f('N', 'C', n_abf, n_abf, 1, -1.0,
+                                coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                1.0, eps_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+    profiler.stop("epsilon_headwing_abf_inverse");
+    // eps_block now holds D = M^-1 - P.
+
+    // Wing construction: Z = sqrt(V)*W_mu, A = D*Z.
+    profiler.start("epsilon_headwing_abf_wing");
+
+    // Keep the contracted n_abf dimension aligned with sqrt(V)'s column
+    // distribution. A unit block is sufficient for the three Cartesian
+    // columns and keeps all subsequent thin PGEMMs mutually aligned.
+    ArrayDesc desc_wing_mu(blacs_h);
+    desc_wing_mu.init(n_abf, 3, desc_nabf_nabf_opt.nb(), 1, 0, 0);
+    auto wing_mu_dist = init_local_mat<complex<double>>(desc_wing_mu, MAJOR::COL);
+    for (int alpha = 0; alpha != 3; ++alpha)
+    {
+        const int loc_alpha = desc_wing_mu.indx_g2l_c(alpha);
+        if (loc_alpha < 0) continue;
+        for (int mu = 0; mu != n_abf; ++mu)
+        {
+            const int loc_mu = desc_wing_mu.indx_g2l_r(mu);
+            if (loc_mu < 0) continue;
+            wing_mu_dist(loc_mu, loc_alpha) = wing_mu(mu, alpha);
+        }
+    }
+
+    ArrayDesc desc_nabf_3(blacs_h);
+    desc_nabf_3.init(n_abf, 3, desc_nabf_nabf_opt.mb(), desc_wing_mu.nb(), 0, 0);
+    auto Z = init_local_mat<complex<double>>(desc_nabf_3, MAJOR::COL);
+    // Z = sqrt(V) * W_mu
+    ScalapackConnector::pgemm_f('N', 'N', n_abf, 3, n_abf, 1.0,
+                                sqrtv_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                wing_mu_dist.ptr(), 1, 1, desc_wing_mu.desc,
+                                0.0, Z.ptr(), 1, 1, desc_nabf_3.desc);
+
+    // A = D * Z
+    auto A = init_local_mat<complex<double>>(desc_nabf_3, MAJOR::COL);
+    ScalapackConnector::pgemm_f('N', 'N', n_abf, 3, n_abf, 1.0,
+                                eps_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                Z.ptr(), 1, 1, desc_nabf_3.desc,
+                                0.0, A.ptr(), 1, 1, desc_nabf_3.desc);
+
+    profiler.stop("epsilon_headwing_abf_wing");
+
+    // L = H - Z^H*A and angular quadrature for a0, K.
+    profiler.start("epsilon_headwing_abf_angular");
+
+    ArrayDesc desc_3x3(blacs_h);
+    desc_3x3.init(3, 3, desc_wing_mu.nb(), desc_wing_mu.nb(), 0, 0);
+    auto zha_dist = init_local_mat<complex<double>>(desc_3x3, MAJOR::COL);
+    ScalapackConnector::pgemm_f('C', 'N', 3, 3, n_abf, 1.0,
+                                Z.ptr(), 1, 1, desc_nabf_3.desc,
+                                A.ptr(), 1, 1, desc_nabf_3.desc,
+                                0.0, zha_dist.ptr(), 1, 1, desc_3x3.desc);
+
+    matrix_m<std::complex<double>> Lmat(3, 3, MAJOR::COL);
+    for (int i = 0; i != 3; ++i)
+    {
+        for (int j = 0; j != 3; ++j)
+        {
+            const int loc_i = desc_3x3.indx_g2l_r(i);
+            const int loc_j = desc_3x3.indx_g2l_c(j);
+            std::complex<double> zha = 0.0;
+            if (loc_i >= 0 && loc_j >= 0) zha = zha_dist(loc_i, loc_j);
+            MPI_Allreduce(MPI_IN_PLACE, &zha, 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
+                          desc_nabf_nabf_opt.comm());
+            Lmat(i, j) = head(i, j) - zha;
+        }
+    }
+
+    const int nleb = static_cast<int>(qx.size());
+    const auto L00 = Lmat(0, 0), L01 = Lmat(0, 1), L02 = Lmat(0, 2);
+    const auto L10 = Lmat(1, 0), L11 = Lmat(1, 1), L12 = Lmat(1, 2);
+    const auto L20 = Lmat(2, 0), L21 = Lmat(2, 1), L22 = Lmat(2, 2);
+
+    std::complex<double> a0 = 0.0;
+    std::array<std::array<std::complex<double>, 3>, 3> K{};
+    for (int ileb = 0; ileb < nleb; ++ileb)
+    {
+        const double qxi = qx[ileb];
+        const double qyi = qy[ileb];
+        const double qzi = qz[ileb];
+        const auto qLq = qxi * (qxi * L00 + qyi * L01 + qzi * L02) +
+                         qyi * (qxi * L10 + qyi * L11 + qzi * L12) +
+                         qzi * (qxi * L20 + qyi * L21 + qzi * L22);
+        const auto w = rho[ileb] / qLq;
+        a0 += w;
+        const std::array<double, 3> qv{qxi, qyi, qzi};
+        for (int alpha = 0; alpha < 3; ++alpha)
+            for (int beta = 0; beta < 3; ++beta)
+                K[alpha][beta] += w * qv[alpha] * qv[beta];
+    }
+
+    profiler.stop("epsilon_headwing_abf_angular");
+
+    // Assemble eps_inv = a0*P + D + A*K*A^H  (eps_block holds D).
+    profiler.start("epsilon_headwing_abf_assemble");
+
+    ScalapackConnector::pgemm_f('N', 'C', n_abf, n_abf, 1, a0,
+                                coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                                1.0, eps_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+
+    auto K_dist = init_local_mat<complex<double>>(desc_3x3, MAJOR::COL);
+    for (int i = 0; i != 3; ++i)
+    {
+        const int loc_i = desc_3x3.indx_g2l_r(i);
+        if (loc_i < 0) continue;
+        for (int j = 0; j != 3; ++j)
+        {
+            const int loc_j = desc_3x3.indx_g2l_c(j);
+            if (loc_j >= 0) K_dist(loc_i, loc_j) = K[i][j];
+        }
+    }
+    auto AK = init_local_mat<complex<double>>(desc_nabf_3, MAJOR::COL);
+    ScalapackConnector::pgemm_f('N', 'N', n_abf, 3, 3, 1.0,
+                                A.ptr(), 1, 1, desc_nabf_3.desc,
+                                K_dist.ptr(), 1, 1, desc_3x3.desc,
+                                0.0, AK.ptr(), 1, 1, desc_nabf_3.desc);
+    ScalapackConnector::pgemm_f('N', 'C', n_abf, n_abf, 3, 1.0,
+                                AK.ptr(), 1, 1, desc_nabf_3.desc,
+                                A.ptr(), 1, 1, desc_nabf_3.desc,
+                                1.0, eps_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+
+    profiler.stop("epsilon_headwing_abf_assemble");
+}
+
+void diele_func::rewrite_eps_abf_space(matrix_m<std::complex<double>> &eps_block, const int ifreq,
+                                       const matrix_m<std::complex<double>> &sqrtv_block,
+                                       const matrix_m<std::complex<double>> &coul_eigen_block,
+                                       const ArrayDesc &desc_nabf_nabf_opt,
+                                       const std::size_t n_nonsingular_in,
+                                       const double sqrt_coulomb_threshold,
+                                       const bool use_cholesky, const bool use_device)
+{
+    this->vol_gamma = rpa_headwing_gamma_cell_volume(pbc_, use_2d_dielectric);
+    const int nleb = static_cast<int>(qw_leb.size());
+    std::vector<double> rho(nleb);
+    for (int ileb = 0; ileb < nleb; ++ileb)
+    {
+        rho[ileb] = use_2d_dielectric
+                        ? qw_leb[ileb] * std::pow(q_gamma[ileb], 2) / (2.0 * vol_gamma)
+                        : qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / (3.0 * vol_gamma);
+    }
+    librpa_int::rewrite_eps_abf_space(eps_block, sqrtv_block, coul_eigen_block, head.at(ifreq),
+                                      wing_mu.at(ifreq), qx_leb, qy_leb, qz_leb, rho,
+                                      desc_nabf_nabf_opt, blacs_h, n_nonsingular_in,
+                                      sqrt_coulomb_threshold, use_cholesky, use_device);
+}
 
 std::complex<double> diele_func::compute_rpa_trace_log_average(
     matrix_m<std::complex<double>> &response_block, const int ifreq, ArrayDesc &desc_response,
