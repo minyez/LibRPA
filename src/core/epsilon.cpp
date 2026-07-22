@@ -3377,7 +3377,14 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                                        desc_nabf_nabf_opt, coul_chi0_block_ptr, 1, 1,
                                        desc_nabf_nabf_opt, info);
                 }
-                assert(info == 0);
+                if (info != 0)
+                {
+                    global::profiler.stop("epsilon_solver_coulwc_1");
+                    std::ostringstream oss;
+                    oss << "Dielectric " << (use_cholesky_gw_wc ? "Cholesky" : "LU")
+                        << " solve failed with info=" << info;
+                    throw LIBRPA_RUNTIME_ERROR(oss.str());
+                }
                 LaConnector::axpy(coulwc_block.size(), {-1.0, 0.0}, coulwc_block_ptr, 1, coul_chi0_block_ptr, 1, blacs_h);
                 global::profiler.stop("epsilon_solver_coulwc_1");
 
