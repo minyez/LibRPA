@@ -5,17 +5,22 @@
 | Option                                                      | Type              | Default    |
 |-------------------------------------------------------------|-------------------|------------|
 | [`LIBRPA_USE_LIBRI`](#librpa-use-libri)                     | bool              | `ON`       |
+| [`LIBRPA_USE_LIBRI_GPU`](#librpa-use-libri-gpu)             | bool              | `OFF`      |
+| [`LIBRPA_USE_CUDA`](#librpa-use-cuda)                       | bool              | `OFF`      |
+| [`LIBRPA_USE_HIP`](#librpa-use-hip)                         | bool              | `OFF`      |
 | [`LIBRPA_USE_CMAKE_INC`](#librpa-use-cmake-inc)             | bool              | `OFF`      |
 | [`LIBRPA_USE_EXTERNAL_GREENX`](#librpa-use-external-greenx) | bool              | `OFF`      |
 | [`LIBRPA_ENABLE_FORTRAN_BIND`](#librpa-enable-fortran-bind) | bool              | `OFF`      |
 | [`LIBRPA_FORTRAN_DP`](#librpa-fortran-dp)                   | string or integer | `c_double` |
 | [`LIBRPA_ENABLE_DRIVER`](#librpa-enable-driver)             | bool              | `ON`       |
+| [`LIBRPA_VERBOSE_OUTPUT`](#librpa-verbose-output)           | bool              | `ON`       |
 | [`LIBRPA_ENABLE_TEST`](#librpa-enable-test)                 | bool              | `ON`       |
 | [`LIBRPA_ENABLE_CPP_TEST`](#librpa-enable-cpp-test)         | bool              | `ON`       |
 | [`LIBRPA_ENABLE_FORTRAN_TEST`](#librpa-enable-fortran-test) | bool              | `ON`       |
 | [`LIBRI_INCLUDE_DIR`](#libri-include-dir)                   | string            | empty      |
 | [`LIBCOMM_INCLUDE_DIR`](#libcomm-include-dir)               | string            | empty      |
 | [`CEREAL_INCLUDE_DIR`](#cereal-include-dir)                 | string            | empty      |
+| [`LIBDDLA_PATH`](#libddla-path)                             | string            | empty      |
 | [`SCALAPACK_DIR`](#scalapack-dir)                           | string            | empty      |
 | [`LIBRPA_USE_EXTERNAL_ELPA`](#librpa-use-external-elpa)     | bool              | `OFF`      |
 | [`EXTERNAL_ELPA_DIR`](#external-elpa-dir)                   | string            | empty      |
@@ -40,6 +45,59 @@ for RI tensor contractions.
 
 The *GW* and EXX functionalities require LibRPA to be compiled with LibRI, i.e. `-DLIBRPA_USE_LIBRI=ON`.
 By contrast, the RPA correlation energy can also be computed without this option.
+
+(librpa-use-libri-gpu)=
+## `LIBRPA_USE_LIBRI_GPU`
+
+Enables GPU-accelerated LibRI tensor contractions. This option is meaningful
+only when [`LIBRPA_USE_LIBRI`](#librpa-use-libri) and exactly one of
+[`LIBRPA_USE_CUDA`](#librpa-use-cuda) or
+[`LIBRPA_USE_HIP`](#librpa-use-hip) are enabled.
+
+When `LIBRI_INCLUDE_DIR` is empty, LibRPA uses the bundled GPU-enabled LibRI
+variant under `thirdparty/LibRI_GPU`. When an external `LIBRI_INCLUDE_DIR` is supplied,
+that LibRI installation must support the selected GPU backend.
+
+Example:
+```sh
+cmake -B build \
+      -DLIBRPA_USE_CUDA=ON \
+      -DLIBRPA_USE_LIBRI_GPU=ON
+```
+
+(librpa-use-cuda)=
+## `LIBRPA_USE_CUDA`
+
+Enables the NVIDIA CUDA backend. CUDA and HIP backends are mutually exclusive.
+The CUDA toolkit, NCCL, and LibDDLA must be discoverable by the build.
+
+If `CMAKE_CUDA_ARCHITECTURES` is not specified, LibRPA uses `70;75;80`.
+Set this standard CMake variable explicitly when building for other GPU
+architectures. An external LibDDLA installation can be selected with
+[`LIBDDLA_PATH`](#libddla-path); otherwise the bundled LibDDLA is built.
+
+Example:
+```sh
+cmake -B build \
+      -DLIBRPA_USE_CUDA=ON \
+      -DCMAKE_CUDA_ARCHITECTURES=80
+```
+
+(librpa-use-hip)=
+## `LIBRPA_USE_HIP`
+
+Enables the AMD HIP/ROCm backend. HIP and CUDA backends are mutually exclusive.
+The HIP/ROCm libraries, RCCL, and LibDDLA must be discoverable by the build.
+
+Set `CMAKE_HIP_ARCHITECTURES` for the target GPU when necessary. `ROCM_PATH`
+can be used when the ROCm installation cannot be inferred from the
+environment. An external LibDDLA installation can be selected with
+[`LIBDDLA_PATH`](#libddla-path); otherwise the bundled LibDDLA is built.
+
+Example:
+```sh
+cmake -B build -DLIBRPA_USE_HIP=ON
+```
 
 (librpa-use-external-elpa)=
 ## `LIBRPA_USE_EXTERNAL_ELPA`
@@ -216,6 +274,13 @@ This option is meaningful only if `LIBRPA_ENABLE_FORTRAN_BIND=ON`.
 
 When enabled, the LibRPA driver executable is built.
 
+(librpa-verbose-output)=
+## `LIBRPA_VERBOSE_OUTPUT`
+
+Compiles additional per-timer timestamp and memory diagnostics into LibRPA.
+The runtime output level still controls which diagnostic messages are emitted.
+Disable this option when those detailed diagnostics are not needed.
+
 (librpa-enable-test)=
 ## `LIBRPA_ENABLE_TEST`
 
@@ -289,6 +354,24 @@ An error is raised if the file cannot be found.
 Example:
 ```sh
 cmake -DCEREAL_INCLUDE_DIR=/path/to/cereal/include
+```
+
+(libddla-path)=
+## `LIBDDLA_PATH`
+
+Specifies the installation prefix of an external LibDDLA library for CUDA or
+HIP builds. It can be set as either a CMake variable or an environment
+variable.
+
+CMake expects `include/ddla/ddla.h` and a `libddla` shared library under
+`lib/` or `lib64/`. If this variable is empty, LibRPA builds the bundled
+LibDDLA source.
+
+Example:
+```sh
+cmake -B build \
+      -DLIBRPA_USE_CUDA=ON \
+      -DLIBDDLA_PATH=/path/to/libddla
 ```
 
 (scalapack-dir)=
