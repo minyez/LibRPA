@@ -39,6 +39,11 @@ target_sources(rpa_exe PRIVATE ${exe_sources})
 target_compile_definitions(rpa_exe PRIVATE "LIBRPA_MPI_THREAD_LEVEL=${_LIBRPA_MPI_THREAD_LEVEL}")
 
 target_link_libraries(rpa_exe PRIVATE rpa_lib)
+if(LIBRPA_BUNDLED_ELPA_PROJECT_TARGET)
+  # base_blacs.h includes ELPA headers, so make them available before compiling
+  # the driver instead of waiting only for the final rpa_lib link dependency.
+  add_dependencies(rpa_exe ${LIBRPA_BUNDLED_ELPA_PROJECT_TARGET})
+endif()
 if(BUILD_SHARED_LIBS)
   target_link_libraries(rpa_exe PRIVATE ${math_libs} ${parallel_libs})
 endif()

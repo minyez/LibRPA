@@ -5,6 +5,10 @@
 macro(config_test TARGET NUMPROC)
   add_executable(${TARGET} ${TARGET}.cpp)
   target_link_libraries(${TARGET} PRIVATE rpa_lib)
+  if(LIBRPA_BUNDLED_ELPA_PROJECT_TARGET)
+    # Tests include LibRPA headers directly, including base_blacs.h.
+    add_dependencies(${TARGET} ${LIBRPA_BUNDLED_ELPA_PROJECT_TARGET})
+  endif()
   # Math and MPI symbols will have been included in rpa_lib for static library case.
   # Only link them when shared library is built.
   if(BUILD_SHARED_LIBS)

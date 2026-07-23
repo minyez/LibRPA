@@ -215,10 +215,19 @@ ExternalProject_Add(librpa_bundled_elpa
       "${_elpa_source_dir}/configure" ${_elpa_configure_args}
   BUILD_COMMAND
     ${CMAKE_COMMAND} -E env ${_elpa_make_environment}
-      "${LIBRPA_BUNDLED_ELPA_MAKE_EXECUTABLE}" "${_elpa_libtool_library}"
+      "${LIBRPA_BUNDLED_ELPA_MAKE_EXECUTABLE}"
+      "ACLOCAL=true"
+      "AUTOCONF=true"
+      "AUTOHEADER=true"
+      "AUTOMAKE=true"
+      "${_elpa_libtool_library}"
   INSTALL_COMMAND
     ${CMAKE_COMMAND} -E env ${_elpa_make_environment}
       "${LIBRPA_BUNDLED_ELPA_MAKE_EXECUTABLE}"
+      "ACLOCAL=true"
+      "AUTOCONF=true"
+      "AUTOHEADER=true"
+      "AUTOMAKE=true"
       install-libLTLIBRARIES
       install-nobase_elpa_includeHEADERS
       install-nobase_nodist_elpa_includeHEADERS
