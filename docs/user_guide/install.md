@@ -25,9 +25,16 @@ For *GW*, the following packages are additionally required:
 - [LibComm](https://github.com/abacusmodeling/LibComm), which is required by LibRI for communication of tensor data between processes
 - [cereal](https://uscilab.github.io/cereal), which is required by LibRI for data serialization
 
-Some of these dependencies are located under the `thirdparty/` directory.
-Depending on the package, they are included either as Git submodules or as
-bundled source code distributed with LibRPA.
+LibRI support is enabled by default and can be disabled for an RPA-only build
+with `-DLIBRPA_USE_LIBRI=OFF`.
+
+CUDA and HIP builds additionally require
+[LibDDLA](https://github.com/userchba/LibDDLA) for distributed GPU linear
+algebra. A compatible LibDDLA revision is bundled under `thirdparty/LibDDLA`;
+an external installation can also be supplied through `LIBDDLA_PATH`.
+
+The required source dependencies are bundled under the `thirdparty/`
+directory in current LibRPA releases.
 
 ## Download
 
@@ -37,9 +44,9 @@ You can obtain the LibRPA code by cloning the GitHub repository:
 git clone https://github.com/Srlive1201/LibRPA
 ```
 
-For commit hash before `28b7431` (including tag `v0.4.0` and older),
+For commits before `28b7431` (including tag `v0.4.0-gw-benchmark` and older),
 LibRI and LibComm are included as Git submodules.
-In this case, you need to initialize the submodules in order to compile with LibRI
+In this case, initialize the submodules before compiling with LibRI:
 ```bash
 cd LibRPA
 git submodule update --init --recursive
