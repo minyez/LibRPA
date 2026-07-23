@@ -234,9 +234,7 @@ def content_a01b01_a01b01(ab_ab, formulas):
 						for (std::size_t ib2 = 0; ib2 < list_Ab2.size(); ++ib2) // G
 						{{
 							const TAC &Ab2 = list_Ab2[ib2];
-							// Output-only filter: Ab01 is already reduced over in D_mul, so it is unavailable here.
-							// LibRPA's output-only filter ignores the representative middle TAC; pass Aa2 to check the result pair (Aa2,Ab2).
-							if (this->filter_atom->filter_for32(label, Aa2, Aa2, Ab2))	continue;
+							if (this->filter_atom->filter_for32(label, Aa01, Aa2, Ab2))	continue;
 							const GPU_Data::Pack &D_mul = rDs_mul.find_2nd(Aa01, Ab2);
 							if (!D_mul.exist)	continue;
 
@@ -380,7 +378,7 @@ def content_a01b01_a01b2(ab_ab, formulas):
 						for (std::size_t ia2 = 0; ia2 < list_Aa2.size(); ++ia2) // F
 						{{
 							const TAC &Aa2 = list_Aa2[ia2];
-							if (this->filter_atom->filter_for32(label, Ab01, Aa01, Aa2))	continue;
+							if (this->filter_atom->filter_for32(label, Aa01, Aa2, Ab01))	continue;
 							const Tensor<Tdata> &D_a = {get_D_a(a)};
 							if (D_a.empty())	continue;
 
@@ -690,7 +688,7 @@ def content_a01b01_a2b2(ab_ab, formulas):
 						for (std::size_t ib2 = 0; ib2 < list_Ab2.size(); ++ib2)
 						{{
 							const TAC &Ab2 = list_Ab2[ib2];
-							if (this->filter_atom->filter_for32(label, Aa01, Ab2, Ab01))	continue;
+							if (this->filter_atom->filter_for32(label, Aa01, Ab01, Ab2))	continue;
 							const Tensor<Tdata> &D_b = {get_D_b(b)};
 							if(D_b.empty())	continue;
 							const GPU_Data::Pack &D_mul = rDs_mul.find_2nd(Aa01, Ab2);
@@ -837,6 +835,7 @@ def content_a01b2_a2b01(ab_ab, formulas):
 						const TAC &Aa2 = list_Aa2[ia2];
 						const Tensor<Tdata> &D_a = {get_D_a(a)};
 						if(D_a.empty())	continue;
+						if(this->filter_atom->filter_for2(label,Aa01,Aa2))	continue;
 						for(std::size_t ib01=0; ib01<list_Ab01.size(); ++ib01)
 						{{
 							const TAC &Ab01 = list_Ab01[ib01];
