@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GPU_Backend.h"
 #include "GPU_Data_Pack.h"
 #include <omp.h>
 
@@ -48,28 +49,30 @@ class Input
 	}
 
 	// 将对应的 C, V, D 放在 d_Cs, d_Vs, d_Ds 上
-	void upload(magma_queue_t &queue)
+	void upload(GPU_Backend::Queue queue)
 	{
 		std::vector<std::size_t> h_data_begin(this->h_data.size()+1, 0);
 		for(std::size_t i=1; i<h_data_begin.size(); ++i)
 			h_data_begin[i] = h_data_begin[i-1] + this->h_data[i-1].size();
 
-		TESTING_CHECK(magma_malloc((void **)&this->d_data, h_data_begin.back() * sizeof(Tdata)));
+		GPU_Backend::allocate(&this->d_data, h_data_begin.back());
 		for(std::size_t i=0; i<this->h_data.size(); ++i)
-			magma_setvector_async(this->h_data[i].size(), sizeof(Tdata), this->h_data[i].data(), 1, this->d_data+h_data_begin[i], 1, queue);
+			GPU_Backend::upload(
+				this->h_data[i].size(), this->h_data[i].data(),
+				this->d_data+h_data_begin[i], queue);
 
 		const std::size_t batchCount = this->h_array.size();
 		std::vector<Tdata*> d_array_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for(std::size_t i=0; i<batchCount; ++i)
 			d_array_[i] = this->d_data + this->h_array[i].pos + h_data_begin[this->h_array[i].thread_num];
-		TESTING_CHECK(magma_malloc((void **)&this->d_array, batchCount * sizeof(Tdata *)));
-		magma_setvector_async(batchCount, sizeof(Tdata*), d_array_.data(), 1, this->d_array, 1, queue);
+		GPU_Backend::allocate(&this->d_array, batchCount);
+		GPU_Backend::upload(batchCount, d_array_.data(), this->d_array, queue);
 	}
 
 	~Input()
 	{
-		if(this->d_data)	TESTING_CHECK(magma_free(this->d_data));
-		if(this->d_array)	TESTING_CHECK(magma_free(this->d_array));
+		GPU_Backend::free(this->d_data);
+		GPU_Backend::free(this->d_array);
 	}
 
 	std::vector<std::vector<Tdata>> h_data;		// 存储数据（CPU）

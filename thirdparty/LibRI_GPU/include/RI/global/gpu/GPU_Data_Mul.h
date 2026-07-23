@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GPU_Backend.h"
 #include "GPU_Data_Pack.h"
 
 namespace RI
@@ -26,17 +27,19 @@ class Mul
 		return pack;
 	}
 
-	void upload_1st(magma_queue_t queue)
+	void upload_1st(GPU_Backend::Queue queue)
 	{
-		TESTING_CHECK(magma_malloc((void **)&this->d_data, this->totalSize * sizeof(Tdata)));
-		GPU_Wrapper::GPUMemset(this->d_data, 0, totalSize * sizeof(Tdata)); // 初始化
+		GPU_Backend::allocate(&this->d_data, this->totalSize);
+		GPU_Backend::memset(
+			this->d_data, 0, totalSize * sizeof(Tdata), queue);
 
 		const std::size_t batchCount = this->h_array_1.size();
 		std::vector<Tdata*> d_array_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for (std::size_t i = 0; i < batchCount; i++)
 			d_array_[i] = this->d_data + this->h_array_1[i].pos;
-		TESTING_CHECK(magma_malloc((void **)&this->d_array_1, batchCount * sizeof(Tdata *)));
-		magma_setvector_async(batchCount, sizeof(Tdata*), d_array_.data(), 1, this->d_array_1, 1, queue);
+		GPU_Backend::allocate(&this->d_array_1, batchCount);
+		GPU_Backend::upload(
+			batchCount, d_array_.data(), this->d_array_1, queue);
 	}
 
 	const Pack &find_2nd(const TA &Aa, const TAC &Ab)
@@ -51,21 +54,22 @@ class Mul
 	}
 
 	// 在 GPU 上分配空间，并获取指针
-	void upload_2nd(magma_queue_t queue)
+	void upload_2nd(GPU_Backend::Queue queue)
 	{
 		const std::size_t batchCount = this->h_array_2.size();
 		std::vector<Tdata*> d_array_2_(batchCount);							// 记录每个batch的 d_data 指针（CPU）
 		for (std::size_t i = 0; i < batchCount; i++)
 			d_array_2_[i] = this->d_data + this->h_array_2[i].pos;
-		TESTING_CHECK(magma_malloc((void **)&this->d_array_2, batchCount * sizeof(Tdata *)));
-		magma_setvector_async(batchCount, sizeof(Tdata*), d_array_2_.data(), 1, this->d_array_2, 1, queue);
+		GPU_Backend::allocate(&this->d_array_2, batchCount);
+		GPU_Backend::upload(
+			batchCount, d_array_2_.data(), this->d_array_2, queue);
 	}
 
 	~Mul()
 	{
-		if(this->d_data)	TESTING_CHECK(magma_free(this->d_data));
-		if(this->d_array_1)	TESTING_CHECK(magma_free(this->d_array_1));
-		if(this->d_array_2)	TESTING_CHECK(magma_free(this->d_array_2));
+		GPU_Backend::free(this->d_data);
+		GPU_Backend::free(this->d_array_1);
+		GPU_Backend::free(this->d_array_2);
 	}
 
 	std::size_t totalSize = 0;                  // 总的数据数量

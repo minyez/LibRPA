@@ -69,7 +69,7 @@ void Parallel_LRI_Equally<TA,Tcell,Ndim,Tdata>::set_parallel_loop3(
 		switch(label)
 		{
 			case Label::Aab_Aab::a01b01_a01b01:
-			  #if defined(__CUDA_RI) || defined(__HIP_RI)
+			  #if defined(__CUDA_RI) || defined(__HIP_RI) || defined(__DDLA_RI)
 				atoms.a01 = atoms_split_list1.first;
 				atoms.b2 = atoms_split_list1.second[0];
 			  #else

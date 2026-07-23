@@ -126,7 +126,6 @@ void pgetrf(
         if(mm_col_start<n_loc){
             CCL_CHECK(cclBcast(d_temp_U,nb_real * (n_loc - mm_col_start), owner_row, col_nccl_comm, stream));
         }
-        // printf("myid:%d, n_s:%d, update trailing matrix mm_row_start:%d, mm_col_start:%d\n",mpi_comm_global_h.myid,n_s,mm_row_start,mm_col_start);
         if(mm_row_start<m_loc&&mm_col_start<n_loc){
             BLAS_CHECK(deblasGemm(
                 blasH, DEBLAS_OP_N, DEBLAS_OP_N,

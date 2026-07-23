@@ -43,30 +43,65 @@ list(APPEND lib_sources
 )
 
 if(DDLA_USE_CUDA)
+    list(APPEND lib_sources
+        gemm_vbatched.cpp
+        vbatched/sgemm_vbatched_core.cpp
+        vbatched/dgemm_vbatched_core.cpp
+        vbatched/cgemm_vbatched_core.cpp
+        vbatched/zgemm_vbatched_core.cpp
+    )
     set_source_files_properties(
         getrf_nopiv.cpp
+        gemm_vbatched.cpp
         pdam.cpp
         pgetf2_kernels.cpp
         potrf_bottom_right_transform.cpp
         ptran.cpp
+        vbatched/sgemm_vbatched_core.cpp
+        vbatched/dgemm_vbatched_core.cpp
+        vbatched/cgemm_vbatched_core.cpp
+        vbatched/zgemm_vbatched_core.cpp
         PROPERTIES
         LANGUAGE CUDA
     )
 endif()
 
 if(DDLA_USE_HIP)
+    list(APPEND lib_sources
+        gemm_vbatched.cpp
+        vbatched/sgemm_vbatched_core.cpp
+        vbatched/dgemm_vbatched_core.cpp
+        vbatched/cgemm_vbatched_core.cpp
+        vbatched/zgemm_vbatched_core.cpp
+    )
     set_source_files_properties(
         getrf_nopiv.cpp
+        gemm_vbatched.cpp
         pdam.cpp
         pgetf2_kernels.cpp
         potrf_bottom_right_transform.cpp
         ptran.cpp
+        vbatched/sgemm_vbatched_core.cpp
+        vbatched/dgemm_vbatched_core.cpp
+        vbatched/cgemm_vbatched_core.cpp
+        vbatched/zgemm_vbatched_core.cpp
         PROPERTIES
         LANGUAGE HIP
     )
 endif()
 
 target_sources(ddla_lib PRIVATE ${lib_sources})
+if(DDLA_USE_HIP)
+    target_link_directories(ddla_lib PUBLIC
+        "${ROCM_PATH}/lib"
+        "${ROCM_PATH}/lib64"
+        "${ROCM_PATH}/dcc/lib"
+    )
+    set_target_properties(ddla_lib PROPERTIES
+        BUILD_RPATH "${ROCM_PATH}/lib;${ROCM_PATH}/lib64;${ROCM_PATH}/dcc/lib"
+        INSTALL_RPATH "${ROCM_PATH}/lib;${ROCM_PATH}/lib64;${ROCM_PATH}/dcc/lib"
+    )
+endif()
 target_link_libraries(ddla_lib PUBLIC ${math_libs})
 
 install(TARGETS ddla_lib

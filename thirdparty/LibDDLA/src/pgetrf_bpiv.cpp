@@ -104,7 +104,6 @@ void pgetrf_bpiv(
         MPI_CHECK(MPI_Bcast(&info, 1, MPI_INT, ddla_handle->rc_to_rank(owner_row, owner_col), ddla_handle->comm));
         if (info != 0) {
             info += n_s;
-            printf("myid:%d, pgetrf_bpiv failed at %d\n", ddla_handle->myid, info);
             break;
         }
         if(n_s + nb_real == n)

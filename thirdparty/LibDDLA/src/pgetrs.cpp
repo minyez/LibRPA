@@ -1,6 +1,7 @@
 #include <ddla/ddla.h>
 #include <cassert>
 #include <vector>
+#include <ddla/ddla_stream.h>
 namespace ddla{
 
 template<typename T>
@@ -32,6 +33,7 @@ void pgetrs(
         d_A, array_descA,
         d_B, array_descB
     );
+
 }
 
 template void pgetrs<double>(

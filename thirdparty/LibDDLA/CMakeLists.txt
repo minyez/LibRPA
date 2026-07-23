@@ -51,6 +51,7 @@ if(DDLA_USE_HIP)
 endif()
 
 enable_language(CXX)
+include(GNUInstallDirs)
 include_directories(src)
 include_directories(include)
 find_package(MPI REQUIRED)
@@ -84,7 +85,7 @@ if(DDLA_USE_HIP)
     # set(CMAKE_HIP_STANDARD_REQUIRED True)
     add_compile_definitions("DDLA_USE_HIP")
     add_compile_definitions("__HIP_PLATFORM_AMD__")
-    set(HIP_LIBRARIES "-lhipblas -lrccl -lhipsolver -lamdhip64 -lhiprand -lgalaxyhip")
+    set(HIP_LIBRARIES "-lhipblas -lrccl -lhipsolver -lamdhip64 -lhiprand -lgalaxyhip -lomp")
     # -lamdhip64 -lhsa-runtime64
     # find_package(HIP REQUIRED)
     list(APPEND math_libs

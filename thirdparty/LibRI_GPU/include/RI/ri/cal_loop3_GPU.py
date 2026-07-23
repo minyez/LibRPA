@@ -48,8 +48,8 @@ def get_gemm_param(formula, *, other=""):
 	mulx_split = split_formula(mulx)
 	muly_split = split_formula(muly)
 	index_x, index_y, index_len = get_equal(mulx_split, muly_split)
-	Tx = "MagmaTrans" if index_x==0 else "MagmaNoTrans"
-	Ty = "MagmaTrans" if index_y!=0 else "MagmaNoTrans"
+	Tx = "GPU_Backend::Trans" if index_x==0 else "GPU_Backend::NoTrans"
+	Ty = "GPU_Backend::Trans" if index_y!=0 else "GPU_Backend::NoTrans"
 	T_all = Tx, Ty
 
 	def get_dim(ab, index, other):
@@ -197,13 +197,13 @@ def content_a01b01_a01b01(ab_ab, formulas):
 			rDs_b.upload(queue);
 			rDs_{a01b01[0]}.upload(queue);
 			rDs_{a01b01[1]}.upload(queue);
-			const std::vector<magma_int_t> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
+			const std::vector<GPU_Backend::Int> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
 			rDs_mul.upload_1st(queue);
 			dim_0.upload(queue);
 			dim_1.upload(queue);
 
 			constexpr bool C0_left = {get_C0_left(formulas[0], formulas[1])};
-			magmablas_gemm_vbatched_2s(
+			GPU_Backend::gemmVbatched2s(
 				{Tx_0}, {Ty_0},
 				dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 				Tdata(1), {rDs_x_0}, {rDs_y_0},
@@ -213,8 +213,8 @@ def content_a01b01_a01b01(ab_ab, formulas):
 				Tdata(1), {rDs_x_1},
 				Tdata(1), rDs_mul.d_array_1,
 				C0_left,
-				rDs_mul.h_array_1.size(), rDs_tmp_segments_size.data(), queue);
-			magma_queue_sync(queue);
+				rDs_mul.h_array_1.size(), rDs_tmp_segments_size, queue);
+			GPU_Backend::sync(queue);
 
 			// D_result = D_mul * D_a
 			GPU_Data::Input<TA, TAC, Tdata> rDs_a;
@@ -234,7 +234,9 @@ def content_a01b01_a01b01(ab_ab, formulas):
 						for (std::size_t ib2 = 0; ib2 < list_Ab2.size(); ++ib2) // G
 						{{
 							const TAC &Ab2 = list_Ab2[ib2];
-							if (this->filter_atom->filter_for32(label, Aa01, Aa2, Ab2))	continue;
+							// Output-only filter: Ab01 is already reduced over in D_mul, so it is unavailable here.
+							// LibRPA's output-only filter ignores the representative middle TAC; pass Aa2 to check the result pair (Aa2,Ab2).
+							if (this->filter_atom->filter_for32(label, Aa2, Aa2, Ab2))	continue;
 							const GPU_Data::Pack &D_mul = rDs_mul.find_2nd(Aa01, Ab2);
 							if (!D_mul.exist)	continue;
 
@@ -256,13 +258,13 @@ def content_a01b01_a01b01(ab_ab, formulas):
 			rDs_a.upload(queue);
 			dim_2.upload(queue);
 
-			magmablas_gemm_vbatched(
+			GPU_Backend::gemmVbatched(
 				{Tx_2}, {Ty_2},
 				dim_2.m.data(), dim_2.n.data(), dim_2.k.data(),
 				Tdata(1), {rDs_x_2}, {rDs_y_2},
 				Tdata(1), rDs_output.d_array,
 				rDs_output.h_array.size(), queue);
-			magma_queue_sync(queue);
+			GPU_Backend::sync(queue);
 
 			rDs_output.download(Ds_result, queue);
 		}} break; // end case {ab_ab}
@@ -349,13 +351,13 @@ def content_a01b01_a01b2(ab_ab, formulas):
 
 			dim_0.upload(queue);
 
-			magmablas_gemm_vbatched(
+			GPU_Backend::gemmVbatched(
 				{Tx_0}, {Ty_0},
 				dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 				Tdata(1), {rDs_x_0}, {rDs_y_0},
 				Tdata(1), rDs_mul.d_array_1,
 				rDs_mul.h_array_1.size(), queue);
-			magma_queue_sync(queue);
+			GPU_Backend::sync(queue);
 
 			// D_result = D_mul * D_a * D_{a01b01}
 			GPU_Data::Input<TA, TAC, Tdata> rDs_a, rDs_{a01b01};
@@ -378,7 +380,7 @@ def content_a01b01_a01b2(ab_ab, formulas):
 						for (std::size_t ia2 = 0; ia2 < list_Aa2.size(); ++ia2) // F
 						{{
 							const TAC &Aa2 = list_Aa2[ia2];
-							if (this->filter_atom->filter_for32(label, Aa01, Aa2, Ab01))	continue;
+							if (this->filter_atom->filter_for32(label, Ab01, Aa01, Aa2))	continue;
 							const Tensor<Tdata> &D_a = {get_D_a(a)};
 							if (D_a.empty())	continue;
 
@@ -399,7 +401,7 @@ def content_a01b01_a01b2(ab_ab, formulas):
 				}} // end for Aa01
 			}} // end omp parallel
 
-			const std::vector<magma_int_t> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
+			const std::vector<GPU_Backend::Int> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
 			rDs_output.upload(queue);
 			rDs_mul.upload_2nd(queue);
 			rDs_a.upload(queue);
@@ -409,7 +411,7 @@ def content_a01b01_a01b2(ab_ab, formulas):
 			dim_2.upload(queue);
 
 			constexpr bool C0_left = {get_C0_left(formulas[1], formulas[2])};
-			magmablas_gemm_vbatched_2s(
+			GPU_Backend::gemmVbatched2s(
 				{Tx_1}, {Ty_1},
 				dim_1.m.data(), dim_1.n.data(), dim_1.k.data(),
 				Tdata(1), {rDs_x_1}, {rDs_y_1},
@@ -419,8 +421,8 @@ def content_a01b01_a01b2(ab_ab, formulas):
 				Tdata(1), {rDs_x_2},
 				Tdata(1), rDs_output.d_array,
 				C0_left,
-				rDs_output.h_array.size(), rDs_tmp_segments_size.data(), queue);
-			magma_queue_sync(queue);
+				rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+			GPU_Backend::sync(queue);
 
 			rDs_output.download(Ds_result, queue);
 		}} break; // end case {ab_ab}
@@ -507,13 +509,13 @@ def content_a01b01_a2b01(ab_ab, formulas):
 			rDs_mul.upload_1st(queue);
 			dim_0.upload(queue);
 
-			magmablas_gemm_vbatched(
+			GPU_Backend::gemmVbatched(
 				{Tx_0}, {Ty_0},
 				dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 				Tdata(1), {rDs_x_0}, {rDs_y_0},
 				Tdata(1), rDs_mul.d_array_1,
 				rDs_mul.h_array_1.size(), queue);
-			magma_queue_sync(queue);
+			GPU_Backend::sync(queue);
 
 			// D_result = D_mul * D_{a01b01} * D_b
 			GPU_Data::Input<TA, TAC, Tdata> rDs_b, rDs_{a01b01};
@@ -557,7 +559,7 @@ def content_a01b01_a2b01(ab_ab, formulas):
 				}} // end for Ab01
 			}} // end omp parallel
 
-			const std::vector<magma_int_t> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
+			const std::vector<GPU_Backend::Int> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
 			rDs_output.upload(queue);
 			rDs_mul.upload_2nd(queue);
 			rDs_b.upload(queue);
@@ -567,7 +569,7 @@ def content_a01b01_a2b01(ab_ab, formulas):
 			dim_2.upload(queue);
 
 			constexpr bool C0_left = {get_C0_left(formulas[1], formulas[2])};
-			magmablas_gemm_vbatched_2s(
+			GPU_Backend::gemmVbatched2s(
 				{Tx_1}, {Ty_1},
 				dim_1.m.data(), dim_1.n.data(), dim_1.k.data(),
 				Tdata(1), {rDs_x_1}, {rDs_y_1},
@@ -577,8 +579,8 @@ def content_a01b01_a2b01(ab_ab, formulas):
 				Tdata(1), {rDs_x_2},
 				Tdata(1), rDs_output.d_array,
 				C0_left,
-				rDs_output.h_array.size(), rDs_tmp_segments_size.data(), queue);
-			magma_queue_sync(queue);
+				rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+			GPU_Backend::sync(queue);
 
 			rDs_output.download(Ds_result, queue);
 		}} break; // end case {ab_ab}
@@ -661,13 +663,13 @@ def content_a01b01_a2b2(ab_ab, formulas):
 			rDs_mul.upload_1st(queue);
 			dim_0.upload(queue);
 
-			magmablas_gemm_vbatched(
+			GPU_Backend::gemmVbatched(
 				{Tx_0}, {Ty_0},
 				dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 				Tdata(1), {rDs_x_0}, {rDs_y_0},
 				Tdata(1), rDs_mul.d_array_1,
 				rDs_mul.h_array_1.size(), queue);
-			magma_queue_sync(queue);
+			GPU_Backend::sync(queue);
 
 			// D_result = D_mul * D_{a01b01} * D_b
 			GPU_Data::Input<TA, TAC, Tdata> rDs_b, rDs_{a01b01};
@@ -688,7 +690,7 @@ def content_a01b01_a2b2(ab_ab, formulas):
 						for (std::size_t ib2 = 0; ib2 < list_Ab2.size(); ++ib2)
 						{{
 							const TAC &Ab2 = list_Ab2[ib2];
-							if (this->filter_atom->filter_for32(label, Aa01, Ab01, Ab2))	continue;
+							if (this->filter_atom->filter_for32(label, Aa01, Ab2, Ab01))	continue;
 							const Tensor<Tdata> &D_b = {get_D_b(b)};
 							if(D_b.empty())	continue;
 							const GPU_Data::Pack &D_mul = rDs_mul.find_2nd(Aa01, Ab2);
@@ -714,14 +716,14 @@ def content_a01b01_a2b2(ab_ab, formulas):
 			rDs_b.upload(queue);
 			rDs_{a01b01}.upload(queue);
 			rDs_mul.upload_2nd(queue);
-			const std::vector<magma_int_t> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
+			const std::vector<GPU_Backend::Int> rDs_tmp_segments_size = rDs_tmp.upload(memory_limit, queue);
 			rDs_output.upload(queue);
 
 			dim_1.upload(queue);
 			dim_2.upload(queue);
 
 			constexpr bool C0_left = {get_C0_left(formulas[1], formulas[2])};
-			magmablas_gemm_vbatched_2s(
+			GPU_Backend::gemmVbatched2s(
 				{Tx_1}, {Ty_1},
 				dim_1.m.data(), dim_1.n.data(), dim_1.k.data(),
 				Tdata(1), {rDs_x_1}, {rDs_y_1},
@@ -731,8 +733,8 @@ def content_a01b01_a2b2(ab_ab, formulas):
 				Tdata(1), {rDs_x_2},
 				Tdata(1), rDs_output.d_array,
 				C0_left,
-				rDs_output.h_array.size(), rDs_tmp_segments_size.data(), queue);
-			magma_queue_sync(queue);
+				rDs_output.h_array.size(), rDs_tmp_segments_size, queue);
+			GPU_Backend::sync(queue);
 
 			rDs_output.download(Ds_result, queue);
 		}} break; // end case {ab_ab}
@@ -813,13 +815,13 @@ def content_a01b2_a2b01(ab_ab, formulas):
 			rDs_mul_1.upload_1st(queue);
 			dim_0.upload(queue);
 
-			magmablas_gemm_vbatched(
+			GPU_Backend::gemmVbatched(
 				{Tx_0}, {Ty_0},
 				dim_0.m.data(), dim_0.n.data(), dim_0.k.data(),
 				Tdata(1), {rDs_x_0}, {rDs_y_0},
 				Tdata(1), rDs_mul_1.d_array_1,
 				rDs_mul_1.h_array_1.size(), queue);
-			magma_queue_sync(queue);
+			GPU_Backend::sync(queue);
 
 			// D_mul2 = D_{a2b01} * D_a
 			// {formulas[1]}
@@ -835,7 +837,6 @@ def content_a01b2_a2b01(ab_ab, formulas):
 						const TAC &Aa2 = list_Aa2[ia2];
 						const Tensor<Tdata> &D_a = {get_D_a(a)};
 						if(D_a.empty())	continue;
-						if(this->filter_atom->filter_for2(label,Aa01,Aa2))	continue;
 						for(std::size_t ib01=0; ib01<list_Ab01.size(); ++ib01)
 						{{
 							const TAC &Ab01 = list_Ab01[ib01];
@@ -862,13 +863,13 @@ def content_a01b2_a2b01(ab_ab, formulas):
 			rDs_mul_2.upload_1st(queue);
 			dim_1.upload(queue);
 
-			magmablas_gemm_vbatched(
+			GPU_Backend::gemmVbatched(
 				{Tx_1}, {Ty_1},
 				dim_1.m.data(), dim_1.n.data(), dim_1.k.data(),
 				Tdata(1), {rDs_x_1}, {rDs_y_1},
 				Tdata(1), rDs_mul_2.d_array_1,
 				rDs_mul_2.h_array_1.size(), queue);
-			magma_queue_sync(queue);
+			GPU_Backend::sync(queue);
 
 			// D_result = D_mul2 * D_mul1
 			// {formulas[2]}
@@ -904,13 +905,13 @@ def content_a01b2_a2b01(ab_ab, formulas):
 			rDs_output.upload(queue);
 			dim_2.upload(queue);
 
-			magmablas_gemm_vbatched(
+			GPU_Backend::gemmVbatched(
 				{Tx_2}, {Ty_2},
 				dim_2.m.data(), dim_2.n.data(), dim_2.k.data(),
 				Tdata(1), {rDs_x_2}, {rDs_y_2},
 				Tdata(1), rDs_output.d_array,
 				rDs_output.h_array.size(), queue);
-			magma_queue_sync(queue);
+			GPU_Backend::sync(queue);
 
 			rDs_output.download(Ds_result, queue);
 		}} break; // end case {ab_ab}
@@ -937,14 +938,12 @@ def content_prefix():
 		#include "../global/Map_Operator.h"
 		#include "../global/Tensor_Multiply.h"
 
-		#include "../global/gpu/GPU_Wrapper.h"
+		#include "../global/gpu/GPU_Backend.h"
 		#include "../global/gpu/GPU_Data_Input.h"
 		#include "../global/gpu/GPU_Data_Mul.h"
 		#include "../global/gpu/GPU_Data_Tmp.h"
 		#include "../global/gpu/GPU_Data_Output.h"
 		#include "../global/gpu/Dim.h"
-		#include "../global/gpu/Magmablas_Interface-Contiguous.h"
-		#include "../global/gpu/Magma_Wrapper.h"
 
 		#include <omp.h>
 
@@ -976,16 +975,8 @@ def content_prefix():
 			mkl_set_num_threads(1);
 			#endif
 
-			magma_init();
-
-			const magma_int_t dev_size = Magma_Wrapper::magma_get_size();
-			const int mpi_size = MPI_Wrapper::mpi_get_size(this->mpi_comm);
-			assert(mpi_size<=dev_size);
-
-			const int mpi_rank = MPI_Wrapper::mpi_get_rank(this->mpi_comm);
-			magma_setdevice(mpi_rank);
-			magma_queue_t queue;
-			magma_queue_create(mpi_rank, &queue);
+			GPU_Backend::Context gpu_context(this->mpi_comm);
+			GPU_Backend::Queue &queue = gpu_context.queue();
 
 			std::map<TA, omp_lock_t> lock_Ds_result_add_map = LRI_Cal_Aux::init_lock_result(labels, this->parallel->list_A, Ds_result);
 

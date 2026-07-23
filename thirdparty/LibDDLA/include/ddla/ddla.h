@@ -2,6 +2,9 @@
 #define DDLA_H
 
 #include "ddla_desc.h"
+#if defined(DDLA_USE_CUDA) || defined(DDLA_USE_HIP)
+#include "gemmVbatched.h"
+#endif
 #include <complex>
 
 namespace ddla{

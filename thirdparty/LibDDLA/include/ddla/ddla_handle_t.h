@@ -17,6 +17,8 @@ void ddla_set(DdlaHandle_t ddla_handle, const MPI_Comm& comm, const int& nprows,
 
 void ddla_destroy(DdlaHandle_t& ddla_handle);
 
+void* ddla_get_stream(const DdlaHandle_t& ddla_handle);
+
 }
 
 

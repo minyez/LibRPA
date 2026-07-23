@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include <magma.h>
+#include "GPU_Backend.h"
 #include <vector>
 
 class Dim
@@ -20,10 +20,16 @@ class Dim
 		this->shapes.push_back(shape1 * shape2);
 	}
 
-	void upload(const magma_queue_t &queue)
+	void upload(RI::GPU_Backend::Queue queue)
 	{
-		TESTING_CHECK(magma_imalloc(&this->d_m, this->shapes.size() + 1));
-		magma_isetvector(this->shapes.size(), this->shapes.data(), 1, this->d_m, 1, queue);
+		RI::GPU_Backend::allocate(&this->d_m, this->shapes.size() + 1);
+		RI::GPU_Backend::upload(
+			this->shapes.size(), this->shapes.data(), this->d_m, queue);
+	}
+
+	~Dim()
+	{
+		RI::GPU_Backend::free(this->d_m);
 	}
 
 	int* data() const
@@ -32,7 +38,7 @@ class Dim
 	}
 
 	std::vector<int> shapes;
-	int* d_m;
+	int* d_m = nullptr;
 };
 
 
@@ -71,7 +77,7 @@ class Dim_mnk
 		k.input(std::get<0>(shape_k), std::get<1>(shape_k));
 	}
 
-	void upload(const magma_queue_t &queue)
+	void upload(RI::GPU_Backend::Queue queue)
 	{
 		m.upload(queue);
 		n.upload(queue);

@@ -271,7 +271,11 @@ void Exx<TA,Tcell,Ndim,Tdata>::cal_Hs(
 
 	if(!this->flag_finish.Ds_delta)
 		this->Hs.clear();
+#if defined(__CUDA_RI) || defined(__HIP_RI) || defined(__DDLA_RI)
+	this->lri.cal_loop3_GPU(
+#else
 	this->lri.cal_loop3(
+#endif
 		{Label::ab_ab::a0b0_a1b1,
 		 Label::ab_ab::a0b0_a1b2,
 		 Label::ab_ab::a0b0_a2b1,

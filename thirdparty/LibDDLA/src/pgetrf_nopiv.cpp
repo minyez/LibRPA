@@ -101,7 +101,6 @@ void pgetrf_nopiv(
             // getrf_nopiv returns a 1-based index within the diagonal block;
             // shift it to the global position.
             info = local_info + n_s;
-            printf("myid:%d, pgetrf_nopiv failed at %d\n", ddla_handle->myid, info);
             break;
         }
         if (n_s + nb_real == n)

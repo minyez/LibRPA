@@ -25,4 +25,11 @@ void ddla_destroy(DdlaHandle_t& ddla_handle){
     }
     return;
 }
+
+void* ddla_get_stream(const DdlaHandle_t& ddla_handle){
+    if(ddla_handle == nullptr){
+        return nullptr;
+    }
+    return reinterpret_cast<void*>(ddla_handle->stream);
+}
 }

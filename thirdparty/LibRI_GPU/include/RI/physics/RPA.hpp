@@ -119,7 +119,11 @@ void RPA<TA,Tcell,Ndim,Tdata>::cal_chi0s(
 	for(const Label::ab label : {Label::ab::a2b1, Label::ab::a2b2})
 		this->lri.data_ab_name[label] = "Gs_neg_"+save_names_suffix[2];
 
+#if defined(__CUDA_RI) || defined(__HIP_RI) || defined(__DDLA_RI)
+	this->lri.cal_loop3_GPU({
+#else
 	this->lri.cal_loop3({
+#endif
 		Label::ab_ab::a1b1_a2b2,
 		Label::ab_ab::a1b2_a2b1},
 		this->chi0s);
@@ -130,7 +134,11 @@ void RPA<TA,Tcell,Ndim,Tdata>::cal_chi0s(
 	for(const Label::ab label : {Label::ab::a2b1, Label::ab::a2b2})
 		this->lri.data_ab_name[label] = "Gs_pos_"+save_names_suffix[1];
 
+#if defined(__CUDA_RI) || defined(__HIP_RI) || defined(__DDLA_RI)
+	this->lri.cal_loop3_GPU({
+#else
 	this->lri.cal_loop3({
+#endif
 		Label::ab_ab::a1b1_a2b2,
 		Label::ab_ab::a1b2_a2b1},
 		this->chi0s);

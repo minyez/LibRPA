@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GPU_Backend.h"
 #include "GPU_Data_Pack.h"
 
 namespace RI
@@ -23,23 +24,25 @@ class Tmp
 		return this->h_array.back();
 	}
 
-	std::vector<magma_int_t> upload(const std::size_t memory_limit, magma_queue_t queue)
+	std::vector<GPU_Backend::Int> upload(
+		const std::size_t memory_limit, GPU_Backend::Queue queue)
 	{
 		const std::size_t size_limit = std::min(this->totalSize, memory_limit / sizeof(Tdata));
 		const std::vector<std::vector<Pack>> h_array_segments = segment_points(this->h_array, size_limit);
 
-		TESTING_CHECK(magma_malloc((void **)&this->d_data, size_limit * sizeof(Tdata)));
-		GPU_Wrapper::GPUMemset(this->d_data, 0, size_limit * sizeof(Tdata)); // 初始化
+		GPU_Backend::allocate(&this->d_data, size_limit);
+		GPU_Backend::memset(
+			this->d_data, 0, size_limit * sizeof(Tdata), queue);
 
 		const std::size_t batchCount = this->h_array.size();
 		std::vector<Tdata*> d_array_;							// 记录每个batch的 d_data 指针（CPU）
 		for(const auto &h_array_segment : h_array_segments)
 			for(const Pack &pack : h_array_segment)
 				d_array_.push_back(this->d_data + pack.pos);
-		TESTING_CHECK(magma_malloc((void **)&this->d_array, batchCount * sizeof(Tdata *)));
-		magma_setvector_async(batchCount, sizeof(Tdata*), d_array_.data(), 1, this->d_array, 1, queue);
+		GPU_Backend::allocate(&this->d_array, batchCount);
+		GPU_Backend::upload(batchCount, d_array_.data(), this->d_array, queue);
 
-		std::vector<magma_int_t> segments_size;
+		std::vector<GPU_Backend::Int> segments_size;
 		for(const auto &h_array_segment : h_array_segments)
 			segments_size.push_back(h_array_segment.size());
 		return segments_size;
@@ -71,8 +74,8 @@ class Tmp
 
 	~Tmp()
 	{
-		if(this->d_data)	TESTING_CHECK(magma_free(this->d_data));
-		if(this->d_array)	TESTING_CHECK(magma_free(this->d_array));
+		GPU_Backend::free(this->d_data);
+		GPU_Backend::free(this->d_array);
 	}
 
 	std::size_t totalSize = 0;					// 总的数据数量
