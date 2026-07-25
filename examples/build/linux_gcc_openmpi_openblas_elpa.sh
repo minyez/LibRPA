@@ -18,6 +18,8 @@ export LANGUAGE=C
 ulimit -s unlimited
 ulimit -c unlimited
 
+# Please customize the modules and root directories of necessary components
+
 unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH
 unset LIBRARY_PATH LD_LIBRARY_PATH LD_RUN_PATH
 unset PKG_CONFIG_PATH CMAKE_PREFIX_PATH
@@ -29,12 +31,25 @@ module load compiler/devtoolset/9.3.1
 module load mpi/hpcx/2.13.1/gcc-9.3.1-wangxh
 module load compiler/cmake/3.24.1
 
-tool_root=/public/home/hbchen/app/LibRPA/260212/toolchain
-tool_install="${tool_root}/install"
-tool_build="${tool_root}/build"
-source "${tool_build}/setup_openblas_extern"
-source "${tool_build}/setup_scalapack_extern"
-source "${tool_build}/setup_cereal_extern"
+# External dependency roots: customize these paths for the target system.
+export OPENBLAS_ROOT="/public/home/hbchen/app/LibRPA/260212/toolchain/install/openblas-0.3.29"
+export SCALAPACK_ROOT="/public/home/hbchen/app/LibRPA/260212/toolchain/install/scalapack-2.2.2"
+export CEREAL_ROOT="/public/home/hbchen/app/LibRPA/260212/toolchain/install/cereal-master"
+
+for dependency_root in "${OPENBLAS_ROOT}" "${SCALAPACK_ROOT}" "${CEREAL_ROOT}"; do
+    if [[ ! -d "${dependency_root}" ]]; then
+        echo "Dependency root does not exist: ${dependency_root}" >&2
+        exit 1
+    fi
+done
+
+export CPATH="${CEREAL_ROOT}/include:${OPENBLAS_ROOT}/include${CPATH:+:${CPATH}}"
+export LIBRARY_PATH="${SCALAPACK_ROOT}/lib:${OPENBLAS_ROOT}/lib${LIBRARY_PATH:+:${LIBRARY_PATH}}"
+export LD_LIBRARY_PATH="${SCALAPACK_ROOT}/lib:${OPENBLAS_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+export LD_RUN_PATH="${SCALAPACK_ROOT}/lib:${OPENBLAS_ROOT}/lib${LD_RUN_PATH:+:${LD_RUN_PATH}}"
+export PKG_CONFIG_PATH="${SCALAPACK_ROOT}/lib/pkgconfig:${OPENBLAS_ROOT}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+export CMAKE_PREFIX_PATH="${SCALAPACK_ROOT}:${OPENBLAS_ROOT}${CMAKE_PREFIX_PATH:+:${CMAKE_PREFIX_PATH}}"
+set -u
 
 repo_root=/public/home/hbchen/app/LibRPA/260531/LibRPA
 work_root=/public/home/hbchen/app/LibRPA/260531
@@ -42,13 +57,9 @@ job_id="${SLURM_JOB_ID:?SLURM_JOB_ID is required}"
 build_dir="${work_root}/build_openmpi_elpa"
 install_dir="${work_root}/librpa_openmpi_elpa"
 stage_dir="${work_root}/.librpa_openmpi_bundle_elpa.stage.${job_id}"
-expected_head=a6f1ded9ddf7175e46c80645457c3c4d37e5cc5b
-expected_staged_sha=f7723491ab4926467ccdc35e733e09325fbeba2eae2e39da0af04437ad018a4d
-empty_diff_sha=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 stage_promoted=0
 
-cleanup_stage()
-{
+cleanup_stage() {
     status=$?
     if [[ "${status}" -ne 0 && "${stage_promoted}" -eq 0 && -d "${stage_dir}" ]]; then
         find "${stage_dir}" -depth -delete
@@ -59,11 +70,6 @@ trap cleanup_stage EXIT
 
 cd "${repo_root}"
 current_head=$(git rev-parse HEAD)
-staged_sha=$(git diff --cached --binary | sha256sum | awk '{print $1}')
-unstaged_sha=$(git diff --binary | sha256sum | awk '{print $1}')
-test "${current_head}" = "${expected_head}"
-test "${staged_sha}" = "${expected_staged_sha}"
-test "${unstaged_sha}" = "${empty_diff_sha}"
 git diff --cached --check
 git diff --check
 
@@ -74,15 +80,17 @@ for target in "${build_dir}" "${install_dir}" "${stage_dir}"; do
     fi
 done
 
-scalapack_dir="${tool_install}/scalapack-2.2.2/lib"
-cereal_include="${tool_install}/cereal-master/include"
+scalapack_dir="${SCALAPACK_ROOT}"
+cereal_include="${CEREAL_ROOT}/include"
+cmake_prefix_path="${SCALAPACK_ROOT};${OPENBLAS_ROOT}"
 elpa_configure_args="--enable-option-checking=fatal --enable-single-precision --disable-cpp-tests"
+# Keep the CMake $ORIGIN token literal.
+# shellcheck disable=SC2016
 install_rpath='$ORIGIN/../lib64;$ORIGIN/../lib'
 
 echo "SLURM_JOB_ID=${job_id}"
 echo "REPO_ROOT=${repo_root}"
 echo "SOURCE_HEAD=${current_head}"
-echo "STAGED_DIFF_SHA256=${staged_sha}"
 echo "BUILD_DIR=${build_dir}"
 echo "STAGE_DIR=${stage_dir}"
 echo "INSTALL_DIR=${install_dir}"
@@ -95,10 +103,12 @@ cmake -S "${repo_root}" -B "${build_dir}" \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     -DCMAKE_C_COMPILER=gcc \
     -DCMAKE_CXX_COMPILER=g++ \
+    -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
     -DMPI_C_COMPILER=mpicc \
     -DMPI_CXX_COMPILER=mpicxx \
     -DCMAKE_Fortran_COMPILER=gfortran \
     -DMPI_Fortran_COMPILER=mpifort \
+    -DBLA_VENDOR=OpenBLAS \
     -DSCALAPACK_DIR="${scalapack_dir}" \
     -DCEREAL_INCLUDE_DIR="${cereal_include}" \
     -DLIBRPA_USE_LIBRI=ON \
@@ -171,12 +181,12 @@ fi
 export LD_LIBRARY_PATH="${stage_dir}/lib:${stage_dir}/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 for binary in "${stage_dir}/bin/chi0_main.exe" "${rpa_library}"; do
     ldd_output=$(ldd "${binary}")
-    if grep -q 'not found' <<< "${ldd_output}"; then
+    if grep -q 'not found' <<<"${ldd_output}"; then
         echo "Unresolved runtime dependency: ${binary}" >&2
         echo "${ldd_output}" >&2
         exit 1
     fi
-    if grep -Eqi 'lib(elpa|amdhip64|rocblas|rocsolver|hipblas|hipsolver|cuda|cudart)' <<< "${ldd_output}"; then
+    if grep -Eqi 'lib(elpa|amdhip64|rocblas|rocsolver|hipblas|hipsolver|cuda|cudart)' <<<"${ldd_output}"; then
         echo "Unexpected dynamic ELPA or GPU dependency: ${binary}" >&2
         echo "${ldd_output}" >&2
         exit 1
@@ -189,15 +199,11 @@ stage_promoted=1
 export LD_LIBRARY_PATH="${install_dir}/lib:${install_dir}/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 test -x "${install_dir}/bin/chi0_main.exe"
 promoted_ldd=$(ldd "${install_dir}/bin/chi0_main.exe")
-if grep -q 'not found' <<< "${promoted_ldd}"; then
+if grep -q 'not found' <<<"${promoted_ldd}"; then
     echo "Unresolved dependency after promotion" >&2
     echo "${promoted_ldd}" >&2
     exit 1
 fi
-
-cd "${repo_root}"
-test "$(git diff --cached --binary | sha256sum | awk '{print $1}')" = "${expected_staged_sha}"
-test "$(git diff --binary | sha256sum | awk '{print $1}')" = "${empty_diff_sha}"
 
 trap - EXIT
 echo "BUNDLED_ELPA_ARCHIVE=${elpa_archive}"

@@ -9,7 +9,7 @@
 #SBATCH --error=/public/home/hbchen/app/LibRPA/260531/err_hip_bundle_ddla_ri
 #SBATCH --open-mode=truncate
 
-set -eo pipefail
+set -eEo pipefail
 
 export LC_ALL=C
 export LANG=C
@@ -18,28 +18,45 @@ export LANGUAGE=C
 ulimit -s unlimited
 ulimit -c unlimited
 
+# Please customize the modules and root directories of necessary components
+
 unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH
 unset LIBRARY_PATH LD_LIBRARY_PATH LD_RUN_PATH
 unset PKG_CONFIG_PATH CMAKE_PREFIX_PATH
 unset LIBDDLA_PATH LIBRI_INCLUDE_DIR
 unset MAGMA_ROOT MAGMA_DIR
 unset ELPA_PATH ELPA_ROOT EXTERNAL_ELPA_DIR ELPA_DIR
+unset ROCM_PATH HIP_PATH CUDA_HOME CUDA_PATH
 module purge
 
 module load compiler/rocm/dtk/25.04.3
-export CPATH="${ROCM_PATH}/include/rocrand"
+: "${ROCM_PATH:?ROCm module did not set ROCM_PATH}"
+export CPATH="${ROCM_PATH}/include/rocrand${CPATH:+:${CPATH}}"
 export LIBRARY_PATH="${ROCM_PATH}/lib:${ROCM_PATH}/lib64${LIBRARY_PATH:+:${LIBRARY_PATH}}"
 export LD_LIBRARY_PATH="${ROCM_PATH}/lib:${ROCM_PATH}/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 module load compiler/devtoolset/9.3.1
 module load mpi/hpcx/2.13.1/gcc-9.3.1-wangxh
 module load compiler/cmake/3.24.1
 
-tool_root=/public/home/hbchen/app/LibRPA/260212/toolchain
-tool_install="${tool_root}/install"
-tool_build="${tool_root}/build"
-source "${tool_build}/setup_openblas_extern"
-source "${tool_build}/setup_scalapack_extern"
-source "${tool_build}/setup_cereal_extern"
+# External dependency roots: customize these paths for the target system.
+export OPENBLAS_ROOT="/public/home/hbchen/app/LibRPA/260212/toolchain/install/openblas-0.3.29"
+export SCALAPACK_ROOT="/public/home/hbchen/app/LibRPA/260212/toolchain/install/scalapack-2.2.2"
+export CEREAL_ROOT="/public/home/hbchen/app/LibRPA/260212/toolchain/install/cereal-master"
+
+for dependency_root in "${OPENBLAS_ROOT}" "${SCALAPACK_ROOT}" "${CEREAL_ROOT}"; do
+    if [[ ! -d "${dependency_root}" ]]; then
+        echo "Dependency root does not exist: ${dependency_root}" >&2
+        exit 1
+    fi
+done
+
+export CPATH="${CEREAL_ROOT}/include:${OPENBLAS_ROOT}/include${CPATH:+:${CPATH}}"
+export LIBRARY_PATH="${SCALAPACK_ROOT}/lib:${OPENBLAS_ROOT}/lib${LIBRARY_PATH:+:${LIBRARY_PATH}}"
+export LD_LIBRARY_PATH="${SCALAPACK_ROOT}/lib:${OPENBLAS_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+export LD_RUN_PATH="${SCALAPACK_ROOT}/lib:${OPENBLAS_ROOT}/lib${LD_RUN_PATH:+:${LD_RUN_PATH}}"
+export PKG_CONFIG_PATH="${SCALAPACK_ROOT}/lib/pkgconfig:${OPENBLAS_ROOT}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+export CMAKE_PREFIX_PATH="${SCALAPACK_ROOT}:${OPENBLAS_ROOT}${CMAKE_PREFIX_PATH:+:${CMAKE_PREFIX_PATH}}"
+set -u
 
 repo_root=/public/home/hbchen/app/LibRPA/260531/LibRPA
 work_root=/public/home/hbchen/app/LibRPA/260531
@@ -50,12 +67,12 @@ install_dir="${work_root}/librpa_hip"
 if [[ "${LIBRPA_REUSE_BUILD:-0}" != 1 ]]; then
     rm -rf "${build_dir}"
 fi
-rm -rf $install_dir
 
-scalapack_dir="${tool_install}/scalapack-2.2.2/lib"
-cereal_include="${tool_install}/cereal-master/include"
+scalapack_dir="${SCALAPACK_ROOT}"
+cereal_include="${CEREAL_ROOT}/include"
+cmake_prefix_path="${ROCM_PATH};${SCALAPACK_ROOT};${OPENBLAS_ROOT}"
 elpa_configure_args="HIPCC=hipcc HIPCCFLAGS='-DROCBLAS_V3 -D__HIP_PLATFORM_AMD__ -g -O3 -std=c++17 --gpu-max-threads-per-block=1024' --enable-option-checking=fatal --enable-amd-gpu-kernels --enable-single-precision --enable-gpu-streams=amd --enable-gpu-ccl=rccl --enable-hipcub --disable-cpp-tests --with-rocsolver"
-elpa_libs="-lscalapack -lopenblas -lamdhip64 -lgalaxyhip -lrocblas -lrocsolver -lrccl -lhipblas -lhipsolver -lhiprand -fPIC -Wno-return-type"
+elpa_libs="-L${SCALAPACK_ROOT}/lib -lscalapack -L${OPENBLAS_ROOT}/lib -lopenblas -lamdhip64 -lgalaxyhip -lrocblas -lrocsolver -lrccl -lhipblas -lhipsolver -lhiprand -fPIC -Wno-return-type"
 
 echo "SLURM_JOB_ID=${job_id}"
 echo "REPO_ROOT=${repo_root}"
@@ -70,10 +87,12 @@ cmake -S "${repo_root}" -B "${build_dir}" \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     -DCMAKE_C_COMPILER=gcc \
     -DCMAKE_CXX_COMPILER=g++ \
+    -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
     -DMPI_C_COMPILER=mpicc \
     -DMPI_CXX_COMPILER=mpicxx \
     -DMPI_Fortran_COMPILER=mpifort \
     -DCMAKE_Fortran_COMPILER=gfortran \
+    -DBLA_VENDOR=OpenBLAS \
     -DSCALAPACK_DIR="${scalapack_dir}" \
     -DCEREAL_INCLUDE_DIR="${cereal_include}" \
     -DLIBRPA_USE_LIBRI=ON \
@@ -91,8 +110,7 @@ cmake -S "${repo_root}" -B "${build_dir}" \
     -DCMAKE_CXX_FLAGS="-DROCBLAS_V3 -D__HIP_PLATFORM_AMD__ -g -O2" \
     -DCMAKE_Fortran_FLAGS="-g -O2" \
     -DCMAKE_HIP_FLAGS="-g -O2 -fopenmp -fgpu-rdc -Wno-return-type -Wno-pass-failed" \
-    -DROCM_PATH="${ROCM_PATH}" \
-    -DCMAKE_PREFIX_PATH="${ROCM_PATH}"
+    -DROCM_PATH="${ROCM_PATH}"
 
 cmake --build "${build_dir}" -j "${SLURM_CPUS_PER_TASK}"
 
@@ -126,8 +144,7 @@ for macro in \
 done
 
 backup_dir=""
-restore_previous_install()
-{
+restore_previous_install() {
     status=$?
     if [[ "${status}" -ne 0 && -n "${backup_dir}" && -d "${backup_dir}" ]]; then
         rm -rf "${install_dir}"
@@ -155,7 +172,7 @@ for library_dir in "${install_dir}/lib" "${install_dir}/lib64"; do
 done
 test -n "${ddla_library}"
 
-if find "${install_dir}" \( -name 'libelpa.so*' -o -name 'libelpa_openmp.so*' \) | grep -q .; then
+if find "${install_dir}" \( -name 'libelpa.so*' -o -name 'libelpa_openmp.so*' \) -print -quit | grep -q .; then
     echo "Bundled static ELPA unexpectedly installed a shared ELPA library" >&2
     find "${install_dir}" \( -name 'libelpa.so*' -o -name 'libelpa_openmp.so*' \) >&2
     exit 1
@@ -170,7 +187,7 @@ for library_dir in "${install_dir}/lib" "${install_dir}/lib64"; do
 done
 test -n "${rpa_library}"
 
-for binary in "${install_dir}/bin/chi0_main.exe" "${rpa_library}"; do
+for binary in "${install_dir}/bin/chi0_main.exe" "${rpa_library}" "${ddla_library}"; do
     if readelf -d "${binary}" | grep -q 'NEEDED.*libelpa'; then
         echo "Bundled static ELPA unexpectedly appears as a runtime dependency: ${binary}" >&2
         readelf -d "${binary}" >&2
@@ -179,15 +196,16 @@ for binary in "${install_dir}/bin/chi0_main.exe" "${rpa_library}"; do
 done
 
 export LD_LIBRARY_PATH="${install_dir}/lib:${install_dir}/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
-for binary in "${install_dir}/bin/chi0_main.exe" "${rpa_library}"; do
-    if ldd "${binary}" | grep -q "not found"; then
+for binary in "${install_dir}/bin/chi0_main.exe" "${rpa_library}" "${ddla_library}"; do
+    ldd_output=$(ldd "${binary}")
+    if grep -q "not found" <<<"${ldd_output}"; then
         echo "Unresolved runtime dependency: ${binary}" >&2
-        ldd "${binary}" >&2
+        echo "${ldd_output}" >&2
         exit 1
     fi
-    if ldd "${binary}" | grep -qi magma; then
+    if grep -qi magma <<<"${ldd_output}"; then
         echo "Bundled DDLA_RI binary unexpectedly depends on MAGMA: ${binary}" >&2
-        ldd "${binary}" >&2
+        echo "${ldd_output}" >&2
         exit 1
     fi
 done
