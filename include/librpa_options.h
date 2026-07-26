@@ -535,6 +535,22 @@ typedef struct
     //! Experimental
     LibrpaSwitch output_gw_sigc_ks_mat_kf;
 
+    //! First zero-based KS state included in both dimensions when exporting the
+    //! correlation self-energy matrix. Matrix construction is unaffected.
+    //! @par Default
+    //! 0
+    //! @par Status
+    //! Experimental
+    int istate_output_mat_start;
+
+    //! Half-open KS-state end index when exporting the correlation self-energy
+    //! matrix; negative means all remaining states.
+    //! @par Default
+    //! -1
+    //! @par Status
+    //! Experimental
+    int istate_output_mat_end;
+
     //! Output correlation self-energy matrix in NAO basis (k-space, imaginary frequency domain).
     //! @par Default
     //! false

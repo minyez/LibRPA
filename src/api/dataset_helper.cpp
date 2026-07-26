@@ -313,6 +313,8 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts)
     ds.p_g0w0->output_dir = opts.output_dir;
     ds.p_g0w0->output_sigc_ks_kf = opts.output_gw_sigc_ks_kf == LIBRPA_SWITCH_ON;
     ds.p_g0w0->output_sigc_ks_mat_kf = opts.output_gw_sigc_ks_mat_kf == LIBRPA_SWITCH_ON;
+    ds.p_g0w0->istate_output_mat_start = opts.istate_output_mat_start;
+    ds.p_g0w0->istate_output_mat_end = opts.istate_output_mat_end;
     ds.p_g0w0->output_sigc_mat_kf = opts.output_gw_sigc_mat_kf == LIBRPA_SWITCH_ON;
     ds.p_g0w0->output_sigc_mat_rt = opts.output_gw_sigc_mat_rt == LIBRPA_SWITCH_ON;
     ds.p_g0w0->output_sigc_mat_rf = opts.output_gw_sigc_mat_rf == LIBRPA_SWITCH_ON;

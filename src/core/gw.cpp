@@ -614,18 +614,28 @@ static void write_sigc_matrix_binary(const Matz &mat, const std::string &fn)
 
 static void write_sigc_matrix_binary_parallel(const Matz &mat_loc,
                                               const ArrayDesc &desc,
+                                              const int istate_start,
+                                              const int istate_end,
                                               const std::string &fn)
 {
     if (!desc.is_initialized())
         throw LIBRPA_RUNTIME_ERROR("SigC matrix output descriptor is not initialized");
     if (mat_loc.nr() != desc.m_loc() || mat_loc.nc() != desc.n_loc())
         throw LIBRPA_RUNTIME_ERROR("SigC matrix local block does not match its descriptor");
+    if (istate_start < 0)
+        throw LIBRPA_RUNTIME_ERROR("istate_output_mat_start must be non-negative");
+    if (istate_start >= istate_end)
+        throw LIBRPA_RUNTIME_ERROR(
+            "istate_output_mat_end must be greater than istate_output_mat_start");
+    if (istate_end > desc.m() || istate_end > desc.n())
+        throw LIBRPA_RUNTIME_ERROR("istate_output_mat_end exceeds the KS matrix dimensions");
 
     ArrayDesc desc_full(desc.ictxt());
-    desc_full.init(desc.m(), desc.n(), desc.m(), desc.n(), desc.irsrc(), desc.icsrc());
+    const int n_states = istate_end - istate_start;
+    desc_full.init(n_states, n_states, n_states, n_states, desc.irsrc(), desc.icsrc());
     Matz mat_full(desc_full.m_loc(), desc_full.n_loc(), mat_loc.major());
-    ScalapackConnector::pgemr2d_f(desc.m(), desc.n(),
-                                  mat_loc.ptr(), 1, 1, desc.desc,
+    ScalapackConnector::pgemr2d_f(n_states, n_states,
+                                  mat_loc.ptr(), istate_start + 1, istate_start + 1, desc.desc,
                                   mat_full.ptr(), 1, 1, desc_full.desc,
                                   desc.ictxt());
     if (desc_full.is_src())
@@ -687,6 +697,8 @@ G0W0::G0W0(const MeanField &mf_in, const AtomicBasis &atbasis_wfc_in,
     output_dir = "./";  // POSIX
     output_sigc_ks_mat_kf = false;
     output_sigc_ks_kf = false;
+    istate_output_mat_start = 0;
+    istate_output_mat_end = -1;
     output_sigc_mat_kf = false;
     output_sigc_mat_rt = false;
     output_sigc_mat_rf = false;
@@ -948,6 +960,8 @@ void G0W0::write_sigc_rf_output_files() const
 void G0W0::write_sigc_matrices_KS_binary(const std::string &output_dir,
                                          const std::string &source) const
 {
+    const int istate_end =
+        istate_output_mat_end < 0 ? desc_sigc_is_ik_f_KS.m() : istate_output_mat_end;
     char fn[100];
     for (const auto &ispin_sigc: sigc_is_ik_f_KS)
     {
@@ -962,6 +976,7 @@ void G0W0::write_sigc_matrices_KS_binary(const std::string &output_dir,
                               source.c_str(), ispin, ik, ifreq);
                 write_sigc_matrix_binary_parallel(
                     freq_sigc.second, desc_sigc_is_ik_f_KS,
+                    istate_output_mat_start, istate_end,
                     path_as_directory(output_dir) + fn);
             }
         }

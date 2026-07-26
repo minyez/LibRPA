@@ -192,6 +192,8 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             normal_pair(istate_ref_hedin_shift),
             normal_pair(ifreq_output_wc_start),
             normal_pair(ifreq_output_wc_end),
+            normal_pair(istate_output_mat_start),
+            normal_pair(istate_output_mat_end),
         };
 
     const std::vector<std::pair<std::string, std::string>> str_params

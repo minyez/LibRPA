@@ -518,11 +518,16 @@ static void test_disabled_component_symmetry_keeps_shared_context()
     opts.use_symmetry_exx = LIBRPA_SWITCH_OFF;
     opts.use_symmetry_rpa = LIBRPA_SWITCH_OFF;
     opts.use_symmetry_gw = LIBRPA_SWITCH_OFF;
+    assert(opts.istate_output_mat_start == 0);
+    assert(opts.istate_output_mat_end == -1);
+    opts.istate_output_mat_end = 1;
 
     initialize_ds_exx(ds, opts);
     initialize_ds_chi0(ds, opts);
     initialize_ds_g0w0(ds, opts);
 
+    assert(ds.p_g0w0->istate_output_mat_start == 0);
+    assert(ds.p_g0w0->istate_output_mat_end == 1);
     assert(ds.symmetry_context.available);
     assert(ds.symmetry_context.kstars.size() == 1);
     assert(ds.symmetry_context.kstars.front().star_index == 17);

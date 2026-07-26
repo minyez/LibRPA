@@ -292,6 +292,15 @@ void parse_inputfile_to_params(const std::string &fn)
         parser.parse_bool("output_gw_sigc_mat", btmp, flag);
         if (flag == 0) opts.output_gw_sigc_ks_mat_kf = get_switch(btmp);
     }
+    _parse_int(opts, istate_output_mat_start);
+    _parse_int(opts, istate_output_mat_end);
+    if (opts.istate_output_mat_start < 0)
+        throw std::runtime_error("istate_output_mat_start must be non-negative");
+    if (opts.istate_output_mat_end >= 0 &&
+        opts.istate_output_mat_end <= opts.istate_output_mat_start)
+        throw std::runtime_error(
+            "istate_output_mat_end must be negative or greater than "
+            "istate_output_mat_start");
     _parse_switch(opts, output_gw_sigc_mat_kf);
     _parse_switch(opts, output_gw_sigc_mat_rt);
     _parse_switch(opts, output_gw_sigc_mat_rf);

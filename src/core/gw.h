@@ -73,6 +73,8 @@ public:
 
     bool output_sigc_ks_mat_kf;
     bool output_sigc_ks_kf;
+    int istate_output_mat_start;
+    int istate_output_mat_end;
     bool output_sigc_mat_kf;
     bool output_sigc_mat_rt;
     bool output_sigc_mat_rf;
