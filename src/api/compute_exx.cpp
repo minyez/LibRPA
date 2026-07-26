@@ -205,6 +205,14 @@ void librpa_get_exx_pot_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts, con
     // TODO: make choosing blacs/non-blacs method a run time option
     pexx->build_KS_kgrid_blacs(pds->blacs_h, opts.use_gpu_replace_scalapack);
     pds->is_band_calc_done = false;
+    if (opts.output_exx_ks_mat_k == LIBRPA_SWITCH_ON)
+    {
+        profiler.start("exx_export_KS", "Export exact exchange in KS basis");
+        pexx->write_exx_matrices_KS_binary(
+            opts.output_dir, "kgrid",
+            opts.istate_output_mat_start, opts.istate_output_mat_end);
+        profiler.stop("exx_export_KS");
+    }
     const int n_states_calc = i_state_high - i_state_low;
     const bool publish_local_values =
         opts.use_kpara_scf_eigvec == LIBRPA_SWITCH_ON || pds->blacs_h.myid == 0;
@@ -270,6 +278,14 @@ void librpa_get_exx_pot_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts, co
         pexx->build_KS_band_blacs(pds->mf_band.get_eigenvectors(), pds->kfrac_band_list,
                                   bvk_remap, pds->blacs_h, opts.use_gpu_replace_scalapack);
         pds->is_band_calc_done = true;
+    }
+    if (opts.output_exx_ks_mat_k == LIBRPA_SWITCH_ON)
+    {
+        profiler.start("exx_export_KS", "Export exact exchange in KS basis");
+        pexx->write_exx_matrices_KS_binary(
+            opts.output_dir, "band_" + std::to_string(pds->band_data_id),
+            opts.istate_output_mat_start, opts.istate_output_mat_end);
+        profiler.stop("exx_export_KS");
     }
     const int n_states_calc = i_state_high - i_state_low;
     const bool publish_local_values =

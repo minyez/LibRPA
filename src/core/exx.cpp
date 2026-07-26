@@ -4,6 +4,7 @@
 #include <omp.h>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
 #include <iterator>
 #include <set>
 #include <sstream>
@@ -11,7 +12,9 @@
 #include <utility>
 #include <vector>
 
+#include "../io/fs.h"
 #include "../io/global_io.h"
+#include "../io/output_gw.h"
 #include "../io/stl_io_helper.h"
 #include "../math/lapack_connector.h"
 #include "../math/utils_matrix_m_mpi.h"
@@ -1162,6 +1165,11 @@ void Exx::build_KS_blacs(const std::map<int, std::map<int, std::map<int, Complex
     desc_wfc_device.init(n_aos, n_bands, block_nao, block_nband,
                          use_klocal_rotation ? desc_wfc_target.irsrc() : 0,
                          use_klocal_rotation ? desc_wfc_target.icsrc() : 0);
+    desc_exx_KS.reset_handler(rotation_blacs_h);
+    if (use_klocal_rotation)
+        desc_exx_KS.init(n_bands, n_bands, block_nband, block_nband, 0, 0);
+    else
+        desc_exx_KS.init(n_bands, n_bands, n_bands, n_bands, 0, 0);
 
     auto Hexx_nao_nao_opt = init_local_mat<complex<double>>(desc_nao_nao_opt, MAJOR::COL);
     auto Hexx_nband_nband_opt = init_local_mat<complex<double>>(desc_nband_nband_opt, MAJOR::COL);
@@ -1858,6 +1866,44 @@ void Exx::build_KS_band_blacs(const std::map<int, std::map<int, std::map<int, Co
 {
     this->build_KS_blacs(wfc_band, kfrac_band, bvk_remap, blacs_ctxt_h,
                          use_gpu_replace_scalapack, true);
+}
+
+void Exx::write_exx_matrices_KS_binary(const std::string &output_dir,
+                                       const std::string &source,
+                                       const int istate_start,
+                                       const int istate_end_option) const
+{
+    const int istate_end =
+        istate_end_option < 0 ? desc_exx_KS.m() : istate_end_option;
+    char fn[100];
+    for (const auto &[ispin, exx_ik]: exx_KS)
+    {
+        for (const auto &[ik, exx]: exx_ik)
+        {
+            const Matz *exx_local = &exx;
+            Matz exx_empty;
+            if (exx.nr() != desc_exx_KS.m_loc() ||
+                exx.nc() != desc_exx_KS.n_loc())
+            {
+                const bool root_dense_layout =
+                    desc_exx_KS.mb() == desc_exx_KS.m() &&
+                    desc_exx_KS.nb() == desc_exx_KS.n();
+                if (!root_dense_layout || desc_exx_KS.is_src())
+                    throw LIBRPA_RUNTIME_ERROR(
+                        "EXX matrix local block does not match its descriptor");
+                exx_empty =
+                    init_local_mat<complex<double>>(desc_exx_KS, MAJOR::COL);
+                exx_local = &exx_empty;
+            }
+
+            std::snprintf(fn, sizeof(fn),
+                          "Exx_k_mn_%s_ispin_%d_ik_%d.bin",
+                          source.c_str(), ispin, ik);
+            write_ks_matrix_binary_parallel(
+                *exx_local, desc_exx_KS, istate_start, istate_end,
+                path_as_directory(output_dir) + fn);
+        }
+    }
 }
 
 void Exx::reset_rspace()

@@ -59,6 +59,8 @@ class Exx
         std::map<int, std::map<int, std::map<int, std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, Matz>>>>>> exx_IJR_cplx;
         //! exact-exchange Hamiltonian in the basis of KS states, dimension (nspins, n_kpoints, n_bands, n_bands)
         std::map<int, std::map<int, Matz>> exx_KS;
+        //! Descriptor for distributed KS exact-exchange matrix blocks.
+        ArrayDesc desc_exx_KS;
         //! exact-exchange energy of each state, dimension (nspins, n_kpoints, n_bands). This is actually the diagonal elements of Heex_KS.
         std::map<int, std::map<int, std::map<int, double>>> Eexx;
 
@@ -91,6 +93,10 @@ class Exx
                                  const AtomPairBvKRemap<atom_t> &bvk_remap,
                                  const BlacsCtxtHandler &blacs_ctxt_h,
                                  bool use_gpu_replace_scalapack = false);
+        void write_exx_matrices_KS_binary(const std::string &output_dir,
+                                          const std::string &source,
+                                          int istate_start,
+                                          int istate_end) const;
         void reset_rspace();
         void reset_kspace();
 };
