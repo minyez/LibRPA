@@ -2320,6 +2320,9 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                     rpa.free_Gs_pos();
                     global::profiler.stop("chi0_libri_routing_free_gf");
 
+                    // Release memory to OS
+                    release_free_mem();
+
                     // collect chi0 on selected atpairs and, for q/uhap split, selected R vectors
                     global::profiler.start("chi0_libri_routing_collect_Rs", "Collect R blocks");
                     if (comm_h.nprocs > 1)
