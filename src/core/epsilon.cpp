@@ -652,10 +652,10 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
     auto coul_chi0_block = init_local_mat<double>(desc_nabf_nabf_opt, MAJOR::COL);
     std::vector<int> ipiv(desc_nabf_nabf_opt.m_loc() + desc_nabf_nabf_opt.mb());
 
-    double* chi0_block_ptr;
-    double* coul_block_ptr;
-    double* coul_chi0_block_ptr;
-    int* ipiv_ptr;
+    double* chi0_block_ptr = chi0_block.ptr();
+    double* coul_block_ptr = coul_block.ptr();
+    double* coul_chi0_block_ptr = coul_chi0_block.ptr();
+    int* ipiv_ptr = ipiv.data();
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
     if(use_gpu_replace_scalapack)
     {
@@ -665,14 +665,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
         DEVICE_CHECK(deviceMallocAsync((void**)&coul_chi0_block_ptr, coul_chi0_block.size() * sizeof(double), blacs_h.ddla_handle->stream));
         DEVICE_CHECK(deviceMallocAsync((void**)&ipiv_ptr, ipiv.size() * sizeof(int), blacs_h.ddla_handle->stream));
     }
-    else
 #endif
-    {
-        chi0_block_ptr = chi0_block.ptr();
-        coul_block_ptr = coul_block.ptr();
-        coul_chi0_block_ptr = coul_chi0_block.ptr();
-        ipiv_ptr = ipiv.data();
-    }
     const auto &qpts = chi0.active_qpoints();
     complex<double> tot_RPA_energy(0.0, 0.0);
     map<Vector3_Order<double>, complex<double>> cRPA_q;
@@ -2609,11 +2602,11 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     auto coul_chi0_block = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
     auto coulwc_block = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
 
-    std::complex<double>* chi0_block_ptr;
-    std::complex<double>* coul_block_ptr;
-    std::complex<double>* coul_chi0_block_ptr;
-    std::complex<double>* coul_eigen_block_ptr;
-    std::complex<double>* coulwc_block_ptr;
+    std::complex<double>* chi0_block_ptr = chi0_block.ptr();
+    std::complex<double>* coul_block_ptr = coul_block.ptr();
+    std::complex<double>* coul_chi0_block_ptr = coul_chi0_block.ptr();
+    std::complex<double>* coul_eigen_block_ptr = coul_eigen_block.ptr();
+    std::complex<double>* coulwc_block_ptr = coulwc_block.ptr();
 
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
     if (use_gpu_replace_scalapack)
@@ -2621,15 +2614,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         desc_nabf_nabf_opt.set_ddla_desc(blacs_h.ddla_handle); // set the descriptor for the device
         DEVICE_CHECK(deviceMallocAsync((void**)&chi0_block_ptr, chi0_block.size() * sizeof(std::complex<double>), blacs_h.ddla_handle->stream));
     }
-    else
 #endif
-    {
-        chi0_block_ptr = chi0_block.ptr();
-        coul_block_ptr = coul_block.ptr();
-        coul_chi0_block_ptr = coul_chi0_block.ptr();
-        coul_eigen_block_ptr = coul_eigen_block.ptr();
-        coulwc_block_ptr = coulwc_block.ptr();
-    }
 #if defined(LIBRPA_USE_ELPA)
     if(use_elpa_sqrt_coulomb)
         desc_nabf_nabf_opt.set_elpa_handle(use_gpu_replace_scalapack);
@@ -2688,6 +2673,13 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
             chi0.symmetry_context, abf_layouts, atom_nabf, chi0.pbc);
 
     vec<double> eigenvalues(n_abf);
+    global::profiler.stop("compute_Wc_freq_q_blacs_init");
+    librpa_int::global::lib_printf_root("Time for Wc initialization (seconds, Wall/CPU): %f %f\n",
+            global::profiler.get_wall_time_last("compute_Wc_freq_q_blacs_init"),
+            global::profiler.get_cpu_time_last("compute_Wc_freq_q_blacs_init"));
+
+    global::profiler.start("compute_Wc_freq_q_work");
+#ifdef LIBRPA_USE_LIBRI
     const auto validate_coulomb_block_shape = [&](const char *stage, const int mu,
                                                   const int nu,
                                                   const Vector3_Order<double> &q,
@@ -2705,13 +2697,6 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                   "legacy shrink Coulomb files cannot be used with full-chi Wc.";
         throw LIBRPA_RUNTIME_ERROR(errmsg.str());
     };
-    global::profiler.stop("compute_Wc_freq_q_blacs_init");
-    librpa_int::global::lib_printf_root("Time for Wc initialization (seconds, Wall/CPU): %f %f\n",
-            global::profiler.get_wall_time_last("compute_Wc_freq_q_blacs_init"),
-            global::profiler.get_cpu_time_last("compute_Wc_freq_q_blacs_init"));
-
-    global::profiler.start("compute_Wc_freq_q_work");
-#ifdef LIBRPA_USE_LIBRI
     for (const auto &q : qpts)
     {
         const int iq = std::distance(qpts.cbegin(), std::find(qpts.cbegin(), qpts.cend(), q));
