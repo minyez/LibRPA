@@ -4,6 +4,7 @@
 #include "../io/global_io.h"
 #include "../io/stl_io_helper.h"
 
+#include "mpi_test_config.h"
 #include "testutils.h"
 
 #include <iostream>
@@ -204,7 +205,7 @@ int main (int argc, char **argv)
 {
     using namespace librpa_int::global;
     int provided;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    MPI_Init_thread(&argc, &argv, LIBRPA_MPI_THREAD_LEVEL, &provided);
     init_global_mpi(MPI_COMM_WORLD);
     init_global_io();
 

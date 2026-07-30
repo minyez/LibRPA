@@ -4,6 +4,7 @@
 #include "../mpi/global_mpi.h"
 #include "../mpi/utils_blacs.h"
 #include "../src/io/global_io.h"
+#include "mpi_test_config.h"
 #include "testutils.h"
 
 using namespace std;
@@ -1083,7 +1084,7 @@ static void finalize()
 int main (int argc, char *argv[])
 {
     int provided;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    MPI_Init_thread(&argc, &argv, LIBRPA_MPI_THREAD_LEVEL, &provided);
     initialize();
 
     // test_pgemm<float>(-2, 1);

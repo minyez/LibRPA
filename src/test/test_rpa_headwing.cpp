@@ -22,6 +22,7 @@
 #include "../mpi/base_mpi.h"
 #include "../mpi/kpoint_blacs_parallel_context.h"
 #include "../utils/constants.h"
+#include "mpi_test_config.h"
 
 using librpa_int::ArrayDesc;
 using librpa_int::AtomicBasis;
@@ -1827,7 +1828,7 @@ void test_abf_space_wing_rewrite_matches_coulomb_basis(const BlacsCtxtHandler &b
 int main(int argc, char *argv[])
 {
     int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    MPI_Init_thread(&argc, &argv, LIBRPA_MPI_THREAD_LEVEL, &provided);
     librpa_int::global::init_global_mpi(MPI_COMM_WORLD);
     librpa_int::global::init_global_io(false, "stdout", false);
 

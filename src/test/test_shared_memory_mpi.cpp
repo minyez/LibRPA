@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "../mpi/mpi_shm.h"
+#include "mpi_test_config.h"
 
 using namespace librpa_int;
 
@@ -101,7 +102,7 @@ void test_move_keeps_window(MPI_Comm comm)
 int main(int argc, char *argv[])
 {
     int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    MPI_Init_thread(&argc, &argv, LIBRPA_MPI_THREAD_LEVEL, &provided);
 
     MPI_Comm shared_comm = MPI_COMM_NULL;
     int ierr =

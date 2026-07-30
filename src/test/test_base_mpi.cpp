@@ -2,6 +2,7 @@
 #include <stdexcept>
 
 #include "../mpi/base_mpi.h"
+#include "mpi_test_config.h"
 #include "testutils.h"
 
 using namespace librpa_int;
@@ -315,7 +316,7 @@ void test_find_mpi_owner_rank()
 int main(int argc, char *argv[])
 {
     int provided;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    MPI_Init_thread(&argc, &argv, LIBRPA_MPI_THREAD_LEVEL, &provided);
 
     size_global = get_mpi_size(MPI_COMM_WORLD);
 

@@ -336,7 +336,7 @@ elseif(_LIBRPA_USE_BUNDLED_LIBCOMM)
 else()
   set(_LIBRPA_MPI_THREAD_LEVEL MPI_THREAD_MULTIPLE)
 endif()
-message(STATUS "Driver MPI thread level         : ${_LIBRPA_MPI_THREAD_LEVEL}")
+message(STATUS "Executable MPI thread level     : ${_LIBRPA_MPI_THREAD_LEVEL}")
 
 if(LIBRPA_USE_CUDA)
   # find_package(CUDA REQUIRED)

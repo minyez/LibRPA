@@ -13,6 +13,7 @@
 #include "../mpi/base_blacs.h"
 #include "../mpi/base_mpi.h"
 #include "../utils/constants.h"
+#include "mpi_test_config.h"
 
 using namespace librpa_int;
 
@@ -515,7 +516,7 @@ void test_dense_wc_real_ct_projects_large_imaginary_residual()
 int main(int argc, char *argv[])
 {
     int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    MPI_Init_thread(&argc, &argv, LIBRPA_MPI_THREAD_LEVEL, &provided);
     librpa_int::global::init_global_mpi(MPI_COMM_WORLD);
     librpa_int::global::init_global_io(false, "stdout", false);
 

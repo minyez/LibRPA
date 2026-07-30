@@ -1,6 +1,7 @@
 #include "../mpi/base_blacs.h"
 #include "../mpi/global_mpi.h"
 
+#include "mpi_test_config.h"
 #include "testutils.h"
 
 #include <cassert>
@@ -126,7 +127,7 @@ int main (int argc, char *argv[])
     using namespace librpa_int::global;
 
     int provided;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    MPI_Init_thread(&argc, &argv, LIBRPA_MPI_THREAD_LEVEL, &provided);
 
     init_global_mpi(MPI_COMM_WORLD);
     blacs_ctxt_h.reset_comm(mpi_comm_global);

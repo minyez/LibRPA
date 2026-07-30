@@ -7,6 +7,7 @@
 #include "../utils/constants.h"
 #include "librpa_enums.h"
 #include "librpa_options.h"
+#include "mpi_test_config.h"
 #include "testutils.h"
 
 template <typename T, typename = void>
@@ -648,7 +649,7 @@ int main (int argc, char *argv[])
     using namespace librpa_int;
     using namespace librpa_int::global;
     int provided;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    MPI_Init_thread(&argc, &argv, LIBRPA_MPI_THREAD_LEVEL, &provided);
 
     int size_global = get_mpi_size(MPI_COMM_WORLD);
     if (size_global != 4) throw std::runtime_error("test imposes 4 MPI processes");
