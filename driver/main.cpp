@@ -32,6 +32,18 @@ using namespace librpa_int::global;
 #define LIBRPA_MPI_THREAD_LEVEL MPI_THREAD_MULTIPLE
 #endif
 
+static const char *mpi_thread_level_name(const int level)
+{
+    switch (level)
+    {
+        case MPI_THREAD_SINGLE: return "MPI_THREAD_SINGLE";
+        case MPI_THREAD_FUNNELED: return "MPI_THREAD_FUNNELED";
+        case MPI_THREAD_SERIALIZED: return "MPI_THREAD_SERIALIZED";
+        case MPI_THREAD_MULTIPLE: return "MPI_THREAD_MULTIPLE";
+        default: return "unknown";
+    }
+}
+
 static void initialize_mpi_env(int argc, char **argv)
 {
     // MPI Initialization
@@ -57,6 +69,7 @@ static void initialize_librpa()
     lib_printf_root("Total number of tasks    : %5d\n", size_global);
     lib_printf_root("Total number of nodes    : %5d\n", size_inter);
     lib_printf_root("Maximal number of threads: %3d\n", omp_get_max_threads());
+    lib_printf_root("MPI thread support level : %s\n", mpi_thread_level_name(LIBRPA_MPI_THREAD_LEVEL));
     mpi_comm_global_h.barrier();
     lib_printf_root("MPI tasks information:\n");
     mpi_comm_global_h.barrier();
