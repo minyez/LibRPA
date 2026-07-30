@@ -104,8 +104,11 @@ void pgemm(
     std::vector<T> h_temp(std::max(count_a, count_b));
     #endif
     for(int i=0;i<buffer_max;i++){
-        DEVICE_CHECK(deviceMallocAsync(&d_A_temp[i], sizeof(T) * count_a, stream_data));
-        DEVICE_CHECK(deviceMallocAsync(&d_B_temp[i], sizeof(T) * count_b, stream_data));
+        // transport_block and GEMM consume these buffers on the main stream.
+        // Allocate them there as well so stream-ordered allocation completes
+        // before the first cross-rank transfer writes into the buffers.
+        DEVICE_CHECK(deviceMallocAsync(&d_A_temp[i], sizeof(T) * count_a, stream));
+        DEVICE_CHECK(deviceMallocAsync(&d_B_temp[i], sizeof(T) * count_b, stream));
     }
 
     int temp_buffer = 0;
@@ -185,8 +188,8 @@ void pgemm(
     DEVICE_CHECK(deviceStreamSynchronize(stream));
     DEVICE_CHECK(deviceStreamSynchronize(stream_data));
     for(int i=0;i<buffer_max;i++){
-        DEVICE_CHECK(deviceFreeAsync(d_A_temp[i], stream_data));
-        DEVICE_CHECK(deviceFreeAsync(d_B_temp[i], stream_data));
+        DEVICE_CHECK(deviceFreeAsync(d_A_temp[i], stream));
+        DEVICE_CHECK(deviceFreeAsync(d_B_temp[i], stream));
     }
     return;
 }
