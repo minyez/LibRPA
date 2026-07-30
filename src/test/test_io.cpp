@@ -100,7 +100,7 @@ int main (int argc, char *argv[])
     std::ofstream(unreadable_path).close();
     std::filesystem::permissions(unreadable_path, std::filesystem::perms::none);
     assert(!is_readable_file(unreadable_path));
-    assert(throws_with(unreadable_path, "lacks read permission"));
+    assert(throws_with(unreadable_path, "Cannot open file for reading"));
     std::filesystem::permissions(
         unreadable_path,
         std::filesystem::perms::owner_read | std::filesystem::perms::owner_write);

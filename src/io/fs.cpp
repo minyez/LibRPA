@@ -1,7 +1,9 @@
 #include "fs.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <system_error>
 
@@ -66,18 +68,11 @@ bool ends_with(const std::string &text, const std::string &suffix)
         text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0);
 }
 
-bool has_read_permission(const std::filesystem::perms permissions)
-{
-    using perms = std::filesystem::perms;
-    return (permissions & (perms::owner_read | perms::group_read | perms::others_read)) !=
-           perms::none;
-}
-
 std::string unreadable_file_reason(const std::string &file_path)
 {
     if (file_path.empty())
     {
-        return "Input file path is empty";
+        return "File path is empty";
     }
 
     std::error_code ec;
@@ -85,23 +80,32 @@ std::string unreadable_file_reason(const std::string &file_path)
     {
         if (ec)
         {
-            return "Cannot inspect input file " + file_path + ": " + ec.message();
+            return "Cannot inspect file " + file_path + ": " + ec.message();
         }
-        return "Input file does not exist: " + file_path;
+        return "File does not exist: " + file_path;
     }
 
     const auto status = std::filesystem::status(file_path, ec);
     if (ec)
     {
-        return "Cannot inspect input file permissions: " + file_path + ": " + ec.message();
+        return "Cannot inspect file permissions: " + file_path + ": " + ec.message();
     }
     if (!std::filesystem::is_regular_file(status))
     {
-        return "Input path is not a regular file: " + file_path;
+        return "Path is not a regular file: " + file_path;
     }
-    if (!has_read_permission(status.permissions()))
+
+    errno = 0;
+    std::ifstream input(file_path, std::ios::binary);
+    if (!input.is_open())
     {
-        return "Input file lacks read permission: " + file_path;
+        const int open_errno = errno;
+        std::string reason = "Cannot open file for reading: " + file_path;
+        if (open_errno != 0)
+        {
+            reason += ": " + std::error_code(open_errno, std::generic_category()).message();
+        }
+        return reason;
     }
     return "";
 }
