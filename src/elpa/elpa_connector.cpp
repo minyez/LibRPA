@@ -215,8 +215,10 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
     T *d_W;
     if(use_gpu_replace_scalapack)
     {
+        profiler.start("power_hemat_blacs_2_device_prepare");
         ddla::DEVICE_CHECK(ddla::deviceMallocAsync((void**)&d_W, n * sizeof(T), ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(d_A, A_local_real.ptr(), A_local_real.size() * sizeof(T), ddla::deviceMemcpyHostToDevice, ddla_handle->stream));
+        profiler.stop("power_hemat_blacs_2_device_prepare");
         A = d_A;
         Z = d_Z;
         W_uni = d_W;
@@ -228,15 +230,19 @@ matrix_m<std::complex<T>> power_hemat_elpa_real(
         W_uni = W;
     }
     int error;
+    profiler.start("power_hemat_blacs_2_elpa_eigenvectors");
     elpa_eigenvectors(ad_A.elpa_handle(), A, W_uni, Z, &error);
+    profiler.stop("power_hemat_blacs_2_elpa_eigenvectors");
     if(error != ELPA_OK){
         throw std::runtime_error("elpa eigenvectors error\n");
     }
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     if(use_gpu_replace_scalapack){
+        profiler.start("power_hemat_blacs_2_device_download");
         ddla::DEVICE_CHECK(deviceMemcpyAsync(W, W_uni, n * sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(deviceMemcpyAsync(Z_local_real.ptr(), Z, Z_local_real.size()*sizeof(T), ddla::deviceMemcpyDeviceToHost, ddla_handle->stream));
         ddla::DEVICE_CHECK(ddla::deviceStreamSynchronize(ddla_handle->stream));
+        profiler.stop("power_hemat_blacs_2_device_download");
     }
 #endif
     for (int i = 0; i < n; i++)
