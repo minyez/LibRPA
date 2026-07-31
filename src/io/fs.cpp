@@ -74,6 +74,10 @@ std::string unreadable_file_reason(const std::string &file_path)
     {
         return "File path is empty";
     }
+    if (ends_with(std::filesystem::path(file_path).filename().string(), ".lock"))
+    {
+        return "Lock file is not valid input: " + file_path;
+    }
 
     std::error_code ec;
     if (!std::filesystem::exists(file_path, ec))
@@ -140,6 +144,7 @@ std::vector<std::string> discover_files(const std::string &dir_path,
     for (const auto &entry: std::filesystem::directory_iterator(dir_path))
     {
         const auto filename = entry.path().filename().string();
+        if (ends_with(filename, ".lock")) continue;
         if (starts_with(filename, prefix) && ends_with(filename, suffix))
         {
             const auto file_path = entry.path().string();

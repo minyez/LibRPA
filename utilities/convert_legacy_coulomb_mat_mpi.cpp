@@ -564,6 +564,7 @@ std::vector<int> read_atom_naux_from_cs(const fs::path &input_dir,
     {
         if (!entry.is_regular_file()) continue;
         const auto name = entry.path().filename().string();
+        if (ends_with(name, ".lock")) continue;
         if (starts_with(name, ri_prefix)) files.push_back(entry.path());
     }
     std::sort(files.begin(), files.end());

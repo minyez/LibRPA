@@ -45,7 +45,10 @@ int main (int argc, char *argv[])
     std::ofstream(join_path("librpa.d/fs_discovery", "alpha_001.dat")).close();
     std::ofstream(join_path("librpa.d/fs_discovery", "alpha_002.txt")).close();
     std::ofstream(join_path("librpa.d/fs_discovery", "beta_001.dat")).close();
+    const auto lock_path = join_path("librpa.d/fs_discovery", "alpha_003.dat.lock");
+    std::ofstream(lock_path).close();
     assert(is_readable_file(join_path("librpa.d/fs_discovery", "alpha_001.dat")));
+    assert(!is_readable_file(lock_path));
     assert(!is_readable_file(join_path("librpa.d/fs_discovery", "missing.dat")));
 
     const auto alpha_all = discover_files_with_prefix("librpa.d/fs_discovery", "alpha_");
@@ -70,6 +73,7 @@ int main (int argc, char *argv[])
         }
         return false;
     };
+    assert(throws_with(lock_path, "Lock file is not valid input"));
     assert(throws_with(join_path("librpa.d/fs_discovery", "missing.perm"), "does not exist"));
     assert(throws_with("librpa.d/nested/path", "not a regular file"));
 

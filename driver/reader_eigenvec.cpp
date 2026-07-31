@@ -1,7 +1,5 @@
 #include "reader_eigenvec.h"
 
-#include <dirent.h>
-
 #include <algorithm>
 #include <cassert>
 #include <complex>
@@ -90,21 +88,8 @@ bool selected_driver_ik(const int ik)
 
 std::vector<std::string> eigenvector_files(const std::string &dir_path)
 {
-    std::vector<std::string> files;
-    DIR *dir = opendir(dir_path.c_str());
-    if (dir == nullptr) return files;
-
-    while (auto *ptr = readdir(dir))
-    {
-        const std::string name(ptr->d_name);
-        if (name.find(driver::driver_params.prefix_eigvecs_scf) == 0)
-        {
-            files.emplace_back(dir_path + name);
-        }
-    }
-    closedir(dir);
-    std::sort(files.begin(), files.end());
-    return files;
+    return librpa_int::discover_files_with_prefix(
+        dir_path, driver::driver_params.prefix_eigvecs_scf);
 }
 
 template <typename ShouldReadIk, typename StoreIk>
