@@ -13,6 +13,7 @@
 | [`LIBRPA_ENABLE_FORTRAN_BIND`](#librpa-enable-fortran-bind) | bool              | `OFF`      |
 | [`LIBRPA_FORTRAN_DP`](#librpa-fortran-dp)                   | string or integer | `c_double` |
 | [`LIBRPA_ENABLE_DRIVER`](#librpa-enable-driver)             | bool              | `ON`       |
+| [`LIBRPA_MPI_THREAD_LEVEL`](#librpa-mpi-thread-level)       | string            | automatic  |
 | [`LIBRPA_VERBOSE_OUTPUT`](#librpa-verbose-output)           | bool              | `ON`       |
 | [`LIBRPA_ENABLE_TEST`](#librpa-enable-test)                 | bool              | `ON`       |
 | [`LIBRPA_ENABLE_CPP_TEST`](#librpa-enable-cpp-test)         | bool              | `ON`       |
@@ -273,6 +274,25 @@ This option is meaningful only if `LIBRPA_ENABLE_FORTRAN_BIND=ON`.
 ## `LIBRPA_ENABLE_DRIVER`
 
 When enabled, the LibRPA driver executable is built.
+
+(librpa-mpi-thread-level)=
+## `LIBRPA_MPI_THREAD_LEVEL`
+
+Selects the MPI thread-support level requested by the LibRPA driver and C++
+tests. Supported values are `MPI_THREAD_SINGLE`, `MPI_THREAD_FUNNELED`,
+`MPI_THREAD_SERIALIZED`, and `MPI_THREAD_MULTIPLE`.
+
+When left empty, LibRPA selects the value from the enabled components: CPU
+ELPA builds use `MPI_THREAD_MULTIPLE`, builds with bundled LibComm use
+`MPI_THREAD_FUNNELED`, and other builds use `MPI_THREAD_MULTIPLE`. An explicit
+value takes precedence over this automatic selection:
+
+```sh
+cmake -B build -DLIBRPA_MPI_THREAD_LEVEL=MPI_THREAD_FUNNELED
+```
+
+The override must remain compatible with the selected dependencies and their
+threading requirements.
 
 (librpa-verbose-output)=
 ## `LIBRPA_VERBOSE_OUTPUT`

@@ -41,6 +41,8 @@ option(LIBRPA_ENABLE_FORTRAN_TEST  "Flag to build tests for Fortran bindings" ON
 
 # Customizable cmake macro
 set(LIBRPA_FORTRAN_DP "c_double" CACHE STRING "Kind of double precision that the Fortran binding uses to interface the user code")
+set(LIBRPA_MPI_THREAD_LEVEL "${LIBRPA_MPI_THREAD_LEVEL}" CACHE STRING "MPI thread level requested by LibRPA executables; empty selects automatically")
+set_property(CACHE LIBRPA_MPI_THREAD_LEVEL PROPERTY STRINGS "" MPI_THREAD_SINGLE MPI_THREAD_FUNNELED MPI_THREAD_SERIALIZED MPI_THREAD_MULTIPLE)
 set(EXTERNAL_ELPA_DIR "" CACHE PATH "External ELPA installation prefix")
 set(LIBRPA_BUNDLED_ELPA_VERSION "2026.02.001" CACHE STRING "Bundled ELPA version")
 set_property(CACHE LIBRPA_BUNDLED_ELPA_VERSION PROPERTY STRINGS "2026.02.001")
@@ -329,14 +331,28 @@ if(LIBRPA_USE_LIBRI)
   add_compile_definitions("LIBRPA_USE_LIBRI")
 endif()
 
-if((LIBRPA_USE_EXTERNAL_ELPA OR LIBRPA_USE_BUNDLED_ELPA) AND NOT (LIBRPA_USE_CUDA OR LIBRPA_USE_HIP))
-  set(_LIBRPA_MPI_THREAD_LEVEL MPI_THREAD_MULTIPLE)
-elseif(_LIBRPA_USE_BUNDLED_LIBCOMM)
-  set(_LIBRPA_MPI_THREAD_LEVEL MPI_THREAD_FUNNELED)
-else()
-  set(_LIBRPA_MPI_THREAD_LEVEL MPI_THREAD_MULTIPLE)
+if(NOT LIBRPA_MPI_THREAD_LEVEL)
+  if((LIBRPA_USE_EXTERNAL_ELPA OR LIBRPA_USE_BUNDLED_ELPA) AND NOT (LIBRPA_USE_CUDA OR LIBRPA_USE_HIP))
+    set(LIBRPA_MPI_THREAD_LEVEL MPI_THREAD_MULTIPLE)
+  elseif(_LIBRPA_USE_BUNDLED_LIBCOMM)
+    set(LIBRPA_MPI_THREAD_LEVEL MPI_THREAD_FUNNELED)
+  else()
+    set(LIBRPA_MPI_THREAD_LEVEL MPI_THREAD_MULTIPLE)
+  endif()
 endif()
-message(STATUS "Executable MPI thread level     : ${_LIBRPA_MPI_THREAD_LEVEL}")
+set(_librpa_supported_mpi_thread_levels
+  MPI_THREAD_SINGLE
+  MPI_THREAD_FUNNELED
+  MPI_THREAD_SERIALIZED
+  MPI_THREAD_MULTIPLE)
+list(FIND _librpa_supported_mpi_thread_levels "${LIBRPA_MPI_THREAD_LEVEL}" _librpa_mpi_thread_level_index)
+if(_librpa_mpi_thread_level_index EQUAL -1)
+  message(FATAL_ERROR
+    "Invalid LIBRPA_MPI_THREAD_LEVEL=${LIBRPA_MPI_THREAD_LEVEL}; expected one of: ${_librpa_supported_mpi_thread_levels}")
+endif()
+unset(_librpa_mpi_thread_level_index)
+unset(_librpa_supported_mpi_thread_levels)
+message(STATUS "Executable MPI thread level     : ${LIBRPA_MPI_THREAD_LEVEL}")
 
 if(LIBRPA_USE_CUDA)
   # find_package(CUDA REQUIRED)
