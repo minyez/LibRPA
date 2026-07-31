@@ -617,8 +617,9 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
     using librpa_int::global::lib_printf;
 
     CorrEnergy corr;
-    if (blacs_h.myid == 0){
-        if(use_gpu_replace_scalapack)
+    if (blacs_h.myid == 0)
+    {
+        if (use_gpu_replace_scalapack)
             lib_printf("Calculating EcRPA with BLACS GPU 2D gamma_only\n");
         else
             lib_printf("Calculating EcRPA with BLACS/ScaLAPACK 2D gamma_only\n");
@@ -630,10 +631,10 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
     const int n_abf = chi0.atbasis_abf.nb_total;
     const auto part_range = chi0.atbasis_abf.get_part_range();
     auto nbs_ = chi0.atbasis_abf.get_atom_nbs();
-    std::cout << "n_abf " << n_abf << std::endl;
-    std::cout << "n_atoms " << chi0.atbasis_abf.n_atoms << std::endl;
-    std::cout << "part_range " << part_range[0] << " " << part_range[1] << std::endl;
-    std::cout << "nbs_ " << nbs_[0] << " " << nbs_[1] << std::endl;
+    // std::cout << "n_abf " << n_abf << std::endl;
+    // std::cout << "n_atoms " << chi0.atbasis_abf.n_atoms << std::endl;
+    // std::cout << "part_range " << part_range[0] << " " << part_range[1] << std::endl;
+    // std::cout << "nbs_ " << nbs_[0] << " " << nbs_[1] << std::endl;
 
     const auto &comm_h = blacs_h.comm_h();
     comm_h.barrier();
