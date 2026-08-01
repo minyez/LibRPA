@@ -8,6 +8,7 @@
 #include <mpi.h>
 #include <omp.h>
 #include <exception>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 
@@ -24,6 +25,7 @@
 // #include "task_scRPA_band.h"
 
 using namespace driver;
+using namespace librpa_int;
 using namespace librpa_int::global;
 
 // Default thread support level.
@@ -56,12 +58,11 @@ static void initialize_mpi_env(int argc, char **argv)
     }
 }
 
-static void initialize_librpa()
+static void initialize_librpa(bool &initialized)
 {
-    using namespace librpa_int::global;
-
     librpa::set_output_level(driver::driver_params.output_level);
     librpa::init_global(LIBRPA_SWITCH_OFF);
+    initialized = true;
 
     // Global profiler begins right after MPI is initialized
     profiler.start("driver_total", "Total for driver");
@@ -90,6 +91,32 @@ static void initialize_librpa()
 
     // Create the handler before parsing any data or computation
     driver::h.init(MPI_COMM_WORLD);
+}
+
+static void report_driver_error(const char *message)
+{
+    int initialized = 0;
+    int finalized = 0;
+    int rank = 0;
+    MPI_Initialized(&initialized);
+    if (initialized)
+    {
+        MPI_Finalized(&finalized);
+        if (!finalized) MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    }
+    if (rank == 0) std::cerr << "Error: " << message << std::endl;
+}
+
+static void finalize_mpi()
+{
+    int initialized = 0;
+    int finalized = 0;
+    MPI_Initialized(&initialized);
+    if (initialized)
+    {
+        MPI_Finalized(&finalized);
+        if (!finalized) MPI_Finalize();
+    }
 }
 
 static int run_task_and_catch(const driver::task_t &task)
@@ -150,135 +177,163 @@ static void finalize_librpa(bool success)
 
 int main(int argc, char **argv)
 {
-    using librpa_int::get_node_free_mem;
-
-    // Initialize MPI environment
-    initialize_mpi_env(argc, argv);
-
-    // Parse the main input file
-    parse_inputfile_to_params(input_filename);
-    // Early check of task to fail quickly in case
-    task_t task = get_task(driver_params.task);
-
-    // Initialize LibRPA global environment and handler
-    initialize_librpa();
-
-    // Echo input file runtime options.
-    profiler.start("driver_read_params", "Driver Read Input Parameters");
-    if (mpi_comm_global_h.is_root())
+    bool librpa_initialized = false;
+    try
     {
-        lib_printf("===== Begin driver parameters  =====\n");
-        lib_printf(driver_params.format().c_str());
-        lib_printf("===== End driver parameters    =====\n\n");
-        lib_printf("===== Begin control parameters =====\n");
-        lib_printf(format_runtime_options(opts).c_str());
-        lib_printf("===== End control parameters   =====\n\n");
-    }
-    librpa_int::create_directories(driver::opts.output_dir, mpi_comm_global_h.myid);
-    mpi_comm_global_h.barrier();
-    profiler.stop("driver_read_params");
+        // Initialize MPI environment
+        initialize_mpi_env(argc, argv);
 
-    const string path_stru = driver_params.input_dir + driver_params.fn_stru;
-    const string path_bz_sampling = driver_params.input_dir + driver_params.fn_bz_sampling;
-    const string path_eigocc_scf = driver_params.input_dir + driver_params.fn_eigocc_scf;
+        // Parse the main input file
+        parse_inputfile_to_params(input_filename);
+        // Early check of task to fail quickly in case
+        task_t task = get_task(driver_params.task);
 
-    profiler.start("driver_read_common_input_data", "Driver Read Task-Common Input Data");
-    profiler.start("driver_band_out", "DFT SCF eigenvalues/occupations");
-    read_scf_occ_eigenvalues(path_eigocc_scf);
-    profiler.stop("driver_band_out");
+        // Initialize LibRPA global environment and handler
+        initialize_librpa(librpa_initialized);
 
-    if (task != task_t::print_minimax)
-    {
-        profiler.start("driver_struct", "Structure");
-        read_stru(path_stru);
-        profiler.stop("driver_struct");
-        lib_printf_root("\n");
-
-        profiler.start("driver_bz", "BZ sampling");
-        if (!librpa_int::path_exists(path_bz_sampling.c_str()))
+        // Echo input file runtime options.
+        profiler.start("driver_read_params", "Driver Read Input Parameters");
+        if (mpi_comm_global_h.is_root())
         {
-            read_bz_sampling_from_stru(path_stru);
+            lib_printf("===== Begin driver parameters  =====\n");
+            lib_printf(driver_params.format().c_str());
+            lib_printf("===== End driver parameters    =====\n\n");
+            lib_printf("===== Begin control parameters =====\n");
+            lib_printf(format_runtime_options(opts).c_str());
+            lib_printf("===== End control parameters   =====\n\n");
         }
-        else
-        {
-            read_bz_sampling(path_bz_sampling);
-        }
-        lib_printf_root("\n");
-        profiler.stop("driver_bz");
-
-        profiler.start("driver_basis", "Basis (wave-function and auxiliary)");
-        read_basis_wfc_aux(driver_params.input_dir, driver_params.fn_basis,
-                           driver_params.fn_basis_wfc, driver_params.fn_basis_aux);
-        lib_printf_root("\n");
-        profiler.stop("driver_basis");
-
-        // Direct k-BLACS eigenvector input is a LibRI path.  Resolve AUTO before
-        // reading wave functions so the reader can choose the final ownership
-        // layout instead of first materializing dense matrices on k-group roots.
-        if (driver::opts.parallel_routing == LIBRPA_ROUTING_AUTO)
-        {
-            driver::opts.parallel_routing = librpa_int::decide_auto_routing(
-                driver::n_atoms, driver::opts.nfreq * driver::n_kpoints);
-        }
-
-        profiler.start("driver_read_eigenvector", "SCF eigenvectors");
-        int ret_eigenvec = read_eigenvector(driver_params.input_dir);
+        create_directories(driver::opts.output_dir, mpi_comm_global_h.myid);
         mpi_comm_global_h.barrier();
-        if (ret_eigenvec == 0)
+        profiler.stop("driver_read_params");
+
+        const string path_stru = driver_params.input_dir + driver_params.fn_stru;
+        const string path_bz_sampling = driver_params.input_dir + driver_params.fn_bz_sampling;
+        const string path_eigocc_scf = driver_params.input_dir + driver_params.fn_eigocc_scf;
+
+        profiler.start("driver_read_common_input_data", "Driver Read Task-Common Input Data");
+        profiler.start("driver_band_out", "DFT SCF eigenvalues/occupations");
+        read_scf_occ_eigenvalues(path_eigocc_scf);
+        profiler.stop("driver_band_out");
+
+        if (task != task_t::print_minimax)
         {
-            lib_printf_root("Successfully read eigenvector files\n");
-        }
-        else
-        {
-            if (ret_eigenvec > 0)
+            profiler.start("driver_struct", "Structure");
+            read_stru(path_stru);
+            profiler.stop("driver_struct");
+            lib_printf_root("\n");
+
+            profiler.start("driver_bz", "BZ sampling");
+            if (!path_exists(path_bz_sampling.c_str()))
             {
-                lib_printf_root(LIBRPA_VERBOSE_CRITICAL, "Error in reading eigenvector files (retcode %d)\n", ret_eigenvec);
+                read_bz_sampling_from_stru(path_stru);
             }
             else
             {
-                lib_printf_root(
-                    LIBRPA_VERBOSE_CRITICAL,
-                    "Error!!! No eigenvector files is found at directory, check if you "
-                    "have input files KS_eigenvector\n");
+                read_bz_sampling(path_bz_sampling);
             }
-            finalize_librpa(false);
-            return EXIT_FAILURE;
+            lib_printf_root("\n");
+            profiler.stop("driver_bz");
+
+            profiler.start("driver_basis", "Basis (wave-function and auxiliary)");
+            read_basis_wfc_aux(driver_params.input_dir, driver_params.fn_basis,
+                               driver_params.fn_basis_wfc, driver_params.fn_basis_aux);
+            lib_printf_root("\n");
+            profiler.stop("driver_basis");
+
+            // Direct k-BLACS eigenvector input is a LibRI path.  Resolve AUTO before
+            // reading wave functions so the reader can choose the final ownership
+            // layout instead of first materializing dense matrices on k-group roots.
+            if (driver::opts.parallel_routing == LIBRPA_ROUTING_AUTO)
+            {
+                driver::opts.parallel_routing = decide_auto_routing(
+                    driver::n_atoms, driver::opts.nfreq * driver::n_kpoints);
+            }
+
+            profiler.start("driver_read_eigenvector", "SCF eigenvectors");
+            int ret_eigenvec = read_eigenvector(driver_params.input_dir);
+            mpi_comm_global_h.barrier();
+            if (ret_eigenvec == 0)
+            {
+                lib_printf_root("Successfully read eigenvector files\n");
+            }
+            else
+            {
+                if (ret_eigenvec > 0)
+                {
+                    throw LIBRPA_RUNTIME_ERROR("Error in reading eigenvector files (return code " +
+                                               std::to_string(ret_eigenvec) + ")");
+                }
+                throw LIBRPA_RUNTIME_ERROR(
+                    "No eigenvector files found; check the KS_eigenvector input files");
+            }
+            profiler.stop("driver_read_eigenvector");
+
+            profiler.start("driver_read_ri");
+            read_ri(driver_params.input_dir, driver::opts.parallel_routing);
+            lib_printf_root("Actual parallel routing used: %s\n",
+                            get_routing_string(driver::opts.parallel_routing).c_str());
+            profiler.stop("driver_read_ri");
+
+            // Vq distributed using the same strategy
+            // There should be no duplicate for V
         }
-        profiler.stop("driver_read_eigenvector");
 
-        profiler.start("driver_read_ri");
-        read_ri(driver_params.input_dir, driver::opts.parallel_routing);
-        lib_printf_root("Actual parallel routing used: %s\n", get_routing_string(driver::opts.parallel_routing).c_str());
-        profiler.stop("driver_read_ri");
+        mpi_comm_global_h.barrier();
+        if (mpi_comm_intra_h.myid == 0)
+        {
+            if (mpi_comm_global_h.myid == 0)
+            {
+                const auto cputime =
+                    profiler.get_cpu_time_last("driver_read_common_input_data") / 60.0;
+                const auto walltime =
+                    profiler.get_wall_time_last("driver_read_common_input_data") / 60.0;
+                lib_printf("Initialization finished, Wall/CPU time [min]: %12.4f %12.4f\n",
+                           walltime, cputime);
+            }
+            double freemem;
+            auto flag = get_node_free_mem(freemem);
+            if (flag == 0)
+            {
+                lib_printf("Free memory on node %5d [GB]: %8.3f\n", mpi_comm_inter_h.myid, freemem);
+            }
+        }
+        lib_printf_root("Common data parsed, task %s will begin\n", driver_params.task.c_str());
+        lib_printf_root("%s: %s\n", driver_params.task.c_str(), get_task_string(task).c_str());
+        mpi_comm_global_h.barrier();
+        profiler.stop("driver_read_common_input_data");
 
-        // Vq distributed using the same strategy
-        // There should be no duplicate for V
+        int any_failed = run_task_and_catch(task);
+        librpa_initialized = false;
+        finalize_librpa(!any_failed);
+        finalize_mpi();
+
+        return any_failed ? EXIT_FAILURE : EXIT_SUCCESS;
     }
-
-    mpi_comm_global_h.barrier();
-    if (librpa_int::global::mpi_comm_intra_h.myid == 0)
+    catch (const std::exception &e)
     {
-        if (mpi_comm_global_h.myid == 0)
+        report_driver_error(e.what());
+    }
+    catch (...)
+    {
+        report_driver_error("unknown exception");
+    }
+
+    if (librpa_initialized)
+    {
+        librpa_initialized = false;
+        try
         {
-            const auto cputime = profiler.get_cpu_time_last("driver_read_common_input_data") / 60.0;
-            const auto walltime = profiler.get_wall_time_last("driver_read_common_input_data") / 60.0;
-            lib_printf("Initialization finished, Wall/CPU time [min]: %12.4f %12.4f\n", walltime, cputime);
+            finalize_librpa(false);
         }
-        double freemem;
-        auto flag = get_node_free_mem(freemem);
-        if (flag == 0)
+        catch (const std::exception &e)
         {
-            lib_printf("Free memory on node %5d [GB]: %8.3f\n", mpi_comm_inter_h.myid, freemem);
+            report_driver_error(e.what());
+        }
+        catch (...)
+        {
+            report_driver_error("unknown exception while finalizing LibRPA");
         }
     }
-    lib_printf_root("Common data parsed, task %s will begin\n", driver_params.task.c_str());
-    lib_printf_root("%s: %s\n", driver_params.task.c_str(), get_task_string(task).c_str());
-    mpi_comm_global_h.barrier();
-    profiler.stop("driver_read_common_input_data");
-
-    int any_failed = run_task_and_catch(task);
-    finalize_librpa(!any_failed);
-    MPI_Finalize();
-
-    return any_failed ? EXIT_FAILURE : EXIT_SUCCESS;
+    finalize_mpi();
+    return EXIT_FAILURE;
 }
