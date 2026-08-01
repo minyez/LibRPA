@@ -63,8 +63,10 @@ computation functions. They are managed by the environment setup APIs (C/C++/For
 - {librpa}`librpa_init_global` / {librpa}`librpa::init_global`
 - {librpa}`librpa_finalize_global` / {librpa}`librpa::finalize_global`
 - {librpa}`librpa_set_output_level` / {librpa}`librpa::set_output_level`
+- {librpa}`librpa_get_output_level` / {librpa}`librpa::get_output_level`
 - {librpa}`librpa_init_options` / {librpa}`librpa::Options`
 - {librpa}`librpa_set_output_dir` / {librpa}`librpa::Options::set_output_dir`
+- {librpa}`librpa_set_restart_from_dir` / {librpa}`librpa::Options::set_restart_from_dir`
 
 Any calls to input parsing and computation APIs should be surrounded by calls to `librpa_init_global` and `librpa_finalize_global`.
 
@@ -80,6 +82,8 @@ opts.tfgrids_type = LIBRPA_TFGRID_MINIMAX;
 opts.nfreq = 16;
 opts.gf_threshold = 1.e-3;
 librpa_set_output_level(LIBRPA_VERBOSE_INFO);
+// Optional: read restart data from a directory distinct from output_dir.
+librpa_set_restart_from_dir(&opts, "previous_run");
 ```
 
 ```cpp
@@ -89,6 +93,7 @@ opts.tfgrids_type = LIBRPA_TFGRID_MINIMAX;
 opts.nfreq = 16;
 opts.gf_threshold = 1.e-3;
 librpa::set_output_level(LIBRPA_VERBOSE_INFO);
+opts.set_restart_from_dir("previous_run");
 ```
 
 ```fortran
@@ -99,6 +104,7 @@ opts%tfgrids_type = LIBRPA_TFGRID_MINIMAX
 opts%nfreq = 16
 opts%gf_threshold = 1.0d-3
 call librpa_set_output_level(LIBRPA_VERBOSE_INFO)
+call opts%set_restart_from_dir("previous_run")
 ```
 
 The API uses enum/integer constants from the public headers, while the driver reads string values
@@ -115,6 +121,8 @@ Input parsing APIs common to all tasks include (C/C++/Fortran):
 - {librpa}`librpa_set_wfc_spinor` / {librpa}`Handler::set_wfc_spinor` / {librpa}`handler%set_wfc_spinor <librpahandler::set_wfc_spinor>`
 - {librpa}`librpa_set_ao_basis_wfc` / {librpa}`Handler::set_ao_basis_wfc` / {librpa}`handler%set_ao_basis_wfc <librpahandler::set_ao_basis_wfc>`
 - {librpa}`librpa_set_ao_basis_aux` / {librpa}`Handler::set_ao_basis_aux` / {librpa}`handler%set_ao_basis_aux <librpahandler::set_ao_basis_aux>`
+- {librpa}`librpa_set_basis_convention` / {librpa}`Handler::set_basis_convention` / {librpa}`handler%set_basis_convention <librpahandler::set_basis_convention>`
+- {librpa}`librpa_set_symmetry_operations` / {librpa}`Handler::set_symmetry_operations` / {librpa}`handler%set_symmetry_operations <librpahandler::set_symmetry_operations>`
 - {librpa}`librpa_set_latvec_and_G` / {librpa}`Handler::set_latvec_and_G` / {librpa}`handler%set_latvec_and_G <librpahandler::set_latvec_and_g>`
 - {librpa}`librpa_set_atoms` / {librpa}`Handler::set_atoms` / {librpa}`handler%set_atoms <librpahandler::set_atoms>`
 - {librpa}`librpa_set_kgrids_kvec` / {librpa}`Handler::set_kgrids_kvec` / {librpa}`handler%set_kgrids_kvec <librpahandler::set_kgrids_kvec>`
@@ -144,6 +152,35 @@ see [Environment setup](#environment-setup) above.
 their Cartesian vectors, and optional weights. If the loaded SCF k-points are
 symmetry-reduced for the Coulomb calculation, call `set_kq_mapping` with the
 0-based mapping from each loaded SCF k-point to its representative Coulomb q-point.
+
+The wavefunction and auxiliary-basis setters accept optional angular-shell metadata.
+Symmetry-enabled calculations should also provide the basis
+convention and real-space symmetry operations through `set_basis_convention` and
+`set_symmetry_operations`; the convention values must match those used by the calling
+electronic-structure code.
+
+The C and C++ APIs additionally provide packed-complex Coulomb setters:
+
+- {librpa}`librpa_set_aux_bare_coulomb_k_atom_pair_packed` /
+  {librpa}`Handler::set_aux_bare_coulomb_k_atom_pair_packed`
+- {librpa}`librpa_set_aux_cut_coulomb_k_atom_pair_packed` /
+  {librpa}`Handler::set_aux_cut_coulomb_k_atom_pair_packed`
+- {librpa}`librpa_set_aux_bare_coulomb_k_2d_block_packed` /
+  {librpa}`Handler::set_aux_bare_coulomb_k_2d_block_packed`
+- {librpa}`librpa_set_aux_cut_coulomb_k_2d_block_packed` /
+  {librpa}`Handler::set_aux_cut_coulomb_k_2d_block_packed`
+
+The C functions take interleaved real/imaginary `double` buffers; the C++ wrappers
+take `std::complex<double>` buffers. The Fortran Coulomb setters already accept native
+complex arrays and therefore do not have separate `_packed` names.
+
+Analytic head/wing calculations can receive velocity matrices through
+{librpa}`librpa_set_velocity_matrix` or
+{librpa}`librpa_set_velocity_matrix_packed`; the corresponding C++ methods are
+{librpa}`Handler::set_velocity_matrix` and
+{librpa}`Handler::set_velocity_matrix_packed`. These setters are not currently
+exposed by the Fortran wrapper. Matrix elements are ordered as
+`[spin][k-point][Cartesian component][row state][column state]`.
 
 For spinor workflows, initialize the handler with two spinor components, then use the spinor
 wavefunction setters. Internally, LibRPA selects the normal or spinor path from the mean-field
@@ -175,12 +212,27 @@ After data have been correctly set up by input parsing functions, computation fu
 - {librpa}`librpa_get_g0w0_sigc_kgrid` / {librpa}`Handler::get_g0w0_sigc_kgrid` / {librpa}`handler%get_g0w0_sigc_kgrid <librpahandler::get_g0w0_sigc_kgrid>`
 - {librpa}`librpa_get_g0w0_sigc_band_k` / {librpa}`Handler::get_g0w0_sigc_band_k` / {librpa}`handler%get_g0w0_sigc_band_k <librpahandler::get_g0w0_sigc_band_k>`
 
+**G0W0 quasiparticle energies:**
+- {librpa}`librpa_get_g0w0_qpe_kgrid` / {librpa}`Handler::get_g0w0_qpe_kgrid`
+- {librpa}`librpa_get_g0w0_qpe_band_k` / {librpa}`Handler::get_g0w0_qpe_band_k`
+
+These functions return the correlation self-energy together with quasiparticle
+energies obtained using `opts.option_qpe_solver`. The C++ methods return a
+{librpa}`librpa::G0W0QpeResult`. They are not currently exposed by the Fortran
+wrapper; Fortran users can retrieve correlation self-energies through the
+`get_g0w0_sigc_*` methods.
+
 **G0W0 spectral function:**
 - {librpa}`librpa_get_g0w0_spectral_function_kgrid` / {librpa}`Handler::get_g0w0_spectral_function_kgrid` / {librpa}`handler%get_g0w0_spectral_function_kgrid <librpahandler::get_g0w0_spectral_function_kgrid>`
 - {librpa}`librpa_get_g0w0_spectral_function_band_k` / {librpa}`Handler::get_g0w0_spectral_function_band_k` / {librpa}`handler%get_g0w0_spectral_function_band_k <librpahandler::get_g0w0_spectral_function_band_k>`
 
 The C spectral-function APIs take an optional packed complex self-energy output as the last argument.
 Pass `nullptr` when only the spectral function is needed.
+The C++ `get_g0w0_spectral_function_*` methods return only spectral-function values;
+use {librpa}`Handler::get_g0w0_spectral_function_with_sigc_kgrid` or
+{librpa}`Handler::get_g0w0_spectral_function_with_sigc_band_k` to receive a
+{librpa}`librpa::G0W0SpectralFunctionResult`. The Fortran methods expose the
+continued self-energy as an optional final argument.
 
 ## Schematic examples
 
@@ -222,6 +274,11 @@ int main()
     h.set_ao_basis_wfc(nbs_wfc);
     h.set_ao_basis_aux(nbs_aux);
 
+    // Optional symmetry metadata
+    h.set_basis_convention(bloch_phase, bloch_ratom, angular_order,
+                           negative_m_convention, positive_m_convention);
+    h.set_symmetry_operations(n_symops, row_conv, rotmats, translations);
+
     // Loop over atoms and R cells to set LRI coefficients
     for (int i = 0; i < natoms; ++i) {
         for (int j = 0; j < natoms; ++j) {
@@ -234,6 +291,8 @@ int main()
     // Loop over k-points to set Coulomb matrices
     for (int ik = 0; ik < nkpts; ++ik) {
         h.set_aux_bare_coulomb_k_atom_pair(ik, i, j, naux_i, naux_j, Vq_real.data(), Vq_imag.data(), vq_threshold);
+        // For std::complex<double> input, use
+        // h.set_aux_bare_coulomb_k_atom_pair_packed(..., Vq.data(), vq_threshold);
     }
 
     // *** Compute RPA correlation energy ***
@@ -247,6 +306,11 @@ int main()
     // *** Compute G0W0 self-energy ***
     h.build_g0w0_sigma(opts);
     std::vector<std::complex<double>> sigc = h.get_g0w0_sigc_kgrid(opts, nspins, iks_this, i_state_low, i_state_high, vxc, vexx);
+    librpa::G0W0QpeResult qpe = h.get_g0w0_qpe_kgrid(
+        opts, nspins, iks_this, i_state_low, i_state_high, vxc, vexx);
+    librpa::G0W0SpectralFunctionResult spectral =
+        h.get_g0w0_spectral_function_with_sigc_kgrid(
+            opts, nspins, iks_this, i_state_low, i_state_high, omegas_real, vxc, vexx);
 
     // *** Clean up ***
     h.free();
@@ -291,6 +355,9 @@ call h%set_wg_ekb_efermi(nspins, nkpts, nstates, wg, ekb, efermi)
 call h%set_latvec_and_G(lat, recplatt)
 call h%set_kgrids_kvec(nk1, nk2, nk3, nkpts, kpoints, kweights)
 call h%set_kq_mapping(nkpts, map_q_ks)
+call h%set_basis_convention(bloch_phase, bloch_ratom, angular_order, &
+                            negative_m_convention, positive_m_convention)
+call h%set_symmetry_operations(n_symops, row_conv, rotmats, translations)
 ! ... more input calls ...
 
 ! Compute RPA correlation energy
