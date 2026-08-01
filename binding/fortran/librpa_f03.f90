@@ -1305,6 +1305,7 @@ contains
    end subroutine librpa_finalize_global
 
    !> @brief Set global LibRPA stdout verbosity.
+   !> @param[in] output_level Verbosity level.
    subroutine librpa_set_output_level(output_level)
       implicit none
       integer, intent(in) :: output_level
@@ -1312,6 +1313,7 @@ contains
    end subroutine librpa_set_output_level
 
    !> @brief Get global LibRPA stdout verbosity.
+   !> @return Current verbosity level.
    integer function librpa_get_output_level() result(output_level)
       implicit none
       output_level = librpa_get_output_level_c()
@@ -1602,6 +1604,8 @@ contains
    !> @param[in,out] this     Handler.
    !> @param[in]     natoms   Number of atoms.
    !> @param[in]     nbs_wfc  Number of wave-function basis functions on each atom.
+   !> @param[in]     nshells  Optional number of angular shells on each atom.
+   !> @param[in]     l_shells Optional concatenated angular momenta, grouped by atom.
    subroutine librpa_set_ao_basis_wfc(this, natoms, nbs_wfc, nshells, l_shells)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
@@ -1618,6 +1622,8 @@ contains
    !> @param[in,out] this     Handler.
    !> @param[in]     natoms   Number of atoms.
    !> @param[in]     nbs_aux  Number of auxiliary basis functions on each atom.
+   !> @param[in]     nshells  Optional number of angular shells on each atom.
+   !> @param[in]     l_shells Optional concatenated angular momenta, grouped by atom.
    subroutine librpa_set_ao_basis_aux(this, natoms, nbs_aux, nshells, l_shells)
       implicit none
       class(LibrpaHandler), intent(inout) :: this
@@ -1634,6 +1640,8 @@ contains
    !> @param[in,out] this            Handler.
    !> @param[in]     natoms          Number of atoms.
    !> @param[in]     nbs_aux_shrink  Number of shrink auxiliary basis functions on each atom.
+   !> @param[in]     nshells         Optional number of angular shells on each atom.
+   !> @param[in]     l_shells        Optional concatenated angular momenta, grouped by atom.
    subroutine librpa_set_ao_basis_aux_shrink(this, natoms, nbs_aux_shrink, nshells, l_shells)
       implicit none
       class(LibrpaHandler), intent(inout) :: this

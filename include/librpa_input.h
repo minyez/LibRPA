@@ -379,6 +379,12 @@ void librpa_set_velocity_matrix(LibrpaHandler* h, int n_spins, int n_kpts, int n
  *
  * The flattened matrix order is [spin][k][cartesian][row band][column band], with
  * interleaved real/imaginary values.
+ *
+ * @param[in] h           Handler.
+ * @param[in] n_spins     Number of spin channels.
+ * @param[in] n_kpts      Number of k-points used by analytic head/wing.
+ * @param[in] n_states    Number of bands.
+ * @param[in] velocity_ri Flattened matrix with interleaved real/imaginary parts.
  */
 void librpa_set_velocity_matrix_packed(LibrpaHandler* h, int n_spins, int n_kpts, int n_states,
                                        const double* velocity_ri);

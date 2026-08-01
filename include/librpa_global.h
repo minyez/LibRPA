@@ -67,11 +67,14 @@ void librpa_init_global(LibrpaSwitch switch_redirect_stdout = LIBRPA_SWITCH_OFF,
  * @brief Set the global LibRPA stdout verbosity.
  *
  * This affects informational output from input and compute APIs.
+ *
+ * @param[in] output_level Verbosity level.
  */
 void librpa_set_output_level(LibrpaVerbose output_level);
 
 /**
  * @brief Get the global LibRPA stdout verbosity.
+ * @return Current verbosity level.
  */
 LibrpaVerbose librpa_get_output_level(void);
 

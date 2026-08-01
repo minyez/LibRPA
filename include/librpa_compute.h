@@ -130,6 +130,17 @@ void librpa_get_g0w0_sigc_kgrid(LibrpaHandler *h, const LibrpaOptions *p_opts,
  * for each selected state. Otherwise, that absolute zero-based reference state
  * at each k-point and spin provides Delta for all states in the same channel.
  *
+ * @param[in]  h           LibRPA handler.
+ * @param[in]  p_opts      Runtime options.
+ * @param[in]  n_spins     Number of spin channels.
+ * @param[in]  n_kpts_this Number of k-points computed on this process.
+ * @param[in]  iks_this    Global indices of those k-points.
+ * @param[in]  i_state_low First state index (inclusive).
+ * @param[in]  i_state_high Last state index (exclusive).
+ * @param[in]  vxc         XC potential for the selected states.
+ * @param[in]  vexx        Exact-exchange potential for the selected states.
+ * @param[out] sigc_re     Real part of the correlation self-energy.
+ * @param[out] sigc_im     Imaginary part of the correlation self-energy.
  * @param[out] eqp              Quasi-particle energy solved by the selected QPE solver.
  *                              It should be at least as long as sigc_re/sigc_im.
  */
@@ -206,6 +217,17 @@ void librpa_get_g0w0_sigc_band_k(LibrpaHandler *h, const LibrpaOptions *p_opts,
  * for each selected band state. Otherwise, that absolute zero-based reference
  * state at each band k-point and spin provides Delta for all states in the same channel.
  *
+ * @param[in]  h                 LibRPA handler.
+ * @param[in]  p_opts            Runtime options.
+ * @param[in]  n_spins           Number of spin channels.
+ * @param[in]  n_kpts_band_this  Number of band k-points computed on this process.
+ * @param[in]  iks_band_this     Global indices of those band k-points.
+ * @param[in]  i_state_low       First state index (inclusive).
+ * @param[in]  i_state_high      Last state index (exclusive).
+ * @param[in]  vxc_band          XC potential for the selected band states.
+ * @param[in]  vexx_band         Exact-exchange potential for the selected band states.
+ * @param[out] sigc_band_re      Real part of the correlation self-energy.
+ * @param[out] sigc_band_im      Imaginary part of the correlation self-energy.
  * @param[out] eqp_band         Quasi-particle energy solved by the selected QPE solver.
  *                              It should be at least as long as sigc_band_re/sigc_band_im.
  */

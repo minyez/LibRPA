@@ -42,16 +42,18 @@ typedef LibrpaKind Kind;  ///< DFT code kind type (C++ alias, reserved)
 
 typedef LibrpaVerbose Verbose;  ///< Verbosity level type (C++ alias)
 
+/** @brief G0W0 correlation self-energies and quasiparticle energies. */
 struct G0W0QpeResult
 {
-    std::vector<std::complex<double>> sigc;
-    std::vector<double> eqp;
+    std::vector<std::complex<double>> sigc;  ///< Correlation self-energies.
+    std::vector<double> eqp;                 ///< Quasiparticle energies.
 };
 
+/** @brief G0W0 spectral functions and continued correlation self-energies. */
 struct G0W0SpectralFunctionResult
 {
-    std::vector<std::complex<double>> sigc;
-    std::vector<double> spectral_function;
+    std::vector<std::complex<double>> sigc;  ///< Continued correlation self-energies.
+    std::vector<double> spectral_function;   ///< Spectral-function values.
 };
 
 
@@ -136,12 +138,14 @@ void init_global(Switch switch_redirect_stdout = LIBRPA_SWITCH_OFF, const char *
 
 /**
  * @brief Set the global LibRPA stdout verbosity.
+ * @param[in] output_level Verbosity level.
  * @see librpa_set_output_level
  */
 void set_output_level(Verbose output_level);
 
 /**
  * @brief Get the global LibRPA stdout verbosity.
+ * @return Current verbosity level.
  * @see librpa_get_output_level
  */
 Verbose get_output_level(void);
@@ -203,7 +207,10 @@ public:
      */
     Handler(MPI_Comm comm);
 
-    /** @brief Get underlying C handler (for internal use). */
+    /**
+     * @brief Get underlying C handler.
+     * @return Non-owning pointer to the wrapped C handler.
+     */
     const LibrpaHandler *get_c_handler() const { return h_; }
 
     /**
@@ -226,144 +233,383 @@ public:
 
     /* Input (set) functions */
 
-    /** @brief Set mean-field wavefunction dimensions (numbers of spins, k-points, states, basis and spin components). */
+    /**
+     * @brief Set mean-field wavefunction dimensions.
+     * @param[in] nspins Number of spin channels.
+     * @param[in] nkpts Number of loaded SCF k-points.
+     * @param[in] nstates Number of electronic states.
+     * @param[in] nbasis Number of basis functions.
+     * @param[in] nspinor Number of spinor components per wavefunction.
+     */
     void set_scf_dimension(int nspins, int nkpts, int nstates, int nbasis, int nspinor = 1);
 
-    /** @brief Set occupation numbers, eigenvalues, and Fermi level. */
+    /**
+     * @brief Set occupation numbers, eigenvalues, and Fermi level.
+     * @param[in] nspins Number of spin channels.
+     * @param[in] nkpts Number of k-points.
+     * @param[in] nstates Number of states.
+     * @param[in] wg Occupation numbers.
+     * @param[in] ekb Eigenvalues.
+     * @param[in] efermi Fermi level.
+     */
     void set_wg_ekb_efermi(int nspins, int nkpts, int nstates, const double *wg, const double *ekb,
                            double efermi);
 
-    /** @brief Set wavefunction coefficients (separated real/imag arrays). */
+    /**
+     * @brief Set wavefunction coefficients from separate real and imaginary arrays.
+     * @param[in] ispin Spin index.
+     * @param[in] ik K-point index.
+     * @param[in] nstates_local Local number of states.
+     * @param[in] nbasis_local Local number of basis functions.
+     * @param[in] wfc_real Real parts of the coefficients.
+     * @param[in] wfc_imag Imaginary parts of the coefficients.
+     */
     void set_wfc(int ispin, int ik, int nstates_local, int nbasis_local, const double *wfc_real,
                  const double *wfc_imag);
 
-    /** @brief Set wavefunction coefficients of spinor format (separated real/imag arrays). */
+    /**
+     * @brief Set spinor wavefunction coefficients from separate real and imaginary arrays.
+     * @param[in] ik K-point index.
+     * @param[in] nstates_local Local number of states.
+     * @param[in] nbasis_local Local number of basis functions.
+     * @param[in] wfc_up_real Real parts of the spin-up coefficients.
+     * @param[in] wfc_up_imag Imaginary parts of the spin-up coefficients.
+     * @param[in] wfc_dn_real Real parts of the spin-down coefficients.
+     * @param[in] wfc_dn_imag Imaginary parts of the spin-down coefficients.
+     */
     void set_wfc_spinor(int ik, int nstates_local, int nbasis_local,
                         const double* wfc_up_real, const double* wfc_up_imag,
                         const double* wfc_dn_real, const double* wfc_dn_imag);
 
-    /** @brief Set wavefunction coefficients (packed complex array). */
+    /**
+     * @brief Set wavefunction coefficients from a packed complex array.
+     * @param[in] ispin Spin index.
+     * @param[in] ik K-point index.
+     * @param[in] nstates_local Local number of states.
+     * @param[in] nbasis_local Local number of basis functions.
+     * @param[in] wfc Complex coefficients.
+     */
     void set_wfc_packed(int ispin, int ik, int nstates_local, int nbasis_local,
                         const std::complex<double> *wfc);
 
-    /** @brief Set wavefunction coefficients of spinor format (packed complex array). */
+    /**
+     * @brief Set spinor wavefunction coefficients from packed complex arrays.
+     * @param[in] ik K-point index.
+     * @param[in] nstates_local Local number of states.
+     * @param[in] nbasis_local Local number of basis functions.
+     * @param[in] wfc_up Spin-up coefficients.
+     * @param[in] wfc_dn Spin-down coefficients.
+     */
     void set_wfc_spinor_packed(int ik, int nstates_local, int nbasis_local,
                                const std::complex<double> *wfc_up,
                                const std::complex<double> *wfc_dn);
 
-    /** @brief Set atomic orbital basis size for wavefunctions. */
+    /**
+     * @brief Set the wavefunction atomic-orbital basis.
+     * @param[in] nbs_wfc Number of basis functions per atom.
+     * @param[in] l_shells Optional angular momenta grouped by atom.
+     */
     void set_ao_basis_wfc(const std::vector<size_t> &nbs_wfc,
                           const std::vector<std::vector<int>> &l_shells = {});
 
-    /** @brief Set auxiliary atomic orbital basis size. */
+    /**
+     * @brief Set the auxiliary atomic-orbital basis.
+     * @param[in] nbs_aux Number of auxiliary basis functions per atom.
+     * @param[in] l_shells Optional angular momenta grouped by atom.
+     */
     void set_ao_basis_aux(const std::vector<size_t> &nbs_aux,
                           const std::vector<std::vector<int>> &l_shells = {});
 
-    /** @brief Set shrink auxiliary atomic orbital basis size. */
+    /**
+     * @brief Set the compressed auxiliary atomic-orbital basis.
+     * @param[in] nbs_aux_shrink Number of compressed auxiliary functions per atom.
+     * @param[in] l_shells Optional angular momenta grouped by atom.
+     */
     void set_ao_basis_aux_shrink(const std::vector<size_t> &nbs_aux_shrink,
                                  const std::vector<std::vector<int>> &l_shells = {});
 
-    /** @brief Set basis convention metadata used by symmetry-based reductions. */
+    /**
+     * @brief Set basis-convention metadata used by symmetry reductions.
+     * @param[in] bloch_phase Bloch-sum phase sign.
+     * @param[in] bloch_ratom Atom-position coefficient in the Bloch phase.
+     * @param[in] order Angular basis ordering.
+     * @param[in] nega_m Real-spherical-harmonic convention for negative m.
+     * @param[in] posi_m Real-spherical-harmonic convention for positive m.
+     */
     void set_basis_convention(int bloch_phase, int bloch_ratom, LibrpaAngularOrder order,
                               LibrpaRshCoeff nega_m, LibrpaRshCoeff posi_m);
 
-    /** @brief Set real-space symmetry operations. */
+    /**
+     * @brief Set real-space symmetry operations.
+     * @param[in] n_symops Number of operations.
+     * @param[in] row_conv Nonzero for row-fractional rotations.
+     * @param[in] rotmats Flattened rotation matrices.
+     * @param[in] trans Optional flattened fractional translations.
+     */
     void set_symmetry_operations(int n_symops, int row_conv, const int* rotmats,
                                  const double* trans = nullptr);
 
-    /** @brief Set lattice vectors and reciprocal lattice vectors. */
+    /**
+     * @brief Set direct and reciprocal lattice vectors.
+     * @param[in] lat_mat Direct lattice vectors in Bohr.
+     * @param[in] G_mat Reciprocal lattice vectors in Bohr^-1.
+     */
     void set_latvec_and_G(const double lat_mat[9], const double G_mat[9]);
 
-    /** @brief Set atom types and Cartesian coordinates. */
+    /**
+     * @brief Set atom types and Cartesian coordinates.
+     * @param[in] types Species indices.
+     * @param[in] pos_cart Cartesian coordinates in Bohr.
+     */
     void set_atoms(const std::vector<int> &types, const std::vector<double> &pos_cart);
 
-    /** @brief Set k-point grid vectors. Non-null weights are normalized to sum to one. */
+    /**
+     * @brief Set loaded SCF k-points from arrays.
+     * @param[in] nk1 Grid size along direction 1.
+     * @param[in] nk2 Grid size along direction 2.
+     * @param[in] nk3 Grid size along direction 3.
+     * @param[in] nkpts Number of loaded SCF k-points.
+     * @param[in] kvecs Cartesian k-point vectors.
+     * @param[in] kweights Optional weights, normalized to sum to one.
+     */
     void set_kgrids_kvec(int nk1, int nk2, int nk3, int nkpts,
                          const double *kvecs, const double *kweights = nullptr);
 
-    /** @brief Set loaded SCF k-point vectors. Non-empty weights are normalized to sum to one. */
+    /**
+     * @brief Set loaded SCF k-points from vectors.
+     * @param[in] nk1 Grid size along direction 1.
+     * @param[in] nk2 Grid size along direction 2.
+     * @param[in] nk3 Grid size along direction 3.
+     * @param[in] kvecs Cartesian k-point vectors.
+     * @param[in] kweights Optional weights, normalized to sum to one.
+     */
     void set_kgrids_kvec(int nk1, int nk2, int nk3, const std::vector<double> &kvecs,
                          const std::vector<double> &kweights = {});
 
-    /** @brief Set mapping from loaded SCF k-points to Coulomb q-points. */
+    /**
+     * @brief Set the mapping from loaded SCF k-points to Coulomb q-points.
+     * @param[in] map_q_ks Representative q-point index for each loaded k-point.
+     */
     void set_kq_mapping(const std::vector<int> &map_q_ks);
 
-    /** @brief Set local RI coefficients. */
+    /**
+     * @brief Set local RI coefficients.
+     * @param[in] routing Parallel routing strategy.
+     * @param[in] I First atom index.
+     * @param[in] J Second atom index.
+     * @param[in] nbasis_i Basis size on atom I.
+     * @param[in] nbasis_j Basis size on atom J.
+     * @param[in] naux_mu Auxiliary basis size.
+     * @param[in] R Lattice vector.
+     * @param[in] Cs_in RI coefficients.
+     * @param[in] shrink_aux Nonzero selects the compressed auxiliary basis.
+     */
     void set_lri_coeff(LibrpaParallelRouting routing, int I, int J, int nbasis_i, int nbasis_j,
                        int naux_mu, const int R[3], const double *Cs_in,
                        int shrink_aux = 0);
 
-    /** @brief Set bare Coulomb matrix elements (atom-pair format). */
+    /**
+     * @brief Set bare Coulomb matrix elements in atom-pair format.
+     * @param[in] ik K-point index.
+     * @param[in] I First atom index.
+     * @param[in] J Second atom index.
+     * @param[in] naux_mu Row size.
+     * @param[in] naux_nu Column size.
+     * @param[in] Vq_real_in Real parts of the matrix.
+     * @param[in] Vq_imag_in Imaginary parts of the matrix.
+     * @param[in] vq_threshold Screening threshold.
+     */
     void set_aux_bare_coulomb_k_atom_pair(int ik, int I, int J, int naux_mu, int naux_nu,
                                           const double *Vq_real_in, const double *Vq_imag_in,
                                           double vq_threshold);
 
-    /** @brief Set bare Coulomb matrix elements (atom-pair format, packed complex array). */
+    /**
+     * @brief Set bare Coulomb matrix elements from a packed complex atom-pair matrix.
+     * @param[in] ik K-point index.
+     * @param[in] I First atom index.
+     * @param[in] J Second atom index.
+     * @param[in] naux_mu Row size.
+     * @param[in] naux_nu Column size.
+     * @param[in] Vq Complex matrix elements.
+     * @param[in] vq_threshold Screening threshold.
+     */
     void set_aux_bare_coulomb_k_atom_pair_packed(int ik, int I, int J, int naux_mu, int naux_nu,
                                                  const std::complex<double> *Vq,
                                                  double vq_threshold);
 
-    /** @brief Set truncated Coulomb matrix elements (atom-pair format). */
+    /**
+     * @brief Set truncated Coulomb matrix elements in atom-pair format.
+     * @param[in] ik K-point index.
+     * @param[in] I First atom index.
+     * @param[in] J Second atom index.
+     * @param[in] naux_mu Row size.
+     * @param[in] naux_nu Column size.
+     * @param[in] Vq_real_in Real parts of the matrix.
+     * @param[in] Vq_imag_in Imaginary parts of the matrix.
+     * @param[in] vq_threshold Screening threshold.
+     */
     void set_aux_cut_coulomb_k_atom_pair(int ik, int I, int J, int naux_mu, int naux_nu,
                                          const double *Vq_real_in, const double *Vq_imag_in,
                                          double vq_threshold);
 
-    /** @brief Set truncated Coulomb matrix elements (atom-pair format, packed complex array). */
+    /**
+     * @brief Set truncated Coulomb matrix elements from a packed complex atom-pair matrix.
+     * @param[in] ik K-point index.
+     * @param[in] I First atom index.
+     * @param[in] J Second atom index.
+     * @param[in] naux_mu Row size.
+     * @param[in] naux_nu Column size.
+     * @param[in] Vq Complex matrix elements.
+     * @param[in] vq_threshold Screening threshold.
+     */
     void set_aux_cut_coulomb_k_atom_pair_packed(int ik, int I, int J, int naux_mu, int naux_nu,
                                                 const std::complex<double> *Vq,
                                                 double vq_threshold);
 
-    /** @brief Set bare Coulomb matrix elements (2D block format). */
+    /**
+     * @brief Set a bare Coulomb matrix block.
+     * @param[in] ik K-point index.
+     * @param[in] mu_begin First row index.
+     * @param[in] mu_end Row end index.
+     * @param[in] nu_begin First column index.
+     * @param[in] nu_end Column end index.
+     * @param[in] Vq_real_in Real parts of the block.
+     * @param[in] Vq_imag_in Imaginary parts of the block.
+     */
     void set_aux_bare_coulomb_k_2d_block(int ik, int mu_begin, int mu_end, int nu_begin, int nu_end,
                                          const double *Vq_real_in, const double *Vq_imag_in);
 
-    /** @brief Set bare Coulomb matrix elements (2D block format, packed complex array). */
+    /**
+     * @brief Set a bare Coulomb matrix block from packed complex values.
+     * @param[in] ik K-point index.
+     * @param[in] mu_begin First row index.
+     * @param[in] mu_end Row end index.
+     * @param[in] nu_begin First column index.
+     * @param[in] nu_end Column end index.
+     * @param[in] Vq Complex block values.
+     */
     void set_aux_bare_coulomb_k_2d_block_packed(int ik, int mu_begin, int mu_end,
                                                 int nu_begin, int nu_end,
                                                 const std::complex<double> *Vq);
 
-    /** @brief Set truncated Coulomb matrix elements (2D block format). */
+    /**
+     * @brief Set a truncated Coulomb matrix block.
+     * @param[in] ik K-point index.
+     * @param[in] mu_begin First row index.
+     * @param[in] mu_end Row end index.
+     * @param[in] nu_begin First column index.
+     * @param[in] nu_end Column end index.
+     * @param[in] Vq_real_in Real parts of the block.
+     * @param[in] Vq_imag_in Imaginary parts of the block.
+     */
     void set_aux_cut_coulomb_k_2d_block(int ik, int mu_begin, int mu_end, int nu_begin, int nu_end,
                                         const double *Vq_real_in, const double *Vq_imag_in);
 
-    /** @brief Set truncated Coulomb matrix elements (2D block format, packed complex array). */
+    /**
+     * @brief Set a truncated Coulomb matrix block from packed complex values.
+     * @param[in] ik K-point index.
+     * @param[in] mu_begin First row index.
+     * @param[in] mu_end Row end index.
+     * @param[in] nu_begin First column index.
+     * @param[in] nu_end Column end index.
+     * @param[in] Vq Complex block values.
+     */
     void set_aux_cut_coulomb_k_2d_block_packed(int ik, int mu_begin, int mu_end,
                                                int nu_begin, int nu_end,
                                                const std::complex<double> *Vq);
 
-    /** @brief Set dielectric function on imaginary frequency axis. */
+    /**
+     * @brief Set the dielectric function on the imaginary-frequency axis.
+     * @param[in] omegas_imag Imaginary-frequency points.
+     * @param[in] dielect_func Dielectric-function values.
+     */
     void set_dielect_func_imagfreq(const std::vector<double> &omegas_imag,
                                    const std::vector<double> &dielect_func);
 
-    /** @brief Set velocity matrix (separated real/imag arrays). */
+    /**
+     * @brief Set velocity matrices from separate real and imaginary arrays.
+     * @param[in] n_spins Number of spin channels.
+     * @param[in] n_kpts Number of k-points.
+     * @param[in] n_states Number of states.
+     * @param[in] velocity_real Real parts of the matrices.
+     * @param[in] velocity_imag Imaginary parts of the matrices.
+     */
     void set_velocity_matrix(int n_spins, int n_kpts, int n_states,
                              const double *velocity_real, const double *velocity_imag);
 
-    /** @brief Set velocity matrix (packed complex array). */
+    /**
+     * @brief Set velocity matrices from packed complex values.
+     * @param[in] n_spins Number of spin channels.
+     * @param[in] n_kpts Number of k-points.
+     * @param[in] n_states Number of states.
+     * @param[in] velocity Complex matrix values.
+     */
     void set_velocity_matrix_packed(int n_spins, int n_kpts, int n_states,
                                     const std::complex<double> *velocity);
 
-    /** @brief Set k-points for band structure calculations. */
+    /**
+     * @brief Set k-points for band-structure calculations.
+     * @param[in] n_kpts_band Number of band k-points.
+     * @param[in] kfrac_band Fractional band k-point coordinates.
+     */
     void set_band_kvec(int n_kpts_band, const double *kfrac_band);
 
-    /** @brief Set occupation numbers and eigenvalues for band k-points. */
+    /**
+     * @brief Set occupation numbers and eigenvalues for band k-points.
+     * @param[in] n_spins Number of spin channels.
+     * @param[in] n_kpts_band Number of band k-points.
+     * @param[in] n_states Number of states.
+     * @param[in] occ Occupation numbers.
+     * @param[in] eig Eigenvalues.
+     */
     void set_band_occ_eigval(int n_spins, int n_kpts_band, int n_states, const double *occ,
                              const double *eig);
 
-    /** @brief Set wavefunction for band k-point (separated real/imag). */
+    /**
+     * @brief Set band-k wavefunctions from separate real and imaginary arrays.
+     * @param[in] ispin Spin index.
+     * @param[in] ik_band Band k-point index.
+     * @param[in] nstates_local Local number of states.
+     * @param[in] nbasis_local Local number of basis functions.
+     * @param[in] wfc_real Real parts of the coefficients.
+     * @param[in] wfc_imag Imaginary parts of the coefficients.
+     */
     void set_wfc_band(int ispin, int ik_band, int nstates_local, int nbasis_local,
                       const double *wfc_real, const double *wfc_imag);
 
-    /** @brief Set wavefunction coefficients of spinor format for band k-point (separated real/imag arrays). */
+    /**
+     * @brief Set spinor band-k wavefunctions from separate real and imaginary arrays.
+     * @param[in] ik_band Band k-point index.
+     * @param[in] nstates_local Local number of states.
+     * @param[in] nbasis_local Local number of basis functions.
+     * @param[in] wfc_up_real Real parts of the spin-up coefficients.
+     * @param[in] wfc_up_imag Imaginary parts of the spin-up coefficients.
+     * @param[in] wfc_dn_real Real parts of the spin-down coefficients.
+     * @param[in] wfc_dn_imag Imaginary parts of the spin-down coefficients.
+     */
     void set_wfc_band_spinor(int ik_band, int nstates_local, int nbasis_local,
                              const double* wfc_up_real, const double* wfc_up_imag,
                              const double* wfc_dn_real, const double* wfc_dn_imag);
 
-    /** @brief Set wavefunction for band k-point (packed complex). */
+    /**
+     * @brief Set band-k wavefunctions from packed complex values.
+     * @param[in] ispin Spin index.
+     * @param[in] ik_band Band k-point index.
+     * @param[in] nstates_local Local number of states.
+     * @param[in] nbasis_local Local number of basis functions.
+     * @param[in] wfc Complex coefficients.
+     */
     void set_wfc_band_packed(int ispin, int ik_band, int nstates_local, int nbasis_local,
                              const std::complex<double> *wfc);
 
-    /** @brief Set wavefunction coefficients of spinor format for band k-point (packed complex array). */
+    /**
+     * @brief Set spinor band-k wavefunctions from packed complex values.
+     * @param[in] ik_band Band k-point index.
+     * @param[in] nstates_local Local number of states.
+     * @param[in] nbasis_local Local number of basis functions.
+     * @param[in] wfc_up Spin-up coefficients.
+     * @param[in] wfc_dn Spin-down coefficients.
+     */
     void set_wfc_band_spinor_packed(int ik_band, int nstates_local, int nbasis_local,
                                     const std::complex<double> *wfc_up,
                                     const std::complex<double> *wfc_dn);
@@ -373,7 +619,12 @@ public:
 
     /* Compute (build/get) functions */
 
-    /** @brief Construct and return frequency grids. */
+    /**
+     * @brief Construct imaginary-frequency grids.
+     * @param[in] opts Runtime options.
+     * @param[out] omegas Frequency points.
+     * @param[out] weights Quadrature weights.
+     */
     void get_imaginary_frequency_grids(const Options &opts,
                                        std::vector<double> &omegas, std::vector<double> &weights);
 
@@ -441,6 +692,17 @@ public:
     get_g0w0_sigc_kgrid(const Options &opts, const int n_spins, const std::vector<int> &iks_this,
                         int i_state_low, int i_state_high, const std::vector<double> &vxc, const std::vector<double> &vexx);
 
+    /**
+     * @brief Get G0W0 correlation self-energies and quasiparticle energies for k-grid states.
+     * @param[in] opts Runtime options.
+     * @param[in] n_spins Number of spin channels.
+     * @param[in] iks_this K-point indices computed on this process.
+     * @param[in] i_state_low First state index (inclusive).
+     * @param[in] i_state_high Last state index (exclusive).
+     * @param[in] vxc XC potential for selected states.
+     * @param[in] vexx Exact-exchange potential for selected states.
+     * @return Correlation self-energies and quasiparticle energies.
+     */
     G0W0QpeResult
     get_g0w0_qpe_kgrid(const Options &opts, const int n_spins, const std::vector<int> &iks_this,
                        int i_state_low, int i_state_high, const std::vector<double> &vxc,
@@ -449,6 +711,15 @@ public:
     /** @brief Get G0W0 spectral functions for k-grid states.
      *
      * The returned data are ordered as [spin][k-point][state][omega].
+     * @param[in] opts Runtime options.
+     * @param[in] n_spins Number of spin channels.
+     * @param[in] iks_this K-point indices computed on this process.
+     * @param[in] i_state_low First state index (inclusive).
+     * @param[in] i_state_high Last state index (exclusive).
+     * @param[in] omegas Real-frequency points.
+     * @param[in] vxc XC potential for selected states.
+     * @param[in] vexx Exact-exchange potential for selected states.
+     * @return Spectral-function values.
      */
     std::vector<double>
     get_g0w0_spectral_function_kgrid(
@@ -456,6 +727,18 @@ public:
         int i_state_low, int i_state_high, const std::vector<double> &omegas,
         const std::vector<double> &vxc, const std::vector<double> &vexx);
 
+    /**
+     * @brief Get G0W0 spectral functions and continued self-energies for k-grid states.
+     * @param[in] opts Runtime options.
+     * @param[in] n_spins Number of spin channels.
+     * @param[in] iks_this K-point indices computed on this process.
+     * @param[in] i_state_low First state index (inclusive).
+     * @param[in] i_state_high Last state index (exclusive).
+     * @param[in] omegas Real-frequency points.
+     * @param[in] vxc XC potential for selected states.
+     * @param[in] vexx Exact-exchange potential for selected states.
+     * @return Spectral functions and continued correlation self-energies.
+     */
     G0W0SpectralFunctionResult
     get_g0w0_spectral_function_with_sigc_kgrid(
         const Options &opts, const int n_spins, const std::vector<int> &iks_this,
@@ -478,6 +761,17 @@ public:
     get_g0w0_sigc_band_k(const Options &opts, const int n_spins, const std::vector<int> &iks_band_this,
                          int i_state_low, int i_state_high, const std::vector<double> &vxc_band, const std::vector<double> &vexx_band);
 
+    /**
+     * @brief Get G0W0 correlation self-energies and quasiparticle energies for band-k states.
+     * @param[in] opts Runtime options.
+     * @param[in] n_spins Number of spin channels.
+     * @param[in] iks_band_this Band k-point indices computed on this process.
+     * @param[in] i_state_low First state index (inclusive).
+     * @param[in] i_state_high Last state index (exclusive).
+     * @param[in] vxc_band XC potential for selected band states.
+     * @param[in] vexx_band Exact-exchange potential for selected band states.
+     * @return Correlation self-energies and quasiparticle energies.
+     */
     G0W0QpeResult
     get_g0w0_qpe_band_k(const Options &opts, const int n_spins,
                         const std::vector<int> &iks_band_this, int i_state_low,
@@ -487,6 +781,15 @@ public:
     /** @brief Get G0W0 spectral functions for band k-point states.
      *
      * The returned data are ordered as [spin][band k-point][state][omega].
+     * @param[in] opts Runtime options.
+     * @param[in] n_spins Number of spin channels.
+     * @param[in] iks_band_this Band k-point indices computed on this process.
+     * @param[in] i_state_low First state index (inclusive).
+     * @param[in] i_state_high Last state index (exclusive).
+     * @param[in] omegas Real-frequency points.
+     * @param[in] vxc_band XC potential for selected band states.
+     * @param[in] vexx_band Exact-exchange potential for selected band states.
+     * @return Spectral-function values.
      */
     std::vector<double>
     get_g0w0_spectral_function_band_k(
@@ -494,6 +797,18 @@ public:
         int i_state_low, int i_state_high, const std::vector<double> &omegas,
         const std::vector<double> &vxc_band, const std::vector<double> &vexx_band);
 
+    /**
+     * @brief Get G0W0 spectral functions and continued self-energies for band-k states.
+     * @param[in] opts Runtime options.
+     * @param[in] n_spins Number of spin channels.
+     * @param[in] iks_band_this Band k-point indices computed on this process.
+     * @param[in] i_state_low First state index (inclusive).
+     * @param[in] i_state_high Last state index (exclusive).
+     * @param[in] omegas Real-frequency points.
+     * @param[in] vxc_band XC potential for selected band states.
+     * @param[in] vexx_band Exact-exchange potential for selected band states.
+     * @return Spectral functions and continued correlation self-energies.
+     */
     G0W0SpectralFunctionResult
     get_g0w0_spectral_function_with_sigc_band_k(
         const Options &opts, const int n_spins, const std::vector<int> &iks_band_this,
