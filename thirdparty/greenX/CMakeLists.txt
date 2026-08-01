@@ -36,7 +36,7 @@ include(GNUInstallDirs)
 # the set the include directory where the mod files will be installed. the include directory is compiler dependent.
 if(NOT DEFINED CMAKE_INSTALL_Fortran_MODULES)
   set(CMAKE_INSTALL_Fortran_MODULES
-      "${CMAKE_INSTALL_FULL_INCLUDEDIR}/${PROJECT_NAME}/${CMAKE_Fortran_COMPILER_ID}-${CMAKE_Fortran_COMPILER_VERSION}"
+      "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}/${CMAKE_Fortran_COMPILER_ID}-${CMAKE_Fortran_COMPILER_VERSION}"
   )
 endif()
 
