@@ -2,8 +2,36 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-02
+
+### Breaking changes
+
+- API `librpa_set_kgrids_kvec` changed to accept the number of loaded SCF
+  k-points explicitly and optional k-point weights. C++/Fortran bindings
+  changed accordingly: `set_kgrids_kvec`.
+- API `librpa_set_ibz_mapping` was renamed to `librpa_set_kq_mapping`.
+  C++/Fortran bindings changed accordingly: `set_ibz_mapping` was renamed to
+  `set_kq_mapping`.
+
 ### Added
 
+- New public APIs:
+  - Global output control: `librpa_set_output_level` and
+    `librpa_get_output_level`.
+  - Restart setup: `librpa_set_restart_from_dir`.
+  - Auxiliary-basis and symmetry metadata: `librpa_set_ao_basis_aux_shrink`,
+    `librpa_set_basis_convention`, and `librpa_set_symmetry_operations`.
+  - Packed-complex Coulomb input:
+    `librpa_set_aux_bare_coulomb_k_atom_pair_packed`,
+    `librpa_set_aux_cut_coulomb_k_atom_pair_packed`,
+    `librpa_set_aux_bare_coulomb_k_2d_block_packed`, and
+    `librpa_set_aux_cut_coulomb_k_2d_block_packed`.
+  - Velocity-matrix input: `librpa_set_velocity_matrix` and
+    `librpa_set_velocity_matrix_packed`.
+  - GW quasiparticle and spectral-function retrieval:
+    `librpa_get_g0w0_qpe_kgrid`, `librpa_get_g0w0_qpe_band_k`,
+    `librpa_get_g0w0_spectral_function_kgrid`, and
+    `librpa_get_g0w0_spectral_function_band_k`.
 - Added CUDA and HIP acceleration for EXX, RPA, GW, and head/wing calculations
   through LibDDLA, GPU-enabled LibRI, and optional ELPA routines.
 - Added support for bundled or external ELPA and bundled or external LibDDLA
@@ -34,8 +62,10 @@
   its default convergence threshold.
 - Improved memory use and scaling in response Fourier transforms, screened
   interactions, self-energy rotation, and symmetry-enabled calculations.
-- Made the driver fail on a missing input file or unknown task while still
-  finalizing cleanly after task exceptions.
+- Made the driver fail cleanly on missing input files, unknown tasks, and
+  initialization or task exceptions while finalizing LibRPA and MPI as applicable.
+- Made the required MPI thread-support level configurable at build time and
+  added startup reporting of the requested and provided levels.
 
 ### Deprecated
 
@@ -195,7 +225,8 @@ Initial tagged snapshot.
 - Corrected early Green-function, response, spin, and distributed RPA-energy
   calculations.
 
-[Unreleased]: https://github.com/Srlive1201/LibRPA/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Srlive1201/LibRPA/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Srlive1201/LibRPA/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Srlive1201/LibRPA/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Srlive1201/LibRPA/compare/v0.4.0-gw-benchmark...v0.5.0
 [0.4.0-gw-benchmark]: https://github.com/Srlive1201/LibRPA/compare/v0.3.0...v0.4.0-gw-benchmark
