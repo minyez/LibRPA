@@ -30,6 +30,9 @@ extern const char * fortran_compiler_flags;
 //! Commit hash of linked GreenX
 extern const char * greenx_commit_hash;
 
+//! Build timestamp
+extern const char * build_time;
+
 // CMake Options
 //! CMake build type
 extern const char * cmake_build_type;

@@ -22,6 +22,8 @@ const char * fortran_compiler_flags = "${CMAKE_Fortran_FLAGS}";
 
 const char * cmake_build_type = "${CMAKE_BUILD_TYPE}";
 
+const char * build_time = __DATE__ " " __TIME__;
+
 const char * use_libri = "${LIBRPA_USE_LIBRI}";
 
 const char * use_external_elpa = "${LIBRPA_USE_EXTERNAL_ELPA}";

@@ -19,6 +19,7 @@ const std::string& cmake_info_storage()
         std::stringstream ss;
         ss << "LibRPA CMake build info:" << "\n"
         << "| Build type               : " << envs::cmake_build_type << "\n"
+        << "| Build time               : " << envs::build_time << "\n"
         << "| Source code directory    : " << envs::source_dir << "\n"
         << "| Source code Git reference: " << envs::git_ref << "\n"
         << "| Source code Git hash     : " << envs::git_hash << "\n"
