@@ -271,7 +271,8 @@ static std::string banner(char c, int n)
 
 void Profiler::display(int verbose) noexcept
 {
-    global::lib_printf("%s", this->get_profile_string(verbose).c_str());
+    // Leading critical marker ensures that this message is always printed.
+    global::lib_printf(LIBRPA_VERBOSE_CRITICAL, "%s", this->get_profile_string(verbose).c_str());
 }
 
 std::string Profiler::get_profile_string(int verbose) noexcept

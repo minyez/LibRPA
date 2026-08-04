@@ -42,10 +42,12 @@ void driver::task_rpa()
     corr = h.get_rpa_correlation_energy(driver::opts, corr_irk);
 
     mpi_comm_global_h.barrier();
-    if (mpi_comm_global_h.is_root() && librpa_int::global::should_output())
+    constexpr auto result_output_level = LIBRPA_VERBOSE_CRITICAL;
+    if (mpi_comm_global_h.is_root()
+        && librpa_int::global::should_output(result_output_level))
     {
-        lib_printf("RPA correlation energy (Hartree)\n");
-        lib_printf("| Weighted contribution from each k:\n");
+        lib_printf(result_output_level, "RPA correlation energy (Hartree)\n");
+        lib_printf(result_output_level, "| Weighted contribution from each k:\n");
 
         for (int i_irk = 0; i_irk < n_ibz_kpoints; i_irk++)
         {
@@ -58,7 +60,7 @@ void driver::task_rpa()
                 std::cout << "| q" << i_irk + 1 << ": " << corr_irk[i_irk] << std::endl;
             }
         }
-        lib_printf("| Total EcRPA: %18.9f\n", corr);
+        lib_printf(result_output_level, "| Total EcRPA: %18.9f\n", corr);
     }
     if (mpi_comm_global_h.is_root())
     {

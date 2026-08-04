@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Kept essential RPA, EXX, and G0W0 result tables visible at `warning` and
+  `critical` output levels.
+
 ## [0.7.0] - 2026-08-02
 
 ### Breaking changes

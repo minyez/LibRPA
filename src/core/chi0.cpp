@@ -1368,7 +1368,7 @@ static void build_gf_Rt_libri_kblacs_para(
     double tau,
     std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> &gf_libri)
 {
-    global::profiler.start("build_gf_Rt_libri_kblacs_para");
+    global::profiler.start("build_gf_Rt_libri_kblacs_para", LIBRPA_VERBOSE_DEBUG);
 
     const auto atom_nw = atbasis_wfc.get_atom_nb_map();
     const auto wfc_layouts = atbasis_wfc.has_l_shells()
@@ -1378,8 +1378,9 @@ static void build_gf_Rt_libri_kblacs_para(
         use_symmetry_context
         && can_restore_symmetry_kstar_meanfield(
             symmetry_context, wfc_layouts, mf, kfrac_list, atom_nw);
-    global::ofs_myid << "Chi0 kBLACS GF symmetry restore: "
-                     << (restore_symmetry_kstars ? "on" : "off") << std::endl;
+    if (global::should_output(LIBRPA_VERBOSE_DEBUG))
+        global::ofs_myid << "Chi0 kBLACS GF symmetry restore: "
+                         << (restore_symmetry_kstars ? "on" : "off") << std::endl;
     auto gf_imagtimes_Rs_cplx = restore_symmetry_kstars
         ? get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
               ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, {tau}, Rs, kblacs_ctxt,
@@ -2271,7 +2272,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                     // time
                     const auto nbands = mf.get_n_bands();
                     assert(nbands_G < nbands);
-                    if (comm_h.is_root())
+                    if (comm_h.is_root() && global::should_output())
                     {
                         if (nbands_G >= 0)
                             std::cout << "Green's Function sums over " << nbands_G

@@ -1302,7 +1302,7 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
                                std::to_string(reader_version));
     }
 
-    cout << "Begin READ_Vq_Row" << endl;
+    if (should_output()) cout << "Begin READ_Vq_Row" << endl;
     const auto &basis_aux = target_coulomb_basis(use_shrink_basis);
     std::set<int> local_I_set;
     for(auto &lap:local_atpair)
@@ -1333,16 +1333,10 @@ size_t read_Vq_row(const string &dir_path, const string &vq_fprefix, double thre
             {
                 binary = check_coulomb_file_binary(file_path);
                 binary_checked = true;
-                if (librpa_int::global::myid_global == 0)
+                if (myid_global == 0)
                 {
-                    if (binary)
-                    {
-                        cout << "Unformatted binary V files detected" << endl;
-                    }
-                    else
-                    {
-                        cout << "ASCII format V files detected" << endl;
-                    }
+                    const char *info = binary ? "Unformatted binary" : "ASCII format";
+                    if (should_output()) cout << info << " V files detected" << endl;
                 }
             }
             handle_Vq_row_file(file_path, threshold, coulomb, local_atpair, binary, basis_aux);

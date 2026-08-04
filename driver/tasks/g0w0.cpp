@@ -753,8 +753,9 @@ void driver::task_g0w0()
                 }
             }
 
-            // display results
-            lib_printf("Printing quasi-particle energy [unit: eV]\n\n");
+            // Final scientific results remain visible at every non-silent output level.
+            constexpr auto result_output_level = LIBRPA_VERBOSE_CRITICAL;
+            lib_printf(result_output_level, "Printing quasi-particle energy [unit: eV]\n\n");
             for (int i_spin = 0; i_spin < n_spins; i_spin++)
             {
                 for (int i_kpoint = 0; i_kpoint < n_kpoints_output; i_kpoint++)
@@ -765,11 +766,15 @@ void driver::task_g0w0()
                     const auto &k = output_full_kgrid_from_symmetry
                         ? full_k_members[as_size(i_kpoint)].k_bz
                         : kfrac_list[i_kpoint_ibz];
-                    lib_printf("spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n",
+                    lib_printf(result_output_level,
+                               "spin %2d, k-point %4d: (%.5f, %.5f, %.5f) \n",
                                i_spin+1, i_kpoint+1, k.x, k.y, k.z);
-                    lib_printf("%124s\n", banner.c_str());
-                    lib_printf("%5s %16s %16s %16s %16s %16s %16s %16s\n", "State", "occ", "e_mf", "v_xc", "v_exx", "ReSigc", "ImSigc", "e_qp");
-                    lib_printf("%124s\n", banner.c_str());
+                    lib_printf(result_output_level, "%124s\n", banner.c_str());
+                    lib_printf(result_output_level,
+                               "%5s %16s %16s %16s %16s %16s %16s %16s\n",
+                               "State", "occ", "e_mf", "v_xc", "v_exx", "ReSigc",
+                               "ImSigc", "e_qp");
+                    lib_printf(result_output_level, "%124s\n", banner.c_str());
                     const size_t start_k = (i_spin * n_kpoints + i_kpoint_ibz) * n_states_calc;
                     for (int i = 0; i < n_states_calc; i++)
                     {
@@ -781,10 +786,11 @@ void driver::task_g0w0()
                         const auto &resigc = sigc_all[start_k+i].real() * HA2EV;
                         const auto &imsigc = sigc_all[start_k+i].imag() * HA2EV;
                         const auto &eqp = eks_state - vxc_state + exx_state + resigc;
-                        lib_printf("%5d %16.5f %16.5f %16.5f %16.5f %16.5f %16.5f %16.5f\n",
+                        lib_printf(result_output_level,
+                                   "%5d %16.5f %16.5f %16.5f %16.5f %16.5f %16.5f %16.5f\n",
                                    i_state+1, occ_state, eks_state, vxc_state, exx_state, resigc, imsigc, eqp);
                     }
-                    lib_printf("\n");
+                    lib_printf(result_output_level, "\n");
                 }
             }
 

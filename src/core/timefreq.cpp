@@ -53,8 +53,11 @@ void TFGrids::show() const
 {
     using std::endl;
     using std::cout;
-
     using librpa_int::global::lib_printf;
+    using librpa_int::global::should_output;
+
+    if (!should_output()) return;
+
     cout << "Grid type: " << TFGrids::GRID_TYPES_NOTES[grid_type] << endl;
     cout << "Grid size: " << n_grids << endl;
     cout << "Frequency node & weight: " << endl;

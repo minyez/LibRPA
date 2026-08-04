@@ -81,18 +81,21 @@ void driver::task_exx()
             }
             mpi_comm_global_h.reduce(MPI_IN_PLACE, exx_sp_collected.data(), n_states_calc * n_kpoints, 0, MPI_SUM);
         }
-        if (mpi_comm_global_h.myid == 0 && should_output())
+        constexpr auto result_output_level = LIBRPA_VERBOSE_CRITICAL;
+        if (mpi_comm_global_h.myid == 0 && should_output(result_output_level))
         {
             cout << "Spin channel " << isp+1 << endl;
             for (int ik = 0; ik < n_kpoints; ik++)
             {
                 const int index = ik * n_states_calc;
                 cout << "k-point " << ik + 1 << ": " << kfrac_list[ik] << endl;
-                lib_printf("%-4s  %-10s  %-10s\n", "Band", "e_exx (Ha)", "e_exx (eV)");
+                lib_printf(result_output_level, "%-4s  %-10s  %-10s\n",
+                           "Band", "e_exx (Ha)", "e_exx (eV)");
                 for (int ib = 0; ib != n_states_calc; ib++)
                 {
                     const auto &e = exx_sp_collected[index + ib];
-                    lib_printf("%4d  %10.5f  %10.5f\n", i_state_low + ib + 1, e, HA2EV * e);
+                    lib_printf(result_output_level, "%4d  %10.5f  %10.5f\n",
+                               i_state_low + ib + 1, e, HA2EV * e);
                 }
                 cout << endl;
             }

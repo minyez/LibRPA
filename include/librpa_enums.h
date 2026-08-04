@@ -34,7 +34,7 @@ extern "C" {
 /** @brief Verbose level for warning messages. */
 #define LIBRPA_VERBOSE_WARN 2
 
-/** @brief Verbose level for critical/error messages only. */
+/** @brief Verbose level for essential results and critical/error messages only. */
 #define LIBRPA_VERBOSE_CRITICAL 1
 
 /** @brief Silent mode - no output. */

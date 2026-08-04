@@ -612,6 +612,7 @@ void librpa_set_latvec_and_G(LibrpaHandler* h, const double lat_mat[9], const do
     using std::cout;
     using std::endl;
     using librpa_int::global::profiler;
+    using librpa_int::global::should_output;
 
     const std::string tname = "api_set_latvec_and_G";
     profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
@@ -625,7 +626,7 @@ void librpa_set_latvec_and_G(LibrpaHandler* h, const double lat_mat[9], const do
     pbc.set_latvec_and_G(latt, recp);
 
     pds->comm_h.barrier();
-    if (pds->comm_h.is_root())
+    if (pds->comm_h.is_root() && should_output())
     {
         cout << "Lattice vectors (Bohr): latt" << endl;
         pbc.latvec.print(16);
@@ -653,6 +654,7 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
     using std::endl;
     using librpa_int::coord_t;
     using librpa_int::global::lib_printf;
+    using librpa_int::global::should_output;
     using librpa_int::global::profiler;
 
     const std::string tname = "api_set_atoms";
@@ -676,7 +678,7 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
         const auto &coords = atoms.coords;
         const auto &coords_frac = atoms.coords_frac;
         pds->comm_h.barrier();
-        if (pds->comm_h.is_root())
+        if (pds->comm_h.is_root() && should_output())
         {
             cout << "Atom positions read (Cartesian in Bohr | fractional):" << endl;
             for (int i = 0; i != natoms; i++)
@@ -695,7 +697,7 @@ void librpa_set_atoms(LibrpaHandler* h, int natoms, const int *types, const doub
         atoms.set(v_types, v_coords);
         const auto &coords = atoms.coords;
         pds->comm_h.barrier();
-        if (pds->comm_h.is_root())
+        if (pds->comm_h.is_root() && should_output())
         {
             cout << "Atom positions read (Cartesian in Bohr, fractional not set due to uninitialized lattice):" << endl;
             for (int i = 0; i != natoms; i++)
@@ -716,6 +718,7 @@ void librpa_set_kgrids_kvec(LibrpaHandler* h, int nk1, int nk2, int nk3, int nkp
                             const double* kvecs, const double* kweights)
 {
     using librpa_int::global::lib_printf;
+    using librpa_int::global::should_output;
     using std::cout;
     using std::endl;
     using librpa_int::global::profiler;
@@ -741,7 +744,7 @@ void librpa_set_kgrids_kvec(LibrpaHandler* h, int nk1, int nk2, int nk3, int nkp
     pds->invalidate_compute_objects();
 
     pds->comm_h.barrier();
-    if (pds->comm_h.is_root())
+    if (pds->comm_h.is_root() && should_output())
     {
         librpa_int::global::lib_printf("kgrids: %3d %3d %3d\n", pbc.period.x, pbc.period.y, pbc.period.z);
         cout << "k-points read (Cartesian in 2Pi Bohr^-1 | fractional):" << endl;
@@ -802,7 +805,7 @@ void librpa_set_kq_mapping(LibrpaHandler* h, int nkpts, const int* map_q_ks)
     pds->invalidate_compute_objects();
     // ofs_myid << map << std::endl;
     pds->comm_h.barrier();
-    if (pds->comm_h.is_root())
+    if (pds->comm_h.is_root() && should_output())
     {
         const int nkpt = pbc.irk_point_id_mapping.size();
         cout << "SCF k-point to Coulomb q-point mapping:" << endl;

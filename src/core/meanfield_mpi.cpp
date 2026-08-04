@@ -1013,7 +1013,7 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
     const std::vector<Vector3_Order<int>> &Rs,
     const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm)
 {
-    global::profiler.start(__FUNCTION__);
+    global::profiler.start(__FUNCTION__, LIBRPA_VERBOSE_DEBUG);
 
     if (!kblacs_ctxt.is_initialized())
         throw LIBRPA_RUNTIME_ERROR("KPointBlacsParallelContext is not initialized");

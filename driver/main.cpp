@@ -166,7 +166,7 @@ static void finalize_librpa(bool success)
         librpa::print_profile();
         if (success)
         {
-            lib_printf("libRPA finished successfully\n");
+            lib_printf(LIBRPA_VERBOSE_CRITICAL, "libRPA finished successfully\n");
         }
         else
         {

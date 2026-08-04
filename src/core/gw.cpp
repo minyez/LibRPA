@@ -1127,7 +1127,7 @@ static void build_gf_libri_kblacs_para(
     const std::vector<Vector3_Order<int>> &Rs,
     std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri)
 {
-    global::profiler.start("g0w0_build_gf_libri_kblacs_para");
+    global::profiler.start("g0w0_build_gf_libri_kblacs_para", LIBRPA_VERBOSE_DEBUG);
 
     tau_gf_libri.clear();
     for (auto tau: taus)
@@ -1141,8 +1141,9 @@ static void build_gf_libri_kblacs_para(
         use_symmetry_context
         && can_restore_symmetry_kstar_meanfield(
             symmetry_context, wfc_layouts, mf, kfrac_list, atom_nw);
-    global::ofs_myid << "GW kBLACS GF symmetry restore: "
-                     << (restore_symmetry_kstars ? "on" : "off") << std::endl;
+    if (global::should_output(LIBRPA_VERBOSE_DEBUG))
+        global::ofs_myid << "GW kBLACS GF symmetry restore: "
+                         << (restore_symmetry_kstars ? "on" : "off") << std::endl;
     auto gf_taus_Rs_cplx = restore_symmetry_kstars
         ? get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
               ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, taus, Rs, kblacs_ctxt,
@@ -1692,7 +1693,8 @@ void G0W0::build_spacetime(
                     dtensor_map sigc_posi_tau, sigc_nega_tau;
                     ztensor_map sigc_posi_tau_cplx, sigc_nega_tau_cplx;
 
-                    profiler.start("g0w0_build_spacetime_4", "Compute G(R,t) and G(R,-t)");
+                    profiler.start("g0w0_build_spacetime_4", "Compute G(R,t) and G(R,-t)",
+                                   LIBRPA_VERBOSE_DEBUG);
                     // global::ofs_myid << "gf size " << gf.size() << endl;
                     // global::ofs_myid << "t " << gf[tau].size() << " ; -t " << gf[-tau].size() << endl;
                     std::map<double, dtensor_map> tau_gf_libri;

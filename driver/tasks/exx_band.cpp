@@ -65,7 +65,8 @@ void driver::task_exx_band()
 
     mpi_comm_global_h.barrier();
     const std::string banner(90, '-');
-    if (mpi_comm_global_h.is_root() && should_output())
+    constexpr auto result_output_level = LIBRPA_VERBOSE_CRITICAL;
+    if (mpi_comm_global_h.is_root() && should_output(result_output_level))
     {
         cout << banner << endl;
         cout << "Printing orbital energy [unit: eV]" << endl << endl;
@@ -100,7 +101,7 @@ void driver::task_exx_band()
             }
             mpi_comm_global_h.reduce(MPI_IN_PLACE, exx_sp_collected.data(), n_states_calc * n_kpoints, 0, MPI_SUM);
         }
-        if (mpi_comm_global_h.myid == 0 && should_output())
+        if (mpi_comm_global_h.myid == 0 && should_output(result_output_level))
         {
             for (int ik = 0; ik < n_kpoints; ik++)
             {
