@@ -49,6 +49,11 @@ For naming, follow these general conventions:
 - Use `snake_case` for variables, object instances, functions, and namespaces.
 - Use `SCREAMING_SNAKE_CASE` for constants.
 
+## Profiling
+
+When profiling the driver, set `output_level = critical` to reduce output
+overhead while keeping essential results and the timing report visible.
+
 ## Source code structure of LibRPA
 
 ```
