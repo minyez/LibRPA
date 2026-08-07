@@ -124,9 +124,6 @@ list(APPEND lib_sources
         mpi/two_level_parallel_context.cpp
         mpi/kpoint_blacs_parallel_context.cpp
 
-        # qsgw/fermi_energy_occupation.cpp
-        # qsgw/Hamiltonian.cpp
-
         utils/constants.cpp
         utils/dev_options.cpp
         utils/profiler.cpp
@@ -166,6 +163,7 @@ endif()
 
 # source must be PRIVATE to avoid recompilation when linking driver to this library
 target_sources(rpa_lib PRIVATE ${lib_sources})
+add_subdirectory(qsgw)
 target_link_libraries(rpa_lib PRIVATE ${math_libs} ${parallel_libs})
 
 install(TARGETS rpa_lib
