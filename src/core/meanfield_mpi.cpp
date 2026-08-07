@@ -330,6 +330,9 @@ static void pgemm_wfc_scaled_wfc_h(const int n_aos, const int n_cols,
     DEVICE_CHECK(deviceFreeAsync(d_B, handle->stream));
     DEVICE_CHECK(deviceFreeAsync(d_C, handle->stream));
 #else
+    global::profiler.start("pgemm_entry_wait", LIBRPA_VERBOSE_DEBUG);
+    blacs_h.barrier();
+    global::profiler.stop("pgemm_entry_wait");
     global::profiler.start("pgemm", LIBRPA_VERBOSE_DEBUG);
     ScalapackConnector::pgemm_f('N', 'C', n_aos, n_aos, n_cols, C_ONE,
                                 wfc_bra, 1, 1,
@@ -339,13 +342,21 @@ static void pgemm_wfc_scaled_wfc_h(const int n_aos, const int n_cols,
                                 C_ZERO, out_opt, 1, 1,
                                 workspace.desc_out_opt.desc);
     global::profiler.stop("pgemm");
+    global::profiler.start("pgemm_exit_wait", LIBRPA_VERBOSE_DEBUG);
+    blacs_h.barrier();
+    global::profiler.stop("pgemm_exit_wait");
 #endif
+    global::profiler.start("pgemr2d", LIBRPA_VERBOSE_DEBUG);
     ScalapackConnector::pgemr2d_f(n_aos, n_aos,
                                   out_opt, 1, 1,
                                   workspace.desc_out_opt.desc,
                                   out.ptr() == nullptr ? dummy.data() : out.ptr(),
                                   1, 1, desc_out.desc,
                                   blacs_h.ictxt);
+    global::profiler.stop("pgemr2d");
+    global::profiler.start("pgemr2d_exit_wait", LIBRPA_VERBOSE_DEBUG);
+    blacs_h.barrier();
+    global::profiler.stop("pgemr2d_exit_wait");
     global::profiler.stop(__FUNCTION__);
 }
 
@@ -1034,11 +1045,15 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
     if (desc_wfc.ictxt() != desc_dm.ictxt())
         throw LIBRPA_RUNTIME_ERROR("wave-function and Green's-function descriptors must use the same BLACS context");
 
+    global::profiler.start("gf_check_same_imagtimes", LIBRPA_VERBOSE_DEBUG);
     check_same_imagtimes(imagtimes, kblacs_ctxt.comm_global_h);
+    global::profiler.stop("gf_check_same_imagtimes");
 
     std::vector<int> n_Rs_all, Rs_all;
     int nR_max;
+    global::profiler.start("gf_collect_Rs", LIBRPA_VERBOSE_DEBUG);
     collect_Rs(Rs, n_Rs_all, Rs_all, nR_max, kblacs_ctxt.comm_kpoint_h);
+    global::profiler.stop("gf_collect_Rs");
 
     std::map<double, std::map<Vector3_Order<int>, Matz>> gf;
     if (imagtimes.empty())
@@ -1062,17 +1077,21 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
     const auto &iks_local = kblacs_ctxt.kpoints_local();
     const int nk_local = iks_local.size();
     int nk_sum = 0;
+    global::profiler.start("gf_check_kpoint_distribution", LIBRPA_VERBOSE_DEBUG);
     MPI_Allreduce(&nk_local, &nk_sum, 1, mpi_datatype<int>::value, MPI_SUM,
                   kblacs_ctxt.comm_kpoint_h.comm);
+    global::profiler.stop("gf_check_kpoint_distribution");
     if (nk_sum != n_kpoints)
         throw LIBRPA_RUNTIME_ERROR("k-point BLACS context has inconsistent k-point distribution");
 
+    global::profiler.start("gf_workspace_init", LIBRPA_VERBOSE_DEBUG);
     std::vector<cplxdb> dummy(1, C_ZERO);
     Matz scaled_wfc_ket(desc_wfc.m_loc(), desc_wfc.n_loc(), MAJOR::COL);
     Matz gf_k(desc_dm.m_loc(), desc_dm.n_loc(), MAJOR::COL);
     auto wfc_gemm_workspace = create_wfc_gemm_workspace(desc_wfc, desc_dm,
                                                         kblacs_ctxt.blacs_h);
     Matz kmat(nk_local, n_elem, MAJOR::COL);
+    global::profiler.stop("gf_workspace_init");
 
     const double scale_spin = 0.5 * mf.get_n_spins() * mf.get_n_spinor();
     for (const auto tau: imagtimes)
@@ -1096,6 +1115,7 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
             if (wfc_ket != nullptr && static_cast<size_t>(wfc_ket->size) != wfc_size_loc)
                 throw LIBRPA_RUNTIME_ERROR("wave-function ket block size is inconsistent with descriptor");
 
+            global::profiler.start("gf_scale_wfc", LIBRPA_VERBOSE_DEBUG);
             std::vector<double> scales(n_states);
 #pragma omp parallel for schedule(static) if (n_states > 64)
             for (int ib = 0; ib != n_states; ++ib)
@@ -1128,15 +1148,18 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
             }
 
             gf_k = C_ZERO;
+            global::profiler.stop("gf_scale_wfc");
             const cplxdb *wfc_bra_ptr = wfc_bra == nullptr ? dummy.data() : wfc_bra->c;
             pgemm_wfc_scaled_wfc_h(n_aos, n_states, wfc_bra_ptr, scaled_wfc_ket.ptr(),
                                    desc_wfc, wfc_gemm_workspace, gf_k, desc_dm,
                                    kblacs_ctxt.blacs_h);
+            global::profiler.start("gf_pack_kmat", LIBRPA_VERBOSE_DEBUG);
 #pragma omp parallel for schedule(static) if (n_elem > 4096)
             for (int i = 0; i != n_elem; ++i)
             {
                 kmat.ptr()[ik_local + static_cast<size_t>(i) * nk_local] = gf_k.ptr()[i];
             }
+            global::profiler.stop("gf_pack_kmat");
         }
 
         for (int pid = 0; pid != kblacs_ctxt.comm_kpoint_h.nprocs; ++pid)
@@ -1144,6 +1167,7 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
             const int nR_this = n_Rs_all[pid];
             if (nR_this < 1) continue;
 
+            global::profiler.start("gf_k_to_R_local", LIBRPA_VERBOSE_DEBUG);
             Matz transmat(nR_this, nk_local, MAJOR::COL);
             const double tau_sign = tau > 0 ? 1.0 : -1.0;
             const size_t n_trans = static_cast<size_t>(nR_this) * nk_local;
@@ -1168,14 +1192,25 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
                                         transmat.ptr(), nR_this, kmat.ptr(), nk_local, C_ZERO,
                                         rmat.ptr(), nR_this);
             }
+            global::profiler.stop("gf_k_to_R_local");
 
             const size_t count = static_cast<size_t>(nR_this) * n_elem;
             if (count > static_cast<size_t>(std::numeric_limits<int>::max()))
                 throw LIBRPA_RUNTIME_ERROR("local Green's-function Fourier block is too large for MPI collectives");
             const int count_int = static_cast<int>(count);
+            global::profiler.start("gf_k_to_R_reduce", LIBRPA_VERBOSE_DEBUG);
             if (kblacs_ctxt.comm_kpoint_h.myid == pid)
             {
                 kblacs_ctxt.comm_kpoint_h.reduce(MPI_IN_PLACE, rmat.ptr(), count_int, pid, MPI_SUM);
+            }
+            else
+            {
+                kblacs_ctxt.comm_kpoint_h.reduce(MPI_IN_PLACE, rmat.ptr(), count_int, pid, MPI_SUM);
+            }
+            global::profiler.stop("gf_k_to_R_reduce");
+            if (kblacs_ctxt.comm_kpoint_h.myid == pid)
+            {
+                global::profiler.start("gf_store_R", LIBRPA_VERBOSE_DEBUG);
                 for (int iR = 0; iR != nR_this; ++iR)
                 {
                     const int index = pid * nR_max * 3 + iR * 3;
@@ -1189,10 +1224,7 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
                         m.ptr()[i] = rmat_iR[static_cast<size_t>(i) * nR_this];
                     }
                 }
-            }
-            else
-            {
-                kblacs_ctxt.comm_kpoint_h.reduce(MPI_IN_PLACE, rmat.ptr(), count_int, pid, MPI_SUM);
+                global::profiler.stop("gf_store_R");
             }
         }
         gf.emplace(tau, std::move(gf_tau));

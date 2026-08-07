@@ -1655,7 +1655,11 @@ void G0W0::build_spacetime(
         // global::lib_printf("task %d itau %d start\n", mpi_comm_global_h.myid, itau);
         const auto tau = tfg.get_time_nodes()[itau];
         // global::lib_printf("task %d Wc_tau_R.count(tau) %zu\n", mpi_comm_global_h.myid, Wc_tau_R.count(tau));
+        profiler.start("g0w0_setup_wc_entry_wait", LIBRPA_VERBOSE_DEBUG);
+        comm_h.barrier();
+        profiler.stop("g0w0_setup_wc_entry_wait");
         profiler.start("g0w0_build_spacetime_3", "Setup LibRI Wc");
+        profiler.start("g0w0_setup_wc_set_Ws", LIBRPA_VERBOSE_DEBUG);
         size_t n_obj_wc_libri = 0;
         if (use_complex_tensor)
         {
@@ -1679,7 +1683,10 @@ void G0W0::build_spacetime(
             gw_libri.set_Ws(Wc_libri, this->libri_threshold_Wc);
             if (it != tau_Wc_libri.end()) tau_Wc_libri.erase(it);
         }
+        profiler.stop("g0w0_setup_wc_set_Ws");
+        profiler.start("g0w0_setup_wc_malloc_trim", LIBRPA_VERBOSE_DEBUG);
         release_free_mem();
+        profiler.stop("g0w0_setup_wc_malloc_trim");
         profiler.stop("g0w0_build_spacetime_3");
 
         const int n_spinor = mf.get_n_spinor();
@@ -1693,6 +1700,9 @@ void G0W0::build_spacetime(
                     dtensor_map sigc_posi_tau, sigc_nega_tau;
                     ztensor_map sigc_posi_tau_cplx, sigc_nega_tau_cplx;
 
+                    profiler.start("g0w0_gf_entry_wait", LIBRPA_VERBOSE_DEBUG);
+                    comm_h.barrier();
+                    profiler.stop("g0w0_gf_entry_wait");
                     profiler.start("g0w0_build_spacetime_4", "Compute G(R,t) and G(R,-t)",
                                    LIBRPA_VERBOSE_DEBUG);
                     // global::ofs_myid << "gf size " << gf.size() << endl;
@@ -1766,7 +1776,12 @@ void G0W0::build_spacetime(
                             for (const auto &gf: gf_libri)
                                 n_obj_gf_libri += gf.second.size();
 
+                            global::profiler.start("g0w0_set_Gs", LIBRPA_VERBOSE_DEBUG);
                             gw_libri_cplx.set_Gs(gf_libri, this->libri_threshold_G);
+                            global::profiler.stop("g0w0_set_Gs");
+                            global::profiler.start("g0w0_cal_sigc_entry_wait", LIBRPA_VERBOSE_DEBUG);
+                            comm_h.barrier();
+                            global::profiler.stop("g0w0_cal_sigc_entry_wait");
                             global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
                             gw_libri_cplx.cal_Sigmas();
                             if (restore_input_sigc_output)
@@ -1776,8 +1791,11 @@ void G0W0::build_spacetime(
                                         gw_libri_cplx.Sigmas, symmetry_ctx,
                                         symmetry_sector_stars, this->atbasis_wfc);
                             }
-                            release_free_mem();
                             global::profiler.stop("g0w0_build_spacetime_5");
+                            global::profiler.start("g0w0_cal_sigc_malloc_trim",
+                                                   LIBRPA_VERBOSE_DEBUG);
+                            release_free_mem();
+                            global::profiler.stop("g0w0_cal_sigc_malloc_trim");
                             global::profiler.start("g0w0_build_spacetime_5_clean",
                                                    LIBRPA_VERBOSE_DEBUG);
                             gw_libri_cplx.free_Gs();
@@ -1846,7 +1864,13 @@ void G0W0::build_spacetime(
                             //         }
                             //     }
                             // }
+	                            global::profiler.start("g0w0_set_Gs", LIBRPA_VERBOSE_DEBUG);
 	                            gw_libri.set_Gs(gf_libri, this->libri_threshold_G);
+	                            global::profiler.stop("g0w0_set_Gs");
+	                            global::profiler.start("g0w0_cal_sigc_entry_wait",
+	                                                   LIBRPA_VERBOSE_DEBUG);
+	                            comm_h.barrier();
+	                            global::profiler.stop("g0w0_cal_sigc_entry_wait");
 	                            global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
 	                            gw_libri.cal_Sigmas();
 	                            if (restore_input_sigc_output)
