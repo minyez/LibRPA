@@ -67,25 +67,32 @@ static void initialize_librpa(bool &initialized)
     // Global profiler begins right after MPI is initialized
     profiler.start("driver_total", "Total for driver");
 
-    lib_printf_root("Total number of tasks    : %5d\n", size_global);
-    lib_printf_root("Total number of nodes    : %5d\n", size_inter);
-    lib_printf_root("Maximal number of threads: %3d\n", omp_get_max_threads());
-    lib_printf_root("MPI thread support level : %s\n", mpi_thread_level_name(LIBRPA_MPI_THREAD_LEVEL));
+    // Use critical so that MPI inforation are always printed when not silent
+    constexpr auto level = LIBRPA_VERBOSE_CRITICAL;
+    lib_printf_root(level, "Total number of tasks    : %5d\n", size_global);
+    lib_printf_root(level, "Total number of nodes    : %5d\n", size_inter);
+    lib_printf_root(level, "Maximal number of threads: %3d\n", omp_get_max_threads());
+    lib_printf_root(level, "MPI thread support level : %s\n",
+                    mpi_thread_level_name(LIBRPA_MPI_THREAD_LEVEL));
     mpi_comm_global_h.barrier();
-    lib_printf_root("MPI tasks information:\n");
+    lib_printf_root(level, "MPI tasks information:\n");
     mpi_comm_global_h.barrier();
-    lib_printf_coll("| %s\n", mpi_comm_global_h.str().c_str());
+    lib_printf_coll(level, "| %s\n", mpi_comm_global_h.str().c_str());
     mpi_comm_global_h.barrier();
-    printf_comm_root(mpi_comm_intra_h, "| Global ID of master process of node %5d : %5d\n",
-                     mpi_comm_inter_h.myid, mpi_comm_global_h.myid);
+    if (mpi_comm_intra_h.is_root())
+    {
+        lib_printf(level,
+                   "| Global ID of master process of node %5d : %5d\n",
+                   mpi_comm_inter_h.myid, mpi_comm_global_h.myid);
+    }
     mpi_comm_global_h.barrier();
 
     // Print cmake infomation
     if (mpi_comm_global_h.is_root())
     {
-        lib_printf("\n");
-        lib_printf("%s", librpa::get_build_info());
-        lib_printf("\n");
+        lib_printf(level, "\n");
+        lib_printf(level, "%s", librpa::get_build_info());
+        lib_printf(level, "\n");
     }
     mpi_comm_global_h.barrier();
 

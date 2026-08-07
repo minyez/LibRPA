@@ -112,7 +112,8 @@ void lib_printf_coll_msg_impl(const librpa_int::MpiCommHandler &comm_h,
     {
         for (int i = 0; i < comm_h.nprocs; ++i)
         {
-            if (counts[i] > 0) lib_printf("%.*s", counts[i], all_msgs.data() + displs[i]);
+            if (counts[i] > 0)
+                lib_printf(verbose_level, "%.*s", counts[i], all_msgs.data() + displs[i]);
         }
     }
     comm_h.barrier();

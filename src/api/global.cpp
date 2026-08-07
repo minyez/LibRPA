@@ -42,7 +42,7 @@ static void librpa_init_global_common(MPI_Comm comm, LibrpaSwitch switch_redirec
     init_global_mpi(comm);
     const bool redirect_stdout = switch_redirect_stdout == LIBRPA_SWITCH_ON;
     const bool process_output = switch_process_output == LIBRPA_SWITCH_ON;
-    librpa_int::global::init_global_io(redirect_stdout, redirect_path, process_output);
+    init_global_io(redirect_stdout, redirect_path, process_output);
 
 #ifdef LIBRPA_USE_ELPA
     if (elpa_init(ELPA_API_VERSION) != ELPA_OK) {  
@@ -51,7 +51,7 @@ static void librpa_init_global_common(MPI_Comm comm, LibrpaSwitch switch_redirec
 #endif
 
     mpi_comm_global_h.barrier();
-    lib_printf_root("Initialized LibRPA global environment at %s\n",
+    lib_printf_root(LIBRPA_VERBOSE_CRITICAL, "Initialized LibRPA global environment at %s\n",
                     librpa_int::get_timestamp().c_str());
     mpi_comm_global_h.barrier();
 }
@@ -85,7 +85,7 @@ void librpa_finalize_global(void)
 {
     using namespace librpa_int::global;
     mpi_comm_global_h.barrier();
-    lib_printf_root("Finalizing LibRPA global environment at %s\n",
+    lib_printf_root(LIBRPA_VERBOSE_CRITICAL, "Finalizing LibRPA global environment at %s\n",
                     librpa_int::get_timestamp().c_str());
     mpi_comm_global_h.barrier();
 
@@ -100,7 +100,7 @@ void librpa_finalize_global(void)
     // terminate all timers for the coming summary
     profiler.terminate();
     // print per-process profiling
-    if (ofs_myid.is_open())
+    if (ofs_myid.is_open() && should_output(LIBRPA_VERBOSE_CRITICAL))
     {
         ofs_myid << "Print per-process profiling data" << std::endl;
         ofs_myid << profiler.get_profile_string();

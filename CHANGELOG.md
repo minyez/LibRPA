@@ -6,6 +6,7 @@
 
 - Kept essential RPA, EXX, and G0W0 result tables visible at `warning` and
   `critical` output levels.
+- Kept MPI task/node and CMake build information visible at every non-silent output level.
 
 ## [0.7.0] - 2026-08-02
 
