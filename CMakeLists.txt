@@ -65,7 +65,7 @@ if (DEFINED USE_GREENX_API)
 endif()
 # Hash number of the bundled greenX. Keep it consistent with thirdparty/greenX
 set(_BUNDLED_GREENX_COMMIT_HASH  "c90d131")
-set(_BUNDLED_LIBRI_COMMIT_HASH   "e978e96")
+set(_BUNDLED_LIBRI_COMMIT_HASH   "75902f8")
 set(_BUNDLED_LIBRI_GPU_COMMIT_HASH "8f20f4c")
 set(_BUNDLED_LIBCOMM_COMMIT_HASH "12457e7")
 set(_BUNDLED_LIBDDLA_COMMIT_HASH "0d576d4")

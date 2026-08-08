@@ -121,7 +121,7 @@ The bundled or included third-party components are licensed as follows:
 
 - [greenX (`c90d131`)](https://github.com/nomad-coe/greenX/tree/c90d131873eeec68406c335dc22ae8ad4b445dd8): Apache-2.0
 - [cereal (1.3.0)](https://github.com/USCiLab/cereal/tree/v1.3.0): BSD-3-Clause
-- [LibRI (`e978e96`)](https://github.com/abacusmodeling/LibRI/tree/e978e96404dd9bcbf8cca0c954470cbd5bdf2edf): LGPL-3.0
+- [LibRI (`75902f8`)](https://github.com/abacusmodeling/LibRI/tree/75902f8555b114da11c1086b7fdb02202bc3ced8): LGPL-3.0
 - LibRI GPU variant (`2f5e23e`): LGPL-3.0
 - [LibComm (`12457e7`)](https://github.com/abacusmodeling/LibComm/tree/12457e7): LGPL-3.0
 - [LibDDLA (`f1f3295`)](https://github.com/userchba/LibDDLA/tree/f1f32953605c434be383abc195e5d1fb41eb1316): LGPL-3.0
