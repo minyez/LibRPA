@@ -262,6 +262,11 @@
            ntasks_enable="none"
            nthreads_enable="none"
       />
+      <!-- Two 64x64 matrices; single-rank references detect missing MPI atom blocks. -->
+      <validate name="output_Wc_Rf_mat"
+                file="librpa/librpa.d/Wc_iR_*_ifreq_0.mtx"
+                comparison="cmp_mtx.abs_diff(1e-8)"
+      />
       <validate name="Quasi-particle energies on k-grid"
                 regex="State\s+occ\s+e_mf\s+v_xc\s+v_exx\s+ReSigc\s+ImSigc\s+e_qp"
                 headers="2"
