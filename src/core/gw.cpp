@@ -1808,165 +1808,117 @@ void G0W0::build_spacetime(
                                 profiler.get_cpu_time_last("g0w0_build_spacetime_4"));
                     }
 
-                    for (auto t: taus)
+                    const std::array<std::string, 2> G_tags{{"positive", "negative"}};
+                    std::array<size_t, 2> n_obj_gf_libri{{0, 0}};
+                    const double wtime_g0w0_cal_sigc = omp_get_wtime();
+
+                    global::profiler.start("g0w0_set_Gs", LIBRPA_VERBOSE_DEBUG);
+                    for (std::size_t ig = 0; ig < taus.size(); ++ig)
                     {
-                        size_t n_obj_gf_libri = 0;
-                        double wtime_g0w0_cal_sigc = omp_get_wtime();
+                        const double t = taus[ig];
                         if (use_complex_tensor)
                         {
                             const auto &gf_libri = tau_gf_libri_cplx.at(t);
-                            for (const auto &gf: gf_libri)
-                                n_obj_gf_libri += gf.second.size();
-
-                            global::profiler.start("g0w0_set_Gs", LIBRPA_VERBOSE_DEBUG);
-                            gw_libri_cplx.set_Gs(gf_libri, this->libri_threshold_G);
-                            global::profiler.stop("g0w0_set_Gs");
-                            global::profiler.start("g0w0_cal_sigc_entry_wait", LIBRPA_VERBOSE_DEBUG);
-                            comm_h.barrier();
-                            global::profiler.stop("g0w0_cal_sigc_entry_wait");
-                            global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
-                            gw_libri_cplx.cal_Sigmas();
-                            if (restore_input_sigc_output)
-                            {
-                                gw_libri_cplx.Sigmas =
-                                    restore_symmetry_ao_rspace_tensor_map_gw(
-                                        gw_libri_cplx.Sigmas, symmetry_ctx,
-                                        symmetry_sector_stars, this->atbasis_wfc);
-                            }
-                            global::profiler.stop("g0w0_build_spacetime_5");
-                            global::profiler.start("g0w0_cal_sigc_malloc_trim",
-                                                   LIBRPA_VERBOSE_DEBUG);
-                            release_free_mem();
-                            global::profiler.stop("g0w0_cal_sigc_malloc_trim");
-                            global::profiler.start("g0w0_build_spacetime_5_clean",
-                                                   LIBRPA_VERBOSE_DEBUG);
-                            gw_libri_cplx.free_Gs();
-                            release_free_mem();
-                            global::profiler.stop("g0w0_build_spacetime_5_clean");
-
-                            // Check size of data
-                            double mem_mb = get_tensor_map_bytes(gw_libri_cplx.Sigmas) * 1e-6;
-                            global::ofs_myid << "Temporary Sigc_tau size for time " << t << " [MB]: " << mem_mb << std::endl;
-
-                            if (t > 0)
-                                sigc_posi_tau_cplx = std::move(gw_libri_cplx.Sigmas);
-                            else
-                                sigc_nega_tau_cplx = std::move(gw_libri_cplx.Sigmas);
-                            gw_libri_cplx.Sigmas.clear();
+                            for (const auto &gf : gf_libri)
+                                n_obj_gf_libri[ig] += gf.second.size();
+                            gw_libri_cplx.set_Gs(
+                                gf_libri, this->libri_threshold_G, G_tags[ig]);
                         }
                         else
                         {
-                            // ofs_myid << tau_gf_libri << std::endl;
                             const auto &gf_libri = tau_gf_libri.at(t);
-                            for (const auto &gf: gf_libri)
-                                n_obj_gf_libri += gf.second.size();
-                            // if (t > 0)  // debug
-                            // {
-                            //     global::ofs_myid << "gf_libri posi ispin=0 itau " << itau << " " << get_num_keys(gf_libri)  << std::endl;
-                            //     print_keys(global::ofs_myid, gf_libri);
-                            //     // global::ofs_myid << gf_libri << std::endl;
-                            //     for (const auto &[I, JR_gf]: gf_libri)
-                            //     {
-                            //         for (const auto &[JR, gf]: JR_gf)
-                            //         {
-                            //             std::stringstream ss;
-                            //             Vector3_Order<int> R(JR.second[0], JR.second[1], JR.second[2]);
-                            //             ss << "gf_libri_posi"
-                            //                 << "_itau_" << std::setfill('0') << std::setw(5) << itau
-                            //                 << "_I_" << std::setfill('0') << std::setw(5) << I
-                            //                 << "_J_" << std::setfill('0') << std::setw(5) << JR.first
-                            //                 << "_iR_" << std::setfill('0') << std::setw(5) << get_R_index(pbc.Rlist, R) << ".dat";
-                            //             global::ofs_myid << "Writing GF to " << ss.str() << " " << tau << " " << I << " " << JR.second << " " << R << std::endl;
-                            //             std::ofstream ofs(ss.str());
-                            //             ofs << gf << std::endl;
-                            //             ofs.close();
-                            //         }
-                            //     }
-                            // }
-                            // else
-                            // {
-                            //     global::ofs_myid << "gf_libri nega ispin=0 itau " << itau << " " << get_num_keys(gf_libri) << std::endl;
-                            //     print_keys(global::ofs_myid, gf_libri);
-                            //     // global::ofs_myid << gf_libri << std::endl;
-                            //     for (const auto &[I, JR_gf]: gf_libri)
-                            //     {
-                            //         for (const auto &[JR, gf]: JR_gf)
-                            //         {
-                            //             std::stringstream ss;
-                            //             Vector3_Order<int> R(JR.second[0], JR.second[1], JR.second[2]);
-                            //             ss << "gf_libri_nega"
-                            //                 << "_itau_" << std::setfill('0') << std::setw(5) << itau
-                            //                 << "_I_" << std::setfill('0') << std::setw(5) << I
-                            //                 << "_J_" << std::setfill('0') << std::setw(5) << JR.first
-                            //                 << "_iR_" << std::setfill('0') << std::setw(5) << get_R_index(pbc.Rlist, R) << ".dat";
-                            //             global::ofs_myid << "Writing GF to " << ss.str() << " " << tau << " " << I << " " << JR.second << " " << R << std::endl;
-                            //             std::ofstream ofs(ss.str());
-                            //             ofs << gf << std::endl;
-                            //             ofs.close();
-                            //         }
-                            //     }
-                            // }
-	                            global::profiler.start("g0w0_set_Gs", LIBRPA_VERBOSE_DEBUG);
-	                            gw_libri.set_Gs(gf_libri, this->libri_threshold_G);
-	                            global::profiler.stop("g0w0_set_Gs");
-	                            global::profiler.start("g0w0_cal_sigc_entry_wait",
-	                                                   LIBRPA_VERBOSE_DEBUG);
-	                            comm_h.barrier();
-	                            global::profiler.stop("g0w0_cal_sigc_entry_wait");
-	                            global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
-	                            gw_libri.cal_Sigmas();
-	                            if (restore_input_sigc_output)
-	                            {
-	                                gw_libri.Sigmas =
-	                                    restore_symmetry_ao_rspace_tensor_map_gw(
-	                                        gw_libri.Sigmas, symmetry_ctx,
-	                                        symmetry_sector_stars, this->atbasis_wfc);
-	                            }
-	                            global::profiler.stop("g0w0_build_spacetime_5");
-                            global::profiler.start("g0w0_build_spacetime_5_clean", LIBRPA_VERBOSE_DEBUG);
-                            gw_libri.free_Gs();
-                            release_free_mem();
-                            global::profiler.stop("g0w0_build_spacetime_5_clean");
-
-                            // Check size of data
-                            double mem_mb = get_tensor_map_bytes(gw_libri.Sigmas) * 1e-6;
-                            global::ofs_myid << "Temporary Sigc_tau size for time " << t << " [MB]: " << mem_mb << std::endl;
-
-                            if (t > 0)
-                                sigc_posi_tau = std::move(gw_libri.Sigmas);
-                            else
-                                sigc_nega_tau = std::move(gw_libri.Sigmas);
-                            gw_libri.Sigmas.clear();
-                            // if (itau == 0 && ispin == 0)
-                            // {
-                            //     if (t > 0)
-                            //     {
-                            //         global::ofs_myid << "sigc_posi_tau itau=0 ispin=0 " << get_num_keys(sigc_posi_tau) << std::endl;
-                            //         print_keys(global::ofs_myid, sigc_posi_tau);
-                            //         global::ofs_myid << sigc_posi_tau << std::endl;
-                            //     }
-                            //     if (t < 0)
-                            //     {
-                            //         global::ofs_myid << "sigc_nega_tau itau=0 ispin=0 " << get_num_keys(sigc_nega_tau) << std::endl;
-                            //         print_keys(global::ofs_myid, sigc_nega_tau);
-                            //         global::ofs_myid << sigc_nega_tau << std::endl;
-                            //     }
-                            // }
+                            for (const auto &gf : gf_libri)
+                                n_obj_gf_libri[ig] += gf.second.size();
+                            gw_libri.set_Gs(gf_libri, this->libri_threshold_G, G_tags[ig]);
                         }
-                        wtime_g0w0_cal_sigc = omp_get_wtime() - wtime_g0w0_cal_sigc;
-                        if (n_spinor > 1)
-                            global::lib_printf(
-                                "Task %4d. libRI G0W0, spin %1d, bra %1d, ket %1d, time grid %12.6f. Wc size %zu, GF "
-                                "size %zu. Wall time %f\n",
-                                comm_h.myid, ispin, ispinor_bra, ispinor_ket, t, n_obj_wc_libri, n_obj_gf_libri,
-                                wtime_g0w0_cal_sigc);
-                        else
-                            global::lib_printf(
-                                "Task %4d. libRI G0W0, spin %1d, time grid %12.6f. Wc size %zu, GF "
-                                "size %zu. Wall time %f\n",
-                                comm_h.myid, ispin, t, n_obj_wc_libri, n_obj_gf_libri,
-                                wtime_g0w0_cal_sigc);
                     }
+                    global::profiler.stop("g0w0_set_Gs");
+
+                    global::profiler.start("g0w0_cal_sigc_entry_wait", LIBRPA_VERBOSE_DEBUG);
+                    comm_h.barrier();
+                    global::profiler.stop("g0w0_cal_sigc_entry_wait");
+                    global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc batch");
+                    if (use_complex_tensor)
+                    {
+                        gw_libri_cplx.cal_Sigmas(
+                            std::vector<std::string>(G_tags.begin(), G_tags.end()));
+                        if (restore_input_sigc_output)
+                            for (const auto &tag : G_tags)
+                                gw_libri_cplx.Sigmas_batch.at(tag) =
+                                    restore_symmetry_ao_rspace_tensor_map_gw(
+                                        gw_libri_cplx.Sigmas_batch.at(tag), symmetry_ctx,
+                                        symmetry_sector_stars, this->atbasis_wfc);
+                    }
+                    else
+                    {
+                        gw_libri.cal_Sigmas(std::vector<std::string>(G_tags.begin(), G_tags.end()));
+                        if (restore_input_sigc_output)
+                            for (const auto &tag : G_tags)
+                                gw_libri.Sigmas_batch.at(tag) =
+                                    restore_symmetry_ao_rspace_tensor_map_gw(
+                                        gw_libri.Sigmas_batch.at(tag), symmetry_ctx,
+                                        symmetry_sector_stars, this->atbasis_wfc);
+                    }
+                    global::profiler.stop("g0w0_build_spacetime_5");
+
+                    global::profiler.start("g0w0_cal_sigc_malloc_trim", LIBRPA_VERBOSE_DEBUG);
+                    release_free_mem();
+                    global::profiler.stop("g0w0_cal_sigc_malloc_trim");
+                    global::profiler.start("g0w0_build_spacetime_5_clean", LIBRPA_VERBOSE_DEBUG);
+                    for (const auto &tag : G_tags)
+                    {
+                        if (use_complex_tensor)
+                            gw_libri_cplx.free_Gs(tag);
+                        else
+                            gw_libri.free_Gs(tag);
+                    }
+                    release_free_mem();
+                    global::profiler.stop("g0w0_build_spacetime_5_clean");
+
+                    for (std::size_t ig = 0; ig < taus.size(); ++ig)
+                    {
+                        if (use_complex_tensor)
+                        {
+                            auto &sigma = gw_libri_cplx.Sigmas_batch.at(G_tags[ig]);
+                            const double mem_mb = get_tensor_map_bytes(sigma) * 1e-6;
+                            global::ofs_myid << "Temporary Sigc_tau size for time " << taus[ig]
+                                             << " [MB]: " << mem_mb << std::endl;
+                            if (ig == 0)
+                                sigc_posi_tau_cplx = std::move(sigma);
+                            else
+                                sigc_nega_tau_cplx = std::move(sigma);
+                        }
+                        else
+                        {
+                            auto &sigma = gw_libri.Sigmas_batch.at(G_tags[ig]);
+                            const double mem_mb = get_tensor_map_bytes(sigma) * 1e-6;
+                            global::ofs_myid << "Temporary Sigc_tau size for time " << taus[ig]
+                                             << " [MB]: " << mem_mb << std::endl;
+                            if (ig == 0)
+                                sigc_posi_tau = std::move(sigma);
+                            else
+                                sigc_nega_tau = std::move(sigma);
+                        }
+                    }
+                    if (use_complex_tensor)
+                        gw_libri_cplx.Sigmas_batch.clear();
+                    else
+                        gw_libri.Sigmas_batch.clear();
+
+                    const double wtime_g0w0_cal_sigc_elapsed =
+                        omp_get_wtime() - wtime_g0w0_cal_sigc;
+                    if (n_spinor > 1)
+                        global::lib_printf(
+                            "Task %4d. libRI G0W0, spin %1d, bra %1d, ket %1d, time grids %12.6f/%12.6f. Wc size %zu, GF sizes %zu/%zu. Batched wall time %f\n",
+                            comm_h.myid, ispin, ispinor_bra, ispinor_ket, taus[0], taus[1],
+                            n_obj_wc_libri, n_obj_gf_libri[0], n_obj_gf_libri[1],
+                            wtime_g0w0_cal_sigc_elapsed);
+                    else
+                        global::lib_printf(
+                            "Task %4d. libRI G0W0, spin %1d, time grids %12.6f/%12.6f. Wc size %zu, GF sizes %zu/%zu. Batched wall time %f\n",
+                            comm_h.myid, ispin, taus[0], taus[1], n_obj_wc_libri,
+                            n_obj_gf_libri[0], n_obj_gf_libri[1],
+                            wtime_g0w0_cal_sigc_elapsed);
 
                     size_t n_IJR_myid = 0; // for sigcmat output
 
