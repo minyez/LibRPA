@@ -8,6 +8,8 @@
 #include "../ri/Label.h"
 #include "./symmetry/Filter_Atom_Symmetry.h"
 
+#include <stdexcept>
+
 namespace RI
 {
 
@@ -122,6 +124,48 @@ void GW<TA, Tcell, Ndim, Tdata>::cal_Sigmas(
 		 Label::ab_ab::a0b0_a2b1,
 		 Label::ab_ab::a0b0_a2b2},
 		this->Sigmas);
+}
+
+template <typename TA, typename Tcell, std::size_t Ndim, typename Tdata>
+void GW<TA, Tcell, Ndim, Tdata>::cal_Sigmas(
+	const std::vector<std::string> &Gs_tags,
+	const std::string &Cs_tag,
+	const std::string &Ws_tag)
+{
+	if(!this->flag_finish.stru)
+		throw std::invalid_argument("GW::cal_Sigmas: parallel structure is not set");
+
+	const std::string Cs_name = "Cs_" + Cs_tag;
+	const std::string Ws_name = "Ws_" + Ws_tag;
+	const auto require_dataset = [this](const std::string &name)
+	{
+		if(this->lri.data_pool.find(name) == this->lri.data_pool.end())
+			throw std::invalid_argument("GW::cal_Sigmas: unknown dataset " + name);
+	};
+	require_dataset(Cs_name);
+	require_dataset(Ws_name);
+
+	std::set<std::string> unique_Gs_tags;
+	std::map<std::string,std::string> Gs_names;
+	for(const std::string &tag : Gs_tags)
+	{
+		if(!unique_Gs_tags.insert(tag).second)
+			throw std::invalid_argument("GW::cal_Sigmas: duplicate G tag " + tag);
+		Gs_names.emplace(tag,"Gs_" + tag);
+		require_dataset(Gs_names.at(tag));
+	}
+
+	this->lri.data_ab_name[Label::ab::a] = Cs_name;
+	this->lri.data_ab_name[Label::ab::b] = Cs_name;
+	this->lri.data_ab_name[Label::ab::a0b0] = Ws_name;
+
+	this->lri.cal_loop3_batch_second_ab(
+		{Label::ab_ab::a0b0_a1b1,
+		 Label::ab_ab::a0b0_a1b2,
+		 Label::ab_ab::a0b0_a2b1,
+		 Label::ab_ab::a0b0_a2b2},
+		Gs_names,
+		this->Sigmas_batch);
 }
 
 } // namespace RI

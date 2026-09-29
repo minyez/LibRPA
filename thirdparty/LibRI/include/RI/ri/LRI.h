@@ -18,6 +18,7 @@
 #include <array>
 #include <vector>
 #include <map>
+#include <string>
 #include <set>
 #include <unordered_map>
 #include <memory>
@@ -34,6 +35,7 @@ public:
 	using TAC = std::pair<TA,TC>;
 	using Tdata_real = Global_Func::To_Real_t<Tdata>;
 	using Tatom_pos = std::array<double,Ndim>;		// tmp
+	using Tensor_map = std::map<TA, std::map<TAC, Tensor<Tdata>>>;
 
 	LRI();
 
@@ -62,6 +64,12 @@ public:
 	void cal_loop3(
 		const std::vector<Label::ab_ab> &labels,
 		std::map<TA, std::map<TAC, Tensor<Tdata>>> &Ds_result,
+		const double fac_add_Ds = 1.0);
+
+	void cal_loop3_batch_second_ab(
+		const std::vector<Label::ab_ab> &labels,
+		const std::map<std::string,std::string> &second_ab_names,
+		std::map<std::string,Tensor_map> &results,
 		const double fac_add_Ds = 1.0);
 
 public:
@@ -94,3 +102,4 @@ public:		// private:
 #include "LRI.hpp"
 #include "LRI-set.hpp"
 #include "LRI-cal_loop3.hpp"
+#include "LRI-cal_loop3_batch_second_ab.hpp"

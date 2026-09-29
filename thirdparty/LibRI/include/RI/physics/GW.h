@@ -10,10 +10,11 @@
 #include "../global/Tensor.h"
 #include "../ri/LRI.h"
 
-#include <mpi.h>
 #include <array>
 #include <map>
 #include <set>
+#include <string>
+#include <vector>
 
 namespace RI
 {
@@ -59,7 +60,13 @@ public:
 	void cal_Sigmas(
 		const std::array<std::string,3> &save_names_suffix={"","",""});		// "Cs","Ws","Gs"
 
+	void cal_Sigmas(
+		const std::vector<std::string> &Gs_tags,
+		const std::string &Cs_tag="",
+		const std::string &Ws_tag="");
+
 	std::map<TA, std::map<TAC, Tensor<Tdata>>> Sigmas;
+	std::map<std::string, std::map<TA, std::map<TAC, Tensor<Tdata>>>> Sigmas_batch;
 
 	void free_Cs(const std::string &save_name_suffix="");
 	void free_Ws(const std::string &save_name_suffix="");
