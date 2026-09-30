@@ -224,6 +224,10 @@ void PeriodicBoundaryData::set_kgrids_kvec(int nk1, int nk2, int nk3,
                 throw LIBRPA_RUNTIME_ERROR("Duplicate loaded k-points map to the same BvK full-grid point");
             }
             canonical_seen[static_cast<std::size_t>(ifull)] = ik;
+            kfrac_list[static_cast<std::size_t>(ik)] =
+                canonical_kfrac_list_full[static_cast<std::size_t>(ifull)];
+            klist[static_cast<std::size_t>(ik)] =
+                kvec_from_fractional(G, kfrac_list[static_cast<std::size_t>(ik)]);
             k_to_kfull[static_cast<std::size_t>(ik)] = ik;
             kfull_to_k[static_cast<std::size_t>(ik)] = ik;
             kfull_to_k_relation[static_cast<std::size_t>(ik)] = KFullToKRelation::DIRECT;
@@ -257,6 +261,10 @@ void PeriodicBoundaryData::set_kgrids_kvec(int nk1, int nk2, int nk3,
             {
                 throw LIBRPA_RUNTIME_ERROR("Duplicate loaded k-points map to the same BvK full-grid point");
             }
+            kfrac_list[static_cast<std::size_t>(ik)] =
+                canonical_kfrac_list_full[static_cast<std::size_t>(ifull)];
+            klist[static_cast<std::size_t>(ik)] =
+                kvec_from_fractional(G, kfrac_list[static_cast<std::size_t>(ik)]);
             k_to_kfull[static_cast<std::size_t>(ik)] = ifull;
             kfull_to_k[static_cast<std::size_t>(ifull)] = ik;
             kfull_to_k_relation[static_cast<std::size_t>(ifull)] = KFullToKRelation::DIRECT;

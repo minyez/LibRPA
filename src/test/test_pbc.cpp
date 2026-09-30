@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cmath>
+#include <stdexcept>
 
 using namespace librpa_int;
 
@@ -107,6 +108,31 @@ static void test_full_scf_kgrids_keep_loaded_order()
     assert(!pbc.kgrid_uses_time_reversal);
 }
 
+static void test_full_scf_kgrids_canonicalize_rounded_cartesian_coordinates()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1, 0, 0, 0, 1, 0, 0, 0, 1});
+
+    std::vector<double> kvecs;
+    for (int ik = 0; ik != 8; ++ik)
+    {
+        const double exact_kfrac = static_cast<double>(ik) / 8.0;
+        const double rounded_kfrac = exact_kfrac - static_cast<double>(ik) * 7.0e-7;
+        kvecs.insert(kvecs.end(), {TWO_PI * rounded_kfrac, 0.0, 0.0});
+    }
+    pbc.set_kgrids_kvec(8, 1, 1, kvecs);
+
+    for (int ik = 0; ik != 8; ++ik)
+    {
+        const double exact_kfrac = static_cast<double>(ik) / 8.0;
+        if (std::abs(pbc.kfrac_list[ik].x - exact_kfrac) >= 1e-15
+            || std::abs(pbc.klist[ik].x - exact_kfrac) >= 1e-15)
+        {
+            throw std::runtime_error("BvK k-point was not canonicalized");
+        }
+    }
+}
+
 static void test_reduced_scf_kgrids()
 {
     PeriodicBoundaryData pbc;
@@ -114,7 +140,7 @@ static void test_reduced_scf_kgrids()
 
     const std::vector<double> kvecs{
         0.0, 0.0, 0.0,
-        librpa_int::TWO_PI / 3.0, 0.0, 0.0,
+        librpa_int::TWO_PI * (1.0 / 3.0 - 2.0e-6), 0.0, 0.0,
     };
     pbc.set_kgrids_kvec(3, 1, 1, kvecs, {1.0 / 3.0, 2.0 / 3.0});
     pbc.set_kq_mapping({0, 1});
@@ -130,6 +156,10 @@ static void test_reduced_scf_kgrids()
     }));
     assert(pbc.kgrid_uses_time_reversal);
     assert(pbc.klist_coul.size() == 2);
+    if (std::abs(pbc.kfrac_list[1].x - 1.0 / 3.0) >= 1e-12)
+    {
+        throw std::runtime_error("Reduced BvK k-point was not canonicalized");
+    }
     assert(std::abs(pbc.weight_q[0] - 1.0 / 3.0) < 1e-12);
     assert(std::abs(pbc.weight_q[1] - 2.0 / 3.0) < 1e-12);
 }
@@ -244,6 +274,7 @@ int main (int argc, char *argv[])
     test_periodic_boundary_data();
     test_kgrids_with_weighted_coulomb_mapping();
     test_full_scf_kgrids_keep_loaded_order();
+    test_full_scf_kgrids_canonicalize_rounded_cartesian_coordinates();
     test_reduced_scf_kgrids();
     test_incomplete_time_reversal_reduced_scf_kgrids();
     test_irreducible_kgrids_from_symmetry_stars();
