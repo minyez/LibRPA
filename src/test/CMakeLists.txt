@@ -62,6 +62,9 @@ foreach(target
     test_profiler
     test_qpe_solver
     test_rsh
+    test_sternheimer_rpa
+    test_sternheimer_symmetry
+    test_sternheimer_qsum
     test_symmetry
     test_symmetry_spin_kernel
     test_timefreq
@@ -71,6 +74,10 @@ foreach(target
   config_test(${target} 1)
 endforeach()
 
+# These suites use standard assert() and must remain active in Release builds.
+target_compile_options(test_sternheimer_rpa PRIVATE -UNDEBUG)
+target_compile_options(test_sternheimer_symmetry PRIVATE -UNDEBUG)
+target_compile_options(test_symmetry_context PRIVATE -UNDEBUG)
 # add 4-process tests
 foreach(target
   test_atomic_basis_blacs
@@ -95,6 +102,10 @@ if(LIBRPA_USE_LIBRI)
   add_test(NAME test_strict_2d_gw_wc_serial COMMAND $<TARGET_FILE:test_strict_2d_gw_wc>)
   set_tests_properties(test_strict_2d_gw_wc test_strict_2d_gw_wc_serial
     PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=1;MKL_NUM_THREADS=1" TIMEOUT 60)
+endif()
+
+if(LIBRPA_USE_LIBRI AND _LIBRPA_USE_BUNDLED_LIBCOMM)
+  config_test(test_libcomm_bounded_exchange 4)
 endif()
 
 # TODO(minye): make use of GTest
