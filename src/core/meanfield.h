@@ -12,6 +12,7 @@
 #include "atom.h"
 #include "pbc.h"
 #include "symmetry_context.h"
+#include "symmetry_spin_kernel.h"
 #include "../math/matrix.h"
 #include "../math/complexmatrix.h"
 #include "../math/vector3_order.h"
@@ -179,6 +180,68 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     const std::vector<bool> &band_mask = {},
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr,
     const symmetry_kstar_representative_indices_t* representative_k_indices = nullptr);
+
+/*!
+ * @brief Validate that a Green's-function band cutoff does not slice through a
+ * degenerate band multiplet on the k-point set used as symmetry-restore source.
+ *
+ * A symmetry restore mixes all bands below the cutoff across each k-star; when
+ * the cutoff index separates two (nearly) degenerate eigenvalues the truncated
+ * band space is not closed under the star operations and the restored GF would
+ * depend on the arbitrary gauge inside the degenerate subspace. Throws
+ * LIBRPA_RUNTIME_ERROR naming the k-point, the band indices and the gap when
+ * |E[nbands_G] - E[nbands_G - 1]| < degen_tol at any spin/k-point.
+ *
+ * No-op when nbands_G < 0 (no truncation), nbands_G == 0, or
+ * nbands_G >= n_bands (truncation outside the band window).
+ */
+void validate_kstar_band_cutoff_closure(
+    const SymmetryContext& ctx,
+    const MeanField& mf,
+    int nbands_G,
+    double degen_tol = 1e-8);
+
+/*!
+ * @brief Four-channel spinor variant of get_symmetry_restored_gf_cplx_imagtimes_Rs.
+ *
+ * Returns, for each tau and R, the four spin blocks G^{ab} (a = bra, b = ket,
+ * channel-outermost convention C8) restored from the IBZ representatives.
+ * Each star member is resolved through
+ * `member.action_id -> ctx.kspace_actions -> ctx.spin_operations[canonical]`
+ * into (spatial_id, U_s, eta). The orbital transform matrix A is built once
+ * per member (gauge phases excluded) and reused for all four source blocks;
+ * the SU(2) mixing and, for antiunitary members, the Theta remap
+ * {conj(Y11), -conj(Y10), -conj(Y01), conj(Y00)} are applied by
+ * transform_spinor_bilinear. The target-kpoint gauge phases are plain unitary
+ * re-gauging factors applied after the kernel, so antiunitary members match
+ * the scalar restore convention. Transforms act in the tau domain point by
+ * point (tau is real, z* = tau; report section 6.8).
+ *
+ * Requires mf.get_n_spinor() == 2. Missing (bra, ket) source blocks are
+ * zero-filled. nbands_G >= 0 is guarded by validate_kstar_band_cutoff_closure.
+ */
+std::map<double, std::map<Vector3_Order<int>, SpinorBlocks4<ComplexMatrix>>>
+get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
+    const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
+    const MeanField& mf,
+    int ispin,
+    const std::vector<Vector3_Order<double>>& kfrac_list,
+    const std::vector<double>& imagtimes,
+    const std::vector<Vector3_Order<int>>& Rs,
+    const std::map<atom_t, size_t>& atom_nw,
+    int nbands_G = -1,
+    const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr,
+    const symmetry_kstar_representative_indices_t* representative_k_indices = nullptr);
+
+/*!
+ * @brief Extract one (bra, ket) channel out of a four-channel spinor GF map,
+ * moving the blocks out of the input.
+ */
+std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>>
+extract_spinor_gf_block(
+    std::map<double, std::map<Vector3_Order<int>, SpinorBlocks4<ComplexMatrix>>>&& gf_spinor,
+    int ispinor_bra, int ispinor_ket);
 
 }
 

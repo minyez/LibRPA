@@ -92,6 +92,40 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
     const SymmetryContext &symmetry_context, const PeriodicBoundaryData &pbc,
     const AtomicBasis &atbasis_wfc, const std::vector<bool> &band_mask = {});
 
+/*!
+ * @brief Four-channel spinor variant of
+ * get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para.
+ *
+ * Requires mf.get_n_spinor() == 2 and a restorable k-star context (the caller
+ * checks can_restore_symmetry_kstar_meanfield; this function throws otherwise).
+ * Each local k-point builds the four (bra, ket) source blocks with the same
+ * pgemm pattern as the scalar path; each star member gathers and spatially
+ * rotates the four block sets (time reversal suppressed, gauge phases
+ * excluded), then applies the SU(2) mixing and the Theta remap through
+ * transform_spinor_bilinear per atom pair. The target-kpoint gauge phases
+ * are applied after the kernel as plain unitary re-gauging factors. The four
+ * channels are packed into one communication buffer, so the reduce rounds
+ * are unchanged from the scalar path. Missing (bra, ket) source blocks are
+ * zero-filled.
+ */
+std::map<double, std::map<Vector3_Order<int>, SpinorBlocks4<Matz>>>
+get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para_spinor(
+    int ispin, const MeanField &mf,
+    const std::vector<Vector3_Order<double>> &kfrac_list, std::vector<double> imagtimes,
+    const std::vector<Vector3_Order<int>> &Rs,
+    const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm,
+    const SymmetryContext &symmetry_context, const PeriodicBoundaryData &pbc,
+    const AtomicBasis &atbasis_wfc);
+
+/*!
+ * @brief Extract one (bra, ket) channel out of a four-channel spinor GF map
+ * of BLACS-distributed matrices, moving the blocks out of the input.
+ */
+std::map<double, std::map<Vector3_Order<int>, Matz>>
+extract_spinor_gf_block_kblacs(
+    std::map<double, std::map<Vector3_Order<int>, SpinorBlocks4<Matz>>>&& gf_spinor,
+    int ispinor_bra, int ispinor_ket);
+
 std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kblacs_para(
     int ispin, const MeanField &mf,
     const std::vector<Vector3_Order<double>> &kfrac_list, std::vector<double> imagtimes,

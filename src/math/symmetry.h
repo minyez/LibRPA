@@ -4,6 +4,8 @@
  */
 #pragma once
 
+#include <array>
+#include <complex>
 #include <cstddef>
 #include <utility>
 #include <vector>
@@ -214,6 +216,59 @@ inline Matrix3 fractional_rotation_to_cartesian(const SpaceGroupSymOp& symop,
                ? row_fractional_rotation_to_cartesian(symop.rotation, lattice_vectors)
                : col_fractional_rotation_to_cartesian(symop.rotation, lattice_vectors);
 }
+
+/*!
+ * @brief Proper (axial-vector) part of a Cartesian rotation: det(R) * R.
+ *
+ * For an improper operation Q (det = -1, e.g. mirror or inversion) the spin
+ * transforms as an axial vector, i.e. only through the proper part det(Q) Q.
+ * The determinant is identical in fractional and Cartesian coordinates, so the
+ * caller may pass either representation as long as it is Cartesian-basis
+ * orthonormal when fed to so3_to_su2.
+ */
+Matrix3 axial_rotation_of(const Matrix3 &cartesian_rotation);
+
+/*!
+ * @brief Lift a proper Cartesian SO(3) rotation to SU(2), row-major [u00 u01; u10 u11].
+ *
+ * Axis-angle formula U = cos(theta/2) I - i sin(theta/2) (n . sigma) with
+ * theta = arccos((Tr R - 1) / 2) and n proportional to the antisymmetric part
+ * (R_zy - R_yz, R_xz - R_zx, R_yx - R_xy) — the sign that makes
+ * su2_to_so3(so3_to_su2(R)) == R for a matrix acting on column vectors,
+ * (R u)_i = R_ij u_j. The input is the Cartesian proper rotation matrix
+ * itself; no transpose guessing is involved. (The planning report writes the
+ * tuple in the swapped order (R_yz - R_zy, ...); that is the row-vector
+ * reading x' = x R and yields the adjoint U^dagger for the same numerical
+ * matrix.) LibRPA stores lattice vectors and fractional coordinates as row
+ * vectors (C1), but a Cartesian rotation converted by
+ * fractional_rotation_to_cartesian is a plain Cartesian matrix and is fed
+ * here as-is. ABACUS instead builds spin_so3 = proper_part(g).Transpose()
+ * because its g acts on column fractional/Cartesian vectors with the opposite
+ * convention; the transpose there converts conventions, it is not part of the
+ * axis-angle map.
+ *
+ * theta = pi branch: R = 2 n n^T - I, the axis sign is anchored on the
+ * largest diagonal element and the remaining components are recovered from
+ * R_ij + R_ji = 4 n_i n_j (aligned with the ABACUS fix in commit 1ed54ee23).
+ * Away from pi the axis is the normalized antisymmetric part and
+ * sin(theta/2) = sqrt(1 - cos(theta/2)^2), so theta = 0 returns the identity
+ * without any 0/0. Conditioning limit: the trace-based cos(theta/2) loses
+ * significance within ~1e-7 of pi, so genuine rotations in the narrow sliver
+ * pi - 2e-7 < theta < pi cannot be round-tripped to 1e-12 in double
+ * precision; exact pi rotations are handled by the pi branch.
+ *
+ * The result satisfies su2_to_so3(so3_to_su2(R)) == R and is defined up to the
+ * SU(2) double-cover sign: U and -U induce the same bilinear X -> U X U^dag.
+ */
+std::array<std::complex<double>, 4> so3_to_su2(const Matrix3 &proper_rotation);
+
+/*!
+ * @brief Covering map SU(2) -> SO(3): W_ij = (1/2) Tr(sigma_i U sigma_j U^dag).
+ *
+ * Inverse check of so3_to_su2, also used to cross-check Pauli-based rotation
+ * formulas. Row-major [u00 u01; u10 u11] input, Cartesian Matrix3 output.
+ */
+Matrix3 su2_to_so3(const std::array<std::complex<double>, 4> &U);
 
 int find_identity_symmetry_operation(const SpaceGroupSymOps &operations);
 

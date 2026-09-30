@@ -50,6 +50,15 @@ void initialize_symmetry_context(Dataset &ds, const bool build_shell_rotations)
     ctx.clear();
     ctx.set_crystal_structure(ds.pbc.latvec, ds.pbc.G, ds.atoms.types, ds.atoms.coords_frac);
     ctx.set_rspace_operations(spg_symops);
+    if (ds.spg_spin_ops_explicit)
+    {
+        ctx.set_symmetry_spin_operations(ds.spg_spin_ops, ds.spg_grey_group);
+        // Phase 8: collinear/scalar storage can only hold operations whose
+        // effective spin action maps each channel onto itself; anything else
+        // is rejected here instead of silently mis-restored downstream.
+        validate_spin_operations_for_storage(
+            ctx, ds.mf.get_n_spins(), ds.mf.get_n_spinor());
+    }
     ctx.build_periodic_mappings(ds.pbc, ds.pbc.Rlist);
 
     auto mark_available = [&ctx]() {
@@ -104,9 +113,18 @@ void reject_spinor_symmetry_speedup(const Dataset &ds, const char *calculation)
     {
         return;
     }
+    // Spinor symmetry is supported only when ABACUS supplied the explicit
+    // spatial/spin operation table through the new stru_out metadata.  Keep
+    // rejecting legacy spinor symmetry requests with no spin-space action so
+    // that an ordinary spatial table cannot silently produce wrong channels.
+    if (ds.spg_spin_ops_explicit)
+    {
+        return;
+    }
     throw LIBRPA_RUNTIME_ERROR(
         std::string("Cannot use ") + calculation
-        + " symmetry speed-up with spinor wave functions; disable symmetry for spinor runs");
+        + " symmetry speed-up with spinor wave functions without an explicit spin-space"
+        + " operation table; regenerate stru_out with spin_symmetry metadata");
 }
 
 void initialize_ds_tfgrids(Dataset &ds, const LibrpaOptions &opts)

@@ -464,6 +464,67 @@ restore_symmetry_ao_rspace_tensor_map_gw(
     }
     return tensors_full;
 }
+
+//! Four-channel ztensor map set of a spinor two-point AO operator, channel-outermost.
+using gw_spinor_ztensor_maps_t = std::array<
+    std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<cplxdb>>>, 4>;
+
+/*!
+ * @brief Jointly restore the four spin channels of a spinor GW self-energy from
+ * the symmetry irreducible sector (Phase 6).
+ *
+ * Thin LibRI-tensor wrapper around restore_symmetry_spinor_rspace_blocks:
+ * converts each channel map to dense ComplexMatrix blocks, runs the
+ * four-block (g, U_s, eta) kernel with key union and zero-fill, and converts
+ * back. Called in the imaginary-time domain, before the tau -> i omega
+ * transform, so antiunitary operations act as the plain Theta remap without
+ * touching the fermionic frequency grid.
+ */
+static gw_spinor_ztensor_maps_t restore_symmetry_spinor_ao_rspace_tensor_map_gw(
+    const gw_spinor_ztensor_maps_t& tensors_ir_channels,
+    const SymmetryContext& symmetry_ctx,
+    const symmetry_rspace_sector_stars_t& sector_stars,
+    const AtomicBasis& atbasis_wfc)
+{
+    const auto wfc_layouts = atbasis_wfc.build_species_basis_layouts(symmetry_ctx.atom_to_type);
+    std::vector<int> atom_nb(atbasis_wfc.n_atoms);
+    for (std::size_t atom = 0; atom != atbasis_wfc.n_atoms; ++atom)
+    {
+        atom_nb[atom] = static_cast<int>(atbasis_wfc.get_atom_nb(static_cast<int>(atom)));
+    }
+
+    std::array<symmetry_rspace_block_map_t, 4> blocks_ir;
+    for (std::size_t channel = 0; channel != 4; ++channel)
+    {
+        for (const auto& i_entry : tensors_ir_channels[channel])
+        {
+            const int nao_I = static_cast<int>(atbasis_wfc.get_atom_nb(i_entry.first));
+            for (const auto& jr_entry : i_entry.second)
+            {
+                const int nao_J = static_cast<int>(atbasis_wfc.get_atom_nb(jr_entry.first.first));
+                blocks_ir[channel][i_entry.first][jr_entry.first] =
+                    convert_libri_tensor_to_complex_matrix(jr_entry.second, nao_I, nao_J);
+            }
+        }
+    }
+
+    auto blocks_full = restore_symmetry_spinor_rspace_blocks(
+        blocks_ir, symmetry_ctx, sector_stars, wfc_layouts, atom_nb);
+
+    gw_spinor_ztensor_maps_t tensors_full;
+    for (std::size_t channel = 0; channel != 4; ++channel)
+    {
+        for (auto& i_entry : blocks_full[channel])
+        {
+            for (auto& jr_entry : i_entry.second)
+            {
+                tensors_full[channel][i_entry.first][jr_entry.first] =
+                    convert_complex_matrix_to_libri_tensor_gw<cplxdb>(jr_entry.second);
+            }
+        }
+    }
+    return tensors_full;
+}
 #endif
 
 template <typename T>
@@ -559,41 +620,21 @@ static void write_wc_rf_full_matrix_from_atom_blocks(
     const PeriodicBoundaryData &pbc, const std::string &output_dir, const int ifreq,
     const double freq)
 {
-    // Hermitian completion keeps the transposed atom block on the same rank
-    // as its source. That rank need not own its BLACS matrix elements.
-    // Elect one source per block (also handles replicated symmetry output),
-    // then redistribute with the same communicator as the output descriptor.
-    const int nat = as_int(atbasis_abf.n_atoms);
-    std::vector<int> owners(nat * nat, ad_Wc.nprocs());
-    for (const auto &[I, J_RWc] : Wc_R)
-        for (const auto &[J, R_Wc] : J_RWc)
-            if (!R_Wc.empty()) owners[I * nat + J] = ad_Wc.myid();
-    MPI_Allreduce(MPI_IN_PLACE, owners.data(), as_int(owners.size()), MPI_INT,
-                  MPI_MIN, ad_Wc.comm());
-    std::map<int, std::set<atpair_t>> map_proc_IJs;
-    for (int I = 0; I < nat; ++I)
-        for (int J = 0; J < nat; ++J)
-            if (owners[I * nat + J] < ad_Wc.nprocs())
-                map_proc_IJs[owners[I * nat + J]].insert({I, J});
-    IndexScheduler sched;
-    sched.init(map_proc_IJs, atbasis_abf, atbasis_abf, ad_Wc, false);
-
     for (const auto &R : pbc.Rlist)
     {
         Matz Wc(ad_Wc.m_loc(), ad_Wc.n_loc(), MAJOR::COL);
         Wc.zero_out();
-        ap_p_map<Matz> blocks;
-        for (const auto &[I, J] : sched.atpairs)
+        for (const auto &[I, J_RWc] : Wc_R)
         {
-            const auto &R_Wc = Wc_R.at(I).at(J);
-            const auto it = R_Wc.find(R);
-            auto &block = blocks[{I, J}];
-            if (it != R_Wc.end()) block = it->second.copy();
-            else block = Matz(atbasis_abf[I], atbasis_abf[J], MAJOR::COL);
-            block.swap_to_col_major();
+            for (const auto &[J, R_Wc] : J_RWc)
+            {
+                const auto Wc_iter = R_Wc.find(R);
+                if (Wc_iter == R_Wc.end()) continue;
+                collect_block_from_IJ_storage(
+                    Wc, ad_Wc, atbasis_abf, atbasis_abf, as_int(I), as_int(J),
+                    cplxdb{1.0, 0.0}, Wc_iter->second.ptr(), Wc_iter->second.major());
+            }
         }
-        fill_local_mat_from_ap_dist_scheduler(Wc, blocks, sched,
-                                              atbasis_abf, atbasis_abf, ad_Wc);
 
         const auto iR = pbc.get_R_index(R);
         std::stringstream ss;
@@ -957,8 +998,7 @@ static void build_gf_libri_kpara(
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<double> &taus,
     const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs,
-    std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri,
-    const std::vector<bool> &band_mask)
+    std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri)
 {
     global::profiler.start("g0w0_build_gf_libri_kpara");
     std::map<Vector3_Order<int>, std::vector<atpair_t>> map_R_IJs;
@@ -972,7 +1012,7 @@ static void build_gf_libri_kpara(
     const int n_Rs_this = map_R_IJs.size();
     int n_Rs_max = n_Rs_this;
     comm_h.allreduce(MPI_IN_PLACE, &n_Rs_max, 1, MPI_MAX);
-    auto gf_taus_Rs_cplx = get_gf_cplx_imagtimes_Rs_kpara(ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, taus, Rs_this, comm_h, band_mask);
+    auto gf_taus_Rs_cplx = get_gf_cplx_imagtimes_Rs_kpara(ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, taus, Rs_this, comm_h);
     // global::ofs_myid << "gf_taus_Rs_cplx " << gf_taus_Rs_cplx << std::endl;
     for (const auto &tau_gf_R_cplx: gf_taus_Rs_cplx)
     {
@@ -1028,8 +1068,7 @@ static void build_gf_libri_kserial(
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<double> &taus,
     const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs,
-    std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri,
-    const std::vector<bool> &band_mask)
+    std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri)
 {
     global::profiler.start("g0w0_build_gf_libri_kserial");
     std::set<Vector3_Order<int>> Rs_local;
@@ -1070,11 +1109,11 @@ static void build_gf_libri_kserial(
         const std::vector<Vector3_Order<int>> R_check{Rs_vec.front()};
         const auto restored_check = get_symmetry_restored_gf_cplx_imagtimes_Rs(
             symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, tau_check,
-            R_check, atom_nw, band_mask, &member_kfrac_targets,
+            R_check, atom_nw, -1, &member_kfrac_targets,
             &full_grid_kstar_representatives).at(tau_check.front()).at(R_check.front());
         const auto direct_check =
             mf.get_gf_cplx_imagtimes_Rs(
-                  ispin, ispinor_bra, ispinor_ket, kfrac_list, tau_check, R_check, band_mask)
+                  ispin, ispinor_bra, ispinor_ket, kfrac_list, tau_check, R_check)
                 .at(tau_check.front()).at(R_check.front());
         const auto diff = restored_check - direct_check;
         if (diff.get_max_abs() > restore_check_tol)
@@ -1086,9 +1125,9 @@ static void build_gf_libri_kserial(
     auto gf = (restore_symmetry_kstars || restore_symmetry_kstars_from_full_grid)
         ? get_symmetry_restored_gf_cplx_imagtimes_Rs(
               symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec, atom_nw,
-              band_mask, &member_kfrac_targets,
+              -1, &member_kfrac_targets,
               restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr)
-        : mf.get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec, band_mask);
+        : mf.get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec);
     // global::ofs_myid << "gf " << gf << std::endl;
     tau_gf_libri.clear();
     // TODO: enable threading below
@@ -1149,8 +1188,7 @@ static void build_gf_libri_kblacs_para(
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<double> &taus,
     const std::vector<Vector3_Order<int>> &Rs,
-    std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri,
-    const std::vector<bool> &band_mask)
+    std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri)
 {
     global::profiler.start("g0w0_build_gf_libri_kblacs_para", LIBRPA_VERBOSE_DEBUG);
 
@@ -1172,10 +1210,10 @@ static void build_gf_libri_kblacs_para(
     auto gf_taus_Rs_cplx = restore_symmetry_kstars
         ? get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
               ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, taus, Rs, kblacs_ctxt,
-              desc_wfc, desc_gf, symmetry_context, pbc, atbasis_wfc, band_mask)
+              desc_wfc, desc_gf, symmetry_context, pbc, atbasis_wfc)
         : get_gf_cplx_imagtimes_Rs_kblacs_para(
               ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, taus, Rs, kblacs_ctxt,
-              desc_wfc, desc_gf, band_mask);
+              desc_wfc, desc_gf);
 
     for (auto &tau_gf_R_cplx: gf_taus_Rs_cplx)
     {
@@ -1342,17 +1380,6 @@ void G0W0::build_spacetime(
     }
     comm_h.barrier();
 
-    if (nbands_G > mf.get_n_bands())
-        throw LIBRPA_RUNTIME_ERROR("n_bands_sigc exceeds the number of input bands");
-    const auto n_bands_used = nbands_G < 0 ? mf.get_n_bands() : nbands_G;
-    std::vector<bool> band_mask;
-    if (nbands_G >= 0 || n_bands_exclude > 0)
-    {
-        band_mask.assign(mf.get_n_bands(), false);
-        std::fill_n(band_mask.begin(), n_bands_used, true);
-        std::fill_n(band_mask.begin(), n_bands_exclude, false);
-    }
-
     const bool use_complex_tensor = mf.get_n_spinor() > 1;
     if (use_complex_tensor)
         lib_printf_root("Using complex tensor\n");
@@ -1402,8 +1429,8 @@ void G0W0::build_spacetime(
             {
                 const auto freq = tfg.get_freq_nodes()[ifreq];
                 auto freq_iter = Wc_freq_q_atom_pair->find(freq);
-                atom_mapping<std::map<Vector3_Order<double>, Matz>>::pair_t_old Wc_q;
-                if (freq_iter != Wc_freq_q_atom_pair->end()) Wc_q = freq_iter->second;
+                if (freq_iter == Wc_freq_q_atom_pair->end()) continue;
+                auto Wc_q = freq_iter->second;
 
                 profiler.start("unfold_Wc_abfs", "Do shrink transformation");
                 unfold_helper.unfold_abfs_Wc_q(*sinvS, Wc_q, pbc.klist_coul,
@@ -1617,7 +1644,7 @@ void G0W0::build_spacetime(
         && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(natom)
         && symmetry_reduces_rspace;
     const bool sigc_band_space_complete =
-        n_bands_exclude == 0 && rspace_symmetry_has_complete_band_space(mf, nbands_G);
+        rspace_symmetry_has_complete_band_space(mf, -1);
     const bool use_input_sigc_symmetry =
         sigc_rspace_symmetry_available && sigc_band_space_complete;
     if (sigc_rspace_symmetry_available && !sigc_band_space_complete && comm_h.is_root())
@@ -1626,7 +1653,7 @@ void G0W0::build_spacetime(
             "GW real-space self-energy irreducible-sector contraction disabled: "
             "%d response bands do not span the complete %d-state AO space; "
             "k-star and q-star symmetry remain active\n",
-            std::max(0, n_bands_used - n_bands_exclude), mf.get_n_aos());
+            mf.get_n_bands(), mf.get_n_aos());
     }
     const auto libri_sigc_irreducible_sector =
         use_input_sigc_symmetry
@@ -1733,8 +1760,161 @@ void G0W0::build_spacetime(
 
         const int n_spinor = mf.get_n_spinor();
 
+        // Phase 6: under a general (g, U_s, eta) operation the four (bra, ket)
+        // spin channels of Sigma_c mix, so the irreducible-sector restore must
+        // see all four channels at the same tau. When active, the per-channel
+        // Sigmas are stashed unrestored below and restored jointly in the tau
+        // domain before the tau -> i omega accumulation.
+        const bool defer_spinor_sigc_restore =
+            restore_input_sigc_output && use_complex_tensor && n_spinor == 2
+            && !symmetry_ctx.spin_operations.empty();
+
+        const auto sigc_t2f_value_cplx =
+            [](const cplxdb &sigc_cos, const cplxdb &sigc_sin, double t2f_cos,
+               double t2f_sin) -> cplxdb
+            {
+                return sigc_cos * t2f_cos + sigc_sin * cplxdb(0.0, t2f_sin);
+            };
+        const auto sigc_t2f_value_real =
+            [](double sigc_cos, double sigc_sin, double t2f_cos,
+               double t2f_sin) -> cplxdb
+            { return cplxdb{sigc_cos * t2f_cos, sigc_sin * t2f_sin}; };
+
         for (int ispin = 0; ispin != mf.get_n_spins(); ispin++)
         {
+            // Irreducible-sector Sigmas stashed per (bra, ket) channel; only
+            // populated when defer_spinor_sigc_restore is true.
+            std::array<ztensor_map, 4> sigc_posi_tau_ir_channels;
+            std::array<ztensor_map, 4> sigc_nega_tau_ir_channels;
+
+            // Symmetrize Sigma_c(R, +/-tau), transform to (R, i omega) and
+            // accumulate into sigc_is_f_IJ_R for one (bra, ket) channel.
+            auto flush_sigc_channel = [&](int ispinor_bra, int ispinor_ket,
+                                          const auto &sigc_posi_tau_in,
+                                          const auto &sigc_nega_tau_in,
+                                          auto block_scale_factor,
+                                          auto make_freq_value, size_t elem_size)
+            {
+                size_t n_IJR_myid = 0; // for sigcmat output
+
+                if (this->output_sigc_mat_rt)
+                {
+                    std::stringstream ss;
+                    ss << path_as_directory(this->output_dir) << "SigcRT"
+                        << "_ispin_" << std::setfill('0') << std::setw(5) << ispin;
+                    if (n_spinor > 1)
+                    {
+                       ss << "_spinor_" << ispinor_bra << "_" << ispinor_ket;
+                    }
+                    ss << "_itau_" << std::setfill('0') << std::setw(5) << itau
+                       << "_myid_" << std::setfill('0') << std::setw(5) << global::myid_global << ".dat";
+                    ofs_sigmac_r.open(ss.str(), std::ios::out | std::ios::binary);
+                    ofs_sigmac_r.write((char *) &n_IJR_myid, sizeof(size_t)); // placeholder
+                }
+
+                auto accumulate_sigc_tau_to_freq = [&](const auto &sigc_posi_tau_in_,
+                                                       const auto &sigc_nega_tau_in_,
+                                                       auto block_scale_factor_,
+                                                       auto make_freq_value_, size_t elem_size_)
+                {
+                    for (const auto &[I, J_R_sigc_posi] : sigc_posi_tau_in_)
+                    {
+                        const auto n_I = this->atbasis_wfc.get_atom_nb(I);
+
+                        auto it_nega_I = sigc_nega_tau_in_.find(I);
+                        if (it_nega_I == sigc_nega_tau_in_.cend()) continue;
+
+                        for (const auto &[JR, sigc_posi_block] : J_R_sigc_posi)
+                        {
+                            const auto J = JR.first;
+                            const auto n_J = this->atbasis_wfc.get_atom_nb(J);
+                            const auto &Ra = JR.second;
+
+                            auto it_nega_JR = it_nega_I->second.find(JR);
+                            if (it_nega_JR == it_nega_I->second.cend()) continue;
+
+                            const auto &sigc_nega_block = it_nega_JR->second;
+
+                            const Vector3_Order<int> R{Ra[0], Ra[1], Ra[2]};
+
+                            const auto it_R = std::find(Rlist.cbegin(), Rlist.cend(), R);
+                            const auto iR = std::distance(Rlist.cbegin(), it_R);
+
+                            const auto sigc_cos = block_scale_factor_ * (sigc_posi_block + sigc_nega_block);
+                            const auto sigc_sin = block_scale_factor_ * (sigc_posi_block - sigc_nega_block);
+
+                            ++n_IJR_myid;
+
+                            if (this->output_sigc_mat_rt)
+                            {
+                                size_t dims[5];
+                                dims[0] = as_size(iR);
+                                dims[1] = as_size(I);
+                                dims[2] = as_size(J);
+                                dims[3] = as_size(n_I);
+                                dims[4] = as_size(n_J);
+
+                                ofs_sigmac_r.write(reinterpret_cast<const char *>(dims),
+                                                   5 * sizeof(size_t));
+
+                                ofs_sigmac_r.write(
+                                    reinterpret_cast<const char *>(sigc_cos.ptr()),
+                                    n_I * n_J * elem_size_);
+
+                                ofs_sigmac_r.write(
+                                    reinterpret_cast<const char *>(sigc_sin.ptr()),
+                                    n_I * n_J * elem_size_);
+                            }
+
+                            for (size_t iomega = 0; iomega != tfg.get_n_grids(); ++iomega)
+                            {
+                                const auto omega = tfg.get_freq_nodes()[iomega];
+                                const auto t2f_sin = tfg.get_sintrans_t2f()(iomega, itau);
+                                const auto t2f_cos = tfg.get_costrans_t2f()(iomega, itau);
+
+                                Matz sigc_temp(n_I, n_J, MAJOR::ROW);
+
+                                for (size_t i = 0; i != static_cast<size_t>(n_I); ++i)
+                                {
+                                    for (size_t j = 0; j != static_cast<size_t>(n_J); ++j)
+                                    {
+                                        sigc_temp(i, j) = make_freq_value_(
+                                            sigc_cos(i, j), sigc_sin(i, j), t2f_cos, t2f_sin);
+                                    }
+                                }
+
+                                const atpair_t IJ{I, J};
+                                auto &m_IJ =
+                                    sigc_is_f_IJ_R[ispin][ispinor_bra][ispinor_ket][omega][IJ];
+
+                                auto it = m_IJ.find(R);
+                                if (it == m_IJ.cend())
+                                {
+                                    m_IJ.emplace(R, std::move(sigc_temp));
+                                }
+                                else
+                                {
+                                    it->second += sigc_temp;
+                                }
+                            }
+                        }
+                    }
+                };
+
+                // symmetrize and perform transformation
+                global::profiler.start("g0w0_build_spacetime_6", "Transform Sigc (R,t) -> (R,w)");
+                accumulate_sigc_tau_to_freq(sigc_posi_tau_in, sigc_nega_tau_in,
+                                            block_scale_factor, make_freq_value, elem_size);
+                global::profiler.stop("g0w0_build_spacetime_6");
+
+                if (this->output_sigc_mat_rt)
+                {
+                    ofs_sigmac_r.seekp(0);
+                    ofs_sigmac_r.write((char *) &n_IJR_myid, sizeof(size_t)); // overwrite
+                    ofs_sigmac_r.close();
+                }
+            };
+
             for (int ispinor_bra = 0; ispinor_bra < n_spinor; ispinor_bra++)
             {
                 for (int ispinor_ket = 0; ispinor_ket < n_spinor; ispinor_ket++)
@@ -1760,7 +1940,7 @@ void G0W0::build_spacetime(
                                 mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, atbasis_wfc,
                                 ispin, ispinor_bra, ispinor_ket, this->pbc,
                                 this->symmetry_context, this->use_symmetry_context,
-                                this->pbc.kfrac_list, taus, Rs_gf, tau_gf_libri_cplx, band_mask);
+                                this->pbc.kfrac_list, taus, Rs_gf, tau_gf_libri_cplx);
                         }
                         else
                         {
@@ -1768,7 +1948,7 @@ void G0W0::build_spacetime(
                                                 this->symmetry_context,
                                                 this->use_symmetry_context,
                                                 this->pbc.kfrac_list,
-                                                taus, IJR_local_gf, tau_gf_libri_cplx, band_mask);
+                                                taus, IJR_local_gf, tau_gf_libri_cplx);
                         }
                     }
                     else
@@ -1778,13 +1958,13 @@ void G0W0::build_spacetime(
                                 mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, atbasis_wfc,
                                 ispin, ispinor_bra, ispinor_ket, this->pbc,
                                 this->symmetry_context, this->use_symmetry_context,
-                                this->pbc.kfrac_list, taus, Rs_gf, tau_gf_libri, band_mask);
+                                this->pbc.kfrac_list, taus, Rs_gf, tau_gf_libri);
                         else
                             build_gf_libri_kserial(mf, atbasis_wfc, ispin, ispinor_bra, ispinor_ket, this->pbc,
                                                 this->symmetry_context,
                                                 this->use_symmetry_context,
                                                 this->pbc.kfrac_list,
-                                                taus, IJR_local_gf, tau_gf_libri, band_mask);
+                                                taus, IJR_local_gf, tau_gf_libri);
                     }
                     // if (itau == 0 && ispin == 0)  // debug
                     // {
@@ -1826,7 +2006,7 @@ void G0W0::build_spacetime(
                             global::profiler.stop("g0w0_cal_sigc_entry_wait");
                             global::profiler.start("g0w0_build_spacetime_5", "Call libRI cal_Sigc");
                             gw_libri_cplx.cal_Sigmas();
-                            if (restore_input_sigc_output)
+                            if (restore_input_sigc_output && !defer_spinor_sigc_restore)
                             {
                                 gw_libri_cplx.Sigmas =
                                     restore_symmetry_ao_rspace_tensor_map_gw(
@@ -1848,7 +2028,18 @@ void G0W0::build_spacetime(
                             double mem_mb = get_tensor_map_bytes(gw_libri_cplx.Sigmas) * 1e-6;
                             global::ofs_myid << "Temporary Sigc_tau size for time " << t << " [MB]: " << mem_mb << std::endl;
 
-                            if (t > 0)
+                            if (defer_spinor_sigc_restore)
+                            {
+                                // Stash the irreducible-sector Sigmas; the joint
+                                // four-channel restore runs after the (bra, ket)
+                                // loops, still in the tau domain.
+                                auto &sigc_tau_stash =
+                                    (t > 0 ? sigc_posi_tau_ir_channels
+                                           : sigc_nega_tau_ir_channels)[static_cast<std::size_t>(
+                                        ispinor_bra * 2 + ispinor_ket)];
+                                sigc_tau_stash = std::move(gw_libri_cplx.Sigmas);
+                            }
+                            else if (t > 0)
                                 sigc_posi_tau_cplx = std::move(gw_libri_cplx.Sigmas);
                             else
                                 sigc_nega_tau_cplx = std::move(gw_libri_cplx.Sigmas);
@@ -1968,161 +2159,58 @@ void G0W0::build_spacetime(
                                 wtime_g0w0_cal_sigc);
                     }
 
-                    size_t n_IJR_myid = 0; // for sigcmat output
-
-                    if (this->output_sigc_mat_rt)
+                    if (!defer_spinor_sigc_restore)
                     {
-                        std::stringstream ss;
-                        ss << path_as_directory(this->output_dir) << "SigcRT"
-                            << "_ispin_" << std::setfill('0') << std::setw(5) << ispin;
-                        if (n_spinor > 1)
+                        if (use_complex_tensor)
                         {
-                           ss << "_spinor_" << ispinor_bra << "_" << ispinor_ket;
+                            flush_sigc_channel(ispinor_bra, ispinor_ket,
+                                               sigc_posi_tau_cplx, sigc_nega_tau_cplx,
+                                               cplxdb(0.5, 0.0), sigc_t2f_value_cplx,
+                                               sizeof(cplxdb));
+                            sigc_posi_tau_cplx.clear();
+                            sigc_nega_tau_cplx.clear();
                         }
-                        ss << "_itau_" << std::setfill('0') << std::setw(5) << itau
-                           << "_myid_" << std::setfill('0') << std::setw(5) << global::myid_global << ".dat";
-                        ofs_sigmac_r.open(ss.str(), std::ios::out | std::ios::binary);
-                        ofs_sigmac_r.write((char *) &n_IJR_myid, sizeof(size_t)); // placeholder
-                    }
-
-                    auto accumulate_sigc_tau_to_freq = [&](const auto &sigc_posi_tau_in,
-                                                           const auto &sigc_nega_tau_in,
-                                                           auto block_scale_factor,
-                                                           auto make_freq_value, size_t elem_size)
-                    {
-                        for (const bool negative : {false, true})
+                        else
                         {
-                            const auto &primary = negative ? sigc_nega_tau_in : sigc_posi_tau_in;
-                            const auto &secondary = negative ? sigc_posi_tau_in : sigc_nega_tau_in;
-                            for (const auto &[I, J_R_sigc] : primary)
-                            {
-                                const auto n_I = this->atbasis_wfc.get_atom_nb(I);
-
-                                const auto it_other_I = secondary.find(I);
-
-                                for (const auto &[JR, sigc_block] : J_R_sigc)
-                                {
-                                    const auto J = JR.first;
-                                    const auto n_J = this->atbasis_wfc.get_atom_nb(J);
-                                    const auto &Ra = JR.second;
-
-                                    decltype(&sigc_block) other_block = nullptr;
-                                    if (it_other_I != secondary.cend())
-                                    {
-                                        const auto it_other_JR = it_other_I->second.find(JR);
-                                        if (it_other_JR != it_other_I->second.cend())
-                                            other_block = &it_other_JR->second;
-                                    }
-                                    // Paired blocks are handled in the positive-time pass.
-                                    if (negative && other_block) continue;
-
-                                    const Vector3_Order<int> R{Ra[0], Ra[1], Ra[2]};
-
-                                    const auto it_R = std::find(Rlist.cbegin(), Rlist.cend(), R);
-                                    const auto iR = std::distance(Rlist.cbegin(), it_R);
-
-                                    const auto sigc_cos = other_block
-                                        ? block_scale_factor * (sigc_block + *other_block)
-                                        : block_scale_factor * sigc_block;
-                                    const auto sigc_sin = other_block
-                                        ? block_scale_factor * (sigc_block - *other_block)
-                                        : (negative ? -block_scale_factor : block_scale_factor) * sigc_block;
-
-                                    ++n_IJR_myid;
-
-                                    if (this->output_sigc_mat_rt)
-                                    {
-                                        size_t dims[5];
-                                        dims[0] = as_size(iR);
-                                        dims[1] = as_size(I);
-                                        dims[2] = as_size(J);
-                                        dims[3] = as_size(n_I);
-                                        dims[4] = as_size(n_J);
-
-                                        ofs_sigmac_r.write(reinterpret_cast<const char *>(dims),
-                                                           5 * sizeof(size_t));
-
-                                        ofs_sigmac_r.write(
-                                            reinterpret_cast<const char *>(sigc_cos.ptr()),
-                                            n_I * n_J * elem_size);
-
-                                        ofs_sigmac_r.write(
-                                            reinterpret_cast<const char *>(sigc_sin.ptr()),
-                                            n_I * n_J * elem_size);
-                                    }
-
-                                    for (size_t iomega = 0; iomega != tfg.get_n_grids(); ++iomega)
-                                    {
-                                        const auto omega = tfg.get_freq_nodes()[iomega];
-                                        const auto t2f_sin = tfg.get_sintrans_t2f()(iomega, itau);
-                                        const auto t2f_cos = tfg.get_costrans_t2f()(iomega, itau);
-
-                                        Matz sigc_temp(n_I, n_J, MAJOR::ROW);
-
-                                        for (size_t i = 0; i != static_cast<size_t>(n_I); ++i)
-                                        {
-                                            for (size_t j = 0; j != static_cast<size_t>(n_J); ++j)
-                                            {
-                                                sigc_temp(i, j) = make_freq_value(
-                                                    sigc_cos(i, j), sigc_sin(i, j), t2f_cos, t2f_sin);
-                                            }
-                                        }
-
-                                        const atpair_t IJ{I, J};
-                                        auto &m_IJ =
-                                            sigc_is_f_IJ_R[ispin][ispinor_bra][ispinor_ket][omega][IJ];
-
-                                        auto it = m_IJ.find(R);
-                                        if (it == m_IJ.cend())
-                                        {
-                                            m_IJ.emplace(R, std::move(sigc_temp));
-                                        }
-                                        else
-                                        {
-                                            it->second += sigc_temp;
-                                        }
-                                    }
-                                }
-                            }
+                            flush_sigc_channel(ispinor_bra, ispinor_ket,
+                                               sigc_posi_tau, sigc_nega_tau,
+                                               0.5, sigc_t2f_value_real, sizeof(double));
+                            sigc_posi_tau.clear();
+                            sigc_nega_tau.clear();
                         }
-                    };
-
-                    // symmetrize and perform transformation
-                    global::profiler.start("g0w0_build_spacetime_6", "Transform Sigc (R,t) -> (R,w)");
-                    if (use_complex_tensor)
-                    {
-                        accumulate_sigc_tau_to_freq(
-                            sigc_posi_tau_cplx, sigc_nega_tau_cplx,
-                            cplxdb(0.5, 0.0),
-                            [](const cplxdb &sigc_cos, const cplxdb &sigc_sin, double t2f_cos,
-                               double t2f_sin) -> cplxdb
-                            {
-                                return sigc_cos * t2f_cos + sigc_sin * cplxdb(0.0, t2f_sin);
-                            },
-                            sizeof(cplxdb));
-                        sigc_posi_tau_cplx.clear();
-                        sigc_nega_tau_cplx.clear();
                     }
-                    else
+                }
+            }
+            if (defer_spinor_sigc_restore)
+            {
+                // Joint four-channel restore of the stashed irreducible-sector
+                // Sigmas, still in the tau domain (Phase 6): the (g, U_s, eta)
+                // kernel mixes the (bra, ket) channels, and the antiunitary
+                // Theta remap acts on the tau blocks before the tau -> i omega
+                // transform inside flush_sigc_channel.
+                auto sigc_posi_tau_full_channels =
+                    restore_symmetry_spinor_ao_rspace_tensor_map_gw(
+                        sigc_posi_tau_ir_channels, symmetry_ctx,
+                        symmetry_sector_stars, this->atbasis_wfc);
+                auto sigc_nega_tau_full_channels =
+                    restore_symmetry_spinor_ao_rspace_tensor_map_gw(
+                        sigc_nega_tau_ir_channels, symmetry_ctx,
+                        symmetry_sector_stars, this->atbasis_wfc);
+                sigc_posi_tau_ir_channels = {};
+                sigc_nega_tau_ir_channels = {};
+                for (int ispinor_bra = 0; ispinor_bra != n_spinor; ispinor_bra++)
+                {
+                    for (int ispinor_ket = 0; ispinor_ket != n_spinor; ispinor_ket++)
                     {
-                        accumulate_sigc_tau_to_freq(
-                            sigc_posi_tau, sigc_nega_tau,
-                            0.5,
-                            [](double sigc_cos, double sigc_sin, double t2f_cos,
-                               double t2f_sin) -> cplxdb
-                            { return cplxdb{sigc_cos * t2f_cos, sigc_sin * t2f_sin}; },
-                            sizeof(double));
-                        sigc_posi_tau.clear();
-                        sigc_nega_tau.clear();
-                    }
-
-                    global::profiler.stop("g0w0_build_spacetime_6");
-
-                    if (this->output_sigc_mat_rt)
-                    {
-                        ofs_sigmac_r.seekp(0);
-                        ofs_sigmac_r.write((char *) &n_IJR_myid, sizeof(size_t)); // overwrite
-                        ofs_sigmac_r.close();
+                        const auto channel =
+                            static_cast<std::size_t>(ispinor_bra * 2 + ispinor_ket);
+                        flush_sigc_channel(ispinor_bra, ispinor_ket,
+                                           sigc_posi_tau_full_channels[channel],
+                                           sigc_nega_tau_full_channels[channel],
+                                           cplxdb(0.5, 0.0), sigc_t2f_value_cplx,
+                                           sizeof(cplxdb));
+                        sigc_posi_tau_full_channels[channel].clear();
+                        sigc_nega_tau_full_channels[channel].clear();
                     }
                 }
             }

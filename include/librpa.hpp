@@ -350,6 +350,24 @@ public:
                                  const double* trans = nullptr);
 
     /**
+     * @brief Set spatial and spin-space symmetry operations for spinor data.
+     * @param[in] n_ops Number of operations.
+     * @param[in] row_conv Nonzero for row-fractional rotations.
+     * @param[in] rotmats Flattened spatial rotation matrices.
+     * @param[in] trans Optional flattened fractional translations.
+     * @param[in] antiunitary Optional antiunitary flags, one per operation.
+     * @param[in] spin_u Optional explicit 2x2 spin matrices, eight doubles per operation.
+     * @param[in] spin_action_source Spin action convention (0 identity, 1 explicit, 2 derived).
+     * @param[in] grey_group Nonzero for a grey magnetic group.
+     */
+    void set_symmetry_spin_operations(int n_ops, int row_conv, const int* rotmats,
+                                      const double* trans = nullptr,
+                                      const int* antiunitary = nullptr,
+                                      const double* spin_u = nullptr,
+                                      int spin_action_source = 0,
+                                      int grey_group = 0);
+
+    /**
      * @brief Set direct and reciprocal lattice vectors.
      * @param[in] lat_mat Direct lattice vectors in Bohr.
      * @param[in] G_mat Reciprocal lattice vectors in Bohr^-1.

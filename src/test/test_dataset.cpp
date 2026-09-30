@@ -1,11 +1,13 @@
 #include "../api/dataset.h"
 #include "../core/meanfield_mpi.h"
 #include "../api/dataset_helper.h"
+#include "../api/instance_manager.h"
 
 #include "../mpi/global_mpi.h"
 #include "../io/global_io.h"
 #include "../utils/constants.h"
 #include "librpa_enums.h"
+#include "librpa_input.h"
 #include "librpa_options.h"
 #include "mpi_test_config.h"
 #include "testutils.h"
@@ -499,6 +501,115 @@ static void test_spinor_symmetry_speedup_rejected()
     }));
 }
 
+static void test_set_symmetry_spin_operations_api()
+{
+    using namespace librpa_int;
+
+    const int rotmats_ei[18] = {1, 0, 0, 0, 1, 0, 0, 0, 1,
+                                -1, 0, 0, 0, -1, 0, 0, 0, -1};
+
+    // Explicit antiunitary table fills both the spatial and the spin metadata;
+    // the legacy entry point clears the explicit table again.
+    {
+        LibrpaHandler* h = librpa_create_handler(MPI_COMM_WORLD);
+        const int antiunitary[2] = {0, 1};
+        librpa_set_symmetry_spin_operations(h, 2, 1, rotmats_ei, nullptr,
+                                            antiunitary, nullptr, 0, 1);
+        auto pds = api::get_dataset_instance(h);
+        assert(pds->spg_symops.size() == 2);
+        assert(pds->spg_symops[1].rotation
+               == Matrix3(-1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, -1.0));
+        assert(pds->spg_spin_ops_explicit);
+        assert(pds->spg_grey_group);
+        assert(pds->spg_spin_ops.size() == 2);
+        const std::array<std::complex<double>, 4> identity_u{1.0, 0.0, 0.0, 1.0};
+        assert(pds->spg_spin_ops[0].spatial_id == 0);
+        assert(!pds->spg_spin_ops[0].antiunitary);
+        assert(pds->spg_spin_ops[0].spin_source == SymmetrySpinActionSource::Identity);
+        assert(pds->spg_spin_ops[0].spin_u == identity_u);
+        assert(pds->spg_spin_ops[1].spatial_id == 1);
+        assert(pds->spg_spin_ops[1].antiunitary);
+
+        librpa_set_symmetry_operations(h, 2, 1, rotmats_ei, nullptr);
+        assert(!pds->spg_spin_ops_explicit);
+        assert(pds->spg_spin_ops.empty());
+        assert(pds->spg_grey_group);
+        librpa_destroy_handler(h);
+    }
+
+    // DerivedFromSpatialSOC without spin_u is accepted: the context
+    // reconstructs U_s = U[det(Q) Q] from the Cartesian axial rotation.
+    {
+        LibrpaHandler* h = librpa_create_handler(MPI_COMM_WORLD);
+        librpa_set_symmetry_spin_operations(h, 2, 1, rotmats_ei, nullptr,
+                                            nullptr, nullptr, 2, 0);
+        const auto pds = librpa_int::api::get_dataset_instance(h);
+        assert(pds->spg_spin_ops.size() == 2);
+        assert(pds->spg_spin_ops[1].spin_source
+               == librpa_int::SymmetrySpinActionSource::DerivedFromSpatialSOC);
+        librpa_destroy_handler(h);
+    }
+
+    // A non-unitary spin_u is rejected.
+    {
+        LibrpaHandler* h = librpa_create_handler(MPI_COMM_WORLD);
+        const double bad_u[8] = {2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0};
+        bool threw = false;
+        try
+        {
+            librpa_set_symmetry_spin_operations(h, 2, 1, rotmats_ei, nullptr,
+                                                nullptr, bad_u, 1, 0);
+        }
+        catch (const std::invalid_argument&)
+        {
+            threw = true;
+        }
+        assert(threw);
+        librpa_destroy_handler(h);
+    }
+
+    // ExplicitSpinSpace requires a non-null spin_u.
+    {
+        LibrpaHandler* h = librpa_create_handler(MPI_COMM_WORLD);
+        bool threw = false;
+        try
+        {
+            librpa_set_symmetry_spin_operations(h, 2, 1, rotmats_ei, nullptr,
+                                                nullptr, nullptr, 1, 0);
+        }
+        catch (const std::runtime_error&)
+        {
+            threw = true;
+        }
+        assert(threw);
+        librpa_destroy_handler(h);
+    }
+
+    // grey_group=1 expands the table to 2N entries with the unitary block
+    // first when the symmetry context is initialized from the dataset.
+    {
+        LibrpaHandler* h = librpa_create_handler(MPI_COMM_WORLD);
+        librpa_set_symmetry_spin_operations(h, 2, 1, rotmats_ei, nullptr,
+                                            nullptr, nullptr, 0, 1);
+        auto pds = api::get_dataset_instance(h);
+        pds->pbc.set_latvec({1, 0, 0, 0, 1, 0, 0, 0, 1});
+        pds->pbc.set_kgrids_kvec(1, 1, 1, {0.0, 0.0, 0.0});
+        initialize_symmetry_context(*pds, false);
+        const auto& ctx = pds->symmetry_context;
+        assert(ctx.has_explicit_spin_operations);
+        assert(ctx.spin_operations.size() == 4);
+        assert(ctx.spin_operations[0].spatial_id == 0);
+        assert(!ctx.spin_operations[0].antiunitary);
+        assert(ctx.spin_operations[1].spatial_id == 1);
+        assert(!ctx.spin_operations[1].antiunitary);
+        assert(ctx.spin_operations[2].spatial_id == 0);
+        assert(ctx.spin_operations[2].antiunitary);
+        assert(ctx.spin_operations[3].spatial_id == 1);
+        assert(ctx.spin_operations[3].antiunitary);
+        librpa_destroy_handler(h);
+    }
+}
+
 static void test_disabled_component_symmetry_keeps_shared_context()
 {
     using namespace librpa_int;
@@ -699,6 +810,7 @@ int main (int argc, char *argv[])
     test_redistribute_band_eigvecs_kpara_np4();
     test_redistribute_band_eigvecs_kpara_2d_np4();
     test_spinor_symmetry_speedup_rejected();
+    test_set_symmetry_spin_operations_api();
     test_disabled_component_symmetry_keeps_shared_context();
 
     finalize_global_io();

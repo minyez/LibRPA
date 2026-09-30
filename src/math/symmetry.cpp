@@ -522,4 +522,128 @@ std::vector<KPointStar> build_kpoint_stars(
     return stars;
 }
 
+Matrix3 axial_rotation_of(const Matrix3 &cartesian_rotation)
+{
+    return cartesian_rotation * cartesian_rotation.Det();
+}
+
+std::array<std::complex<double>, 4> so3_to_su2(const Matrix3 &proper_rotation)
+{
+    using cplx = std::complex<double>;
+    const Matrix3 &R = proper_rotation;
+    const double trace = R.e11 + R.e22 + R.e33;
+
+    // Antisymmetric part: v = 2 sin(theta) * n. With Matrix3 acting on column
+    // vectors ((R u)_i = R_ij u_j), the axis is
+    // n ~ (R_zy - R_yz, R_xz - R_zx, R_yx - R_xy) — e.g. the +90 deg rotation
+    // about +z, R = [[0,-1,0],[1,0,0],[0,0,1]], gives n = +z and the physical
+    // spinor U = diag(exp(-i pi/4), exp(i pi/4)), and the covering map
+    // satisfies su2_to_so3(so3_to_su2(R)) == R. The planning report writes the
+    // same tuple with swapped index order, (R_yz - R_zy, ...); that reading
+    // corresponds to the row-vector action x' = x R and yields the adjoint
+    // spinor U^dagger = U(-n, theta) for the column-vector matrix fed here.
+    const double vx = R.e32 - R.e23;
+    const double vy = R.e13 - R.e31;
+    const double vz = R.e21 - R.e12;
+
+    // cos(theta/2) = sqrt((Tr R + 1) / 4), non-negative for theta in [0, pi].
+    // Near theta = pi this is ill-conditioned (d cos/d theta = 0): rounding
+    // noise of the input shows up as sqrt-level noise here, so the pi branch
+    // below must not trust it.
+    const double half_cos = 0.5 * std::sqrt(std::max(trace + 1.0, 0.0));
+
+    if (half_cos > 1e-7)
+    {
+        // Generic branch. The axis direction comes from the antisymmetric
+        // part, n = v / |v|, and sin(theta/2) = sqrt(1 - cos(theta/2)^2) is
+        // well-conditioned everywhere outside the pi neighborhood (unlike
+        // |v| = 2 sin theta near theta = 0, where sin(theta/2) n = v/2 stays
+        // smooth and the direction noise is suppressed by the tiny
+        // sin(theta/2) factor). No 0/0 occurs at theta = 0.
+        const double vnorm = std::sqrt(vx * vx + vy * vy + vz * vz);
+        const double half_sin = std::sqrt(std::max(1.0 - half_cos * half_cos, 0.0));
+        double sx = 0.0, sy = 0.0, sz = 0.0;
+        if (vnorm > 1e-14)
+        {
+            const double scale = half_sin / vnorm;
+            sx = vx * scale; // sin(theta/2) * n_x
+            sy = vy * scale;
+            sz = vz * scale;
+        }
+        // U = cos(theta/2) I - i sin(theta/2) (n . sigma)
+        return {cplx(half_cos, -sz), cplx(-sy, -sx),
+                cplx(sy, -sx), cplx(half_cos, sz)};
+    }
+
+    // theta = pi branch: R = 2 n n^T - I, so n_i^2 = (R_ii + 1) / 2.
+    // Anchor the sign on the largest diagonal element and recover the other
+    // components from R_ij + R_ji = 4 n_i n_j (ABACUS commit 1ed54ee23 fix).
+    double nx = std::sqrt(std::max(0.5 * (R.e11 + 1.0), 0.0));
+    double ny = std::sqrt(std::max(0.5 * (R.e22 + 1.0), 0.0));
+    double nz = std::sqrt(std::max(0.5 * (R.e33 + 1.0), 0.0));
+    if (nx >= ny && nx >= nz)
+    {
+        ny = (R.e12 + R.e21) / (4.0 * nx);
+        nz = (R.e13 + R.e31) / (4.0 * nx);
+    }
+    else if (ny >= nz)
+    {
+        nx = (R.e12 + R.e21) / (4.0 * ny);
+        nz = (R.e23 + R.e32) / (4.0 * ny);
+    }
+    else
+    {
+        nx = (R.e13 + R.e31) / (4.0 * nz);
+        ny = (R.e23 + R.e32) / (4.0 * nz);
+    }
+    // U = -i (n . sigma); the real part cos(theta/2) is set to zero because
+    // its trace-based estimate is ill-conditioned in this branch (see above).
+    return {cplx(0.0, -nz), cplx(-ny, -nx),
+            cplx(ny, -nx), cplx(0.0, nz)};
+}
+
+namespace
+{
+
+using su2_matrix_t = std::array<std::complex<double>, 4>;
+
+su2_matrix_t su2_multiply(const su2_matrix_t &a, const su2_matrix_t &b)
+{
+    return {a[0] * b[0] + a[1] * b[2], a[0] * b[1] + a[1] * b[3],
+            a[2] * b[0] + a[3] * b[2], a[2] * b[1] + a[3] * b[3]};
+}
+
+su2_matrix_t su2_dagger(const su2_matrix_t &a)
+{
+    return {std::conj(a[0]), std::conj(a[2]), std::conj(a[1]), std::conj(a[3])};
+}
+
+std::complex<double> su2_trace(const su2_matrix_t &a)
+{
+    return a[0] + a[3];
+}
+
+} // namespace
+
+Matrix3 su2_to_so3(const std::array<std::complex<double>, 4> &U)
+{
+    const std::complex<double> imag_i(0.0, 1.0);
+    const su2_matrix_t sigma[3] = {
+        {0.0, 1.0, 1.0, 0.0},
+        {0.0, -imag_i, imag_i, 0.0},
+        {1.0, 0.0, 0.0, -1.0}};
+    const su2_matrix_t U_dagger = su2_dagger(U);
+    std::array<double, 9> w{};
+    for (int i = 0; i != 3; ++i)
+    {
+        for (int j = 0; j != 3; ++j)
+        {
+            w[3 * i + j] = 0.5 * std::real(
+                su2_trace(su2_multiply(su2_multiply(sigma[i], U),
+                                       su2_multiply(sigma[j], U_dagger))));
+        }
+    }
+    return Matrix3(w);
+}
+
 } // namespace librpa_int

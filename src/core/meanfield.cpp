@@ -254,6 +254,101 @@ static ComplexMatrix build_gf_cplx_imagtime_with_prefactor(
     return transpose(*wfc_bra, false) * scaled_wfc_conj;
 }
 
+//! Zero-fill variant of build_gf_cplx_imagtime_with_prefactor: spinor source
+//! blocks whose wfc channel is missing contribute a zero block (report R11).
+static ComplexMatrix build_gf_cplx_imagtime_with_prefactor_zero_fill(
+    const MeanField& mf,
+    const int ispin,
+    const int ispinor_bra,
+    const int ispinor_ket,
+    const int ikpt,
+    const double tau,
+    const std::vector<double>& prefactors,
+    const int nbands_G)
+{
+    if (mf.find_wfc(ispin, ispinor_bra, ikpt) == nullptr
+        || mf.find_wfc(ispin, ispinor_ket, ikpt) == nullptr)
+    {
+        ComplexMatrix zero(mf.get_n_aos(), mf.get_n_aos());
+        zero.zero_out();
+        return zero;
+    }
+    return build_gf_cplx_imagtime_with_prefactor(
+        mf, ispin, ispinor_bra, ispinor_ket, ikpt, tau, prefactors, nbands_G);
+}
+
+void validate_kstar_band_cutoff_closure(
+    const SymmetryContext& ctx,
+    const MeanField& mf,
+    const int nbands_G,
+    const double degen_tol)
+{
+    (void)ctx;
+    if (nbands_G < 1 || nbands_G >= mf.get_n_bands())
+    {
+        return;
+    }
+    for (int ispin = 0; ispin != mf.get_n_spins(); ++ispin)
+    {
+        for (int ik = 0; ik != mf.get_n_kpoints(); ++ik)
+        {
+            const double gap = mf.get_eigenvals()[ispin](ik, nbands_G)
+                             - mf.get_eigenvals()[ispin](ik, nbands_G - 1);
+            if (std::abs(gap) < degen_tol)
+            {
+                throw LIBRPA_RUNTIME_ERROR(
+                    "Green's-function band cutoff slices through a degenerate band "
+                    "multiplet: ispin " + std::to_string(ispin)
+                    + ", k-point " + std::to_string(ik)
+                    + ", bands " + std::to_string(nbands_G - 1) + "/"
+                    + std::to_string(nbands_G)
+                    + " separated by " + std::to_string(gap)
+                    + " Ha (< " + std::to_string(degen_tol)
+                    + "). Symmetry restore is disabled for this truncation; "
+                    "adjust the cutoff or use the full band grid");
+            }
+        }
+    }
+}
+
+//! Multiply the four blocks by the plain unitary re-gauging phases
+//! block(I, J) *= phase[I] * conj(phase[J]) (applied after the kernel, so
+//! antiunitary members keep the scalar restore convention).
+static void apply_spinor_member_gauge_phases(
+    SpinorBlocks4<ComplexMatrix>& blocks,
+    const std::map<atom_t, size_t>& atom_nw,
+    const std::vector<std::complex<double>>& phases)
+{
+    std::vector<int> offsets;
+    offsets.reserve(atom_nw.size() + 1);
+    offsets.push_back(0);
+    for (const auto& atom_entry : atom_nw)
+    {
+        offsets.push_back(offsets.back() + static_cast<int>(atom_entry.second));
+    }
+    const auto scale_block = [&offsets, &phases](ComplexMatrix& block) {
+        for (std::size_t ai = 0; ai + 1 != offsets.size(); ++ai)
+        {
+            const std::complex<double> phase_i = phases[ai];
+            for (int i = offsets[ai]; i != offsets[ai + 1]; ++i)
+            {
+                for (std::size_t aj = 0; aj + 1 != offsets.size(); ++aj)
+                {
+                    const auto factor = phase_i * std::conj(phases[aj]);
+                    for (int j = offsets[aj]; j != offsets[aj + 1]; ++j)
+                    {
+                        block(i, j) *= factor;
+                    }
+                }
+            }
+        }
+    };
+    scale_block(blocks.b00);
+    scale_block(blocks.b01);
+    scale_block(blocks.b10);
+    scale_block(blocks.b11);
+}
+
 bool can_restore_symmetry_kstar_meanfield(
     const SymmetryContext& ctx,
     const std::vector<SpeciesBasisLayout>& wfc_layouts,
@@ -367,6 +462,7 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets,
     const symmetry_kstar_representative_indices_t* representative_k_indices)
 {
+    validate_kstar_band_cutoff_closure(ctx, mf, nbands_G);
     const auto restore_entries = build_symmetry_kstar_restore_entries(
         ctx, wfc_layouts, mf, kfrac_list, atom_nw, representative_k_indices);
     validate_symmetry_kstar_member_kfrac_targets(restore_entries, member_kfrac_targets);
@@ -426,6 +522,154 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     }
 
     return gf_tau_R;
+}
+
+std::map<double, std::map<Vector3_Order<int>, SpinorBlocks4<ComplexMatrix>>>
+get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
+    const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
+    const MeanField& mf,
+    const int ispin,
+    const std::vector<Vector3_Order<double>>& kfrac_list,
+    const std::vector<double>& imagtimes,
+    const std::vector<Vector3_Order<int>>& Rs,
+    const std::map<atom_t, size_t>& atom_nw,
+    const int nbands_G,
+    const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets,
+    const symmetry_kstar_representative_indices_t* representative_k_indices)
+{
+    if (mf.get_n_spinor() != 2)
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "spinor k-star Green's-function restore requires n_spinor == 2");
+    }
+    validate_kstar_band_cutoff_closure(ctx, mf, nbands_G);
+    const auto restore_entries = build_symmetry_kstar_restore_entries(
+        ctx, wfc_layouts, mf, kfrac_list, atom_nw, representative_k_indices);
+    validate_symmetry_kstar_member_kfrac_targets(restore_entries, member_kfrac_targets);
+
+    std::map<double, std::map<Vector3_Order<int>, SpinorBlocks4<ComplexMatrix>>> gf_tau_R;
+    for (const auto tau : imagtimes)
+    {
+        gf_tau_R[tau] = {};
+    }
+    if (Rs.empty())
+    {
+        return gf_tau_R;
+    }
+
+    const int n_aos = mf.get_n_aos();
+    const int n_bands = mf.get_n_bands();
+    const double scale_spin = 0.5 * mf.get_n_spins() * mf.get_n_spinor();
+
+    for (const auto tau : imagtimes)
+    {
+        const double tau_sign = tau > 0.0 ? 1.0 : -1.0;
+        for (std::size_t ientry = 0; ientry != restore_entries.size(); ++ientry)
+        {
+            const auto& entry = restore_entries[ientry];
+            const auto& star = *entry.star;
+
+            std::vector<double> prefactors(static_cast<std::size_t>(n_bands), 0.0);
+            for (int ib = 0; ib != n_bands; ++ib)
+            {
+                const double occ_weight = mf.get_weight()[ispin](entry.ik_mf, ib) * scale_spin;
+                prefactors[static_cast<std::size_t>(ib)] =
+                    tau > 0.0 ? std::max(0.0, entry.kpoint_weight - occ_weight) : occ_weight;
+            }
+
+            // Four source blocks at the representative, zero-filled when a
+            // (bra, ket) wfc channel is missing.
+            const SpinorBlocks4<ComplexMatrix> gf_ibz{
+                build_gf_cplx_imagtime_with_prefactor_zero_fill(
+                    mf, ispin, 0, 0, entry.ik_mf, tau, prefactors, nbands_G),
+                build_gf_cplx_imagtime_with_prefactor_zero_fill(
+                    mf, ispin, 0, 1, entry.ik_mf, tau, prefactors, nbands_G),
+                build_gf_cplx_imagtime_with_prefactor_zero_fill(
+                    mf, ispin, 1, 0, entry.ik_mf, tau, prefactors, nbands_G),
+                build_gf_cplx_imagtime_with_prefactor_zero_fill(
+                    mf, ispin, 1, 1, entry.ik_mf, tau, prefactors, nbands_G),
+            };
+
+            for (std::size_t imember = 0; imember != star.members.size(); ++imember)
+            {
+                const auto& member = star.members[imember];
+                const auto& op = resolve_symmetry_kstar_member_spin_operation(ctx, member);
+                const auto& k_bz_target = get_symmetry_kstar_member_kfrac_target(
+                    member, member_kfrac_targets, ientry, imember);
+
+                // Orbital transform built once per member, shared by the four
+                // source blocks. The gauge phases are excluded here and
+                // applied after the kernel so that the antiunitary Theta remap
+                // conjugates only the spatial-rotation part (report section
+                // 6.7: spatial unitary first, Theta last).
+                const ComplexMatrix transform = build_symmetry_kspace_operator_transform_matrix(
+                    ctx, wfc_layouts, member, atom_nw, entry.k_source, false, nullptr);
+                const ComplexMatrix transform_dag = transpose(transform, true);
+                const auto orbit = [&transform, &transform_dag](std::size_t spatial_id,
+                                                                const ComplexMatrix& block) {
+                    (void)spatial_id;  // the transform is resolved per member, not per spatial_id
+                    return transform * block * transform_dag;
+                };
+                auto gf_member = transform_spinor_bilinear(
+                    op, gf_ibz, orbit, BilinearConvention::SourceToTarget_DXDdag);
+
+                // Plain unitary re-gauging to the target k-point basis.
+                if (member_kfrac_targets != nullptr && !member_kfrac_targets->empty())
+                {
+                    const auto phases = build_symmetry_kstar_member_target_gauge_phases(
+                        ctx, member, atom_nw.size(), &k_bz_target);
+                    apply_spinor_member_gauge_phases(gf_member, atom_nw, phases);
+                }
+
+                for (const auto& R : Rs)
+                {
+                    const double angle = -(k_bz_target * R) * TWO_PI;
+                    const auto kphase = std::complex<double>(std::cos(angle), std::sin(angle));
+                    const auto factor = entry.star_factor * tau_sign * kphase;
+                    auto& gf_R = gf_tau_R[tau][R];
+                    if (gf_R.b00.nr == 0)
+                    {
+                        gf_R.b00.create(n_aos, n_aos);
+                        gf_R.b01.create(n_aos, n_aos);
+                        gf_R.b10.create(n_aos, n_aos);
+                        gf_R.b11.create(n_aos, n_aos);
+                    }
+                    gf_R.b00 += factor * gf_member.b00;
+                    gf_R.b01 += factor * gf_member.b01;
+                    gf_R.b10 += factor * gf_member.b10;
+                    gf_R.b11 += factor * gf_member.b11;
+                }
+            }
+        }
+    }
+
+    return gf_tau_R;
+}
+
+std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>>
+extract_spinor_gf_block(
+    std::map<double, std::map<Vector3_Order<int>, SpinorBlocks4<ComplexMatrix>>>&& gf_spinor,
+    const int ispinor_bra, const int ispinor_ket)
+{
+    if (ispinor_bra < 0 || ispinor_bra > 1 || ispinor_ket < 0 || ispinor_ket > 1)
+    {
+        throw LIBRPA_RUNTIME_ERROR("spinor Green's-function block index out of range");
+    }
+    std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> gf_block;
+    for (auto& tau_entry : gf_spinor)
+    {
+        auto& gf_R = gf_block[tau_entry.first];
+        for (auto& R_entry : tau_entry.second)
+        {
+            auto& blocks = R_entry.second;
+            if (ispinor_bra == 0 && ispinor_ket == 0) gf_R[R_entry.first] = std::move(blocks.b00);
+            else if (ispinor_bra == 0 && ispinor_ket == 1) gf_R[R_entry.first] = std::move(blocks.b01);
+            else if (ispinor_bra == 1 && ispinor_ket == 0) gf_R[R_entry.first] = std::move(blocks.b10);
+            else gf_R[R_entry.first] = std::move(blocks.b11);
+        }
+    }
+    return gf_block;
 }
 
 void MeanField::resize(int ns, int nk, int nb, int nao, int nspinor, int st_ib, int nb_local, int st_iao, int nao_local)

@@ -81,6 +81,15 @@ public:
     //! Basis ordering and real-spherical-harmonic convention.
     BasisConvention basis_convention;
     SpaceGroupSymOps spg_symops;
+    //! Explicit spin-space operation table set by librpa_set_symmetry_spin_operations;
+    //! spatial_id indexes spg_symops. Consumed only when spg_spin_ops_explicit is set.
+    std::vector<SymmetrySpinOperation> spg_spin_ops;
+    //! Whether spg_spin_ops should replace the default grey-group expansion.
+    bool spg_spin_ops_explicit = false;
+    //! Whether the explicit table is the unitary block of a grey group (LibRPA
+    //! appends the antiunitary copies internally). Defaults to true to match the
+    //! legacy behavior of librpa_set_symmetry_operations.
+    bool spg_grey_group = true;
     //! Symmetry context built from structure and full k-point grid.
     SymmetryContext symmetry_context;
     //! Atomic structure

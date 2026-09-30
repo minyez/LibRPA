@@ -229,6 +229,16 @@ void Handler::set_symmetry_operations(const int n_symops, const int row_conv,
     ::librpa_set_symmetry_operations(this->h_, n_symops, row_conv, rotmats, trans);
 }
 
+void Handler::set_symmetry_spin_operations(const int n_ops, const int row_conv,
+                                           const int* rotmats, const double* trans,
+                                           const int* antiunitary, const double* spin_u,
+                                           const int spin_action_source, const int grey_group)
+{
+    ::librpa_set_symmetry_spin_operations(this->h_, n_ops, row_conv, rotmats, trans,
+                                          antiunitary, spin_u, spin_action_source,
+                                          grey_group);
+}
+
 LIBRPA_CPP_H_METHOD_DEF_WRAP_VOID(
     set_latvec_and_G,
     (const double lat_mat[9], const double G_mat[9]),

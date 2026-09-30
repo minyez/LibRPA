@@ -154,6 +154,40 @@ void librpa_set_symmetry_operations(LibrpaHandler* h, int n_symops, int row_conv
                                     const int* rotmats, const double* trans);
 
 /**
+ * @brief Set symmetry operations with explicit spin actions (magnetic or
+ *        spin-space group input).
+ *
+ * The spatial part is normalized exactly like librpa_set_symmetry_operations.
+ * Each operation additionally carries an antiunitary flag and an SU(2) spin
+ * rotation, normalized internally to SymmetrySpinOperation entries whose
+ * spatial_id indexes the operation in input order.
+ *
+ * @param[in] h          Handler.
+ * @param[in] n_ops      Number of symmetry operations.
+ * @param[in] row_conv   Positive if rotations use the row-fractional convention.
+ * @param[in] rotmats    Flattened rotation matrices, length 9*n_ops.
+ * @param[in] trans      Optional flattened fractional translations, length 3*n_ops.
+ * @param[in] antiunitary Optional flags (0/1) per operation, length n_ops;
+ *                        null means all unitary.
+ * @param[in] spin_u     Optional flattened SU(2) matrices, 8 doubles per
+ *                       operation as (re,im) x 4 in row-major 2x2 order.
+ * @param[in] spin_action_source 0 = Identity (null spin_u means the identity),
+ *                       1 = ExplicitSpinSpace (spin_u required, unitarity
+ *                       checked), 2 = DerivedFromSpatialSOC (null spin_u means
+ *                       LibRPA reconstructs U[det(Q)Q] from the spatial part,
+ *                       requiring the lattice; a provided spin_u is validated
+ *                       and adopted as the upstream authority).
+ * @param[in] grey_group Nonzero to declare the table as the unitary block of a
+ *                       grey group: LibRPA appends one antiunitary copy per
+ *                       operation (unitary block first).
+ */
+void librpa_set_symmetry_spin_operations(
+    LibrpaHandler* h, int n_ops, int row_conv,
+    const int* rotmats, const double* trans,
+    const int* antiunitary, const double* spin_u,
+    int spin_action_source, int grey_group);
+
+/**
  * @brief Set direct and reciprocal lattice vectors.
  * @param[in] h         Handler.
  * @param[in] lat_mat   Lattice vectors (3x3, column-major, in Bohr).

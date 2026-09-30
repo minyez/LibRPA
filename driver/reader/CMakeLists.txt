@@ -1,4 +1,5 @@
 add_library(librpa_file_reader
+  ../stru_symops_parser.cpp
   file_reader.cpp
   read_data.cpp
   reader_band.cpp

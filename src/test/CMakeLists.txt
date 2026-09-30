@@ -63,6 +63,7 @@ foreach(target
     test_qpe_solver
     test_rsh
     test_symmetry
+    test_symmetry_spin_kernel
     test_timefreq
     test_vector3
     test_wigner_rotation

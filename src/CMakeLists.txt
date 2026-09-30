@@ -91,6 +91,7 @@ list(APPEND lib_sources
         api/options.cpp
         core/analycont.cpp
         core/symmetry_context.cpp
+        core/symmetry_spin_kernel.cpp
         core/atomic_basis.cpp
         core/chi0.cpp
         core/coulmat.cpp

@@ -647,8 +647,16 @@ static Chi0CollectMap<Tdata> restore_symmetry_abf_rspace_tensor_map_chi0(
             {
                 if (target_set.count(restore_member.full_atom_pair) == 0)
                     continue;
-                const ComplexMatrix chi0_full = rotate_symmetry_rspace_block(
+                ComplexMatrix chi0_full = rotate_symmetry_rspace_block(
                     symmetry_ctx, abf_layouts, restore_member.isym, ir_I, ir_J, chi0_ir);
+                // Charge-channel response under an antiunitary (g, U_s, eta=1)
+                // operation: the spin trace cancels U_s and the orbital-rotated
+                // block is complex conjugated (bosonic imaginary-time/frequency
+                // convention, same as the dense Wc q-star TR handling).
+                if (symmetry_rspace_restore_member_is_antiunitary(symmetry_ctx, restore_member))
+                {
+                    chi0_full = conj(chi0_full);
+                }
                 auto &target = tensors_full[as_int(restore_member.full_atom_pair.first)][{
                     as_int(restore_member.full_atom_pair.second),
                     {restore_member.full_R.x,
@@ -1120,6 +1128,22 @@ static void build_gf_Rt_libri_serial(
         auto member_kfrac_targets = restore_symmetry_kstars_from_full_grid
             ? build_symmetry_full_grid_kstar_member_kfrac_targets(symmetry_context, kfrac_list)
             : build_symmetry_kstar_member_kfrac_targets(symmetry_context, pbc);
+        const bool use_spinor_restore = mf.get_n_spinor() == 2;
+        const auto restore_gf = [&](const std::vector<Vector3_Order<int>> &Rs_sel) {
+            if (use_spinor_restore)
+            {
+                return extract_spinor_gf_block(
+                    get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
+                        symmetry_context, wfc_layouts, mf, ispin, kfrac_list, {tau}, Rs_sel,
+                        atom_nw, nbands_G, &member_kfrac_targets,
+                        restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr),
+                    isoc1, isoc2);
+            }
+            return get_symmetry_restored_gf_cplx_imagtimes_Rs(
+                symmetry_context, wfc_layouts, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, Rs_sel,
+                atom_nw, nbands_G, &member_kfrac_targets,
+                restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr);
+        };
         std::vector<Vector3_Order<int>> Rs_this;
         Rs_this.reserve(map_R_IJs.size());
         for (const auto &R_IJs : map_R_IJs)
@@ -1132,9 +1156,7 @@ static void build_gf_Rt_libri_serial(
         {
             constexpr double restore_check_tol = 1e-6;
             const std::vector<Vector3_Order<int>> R_check{Rs_this.front()};
-            const auto restored_check = get_symmetry_restored_gf_cplx_imagtimes_Rs(
-                symmetry_context, wfc_layouts, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, R_check, atom_nw,
-                band_mask, &member_kfrac_targets, &full_grid_kstar_representatives).at(tau).at(R_check.front());
+            const auto restored_check = restore_gf(R_check).at(tau).at(R_check.front());
             const auto direct_check =
                 mf.get_gf_cplx_imagtimes_Rs(
                       ispin, isoc1, isoc2, kfrac_list, {tau}, R_check, band_mask).at(tau).at(R_check.front());
@@ -1147,10 +1169,7 @@ static void build_gf_Rt_libri_serial(
         }
         if (restore_symmetry_kstars || restore_symmetry_kstars_from_full_grid)
         {
-            const auto gf_cplx_R = get_symmetry_restored_gf_cplx_imagtimes_Rs(
-                symmetry_context, wfc_layouts, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, Rs_this, atom_nw,
-                band_mask, &member_kfrac_targets,
-                restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr).at(tau);
+            const auto gf_cplx_R = restore_gf(Rs_this).at(tau);
 
             for (const auto &R_IJs : map_R_IJs)
             {
@@ -1389,13 +1408,27 @@ static void build_gf_Rt_libri_kblacs_para(
     if (global::should_output(LIBRPA_VERBOSE_DEBUG))
         global::ofs_myid << "Chi0 kBLACS GF symmetry restore: "
                          << (restore_symmetry_kstars ? "on" : "off") << std::endl;
-    auto gf_imagtimes_Rs_cplx = restore_symmetry_kstars
-        ? get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
-              ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, {tau}, Rs, kblacs_ctxt,
-              desc_wfc, desc_gf, symmetry_context, pbc, atbasis_wfc, band_mask)
-        : get_gf_cplx_imagtimes_Rs_kblacs_para(
-              ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, {tau}, Rs, kblacs_ctxt,
-              desc_wfc, desc_gf, band_mask);
+    std::map<double, std::map<Vector3_Order<int>, Matz>> gf_imagtimes_Rs_cplx;
+    if (restore_symmetry_kstars && mf.get_n_spinor() == 2)
+    {
+        gf_imagtimes_Rs_cplx = extract_spinor_gf_block_kblacs(
+            get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para_spinor(
+                ispin, mf, kfrac_list, {tau}, Rs, kblacs_ctxt, desc_wfc, desc_gf,
+                symmetry_context, pbc, atbasis_wfc),
+            ispinor_bra, ispinor_ket);
+    }
+    else if (restore_symmetry_kstars)
+    {
+        gf_imagtimes_Rs_cplx = get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
+            ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, {tau}, Rs, kblacs_ctxt,
+            desc_wfc, desc_gf, symmetry_context, pbc, atbasis_wfc);
+    }
+    else
+    {
+        gf_imagtimes_Rs_cplx = get_gf_cplx_imagtimes_Rs_kblacs_para(
+            ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, {tau}, Rs, kblacs_ctxt,
+            desc_wfc, desc_gf, band_mask);
+    }
     auto &gf_Rs_cplx = gf_imagtimes_Rs_cplx.at(tau);
 
     for (auto &R_gf_cplx: gf_Rs_cplx)

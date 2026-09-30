@@ -602,6 +602,86 @@ void librpa_set_symmetry_operations(LibrpaHandler* h, const int n_symops, const 
         bool use_row_convention = row_conv > 0 ? true : false;
         ops.push_back({array_rotmt, array_trans, use_row_convention});
     }
+    // The legacy entry point always means an ordinary space group: drop any
+    // previously installed explicit spin-operation table.
+    pds->spg_spin_ops.clear();
+    pds->spg_spin_ops_explicit = false;
+    pds->spg_grey_group = true;
+    pds->invalidate_compute_objects();
+
+    profiler.stop(tname);
+}
+
+void librpa_set_symmetry_spin_operations(
+    LibrpaHandler* h, const int n_ops, const int row_conv,
+    const int* rotmats, const double* trans,
+    const int* antiunitary, const double* spin_u,
+    const int spin_action_source, const int grey_group)
+{
+    using librpa_int::SymmetrySpinActionSource;
+    using librpa_int::SymmetrySpinOperation;
+    using librpa_int::global::profiler;
+    if (n_ops < 0)
+        throw LIBRPA_RUNTIME_ERROR("number of symmetry operations must be non-negative");
+    if (n_ops > 0 && rotmats == nullptr)
+        throw LIBRPA_RUNTIME_ERROR("symmetry operation rotation matrices must not be null");
+    if (spin_action_source < 0 || spin_action_source > 2)
+        throw LIBRPA_RUNTIME_ERROR("spin_action_source must be 0 (Identity), "
+                                   "1 (ExplicitSpinSpace), or 2 (DerivedFromSpatialSOC)");
+    if (spin_action_source == 1 && spin_u == nullptr)
+        throw LIBRPA_RUNTIME_ERROR("ExplicitSpinSpace spin action requires a non-null spin_u");
+    // DerivedFromSpatialSOC with spin_u == nullptr is reconstructed inside
+    // SymmetryContext as U_s = U[det(Q) Q] from the Cartesian axial rotation;
+    // when spin_u is provided it is used as given (upstream authority).
+
+    const std::string tname = "api_set_symmetry_spin_operations";
+    profiler.start(tname, LIBRPA_VERBOSE_DEBUG);
+
+    const auto source = static_cast<SymmetrySpinActionSource>(spin_action_source);
+    auto pds = librpa_int::api::get_dataset_instance(h);
+    auto &ops = pds->spg_symops;
+    auto &spin_ops = pds->spg_spin_ops;
+
+    // Spatial part: identical normalization to librpa_set_symmetry_operations.
+    ops.clear();
+    ops.reserve(static_cast<std::size_t>(n_ops));
+    spin_ops.clear();
+    spin_ops.reserve(static_cast<std::size_t>(n_ops));
+    for (int isym = 0; isym != n_ops; ++isym)
+    {
+        const int* rot = rotmats + 9 * isym;
+        std::array<double, 9> array_rotmt{
+            static_cast<double>(rot[0]), static_cast<double>(rot[1]), static_cast<double>(rot[2]),
+            static_cast<double>(rot[3]), static_cast<double>(rot[4]), static_cast<double>(rot[5]),
+            static_cast<double>(rot[6]), static_cast<double>(rot[7]), static_cast<double>(rot[8])};
+        std::array<double, 3> array_trans{0.0, 0.0, 0.0};
+        if (trans != nullptr)
+        {
+            const double* translation = trans + 3 * isym;
+            array_trans = {translation[0], translation[1], translation[2]};
+        }
+        bool use_row_convention = row_conv > 0 ? true : false;
+        ops.push_back({array_rotmt, array_trans, use_row_convention});
+
+        SymmetrySpinOperation spin_op;
+        spin_op.spatial_id = static_cast<std::size_t>(isym);
+        spin_op.antiunitary = antiunitary != nullptr && antiunitary[isym] != 0;
+        spin_op.spin_source = source;
+        if (spin_u != nullptr)
+        {
+            // 8 doubles per operation: (re, im) x 4, row-major 2x2.
+            const double* u = spin_u + 8 * isym;
+            spin_op.spin_u = {std::complex<double>(u[0], u[1]),
+                              std::complex<double>(u[2], u[3]),
+                              std::complex<double>(u[4], u[5]),
+                              std::complex<double>(u[6], u[7])};
+        }
+        spin_ops.push_back(spin_op);
+    }
+    // Unitarity of every provided spin_u (identity by default trivially passes).
+    librpa_int::validate_symmetry_spin_operations(spin_ops, ops.size());
+    pds->spg_spin_ops_explicit = true;
+    pds->spg_grey_group = grey_group != 0;
     pds->invalidate_compute_objects();
 
     profiler.stop(tname);
