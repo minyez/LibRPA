@@ -9,7 +9,13 @@ add_executable(test_driver_params test_driver_params.cpp ../driver.cpp)
 target_link_libraries(test_driver_params PRIVATE librpa_file_reader)
 add_test(NAME test_driver_params COMMAND $<TARGET_FILE:test_driver_params>)
 
-add_executable(test_velocity_reader test_velocity_reader.cpp ../driver.cpp ../read_data.cpp)
+add_executable(
+  test_velocity_reader
+  test_velocity_reader.cpp
+  ../driver.cpp
+  ../read_data.cpp
+  ../reader_2d_coulomb_head.cpp
+)
 target_link_libraries(test_velocity_reader PRIVATE librpa_file_reader)
 add_test(NAME test_velocity_reader COMMAND $<TARGET_FILE:test_velocity_reader>)
 add_executable(test_stru_symops_parser test_stru_symops_parser.cpp ../stru_symops_parser.cpp)
