@@ -44,6 +44,9 @@ private:
         std::map<int, std::map<int, atom_mapping<std::map<Vector3_Order<int>, std::map<double, matrix>>>::pair_t_old>>>
         gf_is_R_tau;
 
+    //! Band selection used by every response Green-function route.
+    std::vector<bool> band_mask;
+
     //! R on which the space-time GF are created, used for atom-pair and rtau routings
     std::vector<Vector3_Order<int>> Rlist_gf;
 

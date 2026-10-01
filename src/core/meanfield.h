@@ -128,16 +128,18 @@ public:
         const std::vector<Vector3_Order<double>>& kfrac_list,
         const std::vector<Vector3_Order<int>>& Rs) const;
 
+    //! Optional band mask: true includes a band; an empty mask includes all bands.
+    //! A nonempty mask must have get_n_bands() entries, shared by all k-points and spins.
     ComplexMatrix get_gf_cplx_imagtime(int ispin, int ispinor_bra, int ispinor_ket, int ikpt,
-                                       double tau) const;
+                                       double tau, const std::vector<bool> &band_mask = {}) const;
     std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> get_gf_cplx_imagtimes_Rs(
         int ispin, int ispinor_bra, int ispinor_ket,
         const std::vector<Vector3_Order<double>>& kfrac_list, std::vector<double> imagtimes,
-        const std::vector<Vector3_Order<int>>& Rs) const;
+        const std::vector<Vector3_Order<int>>& Rs, const std::vector<bool> &band_mask = {}) const;
     std::map<double, std::map<Vector3_Order<int>, matrix>> get_gf_real_imagtimes_Rs(
         int ispin, int ispinor_bra, int ispinor_ket,
         const std::vector<Vector3_Order<double>>& kfrac_list, std::vector<double> imagtimes,
-        const std::vector<Vector3_Order<int>>& Rs) const;
+        const std::vector<Vector3_Order<int>>& Rs, const std::vector<bool> &band_mask = {}) const;
 
     // void allredue_wfc_isk();
 };
@@ -174,7 +176,7 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     const std::vector<double>& imagtimes,
     const std::vector<Vector3_Order<int>>& Rs,
     const std::map<atom_t, size_t>& atom_nw,
-    int nbands_G = -1,
+    const std::vector<bool> &band_mask = {},
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr,
     const symmetry_kstar_representative_indices_t* representative_k_indices = nullptr);
 

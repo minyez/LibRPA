@@ -460,7 +460,7 @@ std::map<Vector3_Order<int>, ComplexMatrix> get_dmat_cplx_Rs_kpara(
 
 std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> get_gf_cplx_imagtimes_Rs_kpara(
     int ispin, int ispinor_bra, int ispinor_ket, const MeanField &mf, const std::vector<Vector3_Order<double>> &kfrac_list, std::vector<double> imagtimes,
-    const std::vector<Vector3_Order<int>> &Rs, const MpiCommHandler &comm_h)
+    const std::vector<Vector3_Order<int>> &Rs, const MpiCommHandler &comm_h, const std::vector<bool> &band_mask)
 {
     std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> gf;
 
@@ -494,7 +494,7 @@ std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> get_gf_cplx_imagti
         // TODO: this part is the same as denstiy matrix calculation, so it may be extracted to a common function
         for (int ik_local = 0; ik_local < nk_local; ik_local++)
         {
-            const auto dmat_k = mf.get_gf_cplx_imagtime(ispin, ispinor_bra, ispinor_ket, iks_local[ik_local], tau);
+            const auto dmat_k = mf.get_gf_cplx_imagtime(ispin, ispinor_bra, ispinor_ket, iks_local[ik_local], tau, band_mask);
             memcpy(kmat.ptr() + size * ik_local, dmat_k.c, size * sizeof(Matz::type));
         }
 
@@ -550,9 +550,9 @@ std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> get_gf_cplx_imagti
 
 std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> get_gf_cplx_imagtimes_Rs_kpara(
     int ispin, const MeanField &mf, const std::vector<Vector3_Order<double>> &kfrac_list, std::vector<double> imagtimes,
-    const std::vector<Vector3_Order<int>> &Rs, const MpiCommHandler &comm_h)
+    const std::vector<Vector3_Order<int>> &Rs, const MpiCommHandler &comm_h, const std::vector<bool> &band_mask)
 {
-    return get_gf_cplx_imagtimes_Rs_kpara(ispin, 0, 0, mf, kfrac_list, imagtimes, Rs, comm_h);
+    return get_gf_cplx_imagtimes_Rs_kpara(ispin, 0, 0, mf, kfrac_list, imagtimes, Rs, comm_h, band_mask);
 }
 
 std::map<Vector3_Order<int>, Matz> get_dmat_cplx_Rs_kblacs_para(
@@ -1022,8 +1022,12 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
     int ispin, int ispinor_bra, int ispinor_ket, const MeanField &mf,
     const std::vector<Vector3_Order<double>> &kfrac_list, std::vector<double> imagtimes,
     const std::vector<Vector3_Order<int>> &Rs,
-    const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm)
+    const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm,
+    const std::vector<bool> &band_mask)
 {
+    if (!band_mask.empty() && band_mask.size() != static_cast<std::size_t>(mf.get_n_bands()))
+        throw LIBRPA_RUNTIME_ERROR("Green's-function band mask has inconsistent size");
+
     global::profiler.start(__FUNCTION__, LIBRPA_VERBOSE_DEBUG);
 
     if (!kblacs_ctxt.is_initialized())
@@ -1126,7 +1130,7 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
                 const double prefac = tau > 0 ? wg_empty : wg_occ;
                 double scale = -tau * (mf.get_eigenvals()[ispin](ik, ib) - mf.get_efermi());
                 if (scale > 0.0) scale = 0.0;
-                scales[ib] = std::exp(scale) * prefac;
+                scales[ib] = !band_mask.empty() && !band_mask[ib] ? 0.0 : std::exp(scale) * prefac;
             }
 
             scaled_wfc_ket = C_ZERO;
@@ -1241,8 +1245,11 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
     const std::vector<Vector3_Order<int>> &Rs,
     const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm,
     const SymmetryContext &symmetry_context, const PeriodicBoundaryData &pbc,
-    const AtomicBasis &atbasis_wfc)
+    const AtomicBasis &atbasis_wfc, const std::vector<bool> &band_mask)
 {
+    if (!band_mask.empty() && band_mask.size() != static_cast<std::size_t>(mf.get_n_bands()))
+        throw LIBRPA_RUNTIME_ERROR("Green's-function band mask has inconsistent size");
+
     if (!kblacs_ctxt.is_initialized())
         throw LIBRPA_RUNTIME_ERROR("KPointBlacsParallelContext is not initialized");
 
@@ -1273,7 +1280,7 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
     {
         return get_gf_cplx_imagtimes_Rs_kblacs_para(
             ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, imagtimes, Rs,
-            kblacs_ctxt, desc_wfc, desc_dm);
+            kblacs_ctxt, desc_wfc, desc_dm, band_mask);
     }
 
     std::vector<int> n_Rs_all, Rs_all;
@@ -1383,7 +1390,7 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
                         : wg_occ;
                     double scale = -tau * (mf.get_eigenvals()[ispin](ik, ib) - mf.get_efermi());
                     if (scale > 0.0) scale = 0.0;
-                    scales[ib] = std::exp(scale) * prefac;
+                    scales[ib] = !band_mask.empty() && !band_mask[ib] ? 0.0 : std::exp(scale) * prefac;
                 }
 
                 scaled_wfc_ket = C_ZERO;
@@ -1523,9 +1530,10 @@ std::map<double, std::map<Vector3_Order<int>, Matz>> get_gf_cplx_imagtimes_Rs_kb
     int ispin, const MeanField &mf,
     const std::vector<Vector3_Order<double>> &kfrac_list, std::vector<double> imagtimes,
     const std::vector<Vector3_Order<int>> &Rs,
-    const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm)
+    const KPointBlacsParallelContext &kblacs_ctxt, const ArrayDesc &desc_wfc, const ArrayDesc &desc_dm,
+    const std::vector<bool> &band_mask)
 {
-    return get_gf_cplx_imagtimes_Rs_kblacs_para(ispin, 0, 0, mf, kfrac_list, imagtimes, Rs, kblacs_ctxt, desc_wfc, desc_dm);
+    return get_gf_cplx_imagtimes_Rs_kblacs_para(ispin, 0, 0, mf, kfrac_list, imagtimes, Rs, kblacs_ctxt, desc_wfc, desc_dm, band_mask);
 }
 
 }
