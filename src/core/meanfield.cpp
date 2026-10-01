@@ -254,6 +254,17 @@ static ComplexMatrix build_gf_cplx_imagtime_with_prefactor(
     return transpose(*wfc_bra, false) * scaled_wfc_conj;
 }
 
+static std::vector<bool> band_mask_from_cutoff(const MeanField& mf, const int nbands_G)
+{
+    std::vector<bool> band_mask;
+    if (nbands_G > 0 && nbands_G < mf.get_n_bands())
+    {
+        band_mask.assign(static_cast<std::size_t>(mf.get_n_bands()), false);
+        std::fill(band_mask.begin(), band_mask.begin() + nbands_G, true);
+    }
+    return band_mask;
+}
+
 //! Zero-fill variant of build_gf_cplx_imagtime_with_prefactor: spinor source
 //! blocks whose wfc channel is missing contribute a zero block (report R11).
 static ComplexMatrix build_gf_cplx_imagtime_with_prefactor_zero_fill(
@@ -277,12 +288,7 @@ static ComplexMatrix build_gf_cplx_imagtime_with_prefactor_zero_fill(
     // the scalar path now accepts an explicit mask.  Convert only a strict
     // interior cutoff; the documented sentinel values retain the full band
     // space.
-    std::vector<bool> band_mask;
-    if (nbands_G > 0 && nbands_G < mf.get_n_bands())
-    {
-        band_mask.assign(static_cast<std::size_t>(mf.get_n_bands()), false);
-        std::fill(band_mask.begin(), band_mask.begin() + nbands_G, true);
-    }
+    const auto band_mask = band_mask_from_cutoff(mf, nbands_G);
     return build_gf_cplx_imagtime_with_prefactor(
         mf, ispin, ispinor_bra, ispinor_ket, ikpt, tau, prefactors, band_mask);
 }
@@ -531,6 +537,29 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     }
 
     return gf_tau_R;
+}
+
+std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>>
+get_symmetry_restored_gf_cplx_imagtimes_Rs(
+    const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
+    const MeanField& mf,
+    const int ispin,
+    const int ispinor_bra,
+    const int ispinor_ket,
+    const std::vector<Vector3_Order<double>>& kfrac_list,
+    const std::vector<double>& imagtimes,
+    const std::vector<Vector3_Order<int>>& Rs,
+    const std::map<atom_t, size_t>& atom_nw,
+    const int nbands_G,
+    const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets,
+    const symmetry_kstar_representative_indices_t* representative_k_indices)
+{
+    validate_kstar_band_cutoff_closure(ctx, mf, nbands_G);
+    const auto band_mask = band_mask_from_cutoff(mf, nbands_G);
+    return get_symmetry_restored_gf_cplx_imagtimes_Rs(
+        ctx, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, imagtimes, Rs,
+        atom_nw, band_mask, member_kfrac_targets, representative_k_indices);
 }
 
 std::map<double, std::map<Vector3_Order<int>, SpinorBlocks4<ComplexMatrix>>>

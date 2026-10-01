@@ -181,6 +181,21 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr,
     const symmetry_kstar_representative_indices_t* representative_k_indices = nullptr);
 
+//! Compatibility overload for callers that specify a prefix band count.
+std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>>
+get_symmetry_restored_gf_cplx_imagtimes_Rs(
+    const SymmetryContext& ctx,
+    const std::vector<SpeciesBasisLayout>& wfc_layouts,
+    const MeanField& mf,
+    int ispin, int ispinor_bra, int ispinor_ket,
+    const std::vector<Vector3_Order<double>>& kfrac_list,
+    const std::vector<double>& imagtimes,
+    const std::vector<Vector3_Order<int>>& Rs,
+    const std::map<atom_t, size_t>& atom_nw,
+    int nbands_G,
+    const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr,
+    const symmetry_kstar_representative_indices_t* representative_k_indices = nullptr);
+
 /*!
  * @brief Validate that a Green's-function band cutoff does not slice through a
  * degenerate band multiplet on the k-point set used as symmetry-restore source.
