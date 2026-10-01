@@ -1956,84 +1956,97 @@ void G0W0::build_spacetime(
                                                            auto block_scale_factor,
                                                            auto make_freq_value, size_t elem_size)
                     {
-                        for (const auto &[I, J_R_sigc_posi] : sigc_posi_tau_in)
+                        for (const bool negative : {false, true})
                         {
-                            const auto n_I = this->atbasis_wfc.get_atom_nb(I);
-
-                            auto it_nega_I = sigc_nega_tau_in.find(I);
-                            if (it_nega_I == sigc_nega_tau_in.cend()) continue;
-
-                            for (const auto &[JR, sigc_posi_block] : J_R_sigc_posi)
+                            const auto &primary = negative ? sigc_nega_tau_in : sigc_posi_tau_in;
+                            const auto &secondary = negative ? sigc_posi_tau_in : sigc_nega_tau_in;
+                            for (const auto &[I, J_R_sigc] : primary)
                             {
-                                const auto J = JR.first;
-                                const auto n_J = this->atbasis_wfc.get_atom_nb(J);
-                                const auto &Ra = JR.second;
+                                const auto n_I = this->atbasis_wfc.get_atom_nb(I);
 
-                                auto it_nega_JR = it_nega_I->second.find(JR);
-                                if (it_nega_JR == it_nega_I->second.cend()) continue;
+                                const auto it_other_I = secondary.find(I);
 
-                                const auto &sigc_nega_block = it_nega_JR->second;
-
-                                const Vector3_Order<int> R{Ra[0], Ra[1], Ra[2]};
-
-                                const auto it_R = std::find(Rlist.cbegin(), Rlist.cend(), R);
-                                const auto iR = std::distance(Rlist.cbegin(), it_R);
-
-                                const auto sigc_cos = block_scale_factor * (sigc_posi_block + sigc_nega_block);
-                                const auto sigc_sin = block_scale_factor * (sigc_posi_block - sigc_nega_block);
-
-                                ++n_IJR_myid;
-
-                                if (this->output_sigc_mat_rt)
+                                for (const auto &[JR, sigc_block] : J_R_sigc)
                                 {
-                                    size_t dims[5];
-                                    dims[0] = as_size(iR);
-                                    dims[1] = as_size(I);
-                                    dims[2] = as_size(J);
-                                    dims[3] = as_size(n_I);
-                                    dims[4] = as_size(n_J);
+                                    const auto J = JR.first;
+                                    const auto n_J = this->atbasis_wfc.get_atom_nb(J);
+                                    const auto &Ra = JR.second;
 
-                                    ofs_sigmac_r.write(reinterpret_cast<const char *>(dims),
-                                                       5 * sizeof(size_t));
-
-                                    ofs_sigmac_r.write(
-                                        reinterpret_cast<const char *>(sigc_cos.ptr()),
-                                        n_I * n_J * elem_size);
-
-                                    ofs_sigmac_r.write(
-                                        reinterpret_cast<const char *>(sigc_sin.ptr()),
-                                        n_I * n_J * elem_size);
-                                }
-
-                                for (size_t iomega = 0; iomega != tfg.get_n_grids(); ++iomega)
-                                {
-                                    const auto omega = tfg.get_freq_nodes()[iomega];
-                                    const auto t2f_sin = tfg.get_sintrans_t2f()(iomega, itau);
-                                    const auto t2f_cos = tfg.get_costrans_t2f()(iomega, itau);
-
-                                    Matz sigc_temp(n_I, n_J, MAJOR::ROW);
-
-                                    for (size_t i = 0; i != static_cast<size_t>(n_I); ++i)
+                                    decltype(&sigc_block) other_block = nullptr;
+                                    if (it_other_I != secondary.cend())
                                     {
-                                        for (size_t j = 0; j != static_cast<size_t>(n_J); ++j)
+                                        const auto it_other_JR = it_other_I->second.find(JR);
+                                        if (it_other_JR != it_other_I->second.cend())
+                                            other_block = &it_other_JR->second;
+                                    }
+                                    // Paired blocks are handled in the positive-time pass.
+                                    if (negative && other_block) continue;
+
+                                    const Vector3_Order<int> R{Ra[0], Ra[1], Ra[2]};
+
+                                    const auto it_R = std::find(Rlist.cbegin(), Rlist.cend(), R);
+                                    const auto iR = std::distance(Rlist.cbegin(), it_R);
+
+                                    const auto sigc_cos = other_block
+                                        ? block_scale_factor * (sigc_block + *other_block)
+                                        : block_scale_factor * sigc_block;
+                                    const auto sigc_sin = other_block
+                                        ? block_scale_factor * (sigc_block - *other_block)
+                                        : (negative ? -block_scale_factor : block_scale_factor) * sigc_block;
+
+                                    ++n_IJR_myid;
+
+                                    if (this->output_sigc_mat_rt)
+                                    {
+                                        size_t dims[5];
+                                        dims[0] = as_size(iR);
+                                        dims[1] = as_size(I);
+                                        dims[2] = as_size(J);
+                                        dims[3] = as_size(n_I);
+                                        dims[4] = as_size(n_J);
+
+                                        ofs_sigmac_r.write(reinterpret_cast<const char *>(dims),
+                                                           5 * sizeof(size_t));
+
+                                        ofs_sigmac_r.write(
+                                            reinterpret_cast<const char *>(sigc_cos.ptr()),
+                                            n_I * n_J * elem_size);
+
+                                        ofs_sigmac_r.write(
+                                            reinterpret_cast<const char *>(sigc_sin.ptr()),
+                                            n_I * n_J * elem_size);
+                                    }
+
+                                    for (size_t iomega = 0; iomega != tfg.get_n_grids(); ++iomega)
+                                    {
+                                        const auto omega = tfg.get_freq_nodes()[iomega];
+                                        const auto t2f_sin = tfg.get_sintrans_t2f()(iomega, itau);
+                                        const auto t2f_cos = tfg.get_costrans_t2f()(iomega, itau);
+
+                                        Matz sigc_temp(n_I, n_J, MAJOR::ROW);
+
+                                        for (size_t i = 0; i != static_cast<size_t>(n_I); ++i)
                                         {
-                                            sigc_temp(i, j) = make_freq_value(
-                                                sigc_cos(i, j), sigc_sin(i, j), t2f_cos, t2f_sin);
+                                            for (size_t j = 0; j != static_cast<size_t>(n_J); ++j)
+                                            {
+                                                sigc_temp(i, j) = make_freq_value(
+                                                    sigc_cos(i, j), sigc_sin(i, j), t2f_cos, t2f_sin);
+                                            }
                                         }
-                                    }
 
-                                    const atpair_t IJ{I, J};
-                                    auto &m_IJ =
-                                        sigc_is_f_IJ_R[ispin][ispinor_bra][ispinor_ket][omega][IJ];
+                                        const atpair_t IJ{I, J};
+                                        auto &m_IJ =
+                                            sigc_is_f_IJ_R[ispin][ispinor_bra][ispinor_ket][omega][IJ];
 
-                                    auto it = m_IJ.find(R);
-                                    if (it == m_IJ.cend())
-                                    {
-                                        m_IJ.emplace(R, std::move(sigc_temp));
-                                    }
-                                    else
-                                    {
-                                        it->second += sigc_temp;
+                                        auto it = m_IJ.find(R);
+                                        if (it == m_IJ.cend())
+                                        {
+                                            m_IJ.emplace(R, std::move(sigc_temp));
+                                        }
+                                        else
+                                        {
+                                            it->second += sigc_temp;
+                                        }
                                     }
                                 }
                             }
