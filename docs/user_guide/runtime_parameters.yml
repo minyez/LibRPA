@@ -117,19 +117,6 @@ blocks:
     fields:
       - api.use_scalapack_ecrpa
 
-  - heading: Sternheimer RPA
-    text: |
-      Experimental standalone-driver parameters for reading Sternheimer response matrices.
-      When `use_rpa_gamma = false`, the q manifest must still contain exactly one Gamma row
-      and retain the original full-mesh weights; LibRPA skips that row without renormalizing
-      the remaining q points.
-    fields:
-      - driver.prefix_sternheimer_chi0
-      - driver.fn_sternheimer_qpoints
-      - driver.sternheimer_iq
-      - driver.sternheimer_qweight
-      - driver.use_rpa_gamma
-
   - heading: ABF Compression
     fields:
       - api.use_shrink_abfs
