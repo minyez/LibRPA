@@ -212,6 +212,24 @@ typedef struct
     //! Experimental
     int n_bands_sigc;
 
+    //! Number of lowest bands excluded from both Green's functions forming the response function.
+    //!
+    //! Applies independently at each input k-point and spin, for both signs of imaginary time.
+    //! Valid range: 0 through the number of input bands. The input band ordering is retained.
+    //! Does not modify occupations, EXX, output state ranges, or analytic/external head corrections.
+    //! @par Default
+    //! 0
+    int n_bands_exclude_chi0;
+
+    //! Number of lowest bands excluded from the Green's function multiplying Wc in the correlation self-energy.
+    //!
+    //! Applies independently at each input k-point and spin, for both signs of imaginary time.
+    //! Valid range: 0 through the number of input bands. The input band ordering is retained.
+    //! Does not modify occupations, EXX, output state ranges, or analytic/external head corrections.
+    //! @par Default
+    //! 0
+    int n_bands_exclude_sigc;
+
     //! BvK remapping convention for band interpolation.
     /*!
      * Available values:

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `n_bands_exclude_chi0` and `n_bands_exclude_sigc` to independently
+  exclude the lowest input bands from response and correlation self-energy
+  Green's functions. Both default to zero and leave EXX unchanged.
+
 ### Fixed
 
 - Applied `n_bands_sigc` to correlation self-energy Green functions in serial,

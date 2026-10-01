@@ -176,6 +176,8 @@ module librpa_f03
 
       integer(c_int) :: n_bands_chi0
       integer(c_int) :: n_bands_sigc
+      integer(c_int) :: n_bands_exclude_chi0
+      integer(c_int) :: n_bands_exclude_sigc
       integer(c_int) :: option_bvk_remap
 
       ! RPA specific
@@ -297,6 +299,10 @@ module librpa_f03
       integer :: n_bands_chi0
       !> Experimental: maximum number of bands for correlation self-energy construction.
       integer :: n_bands_sigc
+      !> Lowest bands excluded from response Green's functions at each k-point and spin.
+      integer :: n_bands_exclude_chi0
+      !> Lowest bands excluded from correlation self-energy Green's functions at each k-point and spin.
+      integer :: n_bands_exclude_sigc
       !> BvK remapping option for band interpolation: 0 single nearest image, 1 Wigner-Seitz.
       integer :: option_bvk_remap
       !> Real-space Green's function screening threshold for response function.
@@ -1153,6 +1159,8 @@ contains
       call sync_opt(opts%output_abacus_gw_gf,     opts%opts_c%output_abacus_gw_gf,     direction)
       call sync_opt(opts%n_bands_chi0,            opts%opts_c%n_bands_chi0,            direction)
       call sync_opt(opts%n_bands_sigc,            opts%opts_c%n_bands_sigc,            direction)
+      call sync_opt(opts%n_bands_exclude_chi0,    opts%opts_c%n_bands_exclude_chi0, direction)
+      call sync_opt(opts%n_bands_exclude_sigc,    opts%opts_c%n_bands_exclude_sigc, direction)
       call sync_opt(opts%option_bvk_remap,        opts%opts_c%option_bvk_remap,        direction)
       call sync_opt(opts%gf_threshold,            opts%opts_c%gf_threshold,            direction)
       call sync_opt(opts%libri_chi0_collect_s0_chunk, opts%opts_c%libri_chi0_collect_s0_chunk, direction)

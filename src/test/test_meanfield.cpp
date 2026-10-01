@@ -413,7 +413,8 @@ void test_gf_band_mask()
     }
     const std::vector<Vector3_Order<double>> ks{{0, 0, 0}};
     const std::vector<Vector3_Order<int>> Rs{{0, 0, 0}};
-    for (const std::vector<bool> &mask : {std::vector<bool>{}, {true, false, false}, {false, false, false}})
+    for (const std::vector<bool> &mask : {std::vector<bool>{}, {true, false, false}, {false, true, true},
+                                         {false, true, false}, {false, false, false}})
         for (double tau : {-0.5, 0.5})
         {
             const auto single = mf.get_gf_cplx_imagtime(0, 0, 0, 0, tau, mask);
@@ -444,6 +445,7 @@ int main(int argc, char *argv[])
     test_symmetry_context_kstar_restore_skips_full_grid();
     test_symmetry_context_full_grid_kstar_route_matches_direct_full_k();
     test_symmetry_context_full_grid_kstar_route_matches_direct_full_k({true, false});
+    test_symmetry_context_full_grid_kstar_route_matches_direct_full_k({false, true});
     test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge();
     return 0;
 }

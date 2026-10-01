@@ -74,6 +74,8 @@ void librpa_init_options(LibrpaOptions *opts)
 
     opts->n_bands_chi0 = -1;
     opts->n_bands_sigc = -1;
+    opts->n_bands_exclude_chi0 = 0;
+    opts->n_bands_exclude_sigc = 0;
     opts->option_bvk_remap = 1;
 
     opts->gf_threshold = 0.0e0;

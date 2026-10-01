@@ -177,6 +177,10 @@ module librpa_f03
       integer :: n_bands_chi0
       !> Experimental: maximum number of bands for correlation self-energy construction.
       integer :: n_bands_sigc
+      !> Lowest bands excluded from response Green's functions at each k-point and spin.
+      integer :: n_bands_exclude_chi0
+      !> Lowest bands excluded from correlation self-energy Green's functions at each k-point and spin.
+      integer :: n_bands_exclude_sigc
       !> BvK remapping option for band interpolation: 0 single nearest image, 1 Wigner-Seitz.
       integer :: option_bvk_remap
       !> Real-space Green's function screening threshold for response function.

@@ -109,6 +109,7 @@ blocks:
     fields:
       - api.gf_threshold
       - api.n_bands_chi0
+      - api.n_bands_exclude_chi0
       - api.libri_chi0_collect_s0_chunk
       - api.libri_chi0_collect_max_bytes
 
@@ -150,6 +151,7 @@ blocks:
       - api.read_sigc_mat_rf
       - api.sqrt_coulomb_threshold
       - api.n_bands_sigc
+      - api.n_bands_exclude_sigc
 
   - heading: QSGW
     text: |

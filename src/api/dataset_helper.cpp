@@ -252,6 +252,8 @@ void initialize_ds_exx(Dataset &ds, const LibrpaOptions &opts)
 void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts)
 {
     global::profiler.start("initialize_ds_chi0");
+    if (opts.n_bands_exclude_chi0 < 0 || opts.n_bands_exclude_chi0 > ds.mf.get_n_bands())
+        throw LIBRPA_RUNTIME_ERROR("n_bands_exclude_chi0 must be between 0 and the number of input bands");
     const bool use_symmetry = opts.use_symmetry_rpa == LIBRPA_SWITCH_ON;
     if (use_symmetry)
     {
@@ -281,6 +283,7 @@ void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts)
     ds.p_chi0->libri_collect_s0_chunk = opts.libri_chi0_collect_s0_chunk;
     ds.p_chi0->libri_collect_max_bytes = opts.libri_chi0_collect_max_bytes;
     ds.p_chi0->nbands_G = opts.n_bands_chi0;
+    ds.p_chi0->n_bands_exclude = opts.n_bands_exclude_chi0;
     ds.p_chi0->libri_threshold_C = opts.libri_chi0_threshold_C;
     ds.p_chi0->libri_threshold_G = opts.libri_chi0_threshold_G;
     global::profiler.stop("initialize_ds_chi0");
@@ -289,6 +292,8 @@ void initialize_ds_chi0(Dataset &ds, const LibrpaOptions &opts)
 void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts)
 {
     global::profiler.start("initialize_ds_g0w0");
+    if (opts.n_bands_exclude_sigc < 0 || opts.n_bands_exclude_sigc > ds.mf.get_n_bands())
+        throw LIBRPA_RUNTIME_ERROR("n_bands_exclude_sigc must be between 0 and the number of input bands");
     const bool use_symmetry = opts.use_symmetry_gw == LIBRPA_SWITCH_ON;
     if (use_symmetry)
     {
@@ -310,6 +315,7 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts)
                                                    is_eigvec_k_distributed,
                                                    use_symmetry);
     ds.p_g0w0->nbands_G = opts.n_bands_sigc;
+    ds.p_g0w0->n_bands_exclude = opts.n_bands_exclude_sigc;
     ds.p_g0w0->libri_threshold_C = opts.libri_g0w0_threshold_C;
     ds.p_g0w0->libri_threshold_G = opts.libri_g0w0_threshold_G;
     ds.p_g0w0->libri_threshold_Wc = opts.libri_g0w0_threshold_Wc;
