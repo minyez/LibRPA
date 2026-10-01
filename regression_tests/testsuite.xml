@@ -445,6 +445,9 @@
                 regex="^(\d+\s+.*)$"
                 comparison="cmp_table.abs_diff(5.4422773e-4,columns=9)"
       />
+      <!-- Canonical BvK reconstruction removes rounded legacy AIMS fractions;
+           keep this metadata check tighter than the physical tolerances while
+           allowing the resulting ~1e-11 representation difference. -->
       <validate name="QSGW trajectory indices and k points"
                 file="librpa/librpa.d/qsgw_eigenvalues.dat"
                 regex="^(\d+\s+.*)$"
@@ -508,7 +511,7 @@
       <validate name="QSGW trajectory indices and k points"
                 file="librpa/librpa.d/qsgw_eigenvalues.dat"
                 regex="^(\d+\s+.*)$"
-                comparison="cmp_table.abs_diff(1e-12,columns=1:8)"
+                comparison="cmp_table.abs_diff(1e-10,columns=1:8)"
       />
     </testcase>
 
