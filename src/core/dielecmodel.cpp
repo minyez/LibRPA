@@ -3677,9 +3677,6 @@ void diele_func::cal_eps(const int ifreq, ArrayDesc &desc_nabf_nabf_opt, ArrayDe
         std::cout << "Angular quadrature accuracy for volume: " << vol_gamma_numeric / vol_gamma
                   << " (should be close to 1)" << std::endl;
     }
-    /*std::cout << "major of Matz: " << wing[0].is_row_major() << "," << body_inv.is_row_major()
-              << "," << transpose(wing.at(0), true).is_row_major() << "," << Lind.is_row_major()
-              << std::endl;*/
     construct_L(ifreq, desc_body);
     strict_2d_lind_by_freq.at(ifreq) = Lind.copy();
 
@@ -3784,25 +3781,6 @@ void diele_func::cal_eps(const int ifreq, ArrayDesc &desc_nabf_nabf_opt, ArrayDe
             chi0(ilo, jlo) = result;
         }
     }
-    // auto identity = init_local_mat<complex<double>>(desc_body, MAJOR::COL);
-    // for (int i = 0; i < n_nonsingular - 1; i++)
-    // {
-    //     const int ilo = desc_body.indx_g2l_r(i);
-    //     if (ilo < 0) continue;
-    //     for (int j = 0; j < n_nonsingular - 1; j++)
-    //     {
-    //         const int jlo = desc_body.indx_g2l_c(j);
-    //         if (jlo < 0) continue;
-    //         if (i == j)
-    //             identity(ilo, jlo) = 1.0;
-    //         else
-    //             identity(ilo, jlo) = 0.0;
-    //     }
-    // }
-    // ScalapackConnector::pgemm_f('N', 'N', n_nonsingular - 1, n_nonsingular - 1, n_nonsingular -
-    // 1,
-    //                             1.0, body_inv.ptr(), 1, 1, desc_body.desc, identity.ptr(), 1, 1,
-    //                             desc_body.desc, 1.0, chi0.ptr(), 2, 2, desc_nabf_nabf_opt.desc);
     ScalapackConnector::pgeadd_f('N', n_nonsingular - 1, n_nonsingular - 1, 1.0, body_inv.ptr(), 1,
                                  1, desc_body.desc, 1.0, chi0.ptr(), 2, 2, desc_nabf_nabf_opt.desc);
     profiler.stop("cal_inverse_dielectric_matrix_ij");
@@ -3983,71 +3961,6 @@ double diele_func::get_strict_2d_bare_coulomb_gamma_average() const
                                qw_leb, physical_qmax,
                                strict_2d_physical_gamma_cell_area(vol_gamma));
 }
-
-/*std::complex<double> diele_func::compute_chi0_inv_00(const int ifreq)
-{
-    std::complex<double> total = 0.0;
-    std::vector<std::complex<double>> partial_sum(qw_leb.size(), 0.0);
-#pragma omp parallel for schedule(dynamic)
-    for (int ileb = 0; ileb != qw_leb.size(); ileb++)
-    {
-        matrix_m<std::complex<double>> q_unit(3, 1, MAJOR::COL);
-        q_unit(0, 0) = qx_leb[ileb];
-        q_unit(1, 0) = qy_leb[ileb];
-        q_unit(2, 0) = qz_leb[ileb];
-
-        auto den = transpose(q_unit, false) * Lind * q_unit;
-        // total += qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / den(0, 0);
-        partial_sum[ileb] = qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / den(0, 0);
-    }
-    total = std::accumulate(partial_sum.begin(), partial_sum.end(), std::complex<double>(0.0,
-0.0)); total *= 1.0 / 3.0 / vol_gamma;
-
-    return total;
-};
-
-std::complex<double> diele_func::compute_chi0_inv_ij(const int ifreq, int i, int j)
-{
-    const std::complex<double> bw_i0 = this->bw(i, 0);
-    const std::complex<double> bw_i1 = this->bw(i, 1);
-    const std::complex<double> bw_i2 = this->bw(i, 2);
-    const std::complex<double> wb_j0 = this->wb(0, j);
-    const std::complex<double> wb_j1 = this->wb(1, j);
-    const std::complex<double> wb_j2 = this->wb(2, j);
-
-    const std::complex<double> L00 = Lind(0, 0);
-    const std::complex<double> L01 = Lind(0, 1);
-    const std::complex<double> L02 = Lind(0, 2);
-    const std::complex<double> L10 = Lind(1, 0);
-    const std::complex<double> L11 = Lind(1, 1);
-    const std::complex<double> L12 = Lind(1, 2);
-    const std::complex<double> L20 = Lind(2, 0);
-    const std::complex<double> L21 = Lind(2, 1);
-    const std::complex<double> L22 = Lind(2, 2);
-
-    std::complex<double> total = 0.0;
-
-    const size_t nleb = qw_leb.size();
-
-#pragma omp parallel for reduction(+ : total)
-    for (int ileb = 0; ileb < nleb; ++ileb)
-    {
-        const double qx = qx_leb[ileb];
-        const double qy = qy_leb[ileb];
-        const double qz = qz_leb[ileb];
-
-        const std::complex<double> qLq = qx * (qx * L00 + qy * L01 + qz * L02) +
-                                         qy * (qx * L10 + qy * L11 + qz * L12) +
-                                         qz * (qx * L20 + qy * L21 + qz * L22);
-
-        const std::complex<double> bwq = bw_i0 * qx + bw_i1 * qy + bw_i2 * qz;
-        const std::complex<double> qwb = qx * wb_j0 + qy * wb_j1 + qz * wb_j2;
-
-        total += qw_leb[ileb] * std::pow(q_gamma[ileb], 3) * bwq * qwb / qLq;
-    }
-
-    return total * (1.0 / (3.0 * vol_gamma));
-}*/
 
 void diele_func::assign_chi0(matrix_m<std::complex<double>> &chi0_block,
                              ArrayDesc &desc_nabf_nabf_opt)

@@ -674,7 +674,7 @@ void read_headwing_input(const string &dir_path, bool need_wing)
     if (use_strict_2d)
     {
         const auto metadata = read_strict_2d_coulomb_head_metadata(
-            librpa_int::join_path(dir_path, "librpa_2d_coulomb_head.dat"));
+            librpa_int::join_path(dir_path, "librpa_2d_coulomb_head.txt"));
         const auto normalization = librpa_int::strict_2d_coulomb_head_normalization(
             pds->pbc, metadata.auxiliary_monopole_norm_squared);
         const double area_scale = std::max(normalization.inplane_area_bohr2,
