@@ -415,7 +415,6 @@ void initialize_ds_headwing(Dataset &ds, const LibrpaOptions &opts, const bool n
         mf.get_n_spins(), headwing_basis_aux.nb_total, ds.pbc, ds.comm_h, ds.blacs_h,
         use_kpara_eigvec, &ds.scfk_blacs_ctxt, &desc_scf_wfc);
     ds.p_headwing->use_2d_dielectric = opts.use_2d_dielectric == LIBRPA_SWITCH_ON;
-        &ds.scfk_blacs_ctxt);
     ds.p_headwing->configure_strict_2d_coulomb_head(
         opts.use_2d_dielectric == LIBRPA_SWITCH_ON);
     ds.p_headwing->use_soc = mf.get_n_spinor() > 1;
