@@ -3571,6 +3571,96 @@ void diele_func::get_g_enclosing_gamma()
     }
 };
 
+ArrayDesc diele_func::get_body_inv(matrix_m<std::complex<double>> &chi0_block,
+                                   ArrayDesc &desc_nabf_nabf_opt)
+{
+    using global::profiler;
+
+    comm_h.barrier();
+    ArrayDesc desc_body(blacs_h);
+    desc_body.init_square_blk(n_nonsingular - 1, n_nonsingular - 1, 0, 0);
+    this->body_inv = init_local_mat<complex<double>>(desc_body, MAJOR::COL);
+    profiler.start("get_inverse_body_of_chi0");
+    comm_h.barrier();
+
+    ScalapackConnector::pgemr2d_f(n_nonsingular - 1, n_nonsingular - 1, chi0_block.ptr(), 2, 2,
+                                  desc_nabf_nabf_opt.desc, this->body_inv.ptr(), 1, 1,
+                                  desc_body.desc, blacs_h.ictxt);
+    invert_scalapack(this->body_inv, desc_body);
+
+    if (debug)
+    {
+        const int ilo = desc_body.indx_g2l_r(0);
+        const int jlo = desc_body.indx_g2l_c(0);
+        if (ilo >= 0 && jlo >= 0) std::cout << "inv_body(0,0)=" << body_inv(ilo, jlo) << std::endl;
+    }
+
+    profiler.stop("get_inverse_body_of_chi0");
+    return desc_body;
+}
+
+void diele_func::construct_L(const int ifreq, ArrayDesc &desc_body)
+{
+    using global::profiler;
+
+    const int n_lambda = as_int(n_nonsingular) - 1;
+    profiler.start("cal_L");
+    this->Lind.resize(3, 3, MAJOR::COL);
+    this->bw.resize(n_lambda, 3, MAJOR::COL);
+    this->wb.resize(3, n_lambda, MAJOR::COL);
+
+    ArrayDesc desc_wing_opt(blacs_h);
+    desc_wing_opt.init(n_lambda, 3, desc_body.mb(), 1, 0, 0);
+    ArrayDesc desc_lam_3(blacs_h);
+    desc_lam_3.init_square_blk(n_lambda, 3, 0, 0);
+    ArrayDesc desc_3_lam(blacs_h);
+    desc_3_lam.init_square_blk(3, n_lambda, 0, 0);
+    ArrayDesc desc_3_3(blacs_h);
+    desc_3_3.init_square_blk(3, 3, 0, 0);
+
+    auto lam_3 = init_local_mat<complex<double>>(desc_lam_3, MAJOR::COL);
+    auto _3_lam = init_local_mat<complex<double>>(desc_3_lam, MAJOR::COL);
+    auto Lind_loc = init_local_mat<complex<double>>(desc_3_3, MAJOR::COL);
+    ScalapackConnector::pgemm_f('N', 'N', n_lambda, 3, n_lambda, 1.0,
+                                body_inv.ptr(), 1, 1, desc_body.desc, wing.at(ifreq).ptr(), 1, 1,
+                                desc_wing_opt.desc, 0.0, lam_3.ptr(), 1, 1, desc_lam_3.desc);
+    ScalapackConnector::pgemm_f('C', 'N', 3, 3, n_lambda, 1.0,
+                                wing.at(ifreq).ptr(), 1, 1, desc_wing_opt.desc, lam_3.ptr(), 1, 1,
+                                desc_lam_3.desc, 0.0, Lind_loc.ptr(), 1, 1, desc_3_3.desc);
+    ScalapackConnector::pgemm_f('C', 'N', 3, n_lambda, n_lambda, 1.0,
+                                wing.at(ifreq).ptr(), 1, 1, desc_wing_opt.desc,
+                                body_inv.ptr(), 1, 1, desc_body.desc, 0.0, _3_lam.ptr(), 1, 1,
+                                desc_3_lam.desc);
+
+    for (int i = 0; i != 3; ++i)
+    {
+        const int loc_i = desc_3_3.indx_g2l_r(i);
+        for (int ilambda = 0; ilambda != n_lambda; ++ilambda)
+        {
+            const int loc_ilambda = desc_lam_3.indx_g2l_r(ilambda);
+            const int loc_ibw = desc_lam_3.indx_g2l_c(i);
+            if (loc_ibw >= 0 && loc_ilambda >= 0) bw(ilambda, i) = lam_3(loc_ilambda, loc_ibw);
+
+            const int loc_3_lam = desc_3_lam.indx_g2l_c(ilambda);
+            const int loc_iwb = desc_3_lam.indx_g2l_r(i);
+            if (loc_iwb >= 0 && loc_3_lam >= 0) wb(i, ilambda) = _3_lam(loc_iwb, loc_3_lam);
+
+            MPI_Allreduce(MPI_IN_PLACE, &bw(ilambda, i), 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
+                          comm_h.comm);
+            MPI_Allreduce(MPI_IN_PLACE, &wb(i, ilambda), 1, MPI_DOUBLE_COMPLEX, MPI_SUM,
+                          comm_h.comm);
+        }
+
+        for (int j = 0; j != 3; ++j)
+        {
+            const int loc_j = desc_3_3.indx_g2l_c(j);
+            if (loc_j >= 0 && loc_i >= 0) Lind(i, j) = head.at(ifreq)(i, j) - Lind_loc(loc_i, loc_j);
+            MPI_Allreduce(MPI_IN_PLACE, &Lind(i, j), 1, MPI_DOUBLE_COMPLEX, MPI_SUM, comm_h.comm);
+        }
+    }
+    profiler.stop("cal_L");
+}
+
 void diele_func::get_g_enclosing_gamma_2d()
 {
     g_enclosing_gamma.clear();

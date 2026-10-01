@@ -203,6 +203,8 @@ private:
     matrix_m<std::complex<double>> bw;
     // ( i:3, j:n_lambda )
     matrix_m<std::complex<double>> wb;
+    // ( i:n_lambda, j:n_lambda )
+    matrix_m<std::complex<double>> chi0;
     // ( lambda: n_nonsingular-1, mu: n_abfs)
     // std::vector<std::vector<std::complex<double>>> Coul_vector;
     // ( lambda: n_nonsingular-1 )
@@ -426,6 +428,9 @@ public:
 
     void construct_rpa_trace_log_schur(const int ifreq, ArrayDesc &desc_body,
                                        int wing_row_offset = 0);
+    ArrayDesc get_body_inv(matrix_m<std::complex<double>> &chi0_block,
+                           ArrayDesc &desc_nabf_nabf_opt);
+    void construct_L(const int ifreq, ArrayDesc &desc_body);
 
     // Lebedev-Laikov quadrature
     void get_Leb_points();
@@ -449,8 +454,7 @@ public:
     void cal_eps(const int ifreq, ArrayDesc &desc_nabf_nabf_opt, ArrayDesc &desc_body);
     void cal_strict_2d_wc(const int ifreq, ArrayDesc &desc_nabf_nabf_opt, ArrayDesc &desc_body,
                           const matrix_m<std::complex<double>> &regular_coulomb_basis);
-    void calculate_q_gamma_2d();
-    void rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
+    void assign_chi0(matrix_m<std::complex<double>> &chi0_block,
                      ArrayDesc &desc_nabf_nabf_opt);
     void rewrite_strict_2d_wc(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
                               ArrayDesc &desc_nabf_nabf_opt,
