@@ -224,6 +224,7 @@ void PeriodicBoundaryData::set_kgrids_kvec(int nk1, int nk2, int nk3,
                 throw LIBRPA_RUNTIME_ERROR("Duplicate loaded k-points map to the same BvK full-grid point");
             }
             canonical_seen[static_cast<std::size_t>(ifull)] = ik;
+            // The exact mesh fraction is authoritative; loaded Cartesian vectors may be rounded.
             kfrac_list[static_cast<std::size_t>(ik)] =
                 canonical_kfrac_list_full[static_cast<std::size_t>(ifull)];
             klist[static_cast<std::size_t>(ik)] =
@@ -261,6 +262,7 @@ void PeriodicBoundaryData::set_kgrids_kvec(int nk1, int nk2, int nk3,
             {
                 throw LIBRPA_RUNTIME_ERROR("Duplicate loaded k-points map to the same BvK full-grid point");
             }
+            // Rebuild Cartesian k from the canonical fraction so symmetry sees one mesh point.
             kfrac_list[static_cast<std::size_t>(ik)] =
                 canonical_kfrac_list_full[static_cast<std::size_t>(ifull)];
             klist[static_cast<std::size_t>(ik)] =
