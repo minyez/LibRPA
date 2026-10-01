@@ -228,7 +228,7 @@ void test_symmetry_context_kstar_restore_skips_full_grid()
         ctx, wfc_layouts, mf, kfrac_list, {{0, 1}}));
 }
 
-void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k()
+void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k(const std::vector<bool> &mask = {})
 {
     using namespace librpa_int;
 
@@ -307,9 +307,9 @@ void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k()
     }
 
     const std::vector<double> taus{-1e-12, 1e-12};
-    const auto direct_gf = mf.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_list, taus, Rs);
+    const auto direct_gf = mf.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_list, taus, Rs, mask);
     const auto restored_gf = get_symmetry_restored_gf_cplx_imagtimes_Rs(
-        ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, taus, Rs, atom_nw, -1,
+        ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, taus, Rs, atom_nw, mask,
         &member_kfrac_targets, &representative_indices);
     for (const auto tau : taus)
     {
@@ -398,15 +398,52 @@ void test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge()
         throw std::runtime_error("ABACUS k-star restored density matrix ignored target k-point gauge");
 }
 
+void test_gf_band_mask()
+{
+    using namespace librpa_int;
+    MeanField mf(1, 1, 3, 3);
+    mf.get_efermi() = 0.0;
+    auto &wfc = mf.get_eigenvectors()[0][0][0];
+    wfc.create(3, 3);
+    for (int ib = 0; ib < 3; ++ib)
+    {
+        wfc(ib, ib) = 1.0;
+        mf.get_eigenvals()[0](0, ib) = ib - 1.0;
+        mf.get_weight()[0](0, ib) = 0.5;
+    }
+    const std::vector<Vector3_Order<double>> ks{{0, 0, 0}};
+    const std::vector<Vector3_Order<int>> Rs{{0, 0, 0}};
+    for (const std::vector<bool> &mask : {std::vector<bool>{}, {true, false, false}, {false, false, false}})
+        for (double tau : {-0.5, 0.5})
+        {
+            const auto single = mf.get_gf_cplx_imagtime(0, 0, 0, 0, tau, mask);
+            const auto summed = mf.get_gf_cplx_imagtimes_Rs(0, 0, 0, ks, {tau}, Rs, mask);
+            for (int ib = 0; ib < 3; ++ib)
+            {
+                const double expected = !mask.empty() && !mask[ib] ? 0.0
+                    : (tau > 0 ? 0.75 : -0.25) * std::exp(std::min(0.0, -tau * (ib - 1.0)));
+                assert(std::abs(single(ib, ib) - expected) < 1e-12);
+                assert(std::abs(summed.at(tau).at(Rs.front())(ib, ib) - expected) < 1e-12);
+            }
+        }
+    bool rejected = false;
+    try { mf.get_gf_cplx_imagtime(0, 0, 0, 0, -0.5, {true}); }
+    catch (const std::runtime_error &) { rejected = true; }
+    assert(rejected);
+    assert(std::abs(mf.get_dmat_cplx(0, 0, 0, 0)(1, 1) - 0.25) < 1e-12);
+}
+
 int main(int argc, char *argv[])
 {
     test_BCC_He_gamma_minimal_basis_aims();
+    test_gf_band_mask();
     test_state_index_energy_bounds();
     test_find_highest_occupied_state();
     test_dmat_cplx_Rs_matches_single_R_accumulation();
     test_symmetry_context_kstar_restored_dmat_uses_full_star_phases();
     test_symmetry_context_kstar_restore_skips_full_grid();
     test_symmetry_context_full_grid_kstar_route_matches_direct_full_k();
+    test_symmetry_context_full_grid_kstar_route_matches_direct_full_k({true, false});
     test_symmetry_context_kstar_restored_dmat_uses_target_kpoint_gauge();
     return 0;
 }

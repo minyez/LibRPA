@@ -788,7 +788,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d_gamma_only(Chi0 &chi0, atpair_k_cplx
                 // ofs_myid << "IJq_chi0" << endl << IJq_chi0;
                 double chi_end_comm = omp_get_wtime();
 
-                collect_block_from_ALL_IJ_Tensor(temp_block, desc_nabf_nabf, chi0.atbasis_abf,
+                collect_block_from_ALL_IJ_Tensor_sparse_zero_missing(temp_block, desc_nabf_nabf, chi0.atbasis_abf,
                         qa,true, CONE, IJq_chi0, MAJOR::ROW);
                 ScalapackConnector::pgemr2d_f(n_abf, n_abf, temp_block.ptr(), 1, 1, desc_nabf_nabf.desc,
                                               chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
@@ -1144,7 +1144,7 @@ CorrEnergy compute_RPA_correlation_blacs_2d(Chi0 &chi0, atpair_k_cplx_mat_t &cou
                 double chi_end_comm = omp_get_wtime();
                 if (IJq_chi0.size() > 0)
                 {
-                    collect_block_from_ALL_IJ_Tensor(temp_block, desc_nabf_nabf, chi0.atbasis_abf,
+                    collect_block_from_ALL_IJ_Tensor_sparse_zero_missing(temp_block, desc_nabf_nabf, chi0.atbasis_abf,
                                                     qa, true, C_ONE, IJq_chi0, MAJOR::ROW);
                     ScalapackConnector::pgemr2d_f(n_abf, n_abf, temp_block.ptr(), 1, 1, desc_nabf_nabf.desc,
                                                   chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,

@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Applied the `n_bands_chi0` mask consistently in serial, k-point/BLACS
+  parallel, and symmetry-restored response Green-function construction.
+  Preserved k-parallel Green-function blocks in the atom-pair/R-tau routes
+  and zero-response frequency entries in the LibRI route.
+
 - Fixed out-of-bounds access in binary v1 LRI and Coulomb readers when input
   files contain zero data blocks.
 

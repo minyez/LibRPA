@@ -114,13 +114,15 @@ static void test_dmat_cplx_Rs_kpara(int nk, int nb, int nocc)
     }
 }
 
-static void test_gf_cplx_Rs_kpara(int nk, int nb, int nocc, double gap, double tau)
+static void test_gf_cplx_Rs_kpara(int nk, int nb, int nocc, double gap, double tau, int n_bands = -1)
 {
     std::vector<Vector3_Order<double>> kfrac_list;
     std::vector<Vector3_Order<int>> Rs;
     const auto mf = init_mf_pbc(nk, nb, nocc, gap, kfrac_list, Rs);
 
-    const auto gf_Rs = get_gf_cplx_imagtimes_Rs_kpara(0, mf, kfrac_list, {tau}, Rs, mpi_comm_global_h);
+    std::vector<bool> mask(nb, true);
+    if (n_bands >= 0) std::fill(mask.begin() + n_bands, mask.end(), false);
+    const auto gf_Rs = get_gf_cplx_imagtimes_Rs_kpara(0, mf, kfrac_list, {tau}, Rs, mpi_comm_global_h, mask);
     assert(gf_Rs.size() == 1);
     assert(gf_Rs.at(tau).size() == Rs.size());
     const double coeff = std::exp(- 0.5 * std::abs(gap * tau)) * (tau > 0? 1.0: -1.0);
@@ -134,12 +136,14 @@ static void test_gf_cplx_Rs_kpara(int nk, int nb, int nocc, double gap, double t
             {
                 for (int ib = 0; ib < nocc; ib++)
                 {
-                    if (tau > 0) assert(fequal(rmat(ib, ib), {0.0, 0.0}));
+                    if (!mask[ib]) assert(fequal(rmat(ib, ib), {0.0, 0.0}));
+                    else if (tau > 0) assert(fequal(rmat(ib, ib), {0.0, 0.0}));
                     else assert(fequal(rmat(ib, ib), {coeff, 0.0}));
                 }
                 for (int ib = nocc; ib < nb; ib++)
                 {
-                    if (tau > 0) assert(fequal(rmat(ib, ib), {coeff, 0.0}));
+                    if (!mask[ib]) assert(fequal(rmat(ib, ib), {0.0, 0.0}));
+                    else if (tau > 0) assert(fequal(rmat(ib, ib), {coeff, 0.0}));
                     else assert(fequal(rmat(ib, ib), {0.0, 0.0}));
                 }
             }
@@ -273,7 +277,7 @@ static void test_dmat_cplx_Rs_kblacs_para_full_wfc()
     }
 }
 
-static void test_gf_cplx_imagtimes_Rs_kblacs_para_full_wfc()
+static void test_gf_cplx_imagtimes_Rs_kblacs_para_full_wfc(bool masked = false)
 {
     if (size_global < 2 || size_global % 2 != 0) return;
 
@@ -335,9 +339,11 @@ static void test_gf_cplx_imagtimes_Rs_kblacs_para_full_wfc()
             ? std::vector<Vector3_Order<int>>{{-1, 0, 0}, {0, 0, 0}}
             : std::vector<Vector3_Order<int>>{{1, 0, 0}};
     std::vector<double> imagtimes{1.0, -0.5};
-    const auto gf_ref = mf_ref.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_list, imagtimes, Rs);
+    std::vector<bool> mask(nb, true);
+    if (masked) std::fill(mask.begin() + 3, mask.end(), false);
+    const auto gf_ref = mf_ref.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_list, imagtimes, Rs, mask);
     const auto gf_Rs = get_gf_cplx_imagtimes_Rs_kblacs_para(
-        0, mf, kfrac_list, imagtimes, Rs, context, desc_wfc, desc_gf);
+        0, mf, kfrac_list, imagtimes, Rs, context, desc_wfc, desc_gf, mask);
     assert(gf_Rs.size() == imagtimes.size());
 
     for (const auto tau: imagtimes)
@@ -626,7 +632,7 @@ static MeanField build_two_atom_full_bz_meanfield_from_kstar(
     return mf_full;
 }
 
-static void test_dmat_gf_kblacs_reduced_kstar_matches_full_bz_fourier()
+static void test_dmat_gf_kblacs_reduced_kstar_matches_full_bz_fourier(bool masked = false)
 {
     if (size_global < 2) return;
 
@@ -645,8 +651,9 @@ static void test_dmat_gf_kblacs_reduced_kstar_matches_full_bz_fourier()
     MeanField mf_full = build_two_atom_full_bz_meanfield_from_kstar(ctx, wfc_layouts, atom_nw);
     const auto expected_dmat_R0 = mf_full.get_dmat_cplx_R(0, 0, 0, kfrac_full, Rs.front());
     const auto expected_dmat_R1 = mf_full.get_dmat_cplx_R(0, 0, 0, kfrac_full, Rs.back());
+    const std::vector<bool> mask{true, !masked};
     const auto expected_gf =
-        mf_full.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_full, taus, Rs);
+        mf_full.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_full, taus, Rs, mask);
 
     KPointBlacsProcessShape shape(1, size_global, false);
     KPointBlacsParallelContext context(shape, mpi_comm_global_h.comm, 1);
@@ -669,7 +676,7 @@ static void test_dmat_gf_kblacs_reduced_kstar_matches_full_bz_fourier()
         atbasis_wfc);
     const auto actual_gf = get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
         0, 0, 0, mf, kfrac_ibz, taus, Rs, context, desc_wfc_full, desc_dm, ctx, pbc,
-        atbasis_wfc);
+        atbasis_wfc, mask);
 
     const std::map<Vector3_Order<int>, ComplexMatrix> expected_dmat{
         {Rs.front(), expected_dmat_R0}, {Rs.back(), expected_dmat_R1}};
@@ -853,14 +860,18 @@ int main (int argc, char *argv[])
     test_dmat_cplx_Rs_kpara(15, 4, 2);
     test_gf_cplx_Rs_kpara(3, 7, 2, 1.0, 1.0);
     test_gf_cplx_Rs_kpara(15, 3, 2, 0.5, -1.0);
+    test_gf_cplx_Rs_kpara(3, 7, 2, 1.0, -1.0, 1);
+    test_gf_cplx_Rs_kpara(3, 7, 2, 1.0, 1.0, 3);
 
     // Actual examples
     test_dmat_cplx_Rs_kpara();
     test_dmat_cplx_Rs_kblacs_para_full_wfc();
     test_gf_cplx_imagtimes_Rs_kblacs_para_full_wfc();
+    test_gf_cplx_imagtimes_Rs_kblacs_para_full_wfc(true);
     test_dm_gf_kblacs_para_redistributed_full_wfc();
     test_dmat_kblacs_reduced_kstar_matches_symmetry_restore();
     test_dmat_gf_kblacs_reduced_kstar_matches_full_bz_fourier();
+    test_dmat_gf_kblacs_reduced_kstar_matches_full_bz_fourier(true);
 
 #if defined(LIBRPA_USE_CUDA) || defined(LIBRPA_USE_HIP)
     world_blacs_h.exit();

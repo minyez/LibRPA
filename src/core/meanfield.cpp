@@ -228,8 +228,11 @@ static ComplexMatrix build_gf_cplx_imagtime_with_prefactor(
     const int ikpt,
     const double tau,
     const std::vector<double>& prefactors,
-    const int nbands_G)
+    const std::vector<bool> &band_mask)
 {
+    if (!band_mask.empty() && band_mask.size() != static_cast<std::size_t>(mf.get_n_bands()))
+        throw LIBRPA_RUNTIME_ERROR("Green's-function band mask has inconsistent size");
+
     const int n_aos = mf.get_n_aos();
     const int n_bands = mf.get_n_bands();
     const auto wfc_bra = mf.find_wfc(ispin, ispinor_bra, ikpt);
@@ -244,18 +247,9 @@ static ComplexMatrix build_gf_cplx_imagtime_with_prefactor(
     {
         const double energy_scale = -tau * (mf.get_eigenvals()[ispin](ikpt, ib) - mf.get_efermi());
         const double bounded_scale = energy_scale > 0.0 ? 0.0 : energy_scale;
-        const double scale = std::exp(bounded_scale) * prefactors[static_cast<std::size_t>(ib)];
+        const double scale = !band_mask.empty() && !band_mask[ib] ? 0.0
+            : std::exp(bounded_scale) * prefactors[static_cast<std::size_t>(ib)];
         LapackConnector::scal(n_aos, scale, scaled_wfc_conj.c + n_aos * ib, 1);
-    }
-    if (nbands_G >= 0)
-    {
-        for (int ib = nbands_G; ib < n_bands; ++ib)
-        {
-            for (int iao = 0; iao != n_aos; ++iao)
-            {
-                scaled_wfc_conj(ib, iao) = 0.0;
-            }
-        }
     }
     return transpose(*wfc_bra, false) * scaled_wfc_conj;
 }
@@ -369,7 +363,7 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     const std::vector<double>& imagtimes,
     const std::vector<Vector3_Order<int>>& Rs,
     const std::map<atom_t, size_t>& atom_nw,
-    const int nbands_G,
+    const std::vector<bool> &band_mask,
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets,
     const symmetry_kstar_representative_indices_t* representative_k_indices)
 {
@@ -407,7 +401,7 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
             }
 
             const auto gf_ibz = build_gf_cplx_imagtime_with_prefactor(
-                mf, ispin, ispinor_bra, ispinor_ket, entry.ik_mf, tau, prefactors, nbands_G);
+                mf, ispin, ispinor_bra, ispinor_ket, entry.ik_mf, tau, prefactors, band_mask);
 
             for (std::size_t imember = 0; imember != star.members.size(); ++imember)
             {
@@ -771,8 +765,12 @@ std::map<Vector3_Order<int>, ComplexMatrix> MeanField::get_dmat_cplx_Rs(
     return dmat_cplx_all;
 }
 
-ComplexMatrix MeanField::get_gf_cplx_imagtime(int ispin, int ispinor_bra, int ispinor_ket, int ikpt, double tau) const
+ComplexMatrix MeanField::get_gf_cplx_imagtime(int ispin, int ispinor_bra, int ispinor_ket, int ikpt, double tau,
+    const std::vector<bool> &band_mask) const
 {
+    if (!band_mask.empty() && band_mask.size() != static_cast<std::size_t>(n_states))
+        throw LIBRPA_RUNTIME_ERROR("Green's-function band mask has inconsistent size");
+
     assert(ispin < this->n_spins);
     assert(ikpt < this->n_kpoints);
 
@@ -793,7 +791,8 @@ ComplexMatrix MeanField::get_gf_cplx_imagtime(int ispin, int ispinor_bra, int is
     {
         scale[ib] = -tau * (scale[ib] - efermi);
         if (scale[ib] > 0) scale[ib] = 0.0;
-        scale[ib] = std::exp(scale[ib]) * prefac_occ[ib];
+        scale[ib] = !band_mask.empty() && !band_mask[ib] ? 0.0
+            : std::exp(scale[ib]) * prefac_occ[ib];
         if (tau <= 0) scale[ib] *= -1.0;
     }
     const auto wfc_bra = find_wfc(ispin, ispinor_bra, ikpt);
@@ -812,8 +811,11 @@ ComplexMatrix MeanField::get_gf_cplx_imagtime(int ispin, int ispinor_bra, int is
 
 std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> MeanField::get_gf_cplx_imagtimes_Rs(
     int ispin, int ispinor_bra, int ispinor_ket, const std::vector<Vector3_Order<double>> &kfrac_list, std::vector<double> imagtimes,
-    const std::vector<Vector3_Order<int>> &Rs) const
+    const std::vector<Vector3_Order<int>> &Rs, const std::vector<bool> &band_mask) const
 {
+    if (!band_mask.empty() && band_mask.size() != static_cast<std::size_t>(n_states))
+        throw LIBRPA_RUNTIME_ERROR("Green's-function band mask has inconsistent size");
+
     std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> gf_tau_R;
     const double scale_spin = 0.5 * n_spins * n_spinor;
     // NOTE: occupation must be copied here, not reference
@@ -850,7 +852,10 @@ std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> MeanField::get_gf_
                 throw LIBRPA_RUNTIME_ERROR("wfc of ispinor_ket not found");
             auto scaled_wfc_conj = conj(*wfc_ket);
             for (int ib = 0; ib != n_states; ib++)
-                LapackConnector::scal(n_aos, scale(ik, ib), scaled_wfc_conj.c + n_aos * ib, 1);
+            {
+                const auto scale_ib = !band_mask.empty() && !band_mask[ib] ? 0.0 : scale(ik, ib);
+                LapackConnector::scal(n_aos, scale_ib, scaled_wfc_conj.c + n_aos * ib, 1);
+            }
             const auto wfc_bra = find_wfc(ispin, ispinor_bra, ik);
             if (wfc_bra == nullptr)
                 throw LIBRPA_RUNTIME_ERROR("wfc of ispinor_bra not found");
@@ -880,11 +885,11 @@ std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>> MeanField::get_gf_
 std::map<double, std::map<Vector3_Order<int>, matrix>> MeanField::get_gf_real_imagtimes_Rs(
     int ispin, int ispinor_bra, int ispinor_ket,
     const std::vector<Vector3_Order<double>> &kfrac_list, std::vector<double> imagtimes,
-    const std::vector<Vector3_Order<int>> &Rs) const
+    const std::vector<Vector3_Order<int>> &Rs, const std::vector<bool> &band_mask) const
 {
     std::map<double, std::map<Vector3_Order<int>, matrix>> gf_tau_R;
     for (const auto &tau_gf_cplx_R :
-         this->get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, imagtimes, Rs))
+         this->get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, imagtimes, Rs, band_mask))
     {
         const auto &tau = tau_gf_cplx_R.first;
         gf_tau_R[tau] = {};

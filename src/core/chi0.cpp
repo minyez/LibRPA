@@ -825,6 +825,15 @@ void Chi0::build(LibrpaParallelRouting routing,
 {
     using librpa_int::global::lib_printf;
 
+    if (nbands_G > mf.get_n_bands())
+        throw LIBRPA_RUNTIME_ERROR("n_bands_chi0 exceeds the number of input bands");
+    band_mask.clear();
+    if (nbands_G >= 0)
+    {
+        band_mask.assign(mf.get_n_bands(), false);
+        std::fill_n(band_mask.begin(), nbands_G, true);
+    }
+
     gf_save = gf_discard = 0;
     // reset chi0_q in case the method was called before
     chi0_q.clear();
@@ -906,7 +915,6 @@ void Chi0::build_gf_Rt(Vector3_Order<int> R, double tau)
     const auto naos = mf.get_n_aos();
     const int natom = atbasis_abf.n_atoms;
 
-    const int nbands_G = this->nbands_G;
     const auto nsoc = 1; // TODO replace with meanfield member variable
     const bool use_soc = mf.get_n_spinor() > 1;
 
@@ -924,7 +932,7 @@ void Chi0::build_gf_Rt(Vector3_Order<int> R, double tau)
                 gf_Rt_is_global.zero_out();
                 if (is_mf_eigvec_k_distributed_)
                 {
-                    const auto gf_tau_R = get_gf_cplx_imagtimes_Rs_kpara(is, isoc1, isoc2, this->mf, pbc.kfrac_list, {tau}, {R}, comm_h);
+                    const auto gf_tau_R = get_gf_cplx_imagtimes_Rs_kpara(is, isoc1, isoc2, this->mf, pbc.kfrac_list, {tau}, {R}, comm_h, band_mask);
                     gf_Rt_is_global += gf_tau_R.at(tau).at(R).real();
                 }
                 else
@@ -963,55 +971,49 @@ void Chi0::build_gf_Rt(Vector3_Order<int> R, double tau)
                         const auto &ev2 = mf.get_eigenvectors().at(is).at(isoc2).at(ik);
                         auto scaled_wfc_conj = conj(ev2);
                         for (int ib = 0; ib != nbands; ib++)
-                            LapackConnector::scal(naos, scale(ik, ib), scaled_wfc_conj.c + naos * ib,
-                                                1);
-                        if (nbands_G >= 0)
                         {
-                            for (int ib = nbands_G; ib != nbands; ib++)
-                            {
-                                for (int inaos = 0; inaos != naos; inaos++)
-                                    scaled_wfc_conj(ib, inaos) = 0.0;
-                            }
+                            const auto scale_ib = !band_mask.empty() && !band_mask[ib] ? 0.0 : scale(ik, ib);
+                            LapackConnector::scal(naos, scale_ib, scaled_wfc_conj.c + naos * ib, 1);
                         }
                         gf_Rt_is_global += (kphase * transpose(ev1, false) * scaled_wfc_conj).real();
                     }
                     if (tau < 0) gf_Rt_is_global *= -1.;
-                    omp_lock_t gf_lock;
-                    omp_init_lock(&gf_lock);
+                }
+                omp_lock_t gf_lock;
+                omp_init_lock(&gf_lock);
 #pragma omp parallel for schedule(dynamic)
-                    for (int I = 0; I != natom; I++)
+                for (int I = 0; I != natom; I++)
+                {
+                    const auto I_num = atbasis_wfc[I];
+                    for (int J = 0; J != natom; J++)
                     {
-                        const auto I_num = atbasis_wfc[I];
-                        for (int J = 0; J != natom; J++)
+                        const auto J_num = atbasis_wfc[J];
+                        matrix tmp_green(I_num, J_num);
+                        for (size_t i = 0; i != I_num; i++)
                         {
-                            const auto J_num = atbasis_wfc[J];
-                            matrix tmp_green(I_num, J_num);
-                            for (size_t i = 0; i != I_num; i++)
+                            size_t i_glo = atbasis_wfc.get_global_index(I, i);
+                            for (size_t j = 0; j != J_num; j++)
                             {
-                                size_t i_glo = atbasis_wfc.get_global_index(I, i);
-                                for (size_t j = 0; j != J_num; j++)
-                                {
-                                    size_t j_glo = atbasis_wfc.get_global_index(J, j);
-                                    tmp_green(i, j) = gf_Rt_is_global(i_glo, j_glo);
-                                }
-                            }
-                            if (tmp_green.absmax() > gf_threshold)
-                            {
-                                // cout<<" max_green_ele:  "<<tmp_green.absmax()<<endl;
-                                omp_set_lock(&gf_lock);
-                                gf_is_R_tau[is][isoc1][isoc2][I][J][R][tau] = std::move(tmp_green);
-                                omp_unset_lock(&gf_lock);
-                                gf_save++;
-                            }
-                            else
-                            {
-                                gf_discard++;
+                                size_t j_glo = atbasis_wfc.get_global_index(J, j);
+                                tmp_green(i, j) = gf_Rt_is_global(i_glo, j_glo);
                             }
                         }
+                        if (tmp_green.absmax() > gf_threshold)
+                        {
+                            // cout<<" max_green_ele:  "<<tmp_green.absmax()<<endl;
+                            omp_set_lock(&gf_lock);
+                            gf_is_R_tau[is][isoc1][isoc2][I][J][R][tau] = std::move(tmp_green);
+                            omp_unset_lock(&gf_lock);
+                            gf_save++;
+                        }
+                        else
+                        {
+                            gf_discard++;
+                        }
                     }
-                    omp_destroy_lock(&gf_lock);
-#pragma omp barrier
                 }
+                omp_destroy_lock(&gf_lock);
+#pragma omp barrier
             }
         }
     }
@@ -1064,7 +1066,7 @@ void Chi0::build_chi0_q_space_time(const LibrpaParallelRouting routing,
 #ifdef LIBRPA_USE_LIBRI
 template <typename Tdata>
 static void build_gf_Rt_libri_serial(
-    const MeanField &mf, const int nbands_G,
+    const MeanField &mf, const std::vector<bool> &band_mask,
     const AtomicBasis &atbasis_wfc,
     int ispin, int isoc1, int isoc2,
     const PeriodicBoundaryData &pbc,
@@ -1084,7 +1086,6 @@ static void build_gf_Rt_libri_serial(
     const bool use_soc = mf.get_n_spinor() > 1;
 
     assert(kfrac_list.size() == as_size(nkpts));
-    assert(nbands_G < nbands);
 
     std::map<Vector3_Order<int>, std::vector<atpair_t>> map_R_IJs;
     for (const auto &IJR : IJRs)
@@ -1131,10 +1132,10 @@ static void build_gf_Rt_libri_serial(
             const std::vector<Vector3_Order<int>> R_check{Rs_this.front()};
             const auto restored_check = get_symmetry_restored_gf_cplx_imagtimes_Rs(
                 symmetry_context, wfc_layouts, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, R_check, atom_nw,
-                nbands_G, &member_kfrac_targets, &full_grid_kstar_representatives).at(tau).at(R_check.front());
+                band_mask, &member_kfrac_targets, &full_grid_kstar_representatives).at(tau).at(R_check.front());
             const auto direct_check =
                 mf.get_gf_cplx_imagtimes_Rs(
-                      ispin, isoc1, isoc2, kfrac_list, {tau}, R_check).at(tau).at(R_check.front());
+                      ispin, isoc1, isoc2, kfrac_list, {tau}, R_check, band_mask).at(tau).at(R_check.front());
             const auto diff = restored_check - direct_check;
             if (diff.get_max_abs() > restore_check_tol)
             {
@@ -1146,7 +1147,7 @@ static void build_gf_Rt_libri_serial(
         {
             const auto gf_cplx_R = get_symmetry_restored_gf_cplx_imagtimes_Rs(
                 symmetry_context, wfc_layouts, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, Rs_this, atom_nw,
-                nbands_G, &member_kfrac_targets,
+                band_mask, &member_kfrac_targets,
                 restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr).at(tau);
 
             for (const auto &R_IJs : map_R_IJs)
@@ -1232,15 +1233,10 @@ static void build_gf_Rt_libri_serial(
             const auto &ev1 = mf.get_eigenvectors().at(ispin).at(isoc1).at(ik);
             const auto &ev2 = mf.get_eigenvectors().at(ispin).at(isoc2).at(ik);
             auto scaled_wfc_conj = conj(ev2);
-            // global::ofs_myid << "nkpts " << nkpts << " ik " << ik << " nbands_G " <<  nbands_G << " " << isoc1 << " " << isoc2 << std::endl;
             for (int ib = 0; ib != nbands; ib++)
-                LapackConnector::scal(naos, scale(ik, ib), scaled_wfc_conj.c + naos * ib, 1);
-            if (nbands_G >= 0)
             {
-                for (int ib = nbands_G; ib < nbands; ib++)
-                {
-                    for (int inaos = 0; inaos != naos; inaos++) scaled_wfc_conj(ib, inaos) = 0.0;
-                }
+                const auto scale_ib = !band_mask.empty() && !band_mask[ib] ? 0.0 : scale(ik, ib);
+                LapackConnector::scal(naos, scale_ib, scaled_wfc_conj.c + naos * ib, 1);
             }
             auto mat = (kphase * transpose(ev1, false) * scaled_wfc_conj);
 #pragma omp critical
@@ -1287,7 +1283,7 @@ static void build_gf_Rt_libri_serial(
 
 template <typename Tdata>
 static void build_gf_Rt_libri_kpara(
-    const MeanField &mf, const int nbands_G,
+    const MeanField &mf, const std::vector<bool> &band_mask,
     const MpiCommHandler &comm_h,
     const AtomicBasis &atbasis_wfc,
     int ispin, int ispinor_bra, int ispinor_ket,
@@ -1313,7 +1309,7 @@ static void build_gf_Rt_libri_kpara(
     MPI_Allreduce(MPI_IN_PLACE, &n_Rs_max, 1, MPI_INT, MPI_MAX, comm_h.comm);
     // Compute the full G({R}, tau) matrices
     const auto gf_Rs_cplx = get_gf_cplx_imagtimes_Rs_kpara(ispin, ispinor_bra, ispinor_ket, mf,
-                                                           kfrac_list, {tau}, Rs_this, comm_h)
+                                                           kfrac_list, {tau}, Rs_this, comm_h, band_mask)
                                 .at(tau);
 
     for (auto it = gf_Rs_cplx.cbegin(); it != gf_Rs_cplx.cend(); it++)
@@ -1375,7 +1371,8 @@ static void build_gf_Rt_libri_kblacs_para(
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<Vector3_Order<int>> &Rs,
     double tau,
-    std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> &gf_libri)
+    std::map<int, std::map<std::pair<int, std::array<int, 3>>, RI::Tensor<Tdata>>> &gf_libri,
+    const std::vector<bool> &band_mask)
 {
     global::profiler.start("build_gf_Rt_libri_kblacs_para", LIBRPA_VERBOSE_DEBUG);
 
@@ -1393,10 +1390,10 @@ static void build_gf_Rt_libri_kblacs_para(
     auto gf_imagtimes_Rs_cplx = restore_symmetry_kstars
         ? get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
               ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, {tau}, Rs, kblacs_ctxt,
-              desc_wfc, desc_gf, symmetry_context, pbc, atbasis_wfc)
+              desc_wfc, desc_gf, symmetry_context, pbc, atbasis_wfc, band_mask)
         : get_gf_cplx_imagtimes_Rs_kblacs_para(
               ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, {tau}, Rs, kblacs_ctxt,
-              desc_wfc, desc_gf);
+              desc_wfc, desc_gf, band_mask);
     auto &gf_Rs_cplx = gf_imagtimes_Rs_cplx.at(tau);
 
     for (auto &R_gf_cplx: gf_Rs_cplx)
@@ -1533,6 +1530,8 @@ static void chi_libri_ct_accumulate_R(
     const bool use_soc = std::is_same<Tdata, std::complex<double>>::value;
     const auto tau = tfg.get_time_nodes()[it];
     const auto freqs = tfg.get_freq_nodes();
+    // Keep frequency keys even when the band mask leaves no transitions.
+    for (const auto freq : freqs) chi0_freq_R.try_emplace(freq);
 
     struct CTTask
     {
@@ -1606,6 +1605,7 @@ static void chi_libri_ft_Rq_from_freq_R(
     std::vector<FTTask> tasks;
     for (const auto &q : qlist)
     {
+        chi0_q[freq].try_emplace(q);
         for (const auto &[Mu_atom, Nu_atom] : atpairs_ABF)
         {
             const int Mu = as_int(Mu_atom);
@@ -2283,8 +2283,6 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
 
                     // On-the-fly build of Green's function at specific spin channel and imaginary
                     // time
-                    const auto nbands = mf.get_n_bands();
-                    assert(nbands_G < nbands);
                     if (comm_h.is_root() && global::should_output())
                     {
                         if (nbands_G >= 0)
@@ -2302,7 +2300,7 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                             this->mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, this->atbasis_wfc,
                             isp, is1, is2, this->pbc, this->symmetry_context,
                             this->use_symmetry_context, this->pbc.kfrac_list, Rs_gf, tau,
-                            gf_po_libri);
+                            gf_po_libri, this->band_mask);
                         global::profiler.start("chi0_gf_neg_entry_wait", LIBRPA_VERBOSE_DEBUG);
                         comm_h.barrier();
                         global::profiler.stop("chi0_gf_neg_entry_wait");
@@ -2310,16 +2308,16 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                             this->mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, this->atbasis_wfc,
                             isp, is2, is1, this->pbc, this->symmetry_context,
                             this->use_symmetry_context, this->pbc.kfrac_list, Rs_gf, -tau,
-                            gf_ne_libri);
+                            gf_ne_libri, this->band_mask);
                     }
                     else
                     {
-                        build_gf_Rt_libri_serial(this->mf, this->nbands_G, this->atbasis_wfc, isp, is1, is2,
+                        build_gf_Rt_libri_serial(this->mf, this->band_mask, this->atbasis_wfc, isp, is1, is2,
                                                  this->pbc, this->symmetry_context,
                                                  this->use_symmetry_context,
                                                  this->pbc.kfrac_list, this->IJRs_gf_local, tau,
                                                  gf_po_libri);
-                        build_gf_Rt_libri_serial(this->mf, this->nbands_G, this->atbasis_wfc, isp, is2, is1,
+                        build_gf_Rt_libri_serial(this->mf, this->band_mask, this->atbasis_wfc, isp, is2, is1,
                                                  this->pbc, this->symmetry_context,
                                                  this->use_symmetry_context,
                                                  this->pbc.kfrac_list, this->IJRs_gf_local, -tau,
