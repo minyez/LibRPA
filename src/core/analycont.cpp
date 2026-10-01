@@ -6,6 +6,7 @@
 #include "analycont.h"
 
 #include <cassert>
+#include <algorithm>
 // #include <iostream>
 
 #include "../math/complexmatrix.h"
@@ -42,6 +43,15 @@ AnalyContPade::AnalyContPade(int n_pars_in, const std::vector<cplxdb> &xs, const
         }
         source_xs[n_pars-1] = xs[n_data-1];
         source_data[n_pars-1] = data[n_data-1];
+    }
+
+    // Band exclusion can make the correlation self-energy identically zero.
+    if (!source_data.empty() && std::all_of(source_data.begin(), source_data.end(),
+                                          [](const cplxdb &value) { return value == cplxdb(0.0, 0.0); }))
+    {
+        n_pars = 1;
+        par_y = {cplxdb(0.0, 0.0)};
+        return;
     }
 
     // Calculate the continuation coefficients, using Thiel's reciprocal difference method

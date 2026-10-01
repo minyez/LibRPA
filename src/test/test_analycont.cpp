@@ -139,6 +139,12 @@ void test_analycont_pade_resample_imag_grid()
 
 int main(int argc, char *argv[])
 {
+    const std::vector<cplxdb> xs{{0.0, 1.0}, {0.0, 2.0}, {0.0, 3.0}};
+    const std::vector<cplxdb> zeros(3, {0.0, 0.0});
+    AnalyContPade zero(3, xs, zeros);
+    assert(zero.get({1.0, 0.1}) == cplxdb(0.0, 0.0));
+    assert(zero.get_derivative({1.0, 0.1}) == cplxdb(0.0, 0.0));
+    assert(zero.get_source_data() == zeros);
     test_analycont_pade();
     test_get_spectfunc_acpade();
     test_analycont_pade_source_data();
