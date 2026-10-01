@@ -1326,10 +1326,11 @@ void G0W0::build_spacetime(
         throw LIBRPA_RUNTIME_ERROR("n_bands_sigc exceeds the number of input bands");
     const auto n_bands_used = nbands_G < 0 ? mf.get_n_bands() : nbands_G;
     std::vector<bool> band_mask;
-    if (nbands_G >= 0)
+    if (nbands_G >= 0 || n_bands_exclude > 0)
     {
         band_mask.assign(mf.get_n_bands(), false);
         std::fill_n(band_mask.begin(), n_bands_used, true);
+        std::fill_n(band_mask.begin(), n_bands_exclude, false);
     }
 
     const bool use_complex_tensor = mf.get_n_spinor() > 1;
@@ -1596,7 +1597,7 @@ void G0W0::build_spacetime(
         && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(natom)
         && symmetry_reduces_rspace;
     const bool sigc_band_space_complete =
-        rspace_symmetry_has_complete_band_space(mf, nbands_G);
+        n_bands_exclude == 0 && rspace_symmetry_has_complete_band_space(mf, nbands_G);
     const bool use_input_sigc_symmetry =
         sigc_rspace_symmetry_available && sigc_band_space_complete;
     if (sigc_rspace_symmetry_available && !sigc_band_space_complete && comm_h.is_root())
@@ -1605,7 +1606,7 @@ void G0W0::build_spacetime(
             "GW real-space self-energy irreducible-sector contraction disabled: "
             "%d response bands do not span the complete %d-state AO space; "
             "k-star and q-star symmetry remain active\n",
-            n_bands_used, mf.get_n_aos());
+            std::max(0, n_bands_used - n_bands_exclude), mf.get_n_aos());
     }
     const auto libri_sigc_irreducible_sector =
         use_input_sigc_symmetry

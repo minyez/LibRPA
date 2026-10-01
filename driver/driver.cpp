@@ -255,6 +255,8 @@ std::string format_runtime_options(const librpa::Options &opts) noexcept
             normal_pair(nfreq),
             normal_pair(n_bands_chi0),
             normal_pair(n_bands_sigc),
+            normal_pair(n_bands_exclude_chi0),
+            normal_pair(n_bands_exclude_sigc),
             normal_pair(n_params_anacon),
             normal_pair(n_params_anacon_resample),
             normal_pair(anacon_nfreq),

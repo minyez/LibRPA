@@ -828,10 +828,12 @@ void Chi0::build(LibrpaParallelRouting routing,
     if (nbands_G > mf.get_n_bands())
         throw LIBRPA_RUNTIME_ERROR("n_bands_chi0 exceeds the number of input bands");
     band_mask.clear();
-    if (nbands_G >= 0)
+    if (nbands_G >= 0 || n_bands_exclude > 0)
     {
         band_mask.assign(mf.get_n_bands(), false);
-        std::fill_n(band_mask.begin(), nbands_G, true);
+        const auto n_bands_used = nbands_G < 0 ? mf.get_n_bands() : nbands_G;
+        std::fill_n(band_mask.begin(), n_bands_used, true);
+        std::fill_n(band_mask.begin(), n_bands_exclude, false);
     }
 
     gf_save = gf_discard = 0;
@@ -2002,14 +2004,16 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
         can_use_chi0_rspace_symmetry(
             this->symmetry_context, abf_Cs, Rlist_gf, this->use_symmetry_context);
     const bool chi0_band_space_complete =
-        rspace_symmetry_has_complete_band_space(this->mf, this->nbands_G);
+        this->n_bands_exclude == 0
+        && rspace_symmetry_has_complete_band_space(this->mf, this->nbands_G);
     const bool use_chi0_rspace_symmetry =
         chi0_rspace_symmetry_available && chi0_band_space_complete;
     if (chi0_rspace_symmetry_available && !chi0_band_space_complete
         && comm_h.is_root())
     {
         const int n_bands_used =
-            this->nbands_G < 0 ? this->mf.get_n_bands() : this->nbands_G;
+            std::max(0, (this->nbands_G < 0 ? this->mf.get_n_bands() : this->nbands_G)
+                        - this->n_bands_exclude);
         global::lib_printf(
             "chi0 real-space irreducible-sector contraction disabled: "
             "%d response bands do not span the complete %d-state AO space; "

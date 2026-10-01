@@ -403,6 +403,8 @@ void parse_inputfile_to_params(const std::string &fn)
 
     _parse_int(opts, n_bands_chi0);
     _parse_int(opts, n_bands_sigc);
+    _parse_int(opts, n_bands_exclude_chi0);
+    _parse_int(opts, n_bands_exclude_sigc);
     _parse_int(opts, option_bvk_remap);
 
     // chi0 related

@@ -71,6 +71,7 @@ public:
     double libri_threshold_Wc;
     double libri_threshold_G;
     int nbands_G = -1;
+    int n_bands_exclude = 0;
 
     bool output_sigc_ks_mat_kf;
     bool output_sigc_ks_kf;
