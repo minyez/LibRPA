@@ -1139,9 +1139,10 @@ static void build_gf_Rt_libri_serial(
                         restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr),
                     isoc1, isoc2);
             }
+            validate_kstar_band_cutoff_closure(symmetry_context, mf, nbands_G);
             return get_symmetry_restored_gf_cplx_imagtimes_Rs(
                 symmetry_context, wfc_layouts, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, Rs_sel,
-                atom_nw, nbands_G, &member_kfrac_targets,
+                atom_nw, band_mask, &member_kfrac_targets,
                 restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr);
         };
         std::vector<Vector3_Order<int>> Rs_this;

@@ -1109,7 +1109,7 @@ static void build_gf_libri_kserial(
         const std::vector<Vector3_Order<int>> R_check{Rs_vec.front()};
         const auto restored_check = get_symmetry_restored_gf_cplx_imagtimes_Rs(
             symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, tau_check,
-            R_check, atom_nw, -1, &member_kfrac_targets,
+            R_check, atom_nw, std::vector<bool>{}, &member_kfrac_targets,
             &full_grid_kstar_representatives).at(tau_check.front()).at(R_check.front());
         const auto direct_check =
             mf.get_gf_cplx_imagtimes_Rs(
@@ -1125,7 +1125,7 @@ static void build_gf_libri_kserial(
     auto gf = (restore_symmetry_kstars || restore_symmetry_kstars_from_full_grid)
         ? get_symmetry_restored_gf_cplx_imagtimes_Rs(
               symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec, atom_nw,
-              -1, &member_kfrac_targets,
+              std::vector<bool>{}, &member_kfrac_targets,
               restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr)
         : mf.get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec);
     // global::ofs_myid << "gf " << gf << std::endl;

@@ -539,29 +539,6 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     return gf_tau_R;
 }
 
-std::map<double, std::map<Vector3_Order<int>, ComplexMatrix>>
-get_symmetry_restored_gf_cplx_imagtimes_Rs(
-    const SymmetryContext& ctx,
-    const std::vector<SpeciesBasisLayout>& wfc_layouts,
-    const MeanField& mf,
-    const int ispin,
-    const int ispinor_bra,
-    const int ispinor_ket,
-    const std::vector<Vector3_Order<double>>& kfrac_list,
-    const std::vector<double>& imagtimes,
-    const std::vector<Vector3_Order<int>>& Rs,
-    const std::map<atom_t, size_t>& atom_nw,
-    const int nbands_G,
-    const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets,
-    const symmetry_kstar_representative_indices_t* representative_k_indices)
-{
-    validate_kstar_band_cutoff_closure(ctx, mf, nbands_G);
-    const auto band_mask = band_mask_from_cutoff(mf, nbands_G);
-    return get_symmetry_restored_gf_cplx_imagtimes_Rs(
-        ctx, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, imagtimes, Rs,
-        atom_nw, band_mask, member_kfrac_targets, representative_k_indices);
-}
-
 std::map<double, std::map<Vector3_Order<int>, SpinorBlocks4<ComplexMatrix>>>
 get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
     const SymmetryContext& ctx,

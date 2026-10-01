@@ -310,7 +310,7 @@ void test_symmetry_context_full_grid_kstar_route_matches_direct_full_k()
     const std::vector<double> taus{-1e-12, 1e-12};
     const auto direct_gf = mf.get_gf_cplx_imagtimes_Rs(0, 0, 0, kfrac_list, taus, Rs);
     const auto restored_gf = get_symmetry_restored_gf_cplx_imagtimes_Rs(
-        ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, taus, Rs, atom_nw, -1,
+        ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, taus, Rs, atom_nw, std::vector<bool>{},
         &member_kfrac_targets, &representative_indices);
     for (const auto tau : taus)
     {
@@ -682,7 +682,7 @@ void test_spinor_kstar_gf_restore_unitary_matches_scalar_with_gauge()
             {
                 const auto scalar = get_symmetry_restored_gf_cplx_imagtimes_Rs(
                     ctx, wfc_layouts, mf, 0, s / 2, s % 2, kfrac_list, {tau}, {R},
-                    atom_nw, -1, &member_kfrac_targets);
+                    atom_nw, std::vector<bool>{}, &member_kfrac_targets);
                 assert_complex_matrix_near(*channel_blocks[s], scalar.at(tau).at(R), 1e-12,
                                            "spinor unitary restore vs scalar restore with gauge");
             }
@@ -910,7 +910,8 @@ void test_spinor_kstar_gf_restore_zero_fills_missing_channels()
     for (const auto tau : taus)
     {
         const auto scalar = get_symmetry_restored_gf_cplx_imagtimes_Rs(
-            ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, {tau}, Rs, atom_nw, -1);
+            ctx, wfc_layouts, mf, 0, 0, 0, kfrac_list, {tau}, Rs, atom_nw,
+            std::vector<bool>{});
         for (const auto &R : Rs)
         {
             const auto &blocks = restored.at(tau).at(R);
