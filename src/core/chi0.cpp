@@ -1076,7 +1076,7 @@ void Chi0::build_chi0_q_space_time(const LibrpaParallelRouting routing,
 #ifdef LIBRPA_USE_LIBRI
 template <typename Tdata>
 static void build_gf_Rt_libri_serial(
-    const MeanField &mf, const std::vector<bool> &band_mask,
+    const MeanField &mf, const std::vector<bool> &band_mask, const int nbands_G,
     const AtomicBasis &atbasis_wfc,
     int ispin, int isoc1, int isoc2,
     const PeriodicBoundaryData &pbc,
@@ -2350,12 +2350,14 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                     }
                     else
                     {
-                        build_gf_Rt_libri_serial(this->mf, this->band_mask, this->atbasis_wfc, isp, is1, is2,
+                        build_gf_Rt_libri_serial(this->mf, this->band_mask, this->nbands_G,
+                                                 this->atbasis_wfc, isp, is1, is2,
                                                  this->pbc, this->symmetry_context,
                                                  this->use_symmetry_context,
                                                  this->pbc.kfrac_list, this->IJRs_gf_local, tau,
                                                  gf_po_libri);
-                        build_gf_Rt_libri_serial(this->mf, this->band_mask, this->atbasis_wfc, isp, is2, is1,
+                        build_gf_Rt_libri_serial(this->mf, this->band_mask, this->nbands_G,
+                                                 this->atbasis_wfc, isp, is2, is1,
                                                  this->pbc, this->symmetry_context,
                                                  this->use_symmetry_context,
                                                  this->pbc.kfrac_list, this->IJRs_gf_local, -tau,
