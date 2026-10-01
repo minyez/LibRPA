@@ -937,7 +937,8 @@ static void build_gf_libri_kpara(
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<double> &taus,
     const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs,
-    std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri)
+    std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri,
+    const std::vector<bool> &band_mask)
 {
     global::profiler.start("g0w0_build_gf_libri_kpara");
     std::map<Vector3_Order<int>, std::vector<atpair_t>> map_R_IJs;
@@ -951,7 +952,7 @@ static void build_gf_libri_kpara(
     const int n_Rs_this = map_R_IJs.size();
     int n_Rs_max = n_Rs_this;
     comm_h.allreduce(MPI_IN_PLACE, &n_Rs_max, 1, MPI_MAX);
-    auto gf_taus_Rs_cplx = get_gf_cplx_imagtimes_Rs_kpara(ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, taus, Rs_this, comm_h);
+    auto gf_taus_Rs_cplx = get_gf_cplx_imagtimes_Rs_kpara(ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, taus, Rs_this, comm_h, band_mask);
     // global::ofs_myid << "gf_taus_Rs_cplx " << gf_taus_Rs_cplx << std::endl;
     for (const auto &tau_gf_R_cplx: gf_taus_Rs_cplx)
     {
@@ -1007,7 +1008,8 @@ static void build_gf_libri_kserial(
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<double> &taus,
     const std::vector<std::pair<atpair_t, Vector3_Order<int>>> IJRs,
-    std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri)
+    std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri,
+    const std::vector<bool> &band_mask)
 {
     global::profiler.start("g0w0_build_gf_libri_kserial");
     std::set<Vector3_Order<int>> Rs_local;
@@ -1048,11 +1050,11 @@ static void build_gf_libri_kserial(
         const std::vector<Vector3_Order<int>> R_check{Rs_vec.front()};
         const auto restored_check = get_symmetry_restored_gf_cplx_imagtimes_Rs(
             symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, tau_check,
-            R_check, atom_nw, {}, &member_kfrac_targets,
+            R_check, atom_nw, band_mask, &member_kfrac_targets,
             &full_grid_kstar_representatives).at(tau_check.front()).at(R_check.front());
         const auto direct_check =
             mf.get_gf_cplx_imagtimes_Rs(
-                  ispin, ispinor_bra, ispinor_ket, kfrac_list, tau_check, R_check)
+                  ispin, ispinor_bra, ispinor_ket, kfrac_list, tau_check, R_check, band_mask)
                 .at(tau_check.front()).at(R_check.front());
         const auto diff = restored_check - direct_check;
         if (diff.get_max_abs() > restore_check_tol)
@@ -1064,9 +1066,9 @@ static void build_gf_libri_kserial(
     auto gf = (restore_symmetry_kstars || restore_symmetry_kstars_from_full_grid)
         ? get_symmetry_restored_gf_cplx_imagtimes_Rs(
               symmetry_context, wfc_layouts, mf, ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec, atom_nw,
-              {}, &member_kfrac_targets,
+              band_mask, &member_kfrac_targets,
               restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr)
-        : mf.get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec);
+        : mf.get_gf_cplx_imagtimes_Rs(ispin, ispinor_bra, ispinor_ket, kfrac_list, taus, Rs_vec, band_mask);
     // global::ofs_myid << "gf " << gf << std::endl;
     tau_gf_libri.clear();
     // TODO: enable threading below
@@ -1127,7 +1129,8 @@ static void build_gf_libri_kblacs_para(
     const vector<Vector3_Order<double>> &kfrac_list,
     const std::vector<double> &taus,
     const std::vector<Vector3_Order<int>> &Rs,
-    std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri)
+    std::map<double, std::map<int, std::map<std::pair<int,std::array<int,3>>,RI::Tensor<Tdata>>>> &tau_gf_libri,
+    const std::vector<bool> &band_mask)
 {
     global::profiler.start("g0w0_build_gf_libri_kblacs_para", LIBRPA_VERBOSE_DEBUG);
 
@@ -1149,10 +1152,10 @@ static void build_gf_libri_kblacs_para(
     auto gf_taus_Rs_cplx = restore_symmetry_kstars
         ? get_symmetry_restored_gf_cplx_imagtimes_Rs_kblacs_para(
               ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, taus, Rs, kblacs_ctxt,
-              desc_wfc, desc_gf, symmetry_context, pbc, atbasis_wfc)
+              desc_wfc, desc_gf, symmetry_context, pbc, atbasis_wfc, band_mask)
         : get_gf_cplx_imagtimes_Rs_kblacs_para(
               ispin, ispinor_bra, ispinor_ket, mf, kfrac_list, taus, Rs, kblacs_ctxt,
-              desc_wfc, desc_gf);
+              desc_wfc, desc_gf, band_mask);
 
     for (auto &tau_gf_R_cplx: gf_taus_Rs_cplx)
     {
@@ -1318,6 +1321,16 @@ void G0W0::build_spacetime(
         throw LIBRPA_RUNTIME_ERROR("input TFGrids object has no time grids");
     }
     comm_h.barrier();
+
+    if (nbands_G > mf.get_n_bands())
+        throw LIBRPA_RUNTIME_ERROR("n_bands_sigc exceeds the number of input bands");
+    const auto n_bands_used = nbands_G < 0 ? mf.get_n_bands() : nbands_G;
+    std::vector<bool> band_mask;
+    if (nbands_G >= 0)
+    {
+        band_mask.assign(mf.get_n_bands(), false);
+        std::fill_n(band_mask.begin(), n_bands_used, true);
+    }
 
     const bool use_complex_tensor = mf.get_n_spinor() > 1;
     if (use_complex_tensor)
@@ -1583,7 +1596,7 @@ void G0W0::build_spacetime(
         && symmetry_ctx.input_coord_frac.size() == static_cast<std::size_t>(natom)
         && symmetry_reduces_rspace;
     const bool sigc_band_space_complete =
-        rspace_symmetry_has_complete_band_space(mf, -1);
+        rspace_symmetry_has_complete_band_space(mf, nbands_G);
     const bool use_input_sigc_symmetry =
         sigc_rspace_symmetry_available && sigc_band_space_complete;
     if (sigc_rspace_symmetry_available && !sigc_band_space_complete && comm_h.is_root())
@@ -1592,7 +1605,7 @@ void G0W0::build_spacetime(
             "GW real-space self-energy irreducible-sector contraction disabled: "
             "%d response bands do not span the complete %d-state AO space; "
             "k-star and q-star symmetry remain active\n",
-            mf.get_n_bands(), mf.get_n_aos());
+            n_bands_used, mf.get_n_aos());
     }
     const auto libri_sigc_irreducible_sector =
         use_input_sigc_symmetry
@@ -1726,7 +1739,7 @@ void G0W0::build_spacetime(
                                 mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, atbasis_wfc,
                                 ispin, ispinor_bra, ispinor_ket, this->pbc,
                                 this->symmetry_context, this->use_symmetry_context,
-                                this->pbc.kfrac_list, taus, Rs_gf, tau_gf_libri_cplx);
+                                this->pbc.kfrac_list, taus, Rs_gf, tau_gf_libri_cplx, band_mask);
                         }
                         else
                         {
@@ -1734,7 +1747,7 @@ void G0W0::build_spacetime(
                                                 this->symmetry_context,
                                                 this->use_symmetry_context,
                                                 this->pbc.kfrac_list,
-                                                taus, IJR_local_gf, tau_gf_libri_cplx);
+                                                taus, IJR_local_gf, tau_gf_libri_cplx, band_mask);
                         }
                     }
                     else
@@ -1744,13 +1757,13 @@ void G0W0::build_spacetime(
                                 mf, kblacs_ctxt, desc_wfc, desc_gf, sched_gf, atbasis_wfc,
                                 ispin, ispinor_bra, ispinor_ket, this->pbc,
                                 this->symmetry_context, this->use_symmetry_context,
-                                this->pbc.kfrac_list, taus, Rs_gf, tau_gf_libri);
+                                this->pbc.kfrac_list, taus, Rs_gf, tau_gf_libri, band_mask);
                         else
                             build_gf_libri_kserial(mf, atbasis_wfc, ispin, ispinor_bra, ispinor_ket, this->pbc,
                                                 this->symmetry_context,
                                                 this->use_symmetry_context,
                                                 this->pbc.kfrac_list,
-                                                taus, IJR_local_gf, tau_gf_libri);
+                                                taus, IJR_local_gf, tau_gf_libri, band_mask);
                     }
                     // if (itau == 0 && ispin == 0)  // debug
                     // {

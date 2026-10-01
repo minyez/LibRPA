@@ -309,6 +309,7 @@ void initialize_ds_g0w0(Dataset &ds, const LibrpaOptions &opts)
                                                    desc_scf_wfc, ds.desc_band_wfc_kb,
                                                    is_eigvec_k_distributed,
                                                    use_symmetry);
+    ds.p_g0w0->nbands_G = opts.n_bands_sigc;
     ds.p_g0w0->libri_threshold_C = opts.libri_g0w0_threshold_C;
     ds.p_g0w0->libri_threshold_G = opts.libri_g0w0_threshold_G;
     ds.p_g0w0->libri_threshold_Wc = opts.libri_g0w0_threshold_Wc;
