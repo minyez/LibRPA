@@ -273,8 +273,18 @@ static ComplexMatrix build_gf_cplx_imagtime_with_prefactor_zero_fill(
         zero.zero_out();
         return zero;
     }
+    // The spinor restore API keeps the historical integer band cutoff while
+    // the scalar path now accepts an explicit mask.  Convert only a strict
+    // interior cutoff; the documented sentinel values retain the full band
+    // space.
+    std::vector<bool> band_mask;
+    if (nbands_G > 0 && nbands_G < mf.get_n_bands())
+    {
+        band_mask.assign(static_cast<std::size_t>(mf.get_n_bands()), false);
+        std::fill(band_mask.begin(), band_mask.begin() + nbands_G, true);
+    }
     return build_gf_cplx_imagtime_with_prefactor(
-        mf, ispin, ispinor_bra, ispinor_ket, ikpt, tau, prefactors, nbands_G);
+        mf, ispin, ispinor_bra, ispinor_ket, ikpt, tau, prefactors, band_mask);
 }
 
 void validate_kstar_band_cutoff_closure(
@@ -462,7 +472,6 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets,
     const symmetry_kstar_representative_indices_t* representative_k_indices)
 {
-    validate_kstar_band_cutoff_closure(ctx, mf, nbands_G);
     const auto restore_entries = build_symmetry_kstar_restore_entries(
         ctx, wfc_layouts, mf, kfrac_list, atom_nw, representative_k_indices);
     validate_symmetry_kstar_member_kfrac_targets(restore_entries, member_kfrac_targets);
