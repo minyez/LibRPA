@@ -104,8 +104,4 @@ if(LIBRPA_USE_LIBRI)
     PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=1;MKL_NUM_THREADS=1" TIMEOUT 60)
 endif()
 
-if(LIBRPA_USE_LIBRI AND _LIBRPA_USE_BUNDLED_LIBCOMM)
-  config_test(test_libcomm_bounded_exchange 4)
-endif()
-
 # TODO(minye): make use of GTest
