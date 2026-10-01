@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Applied `n_bands_sigc` to correlation self-energy Green functions in serial,
+  k-point/BLACS parallel, and symmetry-restored routes; rejected upper bounds
+  exceeding the number of input bands.
+
 - Applied the `n_bands_chi0` mask consistently in serial, k-point/BLACS
   parallel, and symmetry-restored response Green-function construction.
   Preserved k-parallel Green-function blocks in the atom-pair/R-tau routes

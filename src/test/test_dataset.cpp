@@ -528,6 +528,15 @@ static void test_disabled_component_symmetry_keeps_shared_context()
     initialize_ds_chi0(ds, opts);
     initialize_ds_g0w0(ds, opts);
 
+    assert(opts.n_bands_sigc == -1);
+    assert(ds.p_g0w0->nbands_G == -1);
+    for (const int n_bands : {0, 1, -1})
+    {
+        opts.n_bands_sigc = n_bands;
+        initialize_ds_g0w0(ds, opts);
+        assert(ds.p_g0w0->nbands_G == n_bands);
+    }
+
     assert(ds.p_g0w0->istate_output_mat_start == 0);
     assert(ds.p_g0w0->istate_output_mat_end == 1);
     assert(ds.symmetry_context.available);
