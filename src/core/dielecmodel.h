@@ -450,9 +450,6 @@ public:
     void cal_strict_2d_wc(const int ifreq, ArrayDesc &desc_nabf_nabf_opt, ArrayDesc &desc_body,
                           const matrix_m<std::complex<double>> &regular_coulomb_basis);
     void calculate_q_gamma_2d();
-    // not used now due to performance optimization
-    // std::complex<double> compute_chi0_inv_00(const int ifreq);
-    // std::complex<double> compute_chi0_inv_ij(const int ifreq, int i, int j);
     void rewrite_eps(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
                      ArrayDesc &desc_nabf_nabf_opt);
     void rewrite_strict_2d_wc(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
