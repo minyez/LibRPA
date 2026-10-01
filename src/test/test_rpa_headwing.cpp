@@ -2377,7 +2377,10 @@ void test_strict_2d_gamma_quadrature_is_ready_after_wing_initialization(
                   librpa_int::global::mpi_comm_global_h, blacs_h);
     df.configure_strict_2d_coulomb_head(true, librpa_int::TWO_PI);
     assert(df.use_2d_dielectric);
-    require_double_close(df.get_strict_2d_sheet_to_raw_scale(), 1.0, 1e-14);
+    const auto normalization = librpa_int::strict_2d_coulomb_head_normalization(
+        pbc, librpa_int::TWO_PI);
+    require_double_close(df.get_strict_2d_pw_to_auxiliary_scale(),
+                         normalization.pw_to_auxiliary_scale, 1e-14);
     df.init_wing(0.0, empty_vq);
 
     const double average = df.get_strict_2d_bare_coulomb_gamma_average();
