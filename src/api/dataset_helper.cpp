@@ -113,10 +113,9 @@ void reject_spinor_symmetry_speedup(const Dataset &ds, const char *calculation)
     {
         return;
     }
-    // Spinor symmetry is supported only when ABACUS supplied the explicit
-    // spatial/spin operation table through the new stru_out metadata.  Keep
-    // rejecting legacy spinor symmetry requests with no spin-space action so
-    // that an ordinary spatial table cannot silently produce wrong channels.
+    // Spinor symmetry requires an explicit spatial/spin operation table in the
+    // input dataset. Keep rejecting legacy requests with no spin-space action
+    // so that an ordinary spatial table cannot silently produce wrong channels.
     if (ds.spg_spin_ops_explicit)
     {
         return;
@@ -124,7 +123,7 @@ void reject_spinor_symmetry_speedup(const Dataset &ds, const char *calculation)
     throw LIBRPA_RUNTIME_ERROR(
         std::string("Cannot use ") + calculation
         + " symmetry speed-up with spinor wave functions without an explicit spin-space"
-        + " operation table; regenerate stru_out with spin_symmetry metadata");
+        + " operation table; regenerate the dataset with spin_symmetry metadata");
 }
 
 void initialize_ds_tfgrids(Dataset &ds, const LibrpaOptions &opts)

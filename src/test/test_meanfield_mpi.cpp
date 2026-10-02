@@ -919,7 +919,7 @@ static void test_gf_kblacs_reduced_kstar_spinor_matches_serial_restore()
     mf_ref.get_eigenvectors()[0][1][0](1, 0) = {0.1, 0.4};
 
     const auto expected = get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
-        ctx, wfc_layouts, mf_ref, 0, kfrac_list, taus, Rs, atom_nw, -1);
+        ctx, wfc_layouts, mf_ref, 0, kfrac_list, taus, Rs, atom_nw, std::vector<bool>{});
     KPointBlacsProcessShape shape(1, size_global, false);
     KPointBlacsParallelContext context(shape, mpi_comm_global_h.comm, 1);
     const auto desc_wfc = context.create_array_desc(1, 2, 1, 2);

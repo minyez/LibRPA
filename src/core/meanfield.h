@@ -185,20 +185,19 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs(
  * @brief Validate that a Green's-function band cutoff does not slice through a
  * degenerate band multiplet on the k-point set used as symmetry-restore source.
  *
- * A symmetry restore mixes all bands below the cutoff across each k-star; when
- * the cutoff index separates two (nearly) degenerate eigenvalues the truncated
- * band space is not closed under the star operations and the restored GF would
+ * A symmetry restore mixes the selected bands across each k-star; when any
+ * band-mask boundary separates two (nearly) degenerate eigenvalues the selected
+ * space is not closed under the star operations and the restored GF would
  * depend on the arbitrary gauge inside the degenerate subspace. Throws
  * LIBRPA_RUNTIME_ERROR naming the k-point, the band indices and the gap when
- * |E[nbands_G] - E[nbands_G - 1]| < degen_tol at any spin/k-point.
+ * the gap at any mask boundary is smaller than degen_tol.
  *
- * No-op when nbands_G < 0 (no truncation), nbands_G == 0, or
- * nbands_G >= n_bands (truncation outside the band window).
+ * No-op when band_mask is empty, which denotes the full band space.
  */
 void validate_kstar_band_cutoff_closure(
     const SymmetryContext& ctx,
     const MeanField& mf,
-    int nbands_G,
+    const std::vector<bool>& band_mask,
     double degen_tol = 1e-8);
 
 /*!
@@ -218,7 +217,8 @@ void validate_kstar_band_cutoff_closure(
  * point (tau is real, z* = tau; report section 6.8).
  *
  * Requires mf.get_n_spinor() == 2. Missing (bra, ket) source blocks are
- * zero-filled. nbands_G >= 0 is guarded by validate_kstar_band_cutoff_closure.
+ * zero-filled. Non-empty band_mask is guarded by
+ * validate_kstar_band_cutoff_closure.
  */
 std::map<double, std::map<Vector3_Order<int>, SpinorBlocks4<ComplexMatrix>>>
 get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
@@ -230,7 +230,7 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
     const std::vector<double>& imagtimes,
     const std::vector<Vector3_Order<int>>& Rs,
     const std::map<atom_t, size_t>& atom_nw,
-    int nbands_G = -1,
+    const std::vector<bool>& band_mask = {},
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets = nullptr,
     const symmetry_kstar_representative_indices_t* representative_k_indices = nullptr);
 

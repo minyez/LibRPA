@@ -1076,7 +1076,7 @@ void Chi0::build_chi0_q_space_time(const LibrpaParallelRouting routing,
 #ifdef LIBRPA_USE_LIBRI
 template <typename Tdata>
 static void build_gf_Rt_libri_serial(
-    const MeanField &mf, const std::vector<bool> &band_mask, const int nbands_G,
+    const MeanField &mf, const std::vector<bool> &band_mask,
     const AtomicBasis &atbasis_wfc,
     int ispin, int isoc1, int isoc2,
     const PeriodicBoundaryData &pbc,
@@ -1135,11 +1135,11 @@ static void build_gf_Rt_libri_serial(
                 return extract_spinor_gf_block(
                     get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
                         symmetry_context, wfc_layouts, mf, ispin, kfrac_list, {tau}, Rs_sel,
-                        atom_nw, nbands_G, &member_kfrac_targets,
+                        atom_nw, band_mask, &member_kfrac_targets,
                         restore_symmetry_kstars_from_full_grid ? &full_grid_kstar_representatives : nullptr),
                     isoc1, isoc2);
             }
-            validate_kstar_band_cutoff_closure(symmetry_context, mf, nbands_G);
+            validate_kstar_band_cutoff_closure(symmetry_context, mf, band_mask);
             return get_symmetry_restored_gf_cplx_imagtimes_Rs(
                 symmetry_context, wfc_layouts, mf, ispin, isoc1, isoc2, kfrac_list, {tau}, Rs_sel,
                 atom_nw, band_mask, &member_kfrac_targets,
@@ -2350,13 +2350,13 @@ void Chi0::build_chi0_q_space_time_LibRI_routing(const Cs_LRI &Cs,
                     }
                     else
                     {
-                        build_gf_Rt_libri_serial(this->mf, this->band_mask, this->nbands_G,
+                        build_gf_Rt_libri_serial(this->mf, this->band_mask,
                                                  this->atbasis_wfc, isp, is1, is2,
                                                  this->pbc, this->symmetry_context,
                                                  this->use_symmetry_context,
                                                  this->pbc.kfrac_list, this->IJRs_gf_local, tau,
                                                  gf_po_libri);
-                        build_gf_Rt_libri_serial(this->mf, this->band_mask, this->nbands_G,
+                        build_gf_Rt_libri_serial(this->mf, this->band_mask,
                                                  this->atbasis_wfc, isp, is2, is1,
                                                  this->pbc, this->symmetry_context,
                                                  this->use_symmetry_context,

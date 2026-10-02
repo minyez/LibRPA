@@ -83,6 +83,41 @@ R11 R12 R13 R21 R22 R23 R31 R32 R33 t1 t2 t3
 Include the identity operation when providing the block; symmetry-enabled
 calculations require it.
 
+An optional spin-operation block may follow the spatial operation rows:
+
+```text
+spin_symmetry grey source
+```
+
+The `grey` value is nonzero when the listed operations are the unitary block of
+a grey magnetic group; LibRPA then adds the corresponding antiunitary copy.
+`source` selects the spin action convention:
+
+- `0`: `Identity`; no spin matrix is read.
+- `1`: `ExplicitSpinSpace`; each operation row must provide an explicit SU(2)
+  matrix.
+- `2`: `DerivedFromSpatialSOC`; no spin matrix is read from this tail, and
+  LibRPA derives the spin action from the spatial operation.
+
+The spin block contains one row for every spatial operation. Each row starts
+with an `antiunitary` flag (`0` or nonzero). For `source = 1`, append eight
+floating-point values containing the row-major 2x2 SU(2) matrix as
+`(real, imaginary)` pairs:
+
+```text
+antiunitary
+```
+
+or
+
+```text
+antiunitary U11_re U11_im U12_re U12_im U21_re U21_im U22_re U22_im
+```
+
+Whitespace separates tokens; line breaks in these examples are for
+readability only. The spin block is passed to the same symmetry-operation API
+as programmatically supplied datasets.
+
 Older `stru_out` files may also contain the following Brillouin-zone sampling
 entries. LibRPA no longer reads k-points from `stru_out`; datasets must provide
 [`bz_sampling_out`](#bz-sampling-out).

@@ -254,19 +254,8 @@ static ComplexMatrix build_gf_cplx_imagtime_with_prefactor(
     return transpose(*wfc_bra, false) * scaled_wfc_conj;
 }
 
-static std::vector<bool> band_mask_from_cutoff(const MeanField& mf, const int nbands_G)
-{
-    std::vector<bool> band_mask;
-    if (nbands_G > 0 && nbands_G < mf.get_n_bands())
-    {
-        band_mask.assign(static_cast<std::size_t>(mf.get_n_bands()), false);
-        std::fill(band_mask.begin(), band_mask.begin() + nbands_G, true);
-    }
-    return band_mask;
-}
-
 //! Zero-fill variant of build_gf_cplx_imagtime_with_prefactor: spinor source
-//! blocks whose wfc channel is missing contribute a zero block (report R11).
+//! blocks whose wfc channel is missing contribute a zero block.
 static ComplexMatrix build_gf_cplx_imagtime_with_prefactor_zero_fill(
     const MeanField& mf,
     const int ispin,
@@ -275,7 +264,7 @@ static ComplexMatrix build_gf_cplx_imagtime_with_prefactor_zero_fill(
     const int ikpt,
     const double tau,
     const std::vector<double>& prefactors,
-    const int nbands_G)
+    const std::vector<bool>& band_mask)
 {
     if (mf.find_wfc(ispin, ispinor_bra, ikpt) == nullptr
         || mf.find_wfc(ispin, ispinor_ket, ikpt) == nullptr)
@@ -284,11 +273,6 @@ static ComplexMatrix build_gf_cplx_imagtime_with_prefactor_zero_fill(
         zero.zero_out();
         return zero;
     }
-    // The spinor restore API keeps the historical integer band cutoff while
-    // the scalar path now accepts an explicit mask.  Convert only a strict
-    // interior cutoff; the documented sentinel values retain the full band
-    // space.
-    const auto band_mask = band_mask_from_cutoff(mf, nbands_G);
     return build_gf_cplx_imagtime_with_prefactor(
         mf, ispin, ispinor_bra, ispinor_ket, ikpt, tau, prefactors, band_mask);
 }
@@ -296,32 +280,45 @@ static ComplexMatrix build_gf_cplx_imagtime_with_prefactor_zero_fill(
 void validate_kstar_band_cutoff_closure(
     const SymmetryContext& ctx,
     const MeanField& mf,
-    const int nbands_G,
+    const std::vector<bool>& band_mask,
     const double degen_tol)
 {
     (void)ctx;
-    if (nbands_G < 1 || nbands_G >= mf.get_n_bands())
+    if (band_mask.empty())
     {
         return;
+    }
+    if (band_mask.size() != static_cast<std::size_t>(mf.get_n_bands()))
+    {
+        throw LIBRPA_RUNTIME_ERROR(
+            "Green's-function band mask size does not match the mean-field band count");
     }
     for (int ispin = 0; ispin != mf.get_n_spins(); ++ispin)
     {
         for (int ik = 0; ik != mf.get_n_kpoints(); ++ik)
         {
-            const double gap = mf.get_eigenvals()[ispin](ik, nbands_G)
-                             - mf.get_eigenvals()[ispin](ik, nbands_G - 1);
-            if (std::abs(gap) < degen_tol)
+            for (int ib = 1; ib != mf.get_n_bands(); ++ib)
             {
-                throw LIBRPA_RUNTIME_ERROR(
-                    "Green's-function band cutoff slices through a degenerate band "
-                    "multiplet: ispin " + std::to_string(ispin)
-                    + ", k-point " + std::to_string(ik)
-                    + ", bands " + std::to_string(nbands_G - 1) + "/"
-                    + std::to_string(nbands_G)
-                    + " separated by " + std::to_string(gap)
-                    + " Ha (< " + std::to_string(degen_tol)
-                    + "). Symmetry restore is disabled for this truncation; "
-                    "adjust the cutoff or use the full band grid");
+                if (band_mask[static_cast<std::size_t>(ib - 1)]
+                    == band_mask[static_cast<std::size_t>(ib)])
+                {
+                    continue;
+                }
+                const double gap = mf.get_eigenvals()[ispin](ik, ib)
+                                 - mf.get_eigenvals()[ispin](ik, ib - 1);
+                if (std::abs(gap) < degen_tol)
+                {
+                    throw LIBRPA_RUNTIME_ERROR(
+                        "Green's-function band mask slices through a degenerate band "
+                        "multiplet: ispin " + std::to_string(ispin)
+                        + ", k-point " + std::to_string(ik)
+                        + ", bands " + std::to_string(ib - 1) + "/"
+                        + std::to_string(ib)
+                        + " separated by " + std::to_string(gap)
+                        + " Ha (< " + std::to_string(degen_tol)
+                        + "). Symmetry restore is disabled for this truncation; "
+                        "adjust the band mask or use the full band grid");
+                }
             }
         }
     }
@@ -549,7 +546,7 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
     const std::vector<double>& imagtimes,
     const std::vector<Vector3_Order<int>>& Rs,
     const std::map<atom_t, size_t>& atom_nw,
-    const int nbands_G,
+    const std::vector<bool>& band_mask,
     const symmetry_kstar_member_kfrac_targets_t* member_kfrac_targets,
     const symmetry_kstar_representative_indices_t* representative_k_indices)
 {
@@ -558,7 +555,7 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
         throw LIBRPA_RUNTIME_ERROR(
             "spinor k-star Green's-function restore requires n_spinor == 2");
     }
-    validate_kstar_band_cutoff_closure(ctx, mf, nbands_G);
+    validate_kstar_band_cutoff_closure(ctx, mf, band_mask);
     const auto restore_entries = build_symmetry_kstar_restore_entries(
         ctx, wfc_layouts, mf, kfrac_list, atom_nw, representative_k_indices);
     validate_symmetry_kstar_member_kfrac_targets(restore_entries, member_kfrac_targets);
@@ -597,13 +594,13 @@ get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
             // (bra, ket) wfc channel is missing.
             const SpinorBlocks4<ComplexMatrix> gf_ibz{
                 build_gf_cplx_imagtime_with_prefactor_zero_fill(
-                    mf, ispin, 0, 0, entry.ik_mf, tau, prefactors, nbands_G),
+                    mf, ispin, 0, 0, entry.ik_mf, tau, prefactors, band_mask),
                 build_gf_cplx_imagtime_with_prefactor_zero_fill(
-                    mf, ispin, 0, 1, entry.ik_mf, tau, prefactors, nbands_G),
+                    mf, ispin, 0, 1, entry.ik_mf, tau, prefactors, band_mask),
                 build_gf_cplx_imagtime_with_prefactor_zero_fill(
-                    mf, ispin, 1, 0, entry.ik_mf, tau, prefactors, nbands_G),
+                    mf, ispin, 1, 0, entry.ik_mf, tau, prefactors, band_mask),
                 build_gf_cplx_imagtime_with_prefactor_zero_fill(
-                    mf, ispin, 1, 1, entry.ik_mf, tau, prefactors, nbands_G),
+                    mf, ispin, 1, 1, entry.ik_mf, tau, prefactors, band_mask),
             };
 
             for (std::size_t imember = 0; imember != star.members.size(); ++imember)

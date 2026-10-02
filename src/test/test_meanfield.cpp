@@ -587,7 +587,7 @@ void test_spinor_kstar_gf_restore_full_grid_tr_round_trip()
         build_symmetry_full_grid_kstar_member_kfrac_targets(ctx, kfrac_list);
 
     const auto restored = get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
-        ctx, wfc_layouts, mf, 0, kfrac_list, taus, Rs, atom_nw, -1,
+        ctx, wfc_layouts, mf, 0, kfrac_list, taus, Rs, atom_nw, std::vector<bool>{},
         &member_kfrac_targets, &representative_indices);
 
     for (const auto tau : taus)
@@ -668,7 +668,7 @@ void test_spinor_kstar_gf_restore_unitary_matches_scalar_with_gauge()
         {{0.0, 0.0, 0.0}, {1.5, 0.0, 0.0}}};
 
     const auto restored_spinor = get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
-        ctx, wfc_layouts, mf, 0, kfrac_list, taus, Rs, atom_nw, -1,
+        ctx, wfc_layouts, mf, 0, kfrac_list, taus, Rs, atom_nw, std::vector<bool>{},
         &member_kfrac_targets);
 
     for (const auto tau : taus)
@@ -747,7 +747,7 @@ void test_spinor_kstar_gf_restore_pure_spin_average()
     const std::map<atom_t, size_t> atom_nw{{0, 1}};
 
     const auto restored = get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
-        ctx, wfc_layouts, mf, 0, kfrac_list, taus, Rs, atom_nw, -1);
+        ctx, wfc_layouts, mf, 0, kfrac_list, taus, Rs, atom_nw, std::vector<bool>{});
 
     for (const auto tau : taus)
     {
@@ -814,7 +814,7 @@ void test_spinor_kstar_gf_restore_tr_remap_at_gamma()
     const std::map<atom_t, size_t> atom_nw{{0, 1}};
 
     const auto restored = get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
-        ctx, wfc_layouts, mf, 0, kfrac_list, taus, Rs, atom_nw, -1);
+        ctx, wfc_layouts, mf, 0, kfrac_list, taus, Rs, atom_nw, std::vector<bool>{});
 
     for (const auto tau : taus)
     {
@@ -830,7 +830,7 @@ void test_spinor_kstar_gf_restore_tr_remap_at_gamma()
     }
 }
 
-//! Phase 4 rule A: a band cutoff slicing through a degenerate multiplet is
+//! Phase 4 rule A: a band-mask boundary slicing through a degenerate multiplet is
 //! rejected, both directly and through the spinor restore entry point.
 void test_validate_kstar_band_cutoff_closure_rejects_degenerate_cut()
 {
@@ -843,22 +843,24 @@ void test_validate_kstar_band_cutoff_closure_rejects_degenerate_cut()
 
     SymmetryContext ctx;
 
-    bool threw = false;
-    try
-    {
-        validate_kstar_band_cutoff_closure(ctx, mf, 1);
-    }
-    catch (const std::runtime_error &)
-    {
-        threw = true;
-    }
-    if (!threw)
-        throw std::runtime_error("degenerate band cutoff was not rejected");
+    const auto expect_throw = [&ctx, &mf](const std::vector<bool> &band_mask) {
+        try
+        {
+            validate_kstar_band_cutoff_closure(ctx, mf, band_mask);
+        }
+        catch (const std::runtime_error &)
+        {
+            return;
+        }
+        throw std::runtime_error("degenerate band-mask boundary was not rejected");
+    };
+    expect_throw(std::vector<bool>{true, false, false});
+    expect_throw(std::vector<bool>{false, true, true});
 
-    // no throw: gap above tolerance, no truncation, truncation outside window
-    validate_kstar_band_cutoff_closure(ctx, mf, 2);
-    validate_kstar_band_cutoff_closure(ctx, mf, -1);
-    validate_kstar_band_cutoff_closure(ctx, mf, 3);
+    // no throw: gap above tolerance, no truncation, and the full band window
+    validate_kstar_band_cutoff_closure(ctx, mf, std::vector<bool>{true, true, false});
+    validate_kstar_band_cutoff_closure(ctx, mf, std::vector<bool>{});
+    validate_kstar_band_cutoff_closure(ctx, mf, std::vector<bool>{true, true, true});
 }
 
 //! Phase 4: missing (bra, ket) wfc channels are zero-filled; with only the
@@ -905,7 +907,7 @@ void test_spinor_kstar_gf_restore_zero_fills_missing_channels()
     const std::map<atom_t, size_t> atom_nw{{0, 1}};
 
     const auto restored = get_symmetry_restored_gf_cplx_imagtimes_Rs_spinor(
-        ctx, wfc_layouts, mf, 0, kfrac_list, taus, Rs, atom_nw, -1);
+        ctx, wfc_layouts, mf, 0, kfrac_list, taus, Rs, atom_nw, std::vector<bool>{});
 
     for (const auto tau : taus)
     {
