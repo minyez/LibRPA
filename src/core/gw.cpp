@@ -620,21 +620,41 @@ static void write_wc_rf_full_matrix_from_atom_blocks(
     const PeriodicBoundaryData &pbc, const std::string &output_dir, const int ifreq,
     const double freq)
 {
+    // Hermitian completion keeps the transposed atom block on the same rank
+    // as its source. That rank need not own its BLACS matrix elements.
+    // Elect one source per block (also handles replicated symmetry output),
+    // then redistribute with the same communicator as the output descriptor.
+    const int nat = as_int(atbasis_abf.n_atoms);
+    std::vector<int> owners(nat * nat, ad_Wc.nprocs());
+    for (const auto &[I, J_RWc] : Wc_R)
+        for (const auto &[J, R_Wc] : J_RWc)
+            if (!R_Wc.empty()) owners[I * nat + J] = ad_Wc.myid();
+    MPI_Allreduce(MPI_IN_PLACE, owners.data(), as_int(owners.size()), MPI_INT,
+                  MPI_MIN, ad_Wc.comm());
+    std::map<int, std::set<atpair_t>> map_proc_IJs;
+    for (int I = 0; I < nat; ++I)
+        for (int J = 0; J < nat; ++J)
+            if (owners[I * nat + J] < ad_Wc.nprocs())
+                map_proc_IJs[owners[I * nat + J]].insert({I, J});
+    IndexScheduler sched;
+    sched.init(map_proc_IJs, atbasis_abf, atbasis_abf, ad_Wc, false);
+
     for (const auto &R : pbc.Rlist)
     {
         Matz Wc(ad_Wc.m_loc(), ad_Wc.n_loc(), MAJOR::COL);
         Wc.zero_out();
-        for (const auto &[I, J_RWc] : Wc_R)
+        ap_p_map<Matz> blocks;
+        for (const auto &[I, J] : sched.atpairs)
         {
-            for (const auto &[J, R_Wc] : J_RWc)
-            {
-                const auto Wc_iter = R_Wc.find(R);
-                if (Wc_iter == R_Wc.end()) continue;
-                collect_block_from_IJ_storage(
-                    Wc, ad_Wc, atbasis_abf, atbasis_abf, as_int(I), as_int(J),
-                    cplxdb{1.0, 0.0}, Wc_iter->second.ptr(), Wc_iter->second.major());
-            }
+            const auto &R_Wc = Wc_R.at(I).at(J);
+            const auto it = R_Wc.find(R);
+            auto &block = blocks[{I, J}];
+            if (it != R_Wc.end()) block = it->second.copy();
+            else block = Matz(atbasis_abf[I], atbasis_abf[J], MAJOR::COL);
+            block.swap_to_col_major();
         }
+        fill_local_mat_from_ap_dist_scheduler(Wc, blocks, sched,
+                                              atbasis_abf, atbasis_abf, ad_Wc);
 
         const auto iR = pbc.get_R_index(R);
         std::stringstream ss;
