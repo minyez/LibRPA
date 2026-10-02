@@ -1449,8 +1449,8 @@ void G0W0::build_spacetime(
             {
                 const auto freq = tfg.get_freq_nodes()[ifreq];
                 auto freq_iter = Wc_freq_q_atom_pair->find(freq);
-                if (freq_iter == Wc_freq_q_atom_pair->end()) continue;
-                auto Wc_q = freq_iter->second;
+                atom_mapping<std::map<Vector3_Order<double>, Matz>>::pair_t_old Wc_q;
+                if (freq_iter != Wc_freq_q_atom_pair->end()) Wc_q = freq_iter->second;
 
                 profiler.start("unfold_Wc_abfs", "Do shrink transformation");
                 unfold_helper.unfold_abfs_Wc_q(*sinvS, Wc_q, pbc.klist_coul,
