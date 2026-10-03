@@ -189,6 +189,26 @@ BlockedMatrixFile read_sternheimer_header(const std::string &path)
     return file;
 }
 
+void validate_sternheimer_frequency_metadata(const BlockedMatrixFile &file)
+{
+    if (file.ifreq <= 0)
+    {
+        throw std::runtime_error(file.path +
+                                 ": Sternheimer chi0 v1 requires a positive ifrequency");
+    }
+    if (!std::isfinite(file.omega) || file.omega < 0.0)
+    {
+        throw std::runtime_error(file.path +
+                                 ": Sternheimer chi0 v1 requires a finite non-negative omega");
+    }
+    if (!std::isfinite(file.weight) || file.weight <= 0.0)
+    {
+        throw std::runtime_error(
+            file.path +
+            ": Sternheimer chi0 v1 requires a finite positive frequency weight");
+    }
+}
+
 void read_atom_sizes_and_blocks(BlockedMatrixFile &file, std::ifstream &input)
 {
     if (file.iq <= 0 || file.naux <= 0 || file.natoms <= 0 || file.nblocks < 0)
@@ -300,6 +320,7 @@ BlockedMatrixFile read_coulomb_file_metadata(const std::string &path)
 BlockedMatrixFile read_sternheimer_file_metadata(const std::string &path)
 {
     auto file = read_sternheimer_header(path);
+    validate_sternheimer_frequency_metadata(file);
     std::ifstream input(path.c_str(), std::ios::binary);
     input.seekg(6 * static_cast<std::streamoff>(sizeof(std::int32_t)) +
                 2 * static_cast<std::streamoff>(sizeof(double)) +
@@ -508,6 +529,17 @@ std::vector<BlockedMatrixFile> find_sternheimer_files(const std::string &dir_pat
 
     std::sort(matches.begin(), matches.end(),
               [](const auto &lhs, const auto &rhs) { return lhs.ifreq < rhs.ifreq; });
+    const auto &reference = matches.front();
+    for (const auto &file : matches)
+    {
+        if (file.naux != reference.naux || file.natoms != reference.natoms ||
+            file.atom_naux != reference.atom_naux)
+        {
+            throw std::runtime_error(
+                "Inconsistent metadata across Sternheimer chi0 v1 files for iq=" +
+                std::to_string(iq));
+        }
+    }
     for (std::size_t i = 0; i != matches.size(); ++i)
     {
         if (matches[i].ifreq != static_cast<int>(i + 1))
@@ -535,10 +567,6 @@ void validate_coulomb_v1_full_matrix_file(const std::string &dir_path, const std
 SternheimerChi0V1Matrix read_sternheimer_chi0_v1_matrix_file(const std::string &path)
 {
     const auto metadata = read_sternheimer_file_metadata(path);
-    if (metadata.ifreq <= 0)
-    {
-        throw std::runtime_error(path + ": Sternheimer chi0 v1 requires a positive ifrequency");
-    }
     if (metadata.value_flag != kComplexFlag)
     {
         throw std::runtime_error(path + ": Sternheimer chi0 v1 must be complex-valued");
@@ -559,7 +587,7 @@ void write_sternheimer_chi0_v1_matrix_file(const std::string &path,
                                             const SternheimerChi0V1Matrix &response)
 {
     if (response.iq <= 0 || response.ifreq <= 0 || !std::isfinite(response.omega)
-        || !std::isfinite(response.weight) || response.weight <= 0.0
+        || response.omega < 0.0 || !std::isfinite(response.weight) || response.weight <= 0.0
         || response.atom_naux.empty())
     {
         throw std::runtime_error(path + ": invalid Sternheimer chi0 v1 metadata");

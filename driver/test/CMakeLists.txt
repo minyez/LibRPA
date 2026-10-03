@@ -79,4 +79,5 @@ add_executable(
   test_rpa_qsum.cpp
   ../rpa_qsum.cpp
 )
+target_compile_options(test_rpa_qsum PRIVATE -UNDEBUG)
 add_test(NAME test_rpa_qsum COMMAND $<TARGET_FILE:test_rpa_qsum>)

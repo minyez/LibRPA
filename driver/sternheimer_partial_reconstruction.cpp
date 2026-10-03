@@ -272,6 +272,7 @@ std::vector<SternheimerReconstructedResponse> reconstruct_sternheimer_partial_re
     const std::vector<librpa_int::SpeciesBasisLayout> &layouts,
     const std::map<librpa_int::atom_t, std::size_t> &atom_nabf,
     const std::vector<librpa_int::Vector3_Order<double>> &full_kpoints,
+    const std::vector<librpa_int::Vector3_Order<double>> &full_qpoints,
     const std::vector<SternheimerQPoint> &qpoints, const SternheimerPartialResponseGroups &groups,
     const int expected_nfreq, const bool use_rpa_gamma, const int lmax,
     const std::vector<SternheimerFixedQRouteRecord> *fixed_q_routes, const bool fixed_q_matrix_only,
@@ -281,10 +282,10 @@ std::vector<SternheimerReconstructedResponse> reconstruct_sternheimer_partial_re
     {
         throw std::runtime_error("Sternheimer partial reconstruction requires positive nfreq");
     }
-    if (qpoints.empty() || full_kpoints.empty())
+    if (qpoints.empty() || full_kpoints.empty() || full_qpoints.empty())
     {
         throw std::runtime_error(
-            "Sternheimer partial reconstruction requires non-empty q and full-k grids");
+            "Sternheimer partial reconstruction requires non-empty q, full-k, and full-q grids");
     }
     if (lmax < 0)
     {
@@ -292,6 +293,23 @@ std::vector<SternheimerReconstructedResponse> reconstruct_sternheimer_partial_re
     }
 
     const auto expected_atom_naux = ordered_atom_naux(atom_nabf);
+    if (fixed_q_routes != nullptr)
+    {
+        std::set<int> qpoint_iq;
+        for (const auto &point : qpoints)
+        {
+            qpoint_iq.insert(point.iq);
+        }
+        for (const auto &route : *fixed_q_routes)
+        {
+            if (qpoint_iq.count(route.iq) == 0)
+            {
+                throw std::runtime_error(
+                    "Explicit fixed-q Sternheimer routes contain unexpected iq=" +
+                    std::to_string(route.iq));
+            }
+        }
+    }
     if (!fixed_q_matrix_only)
     {
         if (qstar_routes == nullptr)
@@ -303,7 +321,7 @@ std::vector<SternheimerReconstructedResponse> reconstruct_sternheimer_partial_re
                     symmetry.kstars, q_vector(point), "Sternheimer q-star coverage");
                 represented_full_q_count += qstar.members.size();
             }
-            if (represented_full_q_count != full_kpoints.size())
+            if (represented_full_q_count != full_qpoints.size())
             {
                 throw std::runtime_error(
                     "Sternheimer q-star representatives do not cover the full q grid");
@@ -316,11 +334,11 @@ std::vector<SternheimerReconstructedResponse> reconstruct_sternheimer_partial_re
             {
                 representative_iq.insert(point.iq);
             }
-            std::vector<bool> covered(full_kpoints.size(), false);
+            std::vector<bool> covered(full_qpoints.size(), false);
             for (const auto &route : *qstar_routes)
             {
                 if (representative_iq.count(route.representative_iq) == 0 || route.member_iq <= 0 ||
-                    route.member_iq > static_cast<int>(full_kpoints.size()))
+                    route.member_iq > static_cast<int>(full_qpoints.size()))
                 {
                     throw std::runtime_error(
                         "Explicit Sternheimer q-star route has inconsistent representative or "
@@ -433,10 +451,10 @@ std::vector<SternheimerReconstructedResponse> reconstruct_sternheimer_partial_re
                                       ? librpa_int::reconstruct_sternheimer_qstar_responses(
                                             symmetry, layouts, atom_nabf, q, matrix, lmax)
                                       : build_sternheimer_qstar_responses_from_routes(
-                                            symmetry, layouts, atom_nabf, full_kpoints, point.iq, q,
+                                            symmetry, layouts, atom_nabf, full_qpoints, point.iq, q,
                                             matrix, point_qstar_routes, lmax);
                 q_weight = static_cast<double>(qstar_responses.size()) /
-                           static_cast<double>(full_kpoints.size());
+                           static_cast<double>(full_qpoints.size());
                 const double q_weight_scale =
                     std::max({1.0, std::abs(point.weight), std::abs(q_weight)});
                 if (std::abs(point.weight - q_weight) > 1.0e-12 * q_weight_scale)

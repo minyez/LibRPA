@@ -350,6 +350,29 @@ void test_reads_one_sternheimer_response_from_explicit_path()
     assert(std::abs(response.matrix(0, 0) - std::complex<double>(-4.0, 0.0)) < 1.0e-15);
 }
 
+void test_rejects_invalid_sternheimer_frequency_metadata()
+{
+    TempDirectory temp;
+    const auto negative_omega = temp.path / "negative_omega.bin";
+    write_minimal_sternheimer_v1(negative_omega, 3, 1, -0.25, 1.0, {1.0, 0.0});
+    require_throws(
+        [&]()
+        {
+            static_cast<void>(
+                driver::read_sternheimer_chi0_v1_matrix_file(negative_omega.string()));
+        },
+        "finite non-negative omega");
+
+    const auto zero_weight = temp.path / "zero_weight.bin";
+    write_minimal_sternheimer_v1(zero_weight, 3, 1, 0.25, 0.0, {1.0, 0.0});
+    require_throws(
+        [&]()
+        {
+            static_cast<void>(driver::read_sternheimer_chi0_v1_matrix_file(zero_weight.string()));
+        },
+        "finite positive frequency weight");
+}
+
 void test_merges_coulomb_atom_pair_blocks_across_rank_shards()
 {
     TempDirectory temp;
@@ -575,6 +598,7 @@ int main()
     test_partial_mode_requires_coulomb_but_not_aggregate_response_files();
     test_requires_gamma_manifest_row_when_gamma_is_excluded();
     test_reads_one_sternheimer_response_from_explicit_path();
+    test_rejects_invalid_sternheimer_frequency_metadata();
     test_merges_coulomb_atom_pair_blocks_across_rank_shards();
     test_reads_single_coulomb_v1_file();
     test_reads_rectangular_complex_atom_blocks();

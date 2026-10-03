@@ -273,6 +273,14 @@ void driver::task_sternheimer_rpa()
                     "Sternheimer full-k-point manifest does not cover the BvK k grid");
             }
         }
+        // Sternheimer q routes are indexed on the full BvK q grid.  Keep that
+        // grid separate from the producer's full-k manifest used for response
+        // reconstruction, even when the two grids currently have the same mesh.
+        const auto &full_qpoints = pds->pbc.kfrac_list_full;
+        if (full_qpoints.empty())
+        {
+            throw std::runtime_error("Sternheimer reconstruction requires a non-empty full q grid");
+        }
         const int lmax = pds->basis_aux.get_max_l();
         std::vector<librpa_int::SternheimerQStarResponse> coulomb_full_q;
         if (!matrix_only)
@@ -289,7 +297,8 @@ void driver::task_sternheimer_rpa()
                 symmetry, layouts, atom_nabf, pds->pbc.kfrac_list, coulomb_ibz, lmax);
         }
         const auto reconstructed = reconstruct_sternheimer_partial_responses(
-            symmetry, layouts, atom_nabf, full_kpoints, qpoints, groups, driver::opts.nfreq,
+            symmetry, layouts, atom_nabf, full_kpoints, full_qpoints, qpoints, groups,
+            driver::opts.nfreq,
             include_gamma_in_rpa, lmax, fixed_q_routes.empty() ? nullptr : &fixed_q_routes,
             matrix_only, qstar_routes.empty() ? nullptr : &qstar_routes);
 
@@ -386,7 +395,7 @@ void driver::task_sternheimer_rpa()
                                            ? librpa_int::reconstruct_sternheimer_qstar_responses(
                                                  symmetry, layouts, atom_nabf, q, coulomb, lmax)
                                            : build_sternheimer_qstar_responses_from_routes(
-                                                 symmetry, layouts, atom_nabf, full_kpoints,
+                                                 symmetry, layouts, atom_nabf, full_qpoints,
                                                  point.iq, q, coulomb, point_qstar_routes, lmax);
 
             QResult qresult;
@@ -411,7 +420,7 @@ void driver::task_sternheimer_rpa()
                     for (const auto &member : response.qstar_responses)
                     {
                         const auto folded = librpa_int::fold_fractional_kpoint_to_targets(
-                            member.q, full_kpoints, 1.0e-8);
+                            member.q, full_qpoints, 1.0e-8);
                         SternheimerChi0V1Matrix output;
                         output.iq = folded.target_k_index + 1;
                         output.ifreq = response.ifreq;

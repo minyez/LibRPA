@@ -110,7 +110,7 @@ void test_reconstructs_all_frequencies_and_reports_orbit_counts()
                               {{0, scalar_matrix(-4.0)}, {1, scalar_matrix(-5.0)}}));
 
     const auto reconstructed = driver::reconstruct_sternheimer_partial_responses(
-        context, layouts, atom_nabf, full_kpoints, qpoints, groups, 2, true, 0);
+        context, layouts, atom_nabf, full_kpoints, full_kpoints, qpoints, groups, 2, true, 0);
     assert(reconstructed.size() == 2);
     assert(reconstructed[0].iq == 2);
     assert(reconstructed[0].ifreq == 1);
@@ -157,7 +157,7 @@ void test_boundary_q_time_reversal_reduces_two_kpoints_to_one_representative()
                    make_group(4, 1, 0.5, 0.125, {{0, scalar_matrix(-1.0)}}));
 
     const auto reconstructed = driver::reconstruct_sternheimer_partial_responses(
-        context, layouts, atom_nabf, full_kpoints, qpoints, groups, 1, true, 0);
+        context, layouts, atom_nabf, full_kpoints, full_kpoints, qpoints, groups, 1, true, 0);
     assert(reconstructed.size() == 2);
     assert(reconstructed[0].representative_k_count == 1);
     assert(reconstructed[0].full_k_count == 2);
@@ -216,7 +216,7 @@ void test_matrix_only_reconstructs_one_q_without_claiming_full_q_coverage()
     };
 
     const auto reconstructed = driver::reconstruct_sternheimer_partial_responses(
-        context, layouts, atom_nabf, full_kpoints, qpoints, groups, 1, true, 0,
+        context, layouts, atom_nabf, full_kpoints, full_kpoints, qpoints, groups, 1, true, 0,
         &routes, true);
 
     assert(reconstructed.size() == 1);
@@ -286,7 +286,7 @@ void test_derives_qweight_from_qstar_without_overwriting_frequency_weight()
                               {{0, scalar_matrix(-1.0)}, {1, scalar_matrix(-2.0)}}));
 
     const auto reconstructed = driver::reconstruct_sternheimer_partial_responses(
-        context, layouts, atom_nabf, full_kpoints, qpoints, groups, 1, true, 0);
+        context, layouts, atom_nabf, full_kpoints, full_kpoints, qpoints, groups, 1, true, 0);
     assert(reconstructed.size() == 1);
     assert(reconstructed[0].qstar_responses.size() == 2);
     assert(std::abs(reconstructed[0].weight - 0.125) < 1.0e-15);
@@ -322,7 +322,7 @@ void test_rejects_normalized_manifest_weights_that_disagree_with_qstars()
     require_throws(
         [&]() {
             driver::reconstruct_sternheimer_partial_responses(
-                context, layouts, atom_nabf, full_kpoints, qpoints, groups, 1, true, 0);
+                context, layouts, atom_nabf, full_kpoints, full_kpoints, qpoints, groups, 1, true, 0);
         },
         "q-star weight");
 }
@@ -344,7 +344,7 @@ void test_rejects_qstars_that_do_not_cover_the_full_q_grid()
     require_throws(
         [&]() {
             driver::reconstruct_sternheimer_partial_responses(
-                context, layouts, atom_nabf, full_kpoints, qpoints, groups, 1, true, 0);
+                context, layouts, atom_nabf, full_kpoints, full_kpoints, qpoints, groups, 1, true, 0);
         },
         "do not cover the full q grid");
 }
@@ -456,7 +456,7 @@ void test_explicit_discrete_qstar_routes_define_coverage_and_weights()
     };
 
     const auto reconstructed = driver::reconstruct_sternheimer_partial_responses(
-        context, layouts, atom_nabf, full_kpoints, qpoints, groups, 1, true, 0,
+        context, layouts, atom_nabf, full_kpoints, full_kpoints, qpoints, groups, 1, true, 0,
         &fixed_q_routes, false, &qstar_routes);
 
     assert(reconstructed.size() == 2);
@@ -474,10 +474,56 @@ void test_explicit_discrete_qstar_routes_define_coverage_and_weights()
     require_throws(
         [&]() {
             driver::reconstruct_sternheimer_partial_responses(
-                context, layouts, atom_nabf, full_kpoints, qpoints, groups, 1, true, 0,
+                context, layouts, atom_nabf, full_kpoints, full_kpoints, qpoints, groups, 1, true, 0,
                 &fixed_q_routes, false, &wrong_fold);
         },
         "q-star route reciprocal fold disagrees");
+
+    auto extra_fixed_q_routes = fixed_q_routes;
+    extra_fixed_q_routes.push_back({99, 0, 0, {0, false, {0, 0, 0}}});
+    require_throws(
+        [&]() {
+            driver::reconstruct_sternheimer_partial_responses(
+                context, layouts, atom_nabf, full_kpoints, full_kpoints, qpoints, groups, 1, true, 0,
+                &extra_fixed_q_routes, false, &qstar_routes);
+        },
+        "unexpected iq=99");
+}
+
+void test_qstar_routes_use_the_full_q_grid_for_member_indices()
+{
+    const auto context = make_one_atom_context({0.5, 0.0, 0.0});
+    const std::vector<SpeciesBasisLayout> layouts{make_s_layout()};
+    const std::map<atom_t, std::size_t> atom_nabf{{0, 1}};
+    const std::vector<Vector3_Order<double>> full_kpoints{{0.0, 0.0, 0.0},
+                                                          {0.5, 0.0, 0.0}};
+    const std::vector<Vector3_Order<double>> full_qpoints{{0.5, 0.0, 0.0},
+                                                          {0.25, 0.0, 0.0},
+                                                          {-0.5, 0.0, 0.0}};
+    const std::vector<driver::SternheimerQPoint> qpoints{{1, {0.5, 0.0, 0.0}, 2.0 / 3.0},
+                                                         {2, {0.25, 0.0, 0.0}, 1.0 / 3.0}};
+    driver::SternheimerPartialResponseGroups groups;
+    groups.emplace(std::make_pair(1, 1),
+                   make_group(1, 1, 0.5, 0.125,
+                              {{0, scalar_matrix(-1.0)}, {1, scalar_matrix(-2.0)}}));
+    groups.emplace(std::make_pair(2, 1),
+                   make_group(2, 1, 0.5, 0.125,
+                              {{0, scalar_matrix(-3.0)}, {1, scalar_matrix(-4.0)}}));
+    const std::vector<driver::SternheimerQStarRouteRecord> routes{
+        {1, 1, {0, false, {0, 0, 0}}},
+        {2, 2, {0, false, {0, 0, 0}}},
+        {1, 3, {0, true, {0, 0, 0}}},
+    };
+
+    const auto reconstructed = driver::reconstruct_sternheimer_partial_responses(
+        context, layouts, atom_nabf, full_kpoints, full_qpoints, qpoints, groups, 1, true, 0,
+        nullptr, false, &routes);
+
+    assert(reconstructed.size() == 2);
+    assert(reconstructed[0].qstar_responses.size() == 2);
+    assert(reconstructed[1].qstar_responses.size() == 1);
+    assert(std::abs(reconstructed[0].q_weight - 2.0 / 3.0) < 1.0e-15);
+    assert(std::abs(reconstructed[1].q_weight - 1.0 / 3.0) < 1.0e-15);
 }
 
 void test_rejects_missing_representative_and_frequency()
@@ -499,6 +545,7 @@ void test_rejects_missing_representative_and_frequency()
                 layouts,
                 atom_nabf,
                 full_kpoints,
+                full_kpoints,
                 qpoints,
                 missing_representative,
                 1,
@@ -510,7 +557,7 @@ void test_rejects_missing_representative_and_frequency()
     require_throws(
         [&]() {
             driver::reconstruct_sternheimer_partial_responses(
-                context, layouts, atom_nabf, full_kpoints, qpoints, {}, 1, true, 0);
+                context, layouts, atom_nabf, full_kpoints, full_kpoints, qpoints, {}, 1, true, 0);
         },
         "missing (iq, ifreq)=(2, 1)");
 }
@@ -532,6 +579,7 @@ int main()
     test_default_qstar_tolerance_accepts_dense_linear_algebra_noise();
     test_recovers_target_q_coulomb_from_ibz_representative();
     test_explicit_discrete_qstar_routes_define_coverage_and_weights();
+    test_qstar_routes_use_the_full_q_grid_for_member_indices();
     test_rejects_missing_representative_and_frequency();
     return 0;
 }

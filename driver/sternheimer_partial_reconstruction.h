@@ -62,6 +62,7 @@ std::vector<SternheimerReconstructedResponse> reconstruct_sternheimer_partial_re
     const std::vector<librpa_int::SpeciesBasisLayout> &layouts,
     const std::map<librpa_int::atom_t, std::size_t> &atom_nabf,
     const std::vector<librpa_int::Vector3_Order<double>> &full_kpoints,
+    const std::vector<librpa_int::Vector3_Order<double>> &full_qpoints,
     const std::vector<SternheimerQPoint> &qpoints, const SternheimerPartialResponseGroups &groups,
     int expected_nfreq, bool use_rpa_gamma, int lmax,
     const std::vector<SternheimerFixedQRouteRecord> *fixed_q_routes = nullptr,

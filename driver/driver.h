@@ -101,7 +101,7 @@ struct DriverParams
     //! Experimental
     std::string fn_sternheimer_partial_manifest;
 
-    //! Explicit fixed-q inverse routes exported by ABACUS for reconstruction
+    //! Explicit fixed-q inverse routes provided by the producer for reconstruction
     //! under the symmetry subgroup preserved by the discrete Hamiltonian.
     //! @par Default
     //! empty
@@ -110,7 +110,7 @@ struct DriverParams
     std::string fn_sternheimer_symmetry_routes;
 
     //! Explicit inverse routes from every full-q member to the discrete
-    //! q-star representative exported by ABACUS.
+    //! q-star representative provided by the producer.
     //! @par Default
     //! empty
     //! @par Status
