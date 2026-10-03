@@ -829,7 +829,9 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
         opts.replace_w_head == LIBRPA_SWITCH_ON, opts.option_dielect_func,
         opts.use_2d_dielectric == LIBRPA_SWITCH_ON);
     validate_strict_2d_complete_wc_runtime(strict_2d_complete_wc, !epsmac_LF_imagfreq.empty(),
-                                           opts.use_scalapack_gw_wc == LIBRPA_SWITCH_ON);
+                                           opts.use_scalapack_gw_wc == LIBRPA_SWITCH_ON,
+                                           pds->p_headwing != nullptr &&
+                                               pds->p_headwing->strict_2d_coulomb_head_configured());
     validate_strict_2d_gw_coulomb_choices(strict_2d_complete_wc,
                                           opts.use_fullcoul_eps == LIBRPA_SWITCH_ON,
                                           opts.use_fullcoul_wc == LIBRPA_SWITCH_ON);

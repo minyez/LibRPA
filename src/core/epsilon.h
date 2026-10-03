@@ -20,7 +20,8 @@ namespace librpa_int {
 bool strict_2d_complete_wc_requested(bool replace_w_head, int option_dielect_func,
                                      bool use_2d_dielectric);
 void validate_strict_2d_complete_wc_runtime(bool strict_2d_requested, bool headwing_data_available,
-                                            bool use_scalapack_gw_wc);
+                                            bool use_scalapack_gw_wc,
+                                            bool strict_2d_metadata_configured);
 std::string strict_2d_finite_q_diagnostics_header();
 std::string strict_2d_gamma_wc_diagnostics_header();
 std::vector<Vector3_Order<double>> strict_2d_diagnostic_qpoint_order(

@@ -1450,10 +1450,15 @@ void diele_func::configure_strict_2d_coulomb_head(const bool enabled)
     strict_2d_pw_to_auxiliary_scale_ = 0.0;
 }
 
+bool diele_func::strict_2d_coulomb_head_configured() const noexcept
+{
+    return strict_2d_pw_to_auxiliary_scale_ > 0.0 &&
+           std::isfinite(strict_2d_pw_to_auxiliary_scale_);
+}
+
 double diele_func::get_strict_2d_pw_to_auxiliary_scale() const
 {
-    if (!(strict_2d_pw_to_auxiliary_scale_ > 0.0) ||
-        !std::isfinite(strict_2d_pw_to_auxiliary_scale_))
+    if (!strict_2d_coulomb_head_configured())
         throw std::logic_error(
             "strict 2D auxiliary-basis monopole metadata was not configured");
     return strict_2d_pw_to_auxiliary_scale_;

@@ -74,6 +74,8 @@ endforeach()
 
 target_sources(test_strict_2d_coulomb_head_metadata
   PRIVATE ../../driver/reader_2d_coulomb_head.cpp)
+# Strict 2D assertions must remain active in Release builds.
+target_compile_options(test_strict_2d_coulomb_head_metadata PRIVATE -UNDEBUG)
 
 # add 4-process tests
 foreach(target
@@ -90,5 +92,7 @@ foreach(target
   )
   config_test(${target} 4)
 endforeach()
+
+target_compile_options(test_rpa_headwing PRIVATE -UNDEBUG)
 
 # TODO(minye): make use of GTest

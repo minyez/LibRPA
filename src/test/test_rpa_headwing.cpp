@@ -944,13 +944,25 @@ void test_strict_2d_gw_fails_closed_for_incomplete_runtime_configuration()
     require_condition(!librpa_int::strict_2d_complete_wc_requested(true, 3, false),
                       "3D dielectric mode was classified as strict 2D");
 
-    librpa_int::validate_strict_2d_complete_wc_runtime(false, false, false);
-    librpa_int::validate_strict_2d_complete_wc_runtime(true, true, true);
+    librpa_int::validate_strict_2d_complete_wc_runtime(false, false, false, false);
+    librpa_int::validate_strict_2d_complete_wc_runtime(true, true, true, true);
+
+    bool rejected_missing_metadata = false;
+    try
+    {
+        librpa_int::validate_strict_2d_complete_wc_runtime(true, true, true, false);
+    }
+    catch (const std::logic_error &)
+    {
+        rejected_missing_metadata = true;
+    }
+    require_condition(rejected_missing_metadata,
+                      "strict 2D GW silently accepted missing producer metadata");
 
     bool rejected_missing_data = false;
     try
     {
-        librpa_int::validate_strict_2d_complete_wc_runtime(true, false, true);
+        librpa_int::validate_strict_2d_complete_wc_runtime(true, false, true, true);
     }
     catch (const std::logic_error &)
     {
@@ -962,7 +974,7 @@ void test_strict_2d_gw_fails_closed_for_incomplete_runtime_configuration()
     bool rejected_dense_wc = false;
     try
     {
-        librpa_int::validate_strict_2d_complete_wc_runtime(true, true, false);
+        librpa_int::validate_strict_2d_complete_wc_runtime(true, true, false, true);
     }
     catch (const std::logic_error &)
     {

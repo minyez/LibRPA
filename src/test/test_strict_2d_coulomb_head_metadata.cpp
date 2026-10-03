@@ -15,8 +15,7 @@ void test_abacus_reader_v1_metadata_is_parsed_without_equals_signs()
         "# ABACUS reader-v1 strict 2D Coulomb head normalization\n"
         "version 1\n"
         "area_parallel_bohr2 19.390653825130212\n"
-        "multipole_norm_squared 2205.0673846924301\n"
-        "strict_2d_coulomb_head_coefficient 1.0\n"};
+        "multipole_norm_squared 2205.0673846924301\n"};
 
     const auto metadata = read_strict_2d_coulomb_head_metadata(input, "memory");
     assert(metadata.version == 1);

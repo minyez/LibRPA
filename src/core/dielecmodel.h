@@ -254,6 +254,7 @@ public:
     void configure_strict_2d_coulomb_head(bool enabled);
     void configure_strict_2d_coulomb_head(bool enabled,
                                           double auxiliary_monopole_norm_squared);
+    bool strict_2d_coulomb_head_configured() const noexcept;
     double get_strict_2d_pw_to_auxiliary_scale() const;
 
     // Symmetry-aware head/wing switches. When use_symmetry is true and the
