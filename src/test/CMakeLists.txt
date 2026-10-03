@@ -62,7 +62,6 @@ foreach(target
     test_profiler
     test_qpe_solver
     test_rsh
-    test_strict_2d_coulomb_head_metadata
     test_symmetry
     test_symmetry_spin_kernel
     test_timefreq
@@ -71,11 +70,6 @@ foreach(target
     )
   config_test(${target} 1)
 endforeach()
-
-target_sources(test_strict_2d_coulomb_head_metadata
-  PRIVATE ../../driver/reader_2d_coulomb_head.cpp)
-# Strict 2D assertions must remain active in Release builds.
-target_compile_options(test_strict_2d_coulomb_head_metadata PRIVATE -UNDEBUG)
 
 # add 4-process tests
 foreach(target

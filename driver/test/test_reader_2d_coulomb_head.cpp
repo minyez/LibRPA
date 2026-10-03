@@ -3,8 +3,8 @@
 #include <sstream>
 #include <stdexcept>
 
-#include "../../driver/reader_2d_coulomb_head.h"
-#include "../core/dielecmodel.h"
+#include "../reader_2d_coulomb_head.h"
+#include "../../src/core/dielecmodel.h"
 
 namespace
 {
