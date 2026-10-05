@@ -4,11 +4,18 @@
 
 ### Added
 
+- Documented the reader-v1 `librpa_2d_coulomb_head.txt` contract used by
+  strict-2D complete-Wc calculations.
+- Added a small serial/MPI regression for the strict-2D production Wc path.
+
 - Added `n_bands_exclude_chi0` and `n_bands_exclude_sigc` to independently
   exclude the lowest input bands from response and correlation self-energy
   Green's functions. Both default to zero and leave EXX unchanged.
 
 ### Fixed
+
+- Kept strict-2D Gamma body, wing, and Coulomb legs in the same eigenbasis,
+  aligned the MPI wing layout, and restored the returned Wc redistribution.
 
 - Applied `n_bands_sigc` to correlation self-energy Green functions in serial,
   k-point/BLACS parallel, and symmetry-restored routes; rejected upper bounds

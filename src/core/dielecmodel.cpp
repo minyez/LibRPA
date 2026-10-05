@@ -1105,24 +1105,6 @@ double strict_2d_physical_gamma_cell_area(const double internal_gamma_cell_area)
     return TWO_PI * TWO_PI * internal_gamma_cell_area;
 }
 
-Strict2dFiniteQReference strict_2d_finite_q_reference(const matrix_m<std::complex<double>> &head,
-                                                      const matrix_m<std::complex<double>> &lind,
-                                                      const double qx, const double qy)
-{
-    if (head.nr() != 3 || head.nc() != 3 || lind.nr() != 3 || lind.nc() != 3)
-        throw std::logic_error("strict 2D finite-q reference expects 3x3 head matrices");
-    const double qnorm = std::hypot(qx, qy);
-    if (!(qnorm > 0.0) || !std::isfinite(qnorm))
-        throw std::logic_error("strict 2D finite-q reference requires a nonzero in-plane q");
-
-    const double ux = qx / qnorm;
-    const double uy = qy / qnorm;
-    const auto directional_head =
-        ux * (ux * head(0, 0) + uy * head(0, 1)) + uy * (ux * head(1, 0) + uy * head(1, 1));
-    const auto schur_a = strict_2d_schur_coefficient(lind, ux, uy);
-    return {directional_head - 1.0, schur_a, -TWO_PI * schur_a};
-}
-
 namespace
 {
 
@@ -1198,31 +1180,6 @@ void validate_strict_2d_gw_coulomb_choices(const bool strict_2d_headwing_active,
     if (!use_fullcoul_wc)
         throw std::logic_error(
             "strict 2D head/wing requires full Coulomb external legs at finite q");
-}
-
-void accumulate_strict_2d_block_metric(Strict2dBlockMetricSums &sums, const int row,
-                                       const int column, const std::complex<double> &value)
-{
-    if (row < 0 || column < 0)
-        throw std::invalid_argument("strict 2D block indices must be nonnegative");
-    if (row == 0 && column == 0)
-        sums.head += value;
-    else if (row == 0)
-        sums.head_body_squared += std::norm(value);
-    else if (column == 0)
-        sums.body_head_squared += std::norm(value);
-    else
-        sums.body_body_squared += std::norm(value);
-}
-
-Strict2dBlockMetrics finalize_strict_2d_block_metrics(const Strict2dBlockMetricSums &sums)
-{
-    Strict2dBlockMetrics metrics;
-    metrics.head = sums.head;
-    metrics.head_body_frobenius = std::sqrt(sums.head_body_squared);
-    metrics.body_head_frobenius = std::sqrt(sums.body_head_squared);
-    metrics.body_body_frobenius = std::sqrt(sums.body_body_squared);
-    return metrics;
 }
 
 namespace
@@ -1351,26 +1308,6 @@ matrix_m<std::complex<double>> strict_2d_average_wc_coulomb_basis(
     return average;
 }
 
-matrix_m<std::complex<double>> strict_2d_alpha_wc_average_coulomb_basis(
-    const double inverse_dielectric_alpha, const matrix_m<std::complex<double>> &regular_body_sqrt,
-    const std::vector<double> &weights, const std::vector<double> &qmax, const double gamma_area)
-{
-    if (!std::isfinite(inverse_dielectric_alpha) || weights.size() != qmax.size() ||
-        weights.empty() || !(gamma_area > 0.0) || !std::isfinite(gamma_area) ||
-        regular_body_sqrt.nr() < 1 || regular_body_sqrt.nr() != regular_body_sqrt.nc())
-        throw std::logic_error("strict 2D alpha-reference dimensions are inconsistent");
-
-    const double response = inverse_dielectric_alpha - 1.0;
-    const int nbody = regular_body_sqrt.nr();
-    matrix_m<std::complex<double>> average(nbody + 1, nbody + 1, MAJOR::COL);
-    average(0, 0) = response * strict_2d_bare_coulomb_gamma_average(weights, qmax, gamma_area);
-
-    const auto body = response * (regular_body_sqrt * regular_body_sqrt);
-    for (int i = 0; i != nbody; ++i)
-        for (int j = 0; j != nbody; ++j) average(i + 1, j + 1) = body(i, j);
-    return average;
-}
-
 double strict_2d_inplane_cell_area(const PeriodicBoundaryData &pbc)
 {
     const auto &a = pbc.latvec;
@@ -1415,26 +1352,6 @@ matrix_m<std::complex<double>> strict_2d_transform_pw_wc_to_auxiliary_basis(
     return auxiliary_wc;
 }
 
-matrix_m<std::complex<double>> strict_2d_project_operator_to_coulomb_basis(
-    const matrix_m<std::complex<double>> &operator_matrix,
-    const matrix_m<std::complex<double>> &coulomb_eigenvectors)
-{
-    if (operator_matrix.nr() < 1 || operator_matrix.nr() != operator_matrix.nc() ||
-        coulomb_eigenvectors.nr() != operator_matrix.nr() ||
-        coulomb_eigenvectors.nc() != operator_matrix.nc())
-        throw std::logic_error("strict 2D Coulomb-basis projection dimensions are invalid");
-
-    matrix_m<std::complex<double>> projected(operator_matrix.nr(), operator_matrix.nc(),
-                                             MAJOR::COL);
-    for (int i = 0; i != projected.nr(); ++i)
-        for (int j = 0; j != projected.nc(); ++j)
-            for (int k = 0; k != projected.nr(); ++k)
-                for (int l = 0; l != projected.nc(); ++l)
-                    projected(i, j) += std::conj(coulomb_eigenvectors(k, i)) *
-                                       operator_matrix(k, l) * coulomb_eigenvectors(l, j);
-    return projected;
-}
-
 void diele_func::configure_strict_2d_coulomb_head(const bool enabled,
                                                   const double auxiliary_monopole_norm_squared)
 {
@@ -1462,23 +1379,6 @@ double diele_func::get_strict_2d_pw_to_auxiliary_scale() const
         throw std::logic_error(
             "strict 2D auxiliary-basis monopole metadata was not configured");
     return strict_2d_pw_to_auxiliary_scale_;
-}
-
-double strict_2d_bare_coulomb_gamma_average(const std::vector<double> &weights,
-                                            const std::vector<double> &qmax,
-                                            const double gamma_area)
-{
-    if (weights.size() != qmax.size() || weights.empty() || !(gamma_area > 0.0) ||
-        !std::isfinite(gamma_area))
-        throw std::logic_error("strict 2D bare-Coulomb quadrature dimensions are inconsistent");
-    double average = 0.0;
-    for (std::size_t idir = 0; idir != qmax.size(); ++idir)
-    {
-        if (!(qmax[idir] > 0.0) || !std::isfinite(qmax[idir]) || !std::isfinite(weights[idir]))
-            throw std::logic_error("strict 2D bare-Coulomb quadrature is invalid");
-        average += weights[idir] * TWO_PI * qmax[idir] / gamma_area;
-    }
-    return average;
 }
 
 void diele_func::init(double coulomb_eigen_threshold, const librpa_int::atpair_k_cplx_mat_t &Vq)
@@ -1582,8 +1482,6 @@ void diele_func::init_wing(double coulomb_eigen_threshold, const atpair_k_cplx_m
     this->wing.clear();
     this->n_nonsingular = n_abf;
     this->Lind.resize(3, 3, MAJOR::COL);
-    this->strict_2d_lind_by_freq.clear();
-    this->strict_2d_lind_by_freq.resize(n_omega);
     for (int iomega = 0; iomega != n_omega; iomega++)
     {
         wing_mu[iomega].resize(n_abf, 3, MAJOR::COL);
@@ -2805,13 +2703,11 @@ void diele_func::wing_mu_to_lambda(matrix_m<std::complex<double>> &sqrtveig_blac
     // columns and keeps all subsequent thin PGEMMs mutually aligned.
     ArrayDesc desc_wing_mu(blacs_h);
     desc_wing_mu.init(n_abf, 3, desc_nabf_nabf_opt.nb(), 1, 0, 0);
-    ArrayDesc desc_wing(blacs_h);
-    desc_wing.init_square_blk(n_nonsingular - 1, 3, 0, 0);
     ArrayDesc desc_body(blacs_h);
     desc_body.init_square_blk(n_nonsingular - 1, n_nonsingular - 1, 0, 0);
     // opt descriptor for wing
     ArrayDesc desc_wing_opt(blacs_h);
-    desc_wing_opt.init(n_nonsingular - 1, 3, desc_body.mb(), desc_wing.nb(), 0, 0);
+    desc_wing_opt.init(n_nonsingular - 1, 3, desc_body.mb(), 1, 0, 0);
     const int n_omegas = this->omega.size();
     this->wing.clear();
     this->wing.resize(n_omegas);
@@ -3737,154 +3633,6 @@ void diele_func::calculate_q_gamma_2d()
     }
 };
 
-void diele_func::cal_eps(const int ifreq, ArrayDesc &desc_nabf_nabf_opt, ArrayDesc &desc_body)
-{
-    using global::mpi_comm_global_h;
-    using global::profiler;
-
-    profiler.start("cal_inverse_dielectric_matrix");
-    this->chi0 = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
-    this->vol_gamma = rpa_headwing_gamma_cell_volume(pbc_, use_2d_dielectric);
-    double vol_gamma_numeric = 0.0;
-    const int nleb = qw_leb.size();
-
-    if (ifreq == 0 && mpi_comm_global_h.is_root())
-    {
-        if (use_2d_dielectric)
-        {
-            std::cout << "Using strict 2D analytic average inverse dielectric matrix." << std::endl;
-            for (int ileb = 0; ileb != nleb; ileb++)
-            {
-                vol_gamma_numeric += qw_leb[ileb] * std::pow(q_gamma[ileb], 2) / 2.0;
-            }
-        }
-        else
-        {
-            for (int ileb = 0; ileb != nleb; ileb++)
-            {
-                vol_gamma_numeric += qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / 3.0;
-            }
-        }
-        std::cout << "Number of angular grids for average inverse dielectric matrix: "
-                  << qw_leb.size() << std::endl;
-        std::cout << "vol_gamma_numeric/vol_gamma: " << vol_gamma_numeric << ", " << vol_gamma
-                  << std::endl;
-        std::cout << "Angular quadrature accuracy for volume: " << vol_gamma_numeric / vol_gamma
-                  << " (should be close to 1)" << std::endl;
-    }
-    construct_L(ifreq, desc_body);
-    strict_2d_lind_by_freq.at(ifreq) = Lind.copy();
-
-    profiler.start("precompute_q_data");
-
-    std::vector<std::complex<double>> weights(nleb);
-    std::vector<std::complex<double>> body_coupling_weights;
-    if (use_2d_dielectric) body_coupling_weights.resize(nleb);
-    const double strict_2d_gamma_area =
-        use_2d_dielectric ? strict_2d_physical_gamma_cell_area(vol_gamma) : 0.0;
-
-    std::vector<std::array<double, 3>> q_vectors(nleb);
-
-    if (use_2d_dielectric)
-    {
-        for (int ileb = 0; ileb != nleb; ++ileb)
-        {
-            const auto a = strict_2d_schur_coefficient(Lind, qx_leb[ileb], qy_leb[ileb]);
-            const double physical_qmax = strict_2d_physical_q(q_gamma[ileb]);
-            validate_strict_2d_screening_denominator(a, physical_qmax);
-        }
-    }
-
-    const auto L00 = Lind(0, 0), L01 = Lind(0, 1), L02 = Lind(0, 2);
-    const auto L10 = Lind(1, 0), L11 = Lind(1, 1), L12 = Lind(1, 2);
-    const auto L20 = Lind(2, 0), L21 = Lind(2, 1), L22 = Lind(2, 2);
-
-#pragma omp parallel for schedule(static)
-    for (int ileb = 0; ileb < nleb; ++ileb)
-    {
-        const double qx = qx_leb[ileb];
-        const double qy = qy_leb[ileb];
-        const double qz = qz_leb[ileb];
-
-        q_vectors[ileb] = {qx, qy, qz};
-
-        const auto qLq = qx * (qx * L00 + qy * L01 + qz * L02) +
-                         qy * (qx * L10 + qy * L11 + qz * L12) +
-                         qz * (qx * L20 + qy * L21 + qz * L22);
-
-        if (use_2d_dielectric)
-        {
-            const auto a = strict_2d_schur_coefficient(Lind, qx, qy);
-            const double physical_qmax = strict_2d_physical_q(q_gamma[ileb]);
-            weights[ileb] =
-                qw_leb[ileb] * strict_2d_radial_i0(a, physical_qmax) / strict_2d_gamma_area;
-            body_coupling_weights[ileb] =
-                qw_leb[ileb] * strict_2d_radial_i1(a, physical_qmax) / strict_2d_gamma_area;
-        }
-        else
-            weights[ileb] = qw_leb[ileb] * std::pow(q_gamma[ileb], 3) / (3.0 * vol_gamma) / qLq;
-    }
-    profiler.stop("precompute_q_data");
-
-    profiler.start("cal_inverse_dielectric_matrix_ij");
-    int i_start = 0, i_end = n_nonsingular;
-    int j_start = 0, j_end = n_nonsingular;
-#pragma omp parallel for schedule(dynamic, 4) collapse(2)
-    for (int i = i_start; i != i_end; i++)
-    {
-        for (int j = j_start; j != j_end; j++)
-        {
-            const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
-            if (ilo < 0) continue;
-            const int jlo = desc_nabf_nabf_opt.indx_g2l_c(j);
-            if (jlo < 0) continue;
-
-            complex<double> result = 0.0;
-
-            if (i == 0 && j == 0)
-            {
-                for (int ileb = 0; ileb < nleb; ++ileb)
-                {
-                    result += weights[ileb];
-                }
-            }
-            else if (i == 0 || j == 0)
-            {
-                result = 0.0;
-            }
-            else
-            {
-                const int idx_i = i - 1, idx_j = j - 1;
-
-                const auto bw_i0 = bw(idx_i, 0), bw_i1 = bw(idx_i, 1), bw_i2 = bw(idx_i, 2);
-                const auto wb_j0 = wb(0, idx_j), wb_j1 = wb(1, idx_j), wb_j2 = wb(2, idx_j);
-
-                for (int ileb = 0; ileb < nleb; ++ileb)
-                {
-                    const auto &q_vector = q_vectors[ileb];
-                    const auto qx = q_vector[0];
-                    const auto qy = q_vector[1];
-                    const auto qz = q_vector[2];
-                    const auto bwq = bw_i0 * qx + bw_i1 * qy + bw_i2 * qz;
-                    const auto qwb = qx * wb_j0 + qy * wb_j1 + qz * wb_j2;
-
-                    const auto radial_weight =
-                        use_2d_dielectric ? body_coupling_weights[ileb] : weights[ileb];
-                    result += radial_weight * bwq * qwb;
-                }
-            }
-            chi0(ilo, jlo) = result;
-        }
-    }
-    ScalapackConnector::pgeadd_f('N', n_nonsingular - 1, n_nonsingular - 1, 1.0, body_inv.ptr(), 1,
-                                 1, desc_body.desc, 1.0, chi0.ptr(), 2, 2, desc_nabf_nabf_opt.desc);
-    profiler.stop("cal_inverse_dielectric_matrix_ij");
-    if (mpi_comm_global_h.is_root())
-        std::cout << "* Success: calculate average inverse dielectric matrix no." << ifreq + 1
-                  << "." << std::endl;
-    profiler.stop("cal_inverse_dielectric_matrix");
-};
-
 void diele_func::cal_strict_2d_wc(const int ifreq, ArrayDesc &desc_nabf_nabf_opt,
                                   ArrayDesc &desc_body,
                                   const matrix_m<std::complex<double>> &regular_coulomb_basis)
@@ -3910,7 +3658,6 @@ void diele_func::cal_strict_2d_wc(const int ifreq, ArrayDesc &desc_nabf_nabf_opt
     const double gamma_area = strict_2d_physical_gamma_cell_area(vol_gamma);
     const int nleb = as_int(qw_leb.size());
     construct_L(ifreq, desc_body);
-    strict_2d_lind_by_freq.at(ifreq) = Lind.copy();
 
     std::vector<std::complex<double>> i0_weights(nleb);
     std::vector<std::complex<double>> i1_weights(nleb);
@@ -3961,6 +3708,8 @@ void diele_func::cal_strict_2d_wc(const int ifreq, ArrayDesc &desc_nabf_nabf_opt
     }
 
     auto regular_body_sqrt = init_local_mat<complex<double>>(desc_body, MAJOR::COL);
+    // The input is diagonal in the fixed Coulomb eigenbasis.  The body starts
+    // at channel 1; use the same offset as get_body_inv()/assign_chi0.
     ScalapackConnector::pgemr2d_f(nbody, nbody, regular_coulomb_basis.ptr(), 2, 2,
                                   desc_nabf_nabf_opt.desc, regular_body_sqrt.ptr(), 1, 1,
                                   desc_body.desc, blacs_h.ictxt);
@@ -4027,34 +3776,6 @@ void diele_func::cal_strict_2d_wc(const int ifreq, ArrayDesc &desc_nabf_nabf_opt
         std::cout << "* Success: calculate strict 2D complete Wc average no." << ifreq + 1 << "."
                   << std::endl;
     profiler.stop("cal_strict_2d_wc");
-}
-
-Strict2dFiniteQReference diele_func::get_strict_2d_finite_q_reference(const int ifreq,
-                                                                      const double qx,
-                                                                      const double qy) const
-{
-    if (ifreq < 0 || static_cast<std::size_t>(ifreq) >= head.size() ||
-        static_cast<std::size_t>(ifreq) >= strict_2d_lind_by_freq.size() ||
-        strict_2d_lind_by_freq[ifreq].size() == 0)
-        throw std::logic_error("strict 2D finite-q reference is unavailable for this frequency");
-    auto reference =
-        strict_2d_finite_q_reference(head[ifreq], strict_2d_lind_by_freq[ifreq], qx, qy);
-    const double scale = get_strict_2d_pw_to_auxiliary_scale();
-    reference.wc_head_limit *= scale * scale;
-    return reference;
-}
-
-double diele_func::get_strict_2d_bare_coulomb_gamma_average() const
-{
-    if (!(vol_gamma > 0.0) || q_gamma.size() != qw_leb.size() || q_gamma.empty())
-        throw std::logic_error("strict 2D Gamma-cell quadrature is unavailable");
-    std::vector<double> physical_qmax(q_gamma.size());
-    for (std::size_t idir = 0; idir != q_gamma.size(); ++idir)
-        physical_qmax[idir] = strict_2d_physical_q(q_gamma[idir]);
-    const double scale = get_strict_2d_pw_to_auxiliary_scale();
-    return scale * scale * strict_2d_bare_coulomb_gamma_average(
-                               qw_leb, physical_qmax,
-                               strict_2d_physical_gamma_cell_area(vol_gamma));
 }
 
 void diele_func::assign_chi0(matrix_m<std::complex<double>> &chi0_block,

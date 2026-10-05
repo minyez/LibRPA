@@ -42,6 +42,30 @@ distinct, for example `prefix_lri_coeff = v1_Cs_data_` and
 identical full/shrink prefixes and filters the other family when one prefix is
 a leading substring of the other.
 
+## `librpa_2d_coulomb_head.txt`
+
+Strict-2D complete-Wc runs require the standalone reader-v1 dataset to provide
+this producer-generated metadata file in `input_dir`. It records the in-plane
+cell area and the squared auxiliary-basis monopole norm used to normalize the
+analytic Gamma head. The file is consumed by the reader; it is not inferred
+from the LibRPA basis files.
+
+The parser accepts comments, optional `=`, and arbitrary whitespace. The
+required keys are:
+
+```text
+version = 1
+area_parallel_bohr2 = 19.390653825130212
+multipole_norm_squared = 2205.0673846924301
+```
+
+`area_parallel_bohr2` is the positive in-plane cell area in Bohr$^2$.
+`multipole_norm_squared` is the positive squared monopole norm in the
+producer's auxiliary-basis convention. The values must come from the same
+full auxiliary basis and producer run as `basis_aux_out`, Coulomb matrices,
+and head/wing data. A missing, non-positive, or unsupported-version value is
+rejected before the strict-2D complete-Wc route starts.
+
 (stru-out)=
 ## `stru_out`
 

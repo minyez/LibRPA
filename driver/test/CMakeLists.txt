@@ -27,7 +27,6 @@ add_executable(
   test_reader_2d_coulomb_head.cpp
   ../reader_2d_coulomb_head.cpp
 )
-target_link_libraries(test_reader_2d_coulomb_head PRIVATE rpa_lib)
 # Strict 2D assertions must remain active in Release builds.
 target_compile_options(test_reader_2d_coulomb_head PRIVATE -UNDEBUG)
 add_test(NAME test_reader_2d_coulomb_head COMMAND $<TARGET_FILE:test_reader_2d_coulomb_head>)

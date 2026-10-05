@@ -89,4 +89,12 @@ endforeach()
 
 target_compile_options(test_rpa_headwing PRIVATE -UNDEBUG)
 
+if(LIBRPA_USE_LIBRI)
+  config_test(test_strict_2d_gw_wc 4)
+  target_compile_options(test_strict_2d_gw_wc PRIVATE -UNDEBUG)
+  add_test(NAME test_strict_2d_gw_wc_serial COMMAND $<TARGET_FILE:test_strict_2d_gw_wc>)
+  set_tests_properties(test_strict_2d_gw_wc test_strict_2d_gw_wc_serial
+    PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=1;MKL_NUM_THREADS=1" TIMEOUT 60)
+endif()
+
 # TODO(minye): make use of GTest

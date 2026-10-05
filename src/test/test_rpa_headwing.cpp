@@ -84,6 +84,15 @@ void require_double_close(const double actual, const double expected, const doub
     }
 }
 
+void require_condition(const bool condition, const char *message)
+{
+    if (!condition)
+    {
+        std::cerr << message << std::endl;
+        std::abort();
+    }
+}
+
 void fill_distributed_matrix(
     matrix_m<std::complex<double>> &matrix, const ArrayDesc &desc,
     const std::vector<std::vector<std::complex<double>>> &values)
@@ -437,31 +446,6 @@ void test_kpoint_coordinate_mapping_selects_active_klist_from_full_source()
     assert((wrapped_mapping == std::vector<int>{6}));
 }
 
-void test_strict_2d_qmember_diagnostic_selects_one_periodic_member()
-{
-    const Vector3_Order<double> selected{0.0, 1.0 / 12.0, 0.0};
-    const std::vector<Vector3_Order<double>> first_star{
-        {0.0, 1.0 / 12.0, 0.0},
-        {0.0, -1.0 / 12.0, 0.0},
-        {1.0 / 12.0, 0.0, 0.0},
-        {-1.0 / 12.0, 0.0, 0.0},
-        {1.0 / 12.0, -1.0 / 12.0, 0.0},
-        {-1.0 / 12.0, 1.0 / 12.0, 0.0},
-    };
-
-    for (const auto& q : first_star)
-    {
-        assert(librpa_int::strict_2d_qmember_diagnostic_keeps(q, selected, false));
-    }
-    assert(librpa_int::strict_2d_qmember_diagnostic_keeps(first_star.front(), selected, true));
-    assert(librpa_int::strict_2d_qmember_diagnostic_keeps(
-        Vector3_Order<double>{0.0, -11.0 / 12.0, 0.0}, selected, true));
-    for (std::size_t i = 1; i != first_star.size(); ++i)
-    {
-        assert(!librpa_int::strict_2d_qmember_diagnostic_keeps(first_star[i], selected, true));
-    }
-}
-
 void test_kstar_velocity_mapping_preserves_member_order_and_periodic_gauge()
 {
     SymmetryContext ctx;
@@ -770,20 +754,21 @@ void test_strict_2d_radial_integrals_match_analytic_values()
 
     assert_complex_close(librpa_int::strict_2d_radial_i0(a, qmax), expected_i0, 1e-14);
     assert_complex_close(librpa_int::strict_2d_radial_i1(a, qmax), expected_i1, 1e-14);
-}
 
-void test_strict_2d_radial_integrals_are_stable_at_zero_and_small_a()
-{
-    constexpr double qmax = 0.3;
-    assert_complex_close(librpa_int::strict_2d_radial_i0(0.0, qmax), qmax * qmax / 2.0, 1e-15);
-    assert_complex_close(librpa_int::strict_2d_radial_i1(0.0, qmax), qmax * qmax * qmax / 3.0,
-                         1e-15);
-
+    constexpr double small_qmax = 0.3;
+    assert_complex_close(librpa_int::strict_2d_radial_i0(0.0, small_qmax),
+                         small_qmax * small_qmax / 2.0, 1e-15);
+    assert_complex_close(librpa_int::strict_2d_radial_i1(0.0, small_qmax),
+                         small_qmax * small_qmax * small_qmax / 3.0, 1e-15);
     const std::complex<double> small_a{1.0e-10, -2.0e-10};
-    const auto expected_i0 = qmax * qmax / 2.0 - small_a * std::pow(qmax, 3) / 3.0;
-    const auto expected_i1 = std::pow(qmax, 3) / 3.0 - small_a * std::pow(qmax, 4) / 4.0;
-    assert_complex_close(librpa_int::strict_2d_radial_i0(small_a, qmax), expected_i0, 1e-15);
-    assert_complex_close(librpa_int::strict_2d_radial_i1(small_a, qmax), expected_i1, 1e-15);
+    const auto small_expected_i0 = small_qmax * small_qmax / 2.0 -
+                                   small_a * std::pow(small_qmax, 3) / 3.0;
+    const auto small_expected_i1 = std::pow(small_qmax, 3) / 3.0 -
+                                   small_a * std::pow(small_qmax, 4) / 4.0;
+    assert_complex_close(librpa_int::strict_2d_radial_i0(small_a, small_qmax),
+                         small_expected_i0, 1e-15);
+    assert_complex_close(librpa_int::strict_2d_radial_i1(small_a, small_qmax),
+                         small_expected_i1, 1e-15);
 }
 
 void test_strict_2d_inverse_head_average_has_linear_q_screening()
@@ -796,34 +781,6 @@ void test_strict_2d_inverse_head_average_has_linear_q_screening()
 
     assert(std::abs(inverse_head_average - 1.0) < 0.2);
     assert(std::abs(inverse_head_average - old_2d_formula) > 0.1);
-}
-
-void test_strict_2d_finite_q_reference_matches_head_and_schur_limits()
-{
-    matrix_m<std::complex<double>> head(3, 3, MAJOR::COL);
-    matrix_m<std::complex<double>> lind(3, 3, MAJOR::COL);
-    head(0, 0) = 1.8;
-    head(0, 1) = 0.12;
-    head(1, 0) = 0.12;
-    head(1, 1) = 1.4;
-    head(2, 2) = 1.0;
-    lind(0, 0) = 1.65;
-    lind(0, 1) = 0.08;
-    lind(1, 0) = 0.08;
-    lind(1, 1) = 1.30;
-    lind(2, 2) = 1.0;
-
-    const auto reference = librpa_int::strict_2d_finite_q_reference(head, lind, 3.0, 4.0);
-    const double qx = 3.0 / 5.0;
-    const double qy = 4.0 / 5.0;
-    const auto expected_eps_coefficient =
-        qx * (qx * head(0, 0) + qy * head(0, 1)) + qy * (qx * head(1, 0) + qy * head(1, 1)) - 1.0;
-    const auto expected_a =
-        qx * (qx * lind(0, 0) + qy * lind(0, 1)) + qy * (qx * lind(1, 0) + qy * lind(1, 1)) - 1.0;
-
-    assert_complex_close(reference.epsilon_minus_identity_over_q, expected_eps_coefficient, 1e-14);
-    assert_complex_close(reference.schur_a, expected_a, 1e-14);
-    assert_complex_close(reference.wc_head_limit, -librpa_int::TWO_PI * expected_a, 1e-14);
 }
 
 void test_strict_2d_schur_coefficient_removes_identity()
@@ -904,37 +861,22 @@ void test_strict_2d_gw_uses_full_coulomb_at_all_q()
 
 void test_strict_2d_gw_routes_gamma_through_complete_wc_average()
 {
-    const auto require_route = [](const bool condition, const char *message) {
-        if (!condition)
-        {
-            std::cerr << message << std::endl;
-            std::abort();
-        }
-    };
-    require_route(librpa_int::use_strict_2d_complete_wc_gamma_route(true, 3, true, true, true),
+    require_condition(librpa_int::use_strict_2d_complete_wc_gamma_route(true, 3, true, true, true),
                   "strict 2D Gamma must use the complete-Wc route");
-    require_route(!librpa_int::use_strict_2d_complete_wc_gamma_route(false, 3, true, true, true),
+    require_condition(!librpa_int::use_strict_2d_complete_wc_gamma_route(false, 3, true, true, true),
                   "disabled head/wing replacement must keep the standard route");
-    require_route(!librpa_int::use_strict_2d_complete_wc_gamma_route(true, 2, true, true, true),
+    require_condition(!librpa_int::use_strict_2d_complete_wc_gamma_route(true, 2, true, true, true),
                   "non-full head/wing dielectric mode must keep the standard route");
-    require_route(!librpa_int::use_strict_2d_complete_wc_gamma_route(true, 3, false, true, true),
+    require_condition(!librpa_int::use_strict_2d_complete_wc_gamma_route(true, 3, false, true, true),
                   "3D dielectric calculations must keep the standard route");
-    require_route(!librpa_int::use_strict_2d_complete_wc_gamma_route(true, 3, true, false, true),
+    require_condition(!librpa_int::use_strict_2d_complete_wc_gamma_route(true, 3, true, false, true),
                   "finite q must keep the standard route");
-    require_route(!librpa_int::use_strict_2d_complete_wc_gamma_route(true, 3, true, true, false),
+    require_condition(!librpa_int::use_strict_2d_complete_wc_gamma_route(true, 3, true, true, false),
                   "missing head/wing data must keep the standard route");
 }
 
 void test_strict_2d_gw_fails_closed_for_incomplete_runtime_configuration()
 {
-    const auto require_condition = [](const bool condition, const char *message)
-    {
-        if (!condition)
-        {
-            std::cerr << message << std::endl;
-            std::abort();
-        }
-    };
     require_condition(librpa_int::strict_2d_complete_wc_requested(true, 3, true),
                       "strict 2D complete-Wc request was not recognized");
     require_condition(!librpa_int::strict_2d_complete_wc_requested(false, 3, true),
@@ -984,70 +926,6 @@ void test_strict_2d_gw_fails_closed_for_incomplete_runtime_configuration()
                       "strict 2D GW silently accepted a path without complete-Wc support");
 }
 
-void test_strict_2d_diagnostic_schema_and_qpoint_order_are_stable()
-{
-    const auto count_columns = [](const std::string &header)
-    { return 1 + static_cast<int>(std::count(header.begin(), header.end(), ',')); };
-    if (count_columns(librpa_int::strict_2d_finite_q_diagnostics_header()) != 37 ||
-        count_columns(librpa_int::strict_2d_gamma_wc_diagnostics_header()) != 19)
-    {
-        std::cerr << "strict 2D diagnostic CSV schema changed unexpectedly" << std::endl;
-        std::abort();
-    }
-
-    const std::vector<Vector3_Order<double>> qpoints{
-        {0.1, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.1, 0.0}};
-    const auto unchanged = librpa_int::strict_2d_diagnostic_qpoint_order(qpoints, false);
-    if (!(unchanged == qpoints))
-    {
-        std::cerr << "disabled strict 2D diagnostics changed q-point order" << std::endl;
-        std::abort();
-    }
-    const auto ordered = librpa_int::strict_2d_diagnostic_qpoint_order(qpoints, true);
-    if (!librpa_int::is_gamma_point(ordered.front()) || ordered.size() != qpoints.size())
-    {
-        std::cerr << "strict 2D diagnostics did not place Gamma first" << std::endl;
-        std::abort();
-    }
-}
-
-void test_strict_2d_block_metrics_separate_head_wings_and_body()
-{
-    librpa_int::Strict2dBlockMetricSums sums;
-    librpa_int::accumulate_strict_2d_block_metric(sums, 0, 0, {2.0, -1.0});
-    librpa_int::accumulate_strict_2d_block_metric(sums, 0, 1, {3.0, 4.0});
-    librpa_int::accumulate_strict_2d_block_metric(sums, 2, 0, {0.0, 6.0});
-    librpa_int::accumulate_strict_2d_block_metric(sums, 1, 1, {5.0, 12.0});
-    librpa_int::accumulate_strict_2d_block_metric(sums, 2, 2, {8.0, 15.0});
-
-    const auto metrics = librpa_int::finalize_strict_2d_block_metrics(sums);
-    require_double_close(metrics.head.real(), 2.0, 1e-15);
-    require_double_close(metrics.head.imag(), -1.0, 1e-15);
-    require_double_close(metrics.head_body_frobenius, 5.0, 1e-15);
-    require_double_close(metrics.body_head_frobenius, 6.0, 1e-15);
-    require_double_close(metrics.body_body_frobenius, std::sqrt(13.0 * 13.0 + 17.0 * 17.0), 1e-15);
-}
-
-void test_strict_2d_alpha_reference_averages_bare_coulomb()
-{
-    constexpr double alpha = 0.25;
-    constexpr double radius = 0.4;
-    const double gamma_area = librpa_int::PI * radius * radius;
-    const std::vector<double> weights(4, librpa_int::TWO_PI / 4.0);
-    const std::vector<double> qmax(4, radius);
-    matrix_m<std::complex<double>> regular_body_sqrt(1, 1, MAJOR::COL);
-    regular_body_sqrt(0, 0) = 2.0;
-
-    const auto alpha_wc = librpa_int::strict_2d_alpha_wc_average_coulomb_basis(
-        alpha, regular_body_sqrt, weights, qmax, gamma_area);
-    require_double_close(alpha_wc(0, 0).real(), (alpha - 1.0) * 4.0 * librpa_int::PI / radius,
-                         1e-13);
-    require_double_close(alpha_wc(0, 0).imag(), 0.0, 1e-15);
-    require_double_close(std::abs(alpha_wc(0, 1)), 0.0, 1e-15);
-    require_double_close(std::abs(alpha_wc(1, 0)), 0.0, 1e-15);
-    require_double_close(alpha_wc(1, 1).real(), (alpha - 1.0) * 4.0, 1e-13);
-}
-
 void test_strict_2d_pw_wc_transforms_to_auxiliary_coulomb_basis()
 {
     constexpr double scale = 5.0;
@@ -1073,27 +951,6 @@ void test_strict_2d_pw_wc_transforms_to_auxiliary_coulomb_basis()
         for (int j = 1; j != 3; ++j)
             assert_complex_close(auxiliary_wc(i, j), pw_wc(i, j), 1e-13);
     }
-}
-
-void test_strict_2d_regular_coulomb_legs_are_projected_to_the_gamma_basis()
-{
-    constexpr double inverse_sqrt_two = 0.70710678118654752440;
-    matrix_m<std::complex<double>> coulomb_sqrt(2, 2, MAJOR::COL);
-    coulomb_sqrt(0, 0) = 4.0;
-    coulomb_sqrt(1, 1) = 1.0;
-
-    matrix_m<std::complex<double>> eigenvectors(2, 2, MAJOR::COL);
-    eigenvectors(0, 0) = inverse_sqrt_two;
-    eigenvectors(0, 1) = inverse_sqrt_two;
-    eigenvectors(1, 0) = inverse_sqrt_two;
-    eigenvectors(1, 1) = -inverse_sqrt_two;
-
-    const auto projected =
-        librpa_int::strict_2d_project_operator_to_coulomb_basis(coulomb_sqrt, eigenvectors);
-    require_double_close(projected(0, 0).real(), 2.5, 1e-14);
-    require_double_close(projected(0, 1).real(), 1.5, 1e-14);
-    require_double_close(projected(1, 0).real(), 1.5, 1e-14);
-    require_double_close(projected(1, 1).real(), 2.5, 1e-14);
 }
 
 void test_strict_2d_wc_blocks_match_dense_finite_q_inverse()
@@ -2358,48 +2215,6 @@ void test_head_initialization_does_not_require_coulomb_diagonalization(
     assert(df.get_head_vec().size() == 1);
 }
 
-void test_strict_2d_gamma_quadrature_is_ready_after_wing_initialization(
-    const BlacsCtxtHandler &blacs_h)
-{
-    MeanField mf(1, 1, 2, 1);
-    librpa_int::velocity_matrix_t velocity;
-    librpa_int::initialize_velocity_matrix(velocity, 1, 1, 2);
-    AtomicBasis basis_wfc({1});
-    AtomicBasis basis_abf({1});
-    PeriodicBoundaryData pbc;
-    pbc.set_latvec({1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 8.0});
-    const std::vector<double> kvecs{0.0,
-                                    0.0,
-                                    0.0,
-                                    0.0,
-                                    librpa_int::PI,
-                                    0.0,
-                                    librpa_int::PI,
-                                    0.0,
-                                    0.0,
-                                    librpa_int::PI,
-                                    librpa_int::PI,
-                                    0.0};
-    pbc.set_kgrids_kvec(2, 2, 1, kvecs);
-    const std::vector<Vector3_Order<double>> kfrac{{0.0, 0.0, 0.0}};
-    const std::vector<double> omega{0.5};
-    const atpair_k_cplx_mat_t empty_vq;
-
-    diele_func df(mf, velocity, kfrac, basis_wfc, basis_abf, omega, 1, 2, 1, 1, pbc,
-                  librpa_int::global::mpi_comm_global_h, blacs_h);
-    df.configure_strict_2d_coulomb_head(true, librpa_int::TWO_PI);
-    assert(df.use_2d_dielectric);
-    const auto normalization = librpa_int::strict_2d_coulomb_head_normalization(
-        pbc, librpa_int::TWO_PI);
-    require_double_close(df.get_strict_2d_pw_to_auxiliary_scale(),
-                         normalization.pw_to_auxiliary_scale, 1e-14);
-    df.init_wing(0.0, empty_vq);
-
-    const double average = df.get_strict_2d_bare_coulomb_gamma_average();
-    assert(std::isfinite(average));
-    assert(average > 0.0);
-}
-
 // Dense old Coulomb-basis averaged inverse dielectric reference. sqrt(V) is an
 // independent fixed input; U supplies the Coulomb eigenvectors (x1 = U[:,0] and
 // the rotation back to the ABF basis). Returns eps_inv in the ABF basis.
@@ -2862,7 +2677,6 @@ int main(int argc, char *argv[])
         test_gamma_head_rank_one_handles_empty_local_blocks(blacs_h);
         test_rspace_symmetry_requires_complete_band_space();
         test_kpoint_coordinate_mapping_selects_active_klist_from_full_source();
-        test_strict_2d_qmember_diagnostic_selects_one_periodic_member();
         test_kstar_velocity_mapping_preserves_member_order_and_periodic_gauge();
         test_replace_rpa_response_head_only_keeps_numeric_wings(blacs_h);
         test_rpa_trace_log_average_uses_directional_head_and_wing();
@@ -2872,19 +2686,13 @@ int main(int argc, char *argv[])
         test_strict_2d_auxiliary_normalization_is_computed_from_basis_metadata();
         test_strict_2d_gamma_cell_uses_physical_reciprocal_measure();
         test_strict_2d_radial_integrals_match_analytic_values();
-        test_strict_2d_radial_integrals_are_stable_at_zero_and_small_a();
         test_strict_2d_inverse_head_average_has_linear_q_screening();
-        test_strict_2d_finite_q_reference_matches_head_and_schur_limits();
         test_strict_2d_schur_coefficient_removes_identity();
         test_strict_2d_screening_denominator_must_stay_on_physical_branch();
         test_strict_2d_gw_uses_full_coulomb_at_all_q();
         test_strict_2d_gw_routes_gamma_through_complete_wc_average();
         test_strict_2d_gw_fails_closed_for_incomplete_runtime_configuration();
-        test_strict_2d_diagnostic_schema_and_qpoint_order_are_stable();
-        test_strict_2d_block_metrics_separate_head_wings_and_body();
-        test_strict_2d_alpha_reference_averages_bare_coulomb();
         test_strict_2d_pw_wc_transforms_to_auxiliary_coulomb_basis();
-        test_strict_2d_regular_coulomb_legs_are_projected_to_the_gamma_basis();
         test_strict_2d_wc_blocks_match_dense_finite_q_inverse();
         test_strict_2d_wc_cell_average_matches_anisotropic_radial_quadrature();
         test_strict_2d_wc_cell_average_matches_cartesian_voronoi_subgrid();
@@ -2912,7 +2720,6 @@ int main(int argc, char *argv[])
         test_transform_Cs2mnk_can_keep_spin_channels_separate(blacs_h);
         test_head_initialization_does_not_require_coulomb_diagonalization(blacs_h);
         test_abf_space_wing_rewrite_matches_coulomb_basis(blacs_h);
-        test_strict_2d_gamma_quadrature_is_ready_after_wing_initialization(blacs_h);
     }
 
     librpa_int::global::finalize_global_io();

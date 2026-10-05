@@ -22,13 +22,6 @@ bool strict_2d_complete_wc_requested(bool replace_w_head, int option_dielect_fun
 void validate_strict_2d_complete_wc_runtime(bool strict_2d_requested, bool headwing_data_available,
                                             bool use_scalapack_gw_wc,
                                             bool strict_2d_metadata_configured);
-std::string strict_2d_finite_q_diagnostics_header();
-std::string strict_2d_gamma_wc_diagnostics_header();
-std::vector<Vector3_Order<double>> strict_2d_diagnostic_qpoint_order(
-    const std::vector<Vector3_Order<double>> &qpoints, bool diagnostics_enabled);
-bool strict_2d_qmember_diagnostic_keeps(const Vector3_Order<double>& q_member_frac,
-                                        const Vector3_Order<double>& selected_q_frac,
-                                        bool diagnostics_enabled);
 bool use_strict_2d_complete_wc_gamma_route(bool replace_w_head, int option_dielect_func,
                                            bool use_2d_dielectric, bool gamma_point,
                                            bool headwing_data_available);
@@ -77,8 +70,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     const std::vector<std::complex<double>> &epsmac_LF_imagfreq, diele_func *df_headwing,
     const BlacsCtxtHandler &blacs_h, const librpa_int::ArrayDesc &ad, bool debug = false,
     const char *output_dir = ".", bool use_cholesky_gw_wc = false,
-    bool use_gpu_replace_scalapack = false, bool use_elpa_sqrt_coulomb = false,
-    bool output_2d_finite_q_diagnostics = false);
+    bool use_gpu_replace_scalapack = false, bool use_elpa_sqrt_coulomb = false);
 
 void unfold_Wc_freq_q_blacs(
     std::map<double, std::map<Vector3_Order<double>, Matz>> &Wc_freq_q,

@@ -4,7 +4,6 @@
 #include <stdexcept>
 
 #include "../reader_2d_coulomb_head.h"
-#include "../../src/core/dielecmodel.h"
 
 namespace
 {
@@ -21,13 +20,6 @@ void test_abacus_reader_v1_metadata_is_parsed_without_equals_signs()
     assert(metadata.version == 1);
     assert(std::abs(metadata.inplane_area_bohr2 - 19.390653825130212) < 1e-14);
     assert(std::abs(metadata.auxiliary_monopole_norm_squared - 2205.0673846924301) < 1e-12);
-
-    librpa_int::PeriodicBoundaryData pbc;
-    pbc.set_latvec({metadata.inplane_area_bohr2, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 30.0});
-    const auto normalization = librpa_int::strict_2d_coulomb_head_normalization(
-        pbc, metadata.auxiliary_monopole_norm_squared);
-    assert(std::abs(normalization.auxiliary_head_coefficient - 8978.8175111265446) < 1e-10);
-    assert(std::abs(normalization.pw_to_auxiliary_scale - 37.802423070695596) < 1e-12);
 }
 
 void test_canonical_metadata_is_parsed_with_equals_signs()

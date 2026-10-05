@@ -181,8 +181,6 @@ void rewrite_eps_abf_space(
     std::size_t n_nonsingular,
     double sqrt_coulomb_threshold, bool use_cholesky, bool use_device);
 
-// All calculation in unit: Bohr and Ha.
-struct Strict2dFiniteQReference;
 class diele_func
 {
 private:
@@ -198,7 +196,6 @@ private:
     matrix_m<std::complex<double>> body_inv;
     // ( i:3, j:3 )
     matrix_m<std::complex<double>> Lind;
-    std::vector<matrix_m<std::complex<double>>> strict_2d_lind_by_freq;
     // ( i:n_lambda, j:3 )
     matrix_m<std::complex<double>> bw;
     // ( i:3, j:n_lambda )
@@ -452,7 +449,6 @@ public:
                                std::size_t n_nonsingular_in,
                                double sqrt_coulomb_threshold,
                                bool use_cholesky, bool use_device);
-    void cal_eps(const int ifreq, ArrayDesc &desc_nabf_nabf_opt, ArrayDesc &desc_body);
     void cal_strict_2d_wc(const int ifreq, ArrayDesc &desc_nabf_nabf_opt, ArrayDesc &desc_body,
                           const matrix_m<std::complex<double>> &regular_coulomb_basis);
     void assign_chi0(matrix_m<std::complex<double>> &chi0_block,
@@ -460,9 +456,6 @@ public:
     void rewrite_strict_2d_wc(matrix_m<std::complex<double>> &chi0_block, const int ifreq,
                               ArrayDesc &desc_nabf_nabf_opt,
                               const matrix_m<std::complex<double>> &regular_coulomb_basis);
-    Strict2dFiniteQReference get_strict_2d_finite_q_reference(int ifreq, double qx,
-                                                              double qy) const;
-    double get_strict_2d_bare_coulomb_gamma_average() const;
     std::complex<double> compute_rpa_trace_log_average(
         matrix_m<std::complex<double>> &response_block, const int ifreq, ArrayDesc &desc_response,
         const RpaHeadwingSettings &settings);
@@ -487,32 +480,6 @@ double strict_2d_head_prefactor(double inplane_cell_area);
 double strict_2d_wing_prefactor(double inplane_cell_area);
 double strict_2d_physical_q(double internal_q);
 double strict_2d_physical_gamma_cell_area(double internal_gamma_cell_area);
-struct Strict2dFiniteQReference
-{
-    std::complex<double> epsilon_minus_identity_over_q;
-    std::complex<double> schur_a;
-    std::complex<double> wc_head_limit;
-};
-struct Strict2dBlockMetricSums
-{
-    std::complex<double> head = 0.0;
-    double head_body_squared = 0.0;
-    double body_head_squared = 0.0;
-    double body_body_squared = 0.0;
-};
-struct Strict2dBlockMetrics
-{
-    std::complex<double> head = 0.0;
-    double head_body_frobenius = 0.0;
-    double body_head_frobenius = 0.0;
-    double body_body_frobenius = 0.0;
-};
-void accumulate_strict_2d_block_metric(Strict2dBlockMetricSums &sums, int row, int column,
-                                       const std::complex<double> &value);
-Strict2dBlockMetrics finalize_strict_2d_block_metrics(const Strict2dBlockMetricSums &sums);
-Strict2dFiniteQReference strict_2d_finite_q_reference(const matrix_m<std::complex<double>> &head,
-                                                      const matrix_m<std::complex<double>> &lind,
-                                                      double qx, double qy);
 std::complex<double> strict_2d_radial_i0(const std::complex<double> &a, double qmax);
 std::complex<double> strict_2d_radial_i1(const std::complex<double> &a, double qmax);
 std::complex<double> strict_2d_schur_coefficient(const matrix_m<std::complex<double>> &lind,
@@ -531,9 +498,6 @@ matrix_m<std::complex<double>> strict_2d_average_wc_coulomb_basis(
     const matrix_m<std::complex<double>> &regular_body_sqrt, const std::vector<double> &qx,
     const std::vector<double> &qy, const std::vector<double> &weights,
     const std::vector<double> &qmax, double gamma_area);
-matrix_m<std::complex<double>> strict_2d_alpha_wc_average_coulomb_basis(
-    double inverse_dielectric_alpha, const matrix_m<std::complex<double>> &regular_body_sqrt,
-    const std::vector<double> &weights, const std::vector<double> &qmax, double gamma_area);
 struct Strict2dCoulombHeadNormalization
 {
     double inplane_area_bohr2 = 0.0;
@@ -547,11 +511,6 @@ Strict2dCoulombHeadNormalization strict_2d_coulomb_head_normalization(
     const PeriodicBoundaryData &pbc, double auxiliary_monopole_norm_squared);
 matrix_m<std::complex<double>> strict_2d_transform_pw_wc_to_auxiliary_basis(
     const matrix_m<std::complex<double>> &pw_wc, double pw_to_auxiliary_scale);
-matrix_m<std::complex<double>> strict_2d_project_operator_to_coulomb_basis(
-    const matrix_m<std::complex<double>> &operator_matrix,
-    const matrix_m<std::complex<double>> &coulomb_eigenvectors);
-double strict_2d_bare_coulomb_gamma_average(const std::vector<double> &weights,
-                                            const std::vector<double> &qmax, double gamma_area);
 
 ArrayDesc make_rpa_chi0v_wing_desc(const ArrayDesc &desc_body, const int wing_row_offset,
                                    const int wing_rows_loc, const int wing_cols_loc);

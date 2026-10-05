@@ -642,17 +642,6 @@ typedef struct
     //! Experimental
     LibrpaSwitch output_wc_rf_atom_pair;
 
-    //! Output strict-2D diagnostics in the fixed Gamma full-Ewald Coulomb basis.
-    //! `strict2d_finite_q_scaling.csv` contains static P and Wc head, wing, body,
-    //! q weights, and the epsilon^-1=0.25 alpha reference for every finite q.
-    //! `strict2d_gamma_wc_blocks.csv` contains the analytically averaged Gamma Wc
-    //! blocks and alpha reference for every imaginary frequency.
-    //! @par Default
-    //! false
-    //! @par Status
-    //! Experimental
-    LibrpaSwitch output_2d_finite_q_diagnostics;
-
     //! First zero-based Wc frequency index to output.
     //! @par Default
     //! 0

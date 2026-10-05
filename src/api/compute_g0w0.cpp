@@ -848,8 +848,7 @@ void librpa_build_g0w0_sigma(LibrpaHandler* h, const LibrpaOptions *p_opts)
             chi0, coul_eps, coul_wc, opts.sqrt_coulomb_threshold, replace_w_head,
             opts.option_dielect_func, epsmac_LF_imagfreq, pds->p_headwing.get(), pds->blacs_h,
             wc_desc_abf, debug, opts.output_dir, opts.use_cholesky_gw_wc,
-            opts.use_gpu_replace_scalapack, opts.use_elpa_sqrt_coulomb,
-            opts.output_2d_finite_q_diagnostics == LIBRPA_SWITCH_ON);
+            opts.use_gpu_replace_scalapack, opts.use_elpa_sqrt_coulomb);
     }
     else
     {

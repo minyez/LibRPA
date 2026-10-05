@@ -4,11 +4,8 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdlib>
-#include <fstream>
 #include <iomanip>
 #include <iterator>
-#include <limits>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -78,51 +75,15 @@ void validate_strict_2d_complete_wc_runtime(const bool strict_2d_requested,
             "use the standalone reader-v1 driver");
 }
 
-std::string strict_2d_finite_q_diagnostics_header()
-{
-    return "iq,qfrac_x,qfrac_y,qfrac_z,q_physical,qhat_x,qhat_y,q_weight,head_overlap,"
-           "p_head_real,p_head_imag,p_head_over_q_real,p_head_over_q_imag,"
-           "p_head_body_fro,p_body_head_fro,p_body_body_fro,"
-           "analytic_p_over_q_real,analytic_p_over_q_imag,wc_head_real,wc_head_imag,"
-           "wc_head_body_fro,wc_body_head_fro,wc_body_body_fro,"
-           "alpha_wc_head_real,alpha_wc_head_imag,alpha_wc_head_body_fro,"
-           "alpha_wc_body_head_fro,alpha_wc_body_body_fro,"
-           "analytic_wc_limit_real,analytic_wc_limit_imag,q_wc_head_real,"
-           "q_wc_head_imag,weighted_wc_head_real,weighted_wc_head_imag,"
-           "weighted_wc_head_body_fro,weighted_wc_body_head_fro,"
-           "weighted_wc_body_body_fro";
-}
-
-std::string strict_2d_gamma_wc_diagnostics_header()
-{
-    return "ifreq,frequency,q_weight,gamma_area,wc_head_real,wc_head_imag,"
-           "wc_head_body_fro,wc_body_head_fro,wc_body_body_fro,"
-           "alpha_wc_head_real,alpha_wc_head_imag,alpha_wc_head_body_fro,"
-           "alpha_wc_body_head_fro,alpha_wc_body_body_fro,weighted_wc_head_real,"
-           "weighted_wc_head_imag,weighted_wc_head_body_fro,weighted_wc_body_head_fro,"
-           "weighted_wc_body_body_fro";
-}
-
-std::vector<Vector3_Order<double>> strict_2d_diagnostic_qpoint_order(
-    const std::vector<Vector3_Order<double>> &qpoints, const bool diagnostics_enabled)
-{
-    auto ordered = qpoints;
-    if (!diagnostics_enabled) return ordered;
-    const auto gamma = std::find_if(ordered.begin(), ordered.end(),
-                                    [](const auto &q) { return is_gamma_point(q); });
-    if (gamma == ordered.end())
-        throw std::logic_error("strict 2D diagnostics require a Gamma q point");
-    std::rotate(ordered.begin(), gamma, std::next(gamma));
-    return ordered;
-}
-
-bool use_strict_2d_complete_wc_gamma_route(const bool replace_w_head, const int option_dielect_func,
-                                           const bool use_2d_dielectric, const bool gamma_point,
+bool use_strict_2d_complete_wc_gamma_route(const bool replace_w_head,
+                                           const int option_dielect_func,
+                                           const bool use_2d_dielectric,
+                                           const bool gamma_point,
                                            const bool headwing_data_available)
 {
     return strict_2d_complete_wc_requested(replace_w_head, option_dielect_func,
-                                           use_2d_dielectric) &&
-           gamma_point && headwing_data_available;
+                                           use_2d_dielectric)
+           && gamma_point && headwing_data_available;
 }
 
 using abf_qspace_complex_block_map_t =
@@ -132,115 +93,8 @@ using abf_rspace_complex_block_map_t =
 using abf_rspace_dense_block_map_t =
     std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, ComplexMatrix>>>;
 
-static void dump_blacs_debug_matrix(const bool debug, const std::string &output_dir,
-                                    const std::string &file_name,
-                                    const matrix_m<std::complex<double>> &matrix_local,
-                                    const ArrayDesc &matrix_desc, const std::string &comment = "",
-                                    const double threshold = 1e-15)
-{
-    if (!debug) return;
-    print_matrix_mm_file_parallel(path_as_directory(output_dir) + file_name, matrix_local,
-                                  matrix_desc, comment, threshold);
-}
-
-static std::vector<std::complex<double>> collect_normalized_blacs_column(
-    const matrix_m<std::complex<double>> &matrix_local, const ArrayDesc &matrix_desc,
-    const int column, const MpiCommHandler &comm_h)
-{
-    std::vector<std::complex<double>> vector(matrix_desc.m(), 0.0);
-    const int column_local = matrix_desc.indx_g2l_c(column);
-    if (column_local >= 0)
-    {
-        for (int row_local = 0; row_local != matrix_desc.m_loc(); ++row_local)
-        {
-            const int row = matrix_desc.indx_l2g_r(row_local);
-            if (row >= 0) vector[row] = matrix_local(row_local, column_local);
-        }
-    }
-    if (vector.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
-        throw LIBRPA_RUNTIME_ERROR("strict 2D diagnostic head vector is too large");
-    MPI_Allreduce(MPI_IN_PLACE, vector.data(), static_cast<int>(vector.size()),
-                  MPI_CXX_DOUBLE_COMPLEX, MPI_SUM, comm_h.comm);
-    double norm2 = 0.0;
-    for (const auto &value : vector) norm2 += std::norm(value);
-    if (!(norm2 > 0.0) || !std::isfinite(norm2))
-        throw LIBRPA_RUNTIME_ERROR("strict 2D diagnostic head vector has invalid norm");
-    const double inverse_norm = 1.0 / std::sqrt(norm2);
-    for (auto &value : vector) value *= inverse_norm;
-    return vector;
-}
-
-static void project_blacs_matrix_in_basis(const matrix_m<std::complex<double>> &matrix_local,
-                                          const matrix_m<std::complex<double>> &basis_local,
-                                          const ArrayDesc &matrix_desc, const int active_size,
-                                          matrix_m<std::complex<double>> &work_local,
-                                          matrix_m<std::complex<double>> &projected_local)
-{
-    if (matrix_desc.m() != matrix_desc.n() || active_size < 1 || active_size > matrix_desc.m() ||
-        matrix_local.nr() != matrix_desc.m_loc() || matrix_local.nc() != matrix_desc.n_loc() ||
-        basis_local.nr() != matrix_desc.m_loc() || basis_local.nc() != matrix_desc.n_loc() ||
-        work_local.nr() != matrix_desc.m_loc() || work_local.nc() != matrix_desc.n_loc() ||
-        projected_local.nr() != matrix_desc.m_loc() || projected_local.nc() != matrix_desc.n_loc())
-        throw LIBRPA_RUNTIME_ERROR(
-            "strict 2D diagnostic Coulomb-basis projection dimensions are inconsistent");
-
-    work_local.zero_out();
-    projected_local.zero_out();
-    ScalapackConnector::pgemm_f('N', 'N', matrix_desc.m(), active_size, matrix_desc.m(), C_ONE,
-                                matrix_local.ptr(), 1, 1, matrix_desc.desc, basis_local.ptr(), 1, 1,
-                                matrix_desc.desc, C_ZERO, work_local.ptr(), 1, 1, matrix_desc.desc);
-    ScalapackConnector::pgemm_f('C', 'N', active_size, active_size, matrix_desc.m(), C_ONE,
-                                basis_local.ptr(), 1, 1, matrix_desc.desc, work_local.ptr(), 1, 1,
-                                matrix_desc.desc, C_ZERO, projected_local.ptr(), 1, 1,
-                                matrix_desc.desc);
-}
-
-static Strict2dBlockMetrics collect_strict_2d_block_metrics(
-    const matrix_m<std::complex<double>> &matrix_local, const ArrayDesc &matrix_desc,
-    const int active_size, const MpiCommHandler &comm_h)
-{
-    if (active_size < 1 || active_size > matrix_desc.m() || matrix_desc.m() != matrix_desc.n())
-        throw LIBRPA_RUNTIME_ERROR("strict 2D diagnostic block size is invalid");
-
-    Strict2dBlockMetricSums local;
-    for (int row_local = 0; row_local != matrix_desc.m_loc(); ++row_local)
-    {
-        const int row = matrix_desc.indx_l2g_r(row_local);
-        if (row < 0 || row >= active_size) continue;
-        for (int column_local = 0; column_local != matrix_desc.n_loc(); ++column_local)
-        {
-            const int column = matrix_desc.indx_l2g_c(column_local);
-            if (column < 0 || column >= active_size) continue;
-            accumulate_strict_2d_block_metric(local, row, column,
-                                              matrix_local(row_local, column_local));
-        }
-    }
-
-    Strict2dBlockMetricSums global;
-    MPI_Allreduce(&local.head, &global.head, 1, MPI_CXX_DOUBLE_COMPLEX, MPI_SUM, comm_h.comm);
-    const std::array<double, 3> local_squared = {local.head_body_squared, local.body_head_squared,
-                                                 local.body_body_squared};
-    std::array<double, 3> global_squared{};
-    MPI_Allreduce(local_squared.data(), global_squared.data(),
-                  static_cast<int>(global_squared.size()), MPI_DOUBLE, MPI_SUM, comm_h.comm);
-    global.head_body_squared = global_squared[0];
-    global.body_head_squared = global_squared[1];
-    global.body_body_squared = global_squared[2];
-    return finalize_strict_2d_block_metrics(global);
-}
-
-static double normalized_vector_overlap(const std::vector<std::complex<double>> &lhs,
-                                        const std::vector<std::complex<double>> &rhs)
-{
-    if (lhs.size() != rhs.size())
-        throw LIBRPA_RUNTIME_ERROR("strict 2D diagnostic head vectors have different sizes");
-    std::complex<double> overlap = 0.0;
-    for (std::size_t i = 0; i != lhs.size(); ++i) overlap += std::conj(lhs[i]) * rhs[i];
-    return std::abs(overlap);
-}
-
-static bool are_equivalent_symmetry_qpoints(const Vector3_Order<double> &lhs,
-                                            const Vector3_Order<double> &rhs,
+static bool are_equivalent_symmetry_qpoints(const Vector3_Order<double>& lhs,
+                                            const Vector3_Order<double>& rhs,
                                             const double tol = 1e-5)
 {
     const auto same_component = [tol](const double lhs_component, const double rhs_component) {
@@ -251,12 +105,15 @@ static bool are_equivalent_symmetry_qpoints(const Vector3_Order<double> &lhs,
            && same_component(lhs.z, rhs.z);
 }
 
-bool strict_2d_qmember_diagnostic_keeps(const Vector3_Order<double>& q_member_frac,
-                                        const Vector3_Order<double>& selected_q_frac,
-                                        const bool diagnostics_enabled)
+static void dump_blacs_debug_matrix(const bool debug, const std::string &output_dir,
+                                    const std::string &file_name,
+                                    const matrix_m<std::complex<double>> &matrix_local,
+                                    const ArrayDesc &matrix_desc, const std::string &comment = "",
+                                    const double threshold = 1e-15)
 {
-    return !diagnostics_enabled
-           || are_equivalent_symmetry_qpoints(q_member_frac, selected_q_frac);
+    if (!debug) return;
+    print_matrix_mm_file_parallel(path_as_directory(output_dir) + file_name, matrix_local,
+                                  matrix_desc, comment, threshold);
 }
 
 template <typename QMap>
@@ -713,23 +570,6 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
         build_symmetry_full_grid_kstar_member_kfrac_targets(ctx, pbc.kfrac_list);
     const bool use_full_grid_member_targets =
         full_grid_member_targets.size() == ctx.kstars.size();
-    const char* qmember_env = std::getenv("LIBRPA_STRICT2D_QMEMBER_DIAG");
-    const bool qmember_diagnostic_enabled = qmember_env != nullptr && qmember_env[0] != '\0';
-    Vector3_Order<double> selected_q_frac;
-    if (qmember_diagnostic_enabled)
-    {
-        std::string value(qmember_env);
-        std::replace(value.begin(), value.end(), ',', ' ');
-        std::istringstream input(value);
-        std::string extra;
-        if (!(input >> selected_q_frac.x >> selected_q_frac.y >> selected_q_frac.z)
-            || (input >> extra))
-        {
-            throw LIBRPA_RUNTIME_ERROR(
-                "LIBRPA_STRICT2D_QMEMBER_DIAG requires three comma-separated reduced coordinates");
-        }
-    }
-    std::size_t kept_qmembers = 0;
 
     for (const auto& star_mapping : ctx.kstar_grid_mapping)
     {
@@ -765,12 +605,6 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
                     : Vector3_Order<double>{pbc.latvec * star_mapping.member_q_bz_keys[imember]};
             const Vector3_Order<double> q_bz_target_frac =
                 restrict_fractional_coordinate(raw_q_bz_target_frac);
-            if (!strict_2d_qmember_diagnostic_keeps(
-                    q_bz_target_frac, selected_q_frac, qmember_diagnostic_enabled))
-            {
-                continue;
-            }
-            ++kept_qmembers;
             librpa_int::symmetry_atom_block_matrix_map_t rotated_blocks;
             try
             {
@@ -806,20 +640,7 @@ static abf_rspace_complex_block_map_t accumulate_symmetry_full_wr_from_ibz_q(
         }
     }
 
-    if (qmember_diagnostic_enabled && kept_qmembers != 1)
-    {
-        std::ostringstream message;
-        message << "LIBRPA_STRICT2D_QMEMBER_DIAG selected " << kept_qmembers
-                << " full-BZ q members instead of one";
-        throw LIBRPA_RUNTIME_ERROR(message.str());
-    }
-    if (qmember_diagnostic_enabled)
-    {
-        global::lib_printf_root(
-            "Strict 2D diagnostic retained one full-BZ q member at reduced coordinates "
-            "(% .12f, % .12f, % .12f) with the original 1/Nk Fourier weight.\n",
-            selected_q_frac.x, selected_q_frac.y, selected_q_frac.z);
-    }
+
 
     return convert_dense_rspace_blocks_to_row_major(blocks_by_R_full);
 }
@@ -2771,8 +2592,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     const double sqrt_coulomb_threshold, const bool replace_w_head, int option_dielect_func,
     const vector<std::complex<double>> &epsmac_LF_imagfreq, diele_func *df_headwing,
     const BlacsCtxtHandler &blacs_h, const ArrayDesc &ad, const bool debug, const char *output_dir,
-    bool use_cholesky_gw_wc, bool use_gpu_replace_scalapack, bool use_elpa_sqrt_coulomb,
-    const bool output_2d_finite_q_diagnostics)
+    bool use_cholesky_gw_wc, bool use_gpu_replace_scalapack, bool use_elpa_sqrt_coulomb)
 {
     using std::cout;
     using std::endl;
@@ -2818,17 +2638,6 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     auto coul_eigen_block = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
     auto coul_chi0_block = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
     auto coulwc_block = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
-    matrix_m<std::complex<double>> gamma_coulomb_basis;
-    matrix_m<std::complex<double>> diagnostic_projection_work;
-    matrix_m<std::complex<double>> diagnostic_projection;
-    matrix_m<std::complex<double>> diagnostic_alpha_wc;
-    if (output_2d_finite_q_diagnostics)
-    {
-        diagnostic_projection_work =
-            init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
-        diagnostic_projection = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
-        diagnostic_alpha_wc = init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
-    }
 
     std::complex<double>* chi0_block_ptr = chi0_block.ptr();
     std::complex<double>* coul_block_ptr = coul_block.ptr();
@@ -2850,8 +2659,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
 
     const double mem_blocks =
         (chi0_block.size() + coul_block.size() + coul_eigen_block.size() + coul_chi0_block.size() +
-         coulwc_block.size() + diagnostic_projection_work.size() + diagnostic_projection.size() +
-         diagnostic_alpha_wc.size()) *
+         coulwc_block.size()) *
         16.0e-6;
     ofs_myid << get_timestamp()
              << " Memory consumption of task-local blocks for screened Coulomb [MB]: " << mem_blocks
@@ -2892,7 +2700,7 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
 
     const vector<Vector3_Order<double>> active_qpoints(chi0.active_qpoints().begin(),
                                                        chi0.active_qpoints().end());
-    auto qpts = strict_2d_diagnostic_qpoint_order(active_qpoints, output_2d_finite_q_diagnostics);
+    const auto &qpts = active_qpoints;
     const auto &klist = chi0.pbc.klist;
     const auto &kfrac_list = chi0.pbc.kfrac_list;
     const auto atom_nabf = build_atom_nabf_map(chi0.atbasis_abf);
@@ -2932,38 +2740,6 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
     const bool strict_2d_requested =
         strict_2d_complete_wc_requested(replace_w_head, option_dielect_func,
                                         df_headwing != nullptr && df_headwing->use_2d_dielectric);
-    if (output_2d_finite_q_diagnostics && !strict_2d_requested)
-        throw LIBRPA_RUNTIME_ERROR("output_2d_finite_q_diagnostics requires strict 2D complete-Wc");
-    constexpr double diagnostic_inverse_dielectric_alpha = 0.25;
-    std::vector<std::complex<double>> gamma_head_vector;
-    int gamma_n_nonsingular = 0;
-    std::ofstream finite_q_diagnostics;
-    std::ofstream gamma_wc_diagnostics;
-    int diagnostic_output_ready = 1;
-    if (output_2d_finite_q_diagnostics && comm_h.is_root())
-    {
-        finite_q_diagnostics.open(path_as_directory(output_dir) + "strict2d_finite_q_scaling.csv",
-                                  std::ios::out | std::ios::trunc);
-        gamma_wc_diagnostics.open(path_as_directory(output_dir) + "strict2d_gamma_wc_blocks.csv",
-                                  std::ios::out | std::ios::trunc);
-        diagnostic_output_ready = finite_q_diagnostics && gamma_wc_diagnostics ? 1 : 0;
-        if (diagnostic_output_ready)
-        {
-            finite_q_diagnostics << strict_2d_finite_q_diagnostics_header() << '\n'
-                                 << std::scientific << std::setprecision(16);
-            gamma_wc_diagnostics << strict_2d_gamma_wc_diagnostics_header() << '\n'
-                                 << std::scientific << std::setprecision(16);
-        }
-    }
-    if (output_2d_finite_q_diagnostics)
-    {
-        MPI_Bcast(&diagnostic_output_ready, 1, MPI_INT, 0, comm_h.comm);
-        if (!diagnostic_output_ready)
-            throw LIBRPA_RUNTIME_ERROR("cannot open strict 2D diagnostics output");
-        if (comm_h.is_root())
-            std::cout << "Writing strict 2D fixed-Gamma-basis diagnostics under "
-                      << path_as_directory(output_dir) << std::endl;
-    }
     for (const auto &q : qpts)
     {
         const int iq = std::distance(qpts.cbegin(), std::find(qpts.cbegin(), qpts.cend(), q));
@@ -3157,21 +2933,6 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 n_singular, eigenvalues.c, 0.5, sqrt_coulomb_threshold, use_gpu_replace_scalapack,
                 use_elpa_sqrt_coulomb, coul_block_ptr, chi0_block_ptr, coul_chi0_block_ptr);
         }
-        double finite_q_head_overlap = std::numeric_limits<double>::quiet_NaN();
-        if (output_2d_finite_q_diagnostics)
-        {
-            const auto current_head =
-                collect_normalized_blacs_column(coul_eigen_block, desc_nabf_nabf_opt, 0, comm_h);
-            if (is_gamma_point(q))
-                gamma_head_vector = current_head;
-            else
-            {
-                if (gamma_head_vector.empty())
-                    throw LIBRPA_RUNTIME_ERROR(
-                        "strict 2D finite-q diagnostics require Gamma to precede finite q");
-                finite_q_head_overlap = normalized_vector_overlap(gamma_head_vector, current_head);
-            }
-        }
         if (debug_output) ofs_myid << get_timestamp() << " Done power hemat couleps\n";
         const size_t n_nonsingular = n_abf - n_singular;
         if (gamma_full_headwing && n_singular != 0)
@@ -3229,72 +2990,30 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 desc_1x1.set_ddla_desc(blacs_h.ddla_handle);
 #endif
         }
-        // The scaled Coulomb eigenvectors are no longer needed in the frequency
-        // loop: the ABF-space path uses coul_block (sqrt(V)) directly.
-        sqrtveig_blacs.clear();
+        matrix_m<std::complex<double>> strict_2d_regular_coulomb_basis;
         if (strict_2d_complete_wc_gamma)
         {
-            const int n_coulomb = as_int(n_nonsingular);
-            // cal_strict_2d_wc interprets channel 0 as the singular Coulomb
-            // eigenvector and channels 1.. as the regular body. Express the
-            // full-Ewald external legs in that same fixed Gamma basis first.
-            ScalapackConnector::pgemm_f('C', 'N', n_coulomb, n_abf, n_abf, C_ONE,
-                                        coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                                        coulwc_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc, C_ZERO,
-                                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
-            ScalapackConnector::pgemm_f('N', 'N', n_coulomb, n_coulomb, n_abf, C_ONE,
-                                        coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                                        coul_eigen_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                                        C_ZERO, coulwc_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
-            if (comm_h.is_root())
-                std::cout << "Projected full-Ewald regular Wc legs into the fixed Gamma "
-                             "Coulomb basis."
-                          << std::endl;
-        }
-        if (output_2d_finite_q_diagnostics && is_gamma_point(q))
-        {
-            gamma_coulomb_basis = coul_eigen_block.copy();
-            gamma_n_nonsingular = as_int(n_nonsingular);
-        }
-        Strict2dBlockMetrics alpha_wc_metrics;
-        if (output_2d_finite_q_diagnostics)
-        {
-            if (gamma_n_nonsingular < 1 || gamma_coulomb_basis.size() == 0)
-                throw LIBRPA_RUNTIME_ERROR(
-                    "strict 2D alpha diagnostics require the fixed Gamma basis");
-            diagnostic_alpha_wc.zero_out();
-            const std::complex<double> alpha_response = diagnostic_inverse_dielectric_alpha - 1.0;
-            if (is_gamma_point(q))
+            if (df_headwing == nullptr)
+                throw LIBRPA_RUNTIME_ERROR("Strict 2D complete-Wc requires head/wing data");
+            df_headwing->wing_mu_to_lambda(sqrtveig_blacs, desc_nabf_nabf_opt,
+                                           as_size(n_nonsingular));
+            // The analytic Gamma-cell average is assembled in the fixed Coulomb
+            // eigenbasis. Keep the bare-Ewald square-root eigenvalues in that
+            // basis; the ABF-space Wc Coulomb square root above cannot be used
+            // directly in this basis.
+            strict_2d_regular_coulomb_basis =
+                init_local_mat<complex<double>>(desc_nabf_nabf_opt, MAJOR::COL);
+            strict_2d_regular_coulomb_basis.zero_out();
+            for (int i = 0; i != as_int(n_nonsingular); ++i)
             {
-                const int nbody = gamma_n_nonsingular - 1;
-                if (nbody < 1)
-                    throw LIBRPA_RUNTIME_ERROR(
-                        "strict 2D alpha diagnostics require a regular Gamma body");
-                ScalapackConnector::pgemm_f(
-                    'N', 'N', nbody, nbody, nbody, alpha_response, coulwc_block.ptr(), 2, 2,
-                    desc_nabf_nabf_opt.desc, coulwc_block.ptr(), 2, 2, desc_nabf_nabf_opt.desc,
-                    C_ZERO, diagnostic_alpha_wc.ptr(), 2, 2, desc_nabf_nabf_opt.desc);
-                const int head_row = desc_nabf_nabf_opt.indx_g2l_r(0);
-                const int head_column = desc_nabf_nabf_opt.indx_g2l_c(0);
-                if (head_row >= 0 && head_column >= 0)
-                    diagnostic_alpha_wc(head_row, head_column) =
-                        alpha_response * df_headwing->get_strict_2d_bare_coulomb_gamma_average();
-                alpha_wc_metrics = collect_strict_2d_block_metrics(
-                    diagnostic_alpha_wc, desc_nabf_nabf_opt, gamma_n_nonsingular, comm_h);
-            }
-            else
-            {
-                ScalapackConnector::pgemm_f(
-                    'N', 'N', n_abf, n_abf, n_abf, alpha_response, coulwc_block.ptr(), 1, 1,
-                    desc_nabf_nabf_opt.desc, coulwc_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                    C_ZERO, diagnostic_alpha_wc.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
-                project_blacs_matrix_in_basis(diagnostic_alpha_wc, gamma_coulomb_basis,
-                                              desc_nabf_nabf_opt, gamma_n_nonsingular,
-                                              diagnostic_projection_work, diagnostic_projection);
-                alpha_wc_metrics = collect_strict_2d_block_metrics(
-                    diagnostic_projection, desc_nabf_nabf_opt, gamma_n_nonsingular, comm_h);
+                const int ilo = desc_nabf_nabf_opt.indx_g2l_r(i);
+                const int jlo = desc_nabf_nabf_opt.indx_g2l_c(i);
+                if (ilo >= 0 && jlo >= 0)
+                    strict_2d_regular_coulomb_basis(ilo, jlo) =
+                        std::sqrt(std::max(0.0, eigenvalues.c[i]));
             }
         }
+        sqrtveig_blacs.clear();
         global::profiler.stop("epsilon_prepare_couleps_sqrt");
         librpa_int::global::lib_printf_root("Time to prepare sqrt root of Coulomb for Epsilon(q) (seconds, Wall/CPU): %f %f\n",
                 global::profiler.get_wall_time_last("epsilon_prepare_couleps_sqrt"),
@@ -3310,8 +3029,6 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
         for (const auto &freq : chi0.tfg.get_freq_nodes())
         {
             const auto ifreq = chi0.tfg.get_freq_index(freq);
-            std::complex<double> finite_q_p_head = std::numeric_limits<double>::quiet_NaN();
-            Strict2dBlockMetrics finite_q_p_metrics;
             global::profiler.start("epsilon_wc_work_q_omega");
             global::profiler.start("epsilon_prepare_chi0_2d", "Prepare Chi0 2D block");
             chi0_block.zero_out();
@@ -3464,13 +3181,36 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                 if (df_headwing == nullptr)
                     throw LIBRPA_RUNTIME_ERROR("Head/wing dielectric function is not initialized");
                 if (strict_2d_complete_wc_gamma)
-                    df_headwing->rewrite_strict_2d_wc(
-                        chi0_block, ifreq, desc_nabf_nabf_opt, coulwc_block);
+                {
+                    const int n_coulomb = as_int(n_nonsingular);
+                    // The complete Gamma Wc is assembled in the Coulomb eigenbasis.
+                    ScalapackConnector::pgemm_f(
+                        'N', 'N', n_abf, n_coulomb, n_abf, C_ONE, chi0_block.ptr(), 1, 1,
+                        desc_nabf_nabf_opt.desc, coul_eigen_block.ptr(), 1, 1,
+                        desc_nabf_nabf_opt.desc, C_ZERO, coul_chi0_block.ptr(), 1, 1,
+                        desc_nabf_nabf_opt.desc);
+                    ScalapackConnector::pgemm_f('C', 'N', n_coulomb, n_coulomb, n_abf, C_ONE,
+                                                coul_eigen_block.ptr(), 1, 1,
+                                                desc_nabf_nabf_opt.desc, coul_chi0_block.ptr(), 1,
+                                                1, desc_nabf_nabf_opt.desc, C_ZERO,
+                                                chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+                    df_headwing->rewrite_strict_2d_wc(chi0_block, ifreq, desc_nabf_nabf_opt,
+                                                      strict_2d_regular_coulomb_basis);
+                    ScalapackConnector::pgemm_f(
+                        'N', 'N', n_abf, n_coulomb, n_coulomb, C_ONE, coul_eigen_block.ptr(), 1, 1,
+                        desc_nabf_nabf_opt.desc, chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
+                        C_ZERO, coul_chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+                    ScalapackConnector::pgemm_f('N', 'C', n_abf, n_abf, n_coulomb, C_ONE,
+                                                coul_chi0_block.ptr(), 1, 1,
+                                                desc_nabf_nabf_opt.desc, coul_eigen_block.ptr(), 1,
+                                                1, desc_nabf_nabf_opt.desc, C_ZERO,
+                                                chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc);
+                }
                 else
                     df_headwing->rewrite_eps_abf_space(
-                        chi0_block, ifreq, coul_block, coul_eigen_block,
-                        desc_nabf_nabf_opt, n_nonsingular, sqrt_coulomb_threshold,
-                        use_cholesky_gw_wc, use_gpu_replace_scalapack);
+                        chi0_block, ifreq, coul_block, coul_eigen_block, desc_nabf_nabf_opt,
+                        n_nonsingular, sqrt_coulomb_threshold, use_cholesky_gw_wc,
+                        use_gpu_replace_scalapack);
 
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
                 if (use_gpu_replace_scalapack)
@@ -3481,28 +3221,6 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
                         deviceMemcpyHostToDevice, blacs_h.ddla_handle->stream));
                 }
 #endif
-                // The production epsilon matrix has already been formed above.  Copy it
-                // back only for the optional fixed-Gamma-basis diagnostic projection.
-                if (output_2d_finite_q_diagnostics && ifreq == 0)
-                {
-#if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
-                    if (use_gpu_replace_scalapack)
-                    {
-                        DEVICE_CHECK(deviceMemcpyAsync(chi0_block.ptr(), chi0_block_ptr,
-                                                       chi0_block.size() * sizeof(complex<double>),
-                                                       deviceMemcpyDeviceToHost,
-                                                       blacs_h.ddla_handle->stream));
-                        DEVICE_CHECK(deviceStreamSynchronize(blacs_h.ddla_handle->stream));
-                    }
-#endif
-                    project_blacs_matrix_in_basis(
-                        chi0_block, gamma_coulomb_basis, desc_nabf_nabf_opt, gamma_n_nonsingular,
-                        diagnostic_projection_work, diagnostic_projection);
-                    finite_q_p_metrics = collect_strict_2d_block_metrics(
-                        diagnostic_projection, desc_nabf_nabf_opt, gamma_n_nonsingular, comm_h);
-                    finite_q_p_metrics.head *= -1.0;
-                    finite_q_p_head = finite_q_p_metrics.head;
-                }
             }
             else if (gamma_head_only)
             {
@@ -3701,89 +3419,15 @@ std::map<double, std::map<Vector3_Order<double>, Matz>> compute_Wc_freq_q_blacs(
 #if defined(LIBRPA_USE_HIP) || defined(LIBRPA_USE_CUDA)
             if (use_gpu_replace_scalapack)
             {
-                DEVICE_CHECK(deviceMemcpyAsync(chi0_block.ptr(), chi0_block_ptr,
-                                                chi0_block.size() * sizeof(complex<double>),
-                                                deviceMemcpyDeviceToHost,
-                                                blacs_h.ddla_handle->stream));
+                DEVICE_CHECK(deviceMemcpyAsync(
+                    chi0_block.ptr(), chi0_block_ptr, chi0_block.size() * sizeof(complex<double>),
+                    deviceMemcpyDeviceToHost, blacs_h.ddla_handle->stream));
                 DEVICE_CHECK(deviceStreamSynchronize(blacs_h.ddla_handle->stream));
             }
 #endif
-            Strict2dBlockMetrics wc_metrics;
-            const bool collect_wc_metrics =
-                output_2d_finite_q_diagnostics && (ifreq == 0 || is_gamma_point(q));
-            if (collect_wc_metrics)
-            {
-                project_blacs_matrix_in_basis(chi0_block, gamma_coulomb_basis, desc_nabf_nabf_opt,
-                                              gamma_n_nonsingular, diagnostic_projection_work,
-                                              diagnostic_projection);
-                wc_metrics = collect_strict_2d_block_metrics(
-                    diagnostic_projection, desc_nabf_nabf_opt, gamma_n_nonsingular, comm_h);
-            }
-            if (output_2d_finite_q_diagnostics && is_gamma_point(q))
-            {
-                const double q_weight = chi0.q_weight(q);
-                const double gamma_area = strict_2d_physical_gamma_cell_area(
-                    rpa_headwing_gamma_cell_volume(chi0.pbc, true));
-                if (comm_h.is_root())
-                    gamma_wc_diagnostics
-                        << ifreq << ',' << freq << ',' << q_weight << ',' << gamma_area << ','
-                        << wc_metrics.head.real() << ',' << wc_metrics.head.imag() << ','
-                        << wc_metrics.head_body_frobenius << ',' << wc_metrics.body_head_frobenius
-                        << ',' << wc_metrics.body_body_frobenius << ','
-                        << alpha_wc_metrics.head.real() << ',' << alpha_wc_metrics.head.imag()
-                        << ',' << alpha_wc_metrics.head_body_frobenius << ','
-                        << alpha_wc_metrics.body_head_frobenius << ','
-                        << alpha_wc_metrics.body_body_frobenius << ','
-                        << q_weight * wc_metrics.head.real() << ','
-                        << q_weight * wc_metrics.head.imag() << ','
-                        << q_weight * wc_metrics.head_body_frobenius << ','
-                        << q_weight * wc_metrics.body_head_frobenius << ','
-                        << q_weight * wc_metrics.body_body_frobenius << '\n';
-            }
-            if (output_2d_finite_q_diagnostics && ifreq == 0 && !is_gamma_point(q))
-            {
-                const double q_internal = std::hypot(q.x, q.y);
-                const double q_physical = strict_2d_physical_q(q_internal);
-                if (!(q_physical > 0.0) || !std::isfinite(q_physical))
-                    throw LIBRPA_RUNTIME_ERROR(
-                        "strict 2D finite-q diagnostic encountered invalid q");
-                const double qhat_x = q.x / q_internal;
-                const double qhat_y = q.y / q_internal;
-                const auto reference =
-                    df_headwing->get_strict_2d_finite_q_reference(ifreq, q.x, q.y);
-                const auto wc_head = wc_metrics.head;
-                const double q_weight = chi0.q_weight(q);
-                const auto p_over_q = finite_q_p_head / q_physical;
-                const auto analytic_p_over_q = -reference.epsilon_minus_identity_over_q;
-                if (comm_h.is_root())
-                    finite_q_diagnostics
-                        << iq << ',' << qf.x << ',' << qf.y << ',' << qf.z << ',' << q_physical
-                        << ',' << qhat_x << ',' << qhat_y << ',' << q_weight << ','
-                        << finite_q_head_overlap << ',' << finite_q_p_head.real() << ','
-                        << finite_q_p_head.imag() << ',' << p_over_q.real() << ','
-                        << p_over_q.imag() << ',' << finite_q_p_metrics.head_body_frobenius << ','
-                        << finite_q_p_metrics.body_head_frobenius << ','
-                        << finite_q_p_metrics.body_body_frobenius << ',' << analytic_p_over_q.real()
-                        << ',' << analytic_p_over_q.imag() << ',' << wc_head.real() << ','
-                        << wc_head.imag() << ',' << wc_metrics.head_body_frobenius << ','
-                        << wc_metrics.body_head_frobenius << ',' << wc_metrics.body_body_frobenius
-                        << ',' << alpha_wc_metrics.head.real() << ','
-                        << alpha_wc_metrics.head.imag() << ','
-                        << alpha_wc_metrics.head_body_frobenius << ','
-                        << alpha_wc_metrics.body_head_frobenius << ','
-                        << alpha_wc_metrics.body_body_frobenius << ','
-                        << reference.wc_head_limit.real() << ',' << reference.wc_head_limit.imag()
-                        << ',' << (q_physical * wc_head).real() << ','
-                        << (q_physical * wc_head).imag() << ',' << q_weight * wc_head.real() << ','
-                        << q_weight * wc_head.imag() << ','
-                        << q_weight * wc_metrics.head_body_frobenius << ','
-                        << q_weight * wc_metrics.body_head_frobenius << ','
-                        << q_weight * wc_metrics.body_body_frobenius << '\n';
-            }
-            // convert back to initial distribution
-            ScalapackConnector::pgemr2d_f(n_abf, n_abf, chi0_block.ptr(), 1, 1, desc_nabf_nabf_opt.desc,
-                                        temp_block.ptr(), 1, 1, desc_nabf_nabf.desc, blacs_h.ictxt);
-            // lib_printf("chi0_block\n%s", str(chi0_block).c_str());
+            ScalapackConnector::pgemr2d_f(n_abf, n_abf, chi0_block.ptr(), 1, 1,
+                                          desc_nabf_nabf_opt.desc, temp_block.ptr(), 1, 1,
+                                          desc_nabf_nabf.desc, blacs_h.ictxt);
             global::profiler.stop("epsilon_wc_work_q_omega");
             // now temp_block contains the screened Coulomb interaction Wc (i.e. W-V)
             // under the desired array descriptor
