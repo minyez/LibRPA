@@ -66,6 +66,45 @@ full auxiliary basis and producer run as `basis_aux_out`, Coulomb matrices,
 and head/wing data. A missing, non-positive, or unsupported-version value is
 rejected before the strict-2D complete-Wc route starts.
 
+### Minimal complete-Wc driver settings
+
+The following strict-2D settings select the complete Gamma head/wing Wc route
+for the standalone driver. The ordinary dataset, frequency, band, and GW
+settings still need to be supplied for the calculation:
+
+```ini
+task = g0w0
+input_dir = ./reader-v1
+output_dir = ./librpa.out
+parallel_routing = libri
+replace_w_head = t
+option_dielect_func = 3
+use_2d_dielectric = t
+use_scalapack_gw_wc = t
+use_fullcoul_eps = t
+use_fullcoul_wc = t
+use_shrink_abfs = f
+sqrt_coulomb_threshold = 0
+rpa_headwing_mode = qavg
+```
+
+The `input_dir` must contain the metadata file described above together with
+the full auxiliary basis, full Coulomb matrices, and producer head/wing data.
+The complete-Wc route requires full Coulomb for both the dielectric basis and
+the finite-q external legs, and it currently requires the ScaLAPACK Wc path.
+
+Producer support is defined by this reader-v1 contract: a producer is
+supported when it writes `librpa_2d_coulomb_head.txt` and the matching full
+auxiliary-basis, Coulomb, and head/wing files from the same run. Older output
+without this metadata is not inferred or accepted; regenerate it with a
+producer that implements the contract.
+
+In this version the public C/C++ and Fortran API options do not provide a
+metadata injection field. Strict-2D complete-Wc is therefore supported through
+the standalone reader-v1 driver, which reads the file and configures the
+head/wing object. A direct API request without that driver configuration is
+rejected before Wc construction.
+
 (stru-out)=
 ## `stru_out`
 
