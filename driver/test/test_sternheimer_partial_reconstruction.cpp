@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cassert>
 #include <complex>
 #include <filesystem>
@@ -11,6 +12,7 @@
 
 #include "../sternheimer_partial_reconstruction.h"
 #include "../../src/core/symmetry_context.h"
+#include "../../src/utils/constants.h"
 
 using namespace librpa_int;
 
@@ -234,7 +236,6 @@ void test_fixed_q_symmetry_diagnostic_reports_route_and_transform()
     const std::vector<SpeciesBasisLayout> layouts{make_s_layout()};
     const std::map<atom_t, std::size_t> atom_nabf{{0, 1}};
     const std::vector<Vector3_Order<double>> full_kpoints{{0.0, 0.0, 0.0}};
-
     const auto diagnostics = driver::build_sternheimer_fixed_q_symmetry_diagnostics(
         context, layouts, atom_nabf, full_kpoints, {0.0, 0.0, 0.0}, 0);
 
@@ -428,6 +429,102 @@ void test_recovers_target_q_coulomb_from_ibz_representative()
     assert(std::abs(target->matrix(0, 0) - std::complex<double>(2.0, 0.0)) < 1.0e-12);
 }
 
+void test_coulomb_file_indices_follow_canonical_q_star_representatives()
+{
+    PeriodicBoundaryData pbc;
+    pbc.set_latvec({1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0});
+    const std::vector<double> kvecs{
+        0.0, 0.0, 0.0,
+        librpa_int::TWO_PI / 4.0, 0.0, 0.0,
+        2.0 * librpa_int::TWO_PI / 4.0, 0.0, 0.0,
+        3.0 * librpa_int::TWO_PI / 4.0, 0.0, 0.0,
+    };
+    pbc.set_kgrids_kvec(4, 1, 1, kvecs);
+    pbc.set_kq_mapping({0, 1, 2, 3});
+
+    SymmetryContext context;
+    context.set_crystal_structure(pbc.latvec,
+                                  pbc.G,
+                                  {{0, 0}},
+                                  {{0, {0.0, 0.0, 0.0}}});
+    context.set_rspace_operations({SpaceGroupSymOp::IDENTITY});
+    context.basis_convention = {-1,
+                                0,
+                                LIBRPA_ANGULAR_ORDER_NATURAL,
+                                LIBRPA_RSH_COEFF_1_M,
+                                LIBRPA_RSH_COEFF_1_M};
+    context.set_available();
+    context.build_periodic_mappings(pbc, pbc.Rlist);
+    assert(pbc.kfrac_list.size() == 4);
+    assert(context.kstars.size() == 3);
+    assert(context.kstars[0].members.size() == 1);
+    assert(context.kstars[1].members.size() == 2);
+    assert(context.kstars[2].members.size() == 1);
+
+    const auto qpoints = driver::sternheimer_coulomb_ibz_qpoints(context);
+    assert(qpoints.size() == 3);
+    assert(same_fractional_kpoint(qpoints[0], {0.0, 0.0, 0.0}, 1.0e-12));
+    assert(same_fractional_kpoint(qpoints[1], {0.25, 0.0, 0.0}, 1.0e-12));
+    assert(same_fractional_kpoint(qpoints[2], {0.5, 0.0, 0.0}, 1.0e-12));
+
+    const auto restored = driver::reconstruct_sternheimer_full_q_matrices_from_ibz(
+        context, {make_s_layout()}, {{0, 1}}, qpoints,
+        {scalar_matrix(1.0), scalar_matrix(2.0), scalar_matrix(3.0)}, 0);
+    assert(restored.size() == 4);
+    assert(std::any_of(restored.cbegin(), restored.cend(), [](const auto &member) {
+        return same_fractional_kpoint(member.q, {0.75, 0.0, 0.0}, 1.0e-12);
+    }));
+}
+
+void test_omits_gamma_groups_only_when_gamma_is_disabled()
+{
+    const Vector3_Order<double> gamma{0.0, 0.0, 0.0};
+    const Vector3_Order<double> boundary{0.5, 0.0, 0.0};
+    auto context = make_one_atom_context(gamma);
+    SymmetryKStar boundary_star;
+    boundary_star.star_index = 1;
+    boundary_star.k_ibz = boundary;
+    boundary_star.members.push_back(build_symmetry_kspace_operation_member(
+        context, 0, false, boundary, boundary, 0));
+    context.kstars.push_back(std::move(boundary_star));
+
+    const std::vector<SpeciesBasisLayout> layouts{make_s_layout()};
+    const std::map<atom_t, std::size_t> atom_nabf{{0, 1}};
+    const std::vector<Vector3_Order<double>> full_kpoints{{0.0, 0.0, 0.0}};
+    const std::vector<Vector3_Order<double>> full_qpoints{{0.0, 0.0, 0.0},
+                                                          {0.5, 0.0, 0.0}};
+    const std::vector<driver::SternheimerQPoint> qpoints{
+        {1, {0.0, 0.0, 0.0}, 0.5}, {2, {0.5, 0.0, 0.0}, 0.5}};
+    const auto boundary_group = make_group(2, 1, 0.5, 0.125, {{0, scalar_matrix(-1.0)}});
+    const auto gamma_group = make_group(1, 1, 0.5, 0.125, {{0, scalar_matrix(-2.0)}});
+
+    driver::SternheimerPartialResponseGroups complete_groups;
+    complete_groups.emplace(std::make_pair(1, 1), gamma_group);
+    complete_groups.emplace(std::make_pair(2, 1), boundary_group);
+    auto reconstructed = driver::reconstruct_sternheimer_partial_responses(
+        context, layouts, atom_nabf, full_kpoints, full_qpoints, qpoints, complete_groups, 1,
+        false, 0);
+    assert(reconstructed.size() == 1);
+    assert(reconstructed.front().iq == 2);
+
+    complete_groups.erase({1, 1});
+    reconstructed = driver::reconstruct_sternheimer_partial_responses(
+        context, layouts, atom_nabf, full_kpoints, full_qpoints, qpoints, complete_groups, 1,
+        false, 0);
+    assert(reconstructed.size() == 1);
+    assert(reconstructed.front().iq == 2);
+
+    require_throws(
+        [&]() {
+            driver::reconstruct_sternheimer_partial_responses(
+                context, layouts, atom_nabf, full_kpoints, full_qpoints, qpoints,
+                complete_groups, 1, true, 0);
+        },
+        "missing (iq, ifreq)=(1, 1)");
+}
+
 void test_explicit_discrete_qstar_routes_define_coverage_and_weights()
 {
     const auto context = make_one_atom_context({0.0, 0.0, 0.0});
@@ -578,6 +675,8 @@ int main()
     test_qstar_rpa_audit_uses_internal_weight_and_checks_every_member();
     test_default_qstar_tolerance_accepts_dense_linear_algebra_noise();
     test_recovers_target_q_coulomb_from_ibz_representative();
+    test_coulomb_file_indices_follow_canonical_q_star_representatives();
+    test_omits_gamma_groups_only_when_gamma_is_disabled();
     test_explicit_discrete_qstar_routes_define_coverage_and_weights();
     test_qstar_routes_use_the_full_q_grid_for_member_indices();
     test_rejects_missing_representative_and_frequency();

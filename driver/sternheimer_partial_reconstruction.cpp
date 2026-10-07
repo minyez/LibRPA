@@ -47,6 +47,29 @@ librpa_int::Vector3_Order<double> q_vector(const SternheimerQPoint &point)
 
 }  // namespace
 
+std::vector<librpa_int::Vector3_Order<double>> sternheimer_coulomb_ibz_qpoints(
+    const librpa_int::SymmetryContext &symmetry)
+{
+    if (symmetry.kstars.empty())
+    {
+        throw std::runtime_error("Sternheimer Coulomb q-star mapping is empty");
+    }
+
+    std::vector<librpa_int::Vector3_Order<double>> qpoints;
+    qpoints.reserve(symmetry.kstars.size());
+    for (std::size_t index = 0; index != symmetry.kstars.size(); ++index)
+    {
+        const auto &star = symmetry.kstars[index];
+        if (star.star_index != static_cast<int>(index) || star.members.empty())
+        {
+            throw std::runtime_error(
+                "Sternheimer Coulomb q-star mapping has invalid representative order");
+        }
+        qpoints.push_back(star.k_ibz);
+    }
+    return qpoints;
+}
+
 std::vector<librpa_int::SternheimerQStarResponse> reconstruct_sternheimer_full_q_matrices_from_ibz(
     const librpa_int::SymmetryContext &symmetry,
     const std::vector<librpa_int::SpeciesBasisLayout> &layouts,
@@ -58,6 +81,20 @@ std::vector<librpa_int::SternheimerQStarResponse> reconstruct_sternheimer_full_q
     {
         throw std::runtime_error(
             "Sternheimer IBZ q points and matrices must have the same non-zero count");
+    }
+    if (ibz_qpoints.size() != symmetry.kstars.size())
+    {
+        throw std::runtime_error(
+            "Sternheimer Coulomb IBZ files do not match the symmetry q-star count");
+    }
+    for (std::size_t index = 0; index != ibz_qpoints.size(); ++index)
+    {
+        if (!librpa_int::same_fractional_kpoint(ibz_qpoints[index],
+                                                symmetry.kstars[index].k_ibz, 1.0e-8))
+        {
+            throw std::runtime_error(
+                "Sternheimer Coulomb IBZ file index does not match its q-star representative");
+        }
     }
 
     std::size_t expected_full_q_count = 0;
@@ -473,10 +510,28 @@ std::vector<SternheimerReconstructedResponse> reconstruct_sternheimer_partial_re
         }
     }
 
-    if (used_groups.size() != groups.size())
+    std::set<int> skipped_gamma_iq;
+    if (!use_rpa_gamma)
     {
-        throw std::runtime_error(
-            "Sternheimer partial manifest contains unexpected q/frequency response groups");
+        for (const auto &point : qpoints)
+        {
+            if (is_rpa_gamma_point(point.q))
+            {
+                skipped_gamma_iq.insert(point.iq);
+            }
+        }
+    }
+    for (const auto &entry : groups)
+    {
+        if (skipped_gamma_iq.count(entry.first.first) != 0)
+        {
+            continue;
+        }
+        if (used_groups.count(entry.first) == 0)
+        {
+            throw std::runtime_error(
+                "Sternheimer partial manifest contains unexpected q/frequency response groups");
+        }
     }
     return reconstructed;
 }

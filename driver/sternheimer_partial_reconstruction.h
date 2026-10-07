@@ -50,6 +50,10 @@ struct SternheimerQStarRpaAudit
     double max_integrand_difference = 0.0;
 };
 
+//! Return Coulomb-v1 q coordinates in the one-based file-index order.
+std::vector<librpa_int::Vector3_Order<double>> sternheimer_coulomb_ibz_qpoints(
+    const librpa_int::SymmetryContext &symmetry);
+
 std::vector<librpa_int::SternheimerQStarResponse> reconstruct_sternheimer_full_q_matrices_from_ibz(
     const librpa_int::SymmetryContext &symmetry,
     const std::vector<librpa_int::SpeciesBasisLayout> &layouts,

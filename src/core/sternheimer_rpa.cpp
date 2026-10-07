@@ -292,7 +292,7 @@ std::complex<double> compute_rpa_trace_log_integrand(const ComplexMatrix &pi)
     identity_minus_pi.set_as_identity_matrix();
     identity_minus_pi -= pi;
 
-    std::complex<double> det_for_rpa(1.0, 0.0);
+    std::complex<double> logdet_for_rpa(0.0, 0.0);
     std::vector<int> ipiv(pi.nr);
     int info_lu = 0;
     LapackConnector::zgetrf(pi.nr, pi.nc, identity_minus_pi, pi.nr, ipiv.data(), &info_lu);
@@ -304,17 +304,18 @@ std::complex<double> compute_rpa_trace_log_integrand(const ComplexMatrix &pi)
 
     for (int ib = 0; ib != pi.nr; ++ib)
     {
+        logdet_for_rpa += std::log(identity_minus_pi(ib, ib));
         if (ipiv[ib] != ib + 1)
         {
-            det_for_rpa = -det_for_rpa * identity_minus_pi(ib, ib);
-        }
-        else
-        {
-            det_for_rpa *= identity_minus_pi(ib, ib);
+            // Each row interchange contributes a factor -1 to the determinant.
+            logdet_for_rpa += std::complex<double>(0.0, 0.5 * TWO_PI);
         }
     }
 
-    return std::log(det_for_rpa) + trace(pi);
+    // Match std::log(det) branch selection while keeping the magnitude in log
+    // space so large response spaces cannot overflow the determinant product.
+    logdet_for_rpa.imag(std::remainder(logdet_for_rpa.imag(), TWO_PI));
+    return logdet_for_rpa + trace(pi);
 }
 
 SternheimerRpaFrequencyResult compute_sternheimer_rpa_frequency(const ComplexMatrix &coulomb,

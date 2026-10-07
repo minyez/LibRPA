@@ -21,6 +21,7 @@
 #include "../reader_sternheimer_partial.h"
 #include "../reader_sternheimer_qpoints.h"
 #include "../rpa_qsum.h"
+#include "../root_output.h"
 #include "../sternheimer_partial_reconstruction.h"
 #include "../task.h"
 
@@ -285,16 +286,20 @@ void driver::task_sternheimer_rpa()
         std::vector<librpa_int::SternheimerQStarResponse> coulomb_full_q;
         if (!matrix_only)
         {
+            // Coulomb v1 file iq is the one-based index of the symmetry star
+            // representative.  The loaded SCF list may contain every full-BZ
+            // point, so pbc.kfrac_list is not a valid source for this mapping.
+            const auto coulomb_ibz_qpoints = sternheimer_coulomb_ibz_qpoints(symmetry);
             std::vector<librpa_int::ComplexMatrix> coulomb_ibz;
-            coulomb_ibz.reserve(pds->pbc.kfrac_list.size());
-            for (std::size_t index = 0; index != pds->pbc.kfrac_list.size(); ++index)
+            coulomb_ibz.reserve(coulomb_ibz_qpoints.size());
+            for (std::size_t index = 0; index != coulomb_ibz_qpoints.size(); ++index)
             {
                 coulomb_ibz.push_back(read_coulomb_v1_full_matrix(driver_params.input_dir,
                                                                   driver_params.prefix_coul_full,
                                                                   static_cast<int>(index + 1)));
             }
             coulomb_full_q = reconstruct_sternheimer_full_q_matrices_from_ibz(
-                symmetry, layouts, atom_nabf, pds->pbc.kfrac_list, coulomb_ibz, lmax);
+                symmetry, layouts, atom_nabf, coulomb_ibz_qpoints, coulomb_ibz, lmax);
         }
         const auto reconstructed = reconstruct_sternheimer_partial_responses(
             symmetry, layouts, atom_nabf, full_kpoints, full_qpoints, qpoints, groups,
@@ -302,33 +307,34 @@ void driver::task_sternheimer_rpa()
             include_gamma_in_rpa, lmax, fixed_q_routes.empty() ? nullptr : &fixed_q_routes,
             matrix_only, qstar_routes.empty() ? nullptr : &qstar_routes);
 
-        if (write_symmetry_diagnostic && mpi_comm_global_h.is_root())
+        if (write_symmetry_diagnostic)
         {
-            for (const auto &point : qpoints)
-            {
-                if (!include_gamma_in_rpa && is_rpa_gamma_point(point.q))
+            run_root_output_collective([&]() {
+                for (const auto &point : qpoints)
                 {
-                    continue;
+                    if (!include_gamma_in_rpa && is_rpa_gamma_point(point.q))
+                    {
+                        continue;
+                    }
+                    std::vector<SternheimerFixedQRouteRecord> point_routes;
+                    std::copy_if(fixed_q_routes.cbegin(), fixed_q_routes.cend(),
+                                 std::back_inserter(point_routes),
+                                 [&point](const auto &route) { return route.iq == point.iq; });
+                    const auto diagnostics = build_sternheimer_fixed_q_symmetry_diagnostics(
+                        symmetry, layouts, atom_nabf, full_kpoints,
+                        {point.q[0], point.q[1], point.q[2]}, lmax,
+                        point_routes.empty() ? nullptr : &point_routes);
+                    write_sternheimer_fixed_q_symmetry_diagnostics(
+                        driver_params.prefix_sternheimer_symmetry_diagnostic + "iq_" +
+                            std::to_string(point.iq) + ".dat",
+                        point.iq, diagnostics);
                 }
-                std::vector<SternheimerFixedQRouteRecord> point_routes;
-                std::copy_if(fixed_q_routes.cbegin(), fixed_q_routes.cend(),
-                             std::back_inserter(point_routes),
-                             [&point](const auto &route) { return route.iq == point.iq; });
-                const auto diagnostics = build_sternheimer_fixed_q_symmetry_diagnostics(
-                    symmetry, layouts, atom_nabf, full_kpoints,
-                    {point.q[0], point.q[1], point.q[2]}, lmax,
-                    point_routes.empty() ? nullptr : &point_routes);
-                write_sternheimer_fixed_q_symmetry_diagnostics(
-                    driver_params.prefix_sternheimer_symmetry_diagnostic + "iq_" +
-                        std::to_string(point.iq) + ".dat",
-                    point.iq, diagnostics);
-            }
+            });
         }
 
         if (matrix_only)
         {
-            if (mpi_comm_global_h.is_root())
-            {
+            run_root_output_collective([&]() {
                 for (const auto &response : reconstructed)
                 {
                     const auto &metadata = groups.at({response.iq, response.ifreq});
@@ -350,8 +356,9 @@ void driver::task_sternheimer_rpa()
                         SternheimerChi0V1Matrix output = aggregate;
                         output.matrix = member.matrix;
                         write_sternheimer_chi0_v1_matrix_file(
-                            driver_params.prefix_sternheimer_kresolved + std::to_string(output.iq) +
-                                "_ik_" + std::to_string(member.ik_full) + "_ifreq_" +
+                            driver_params.prefix_sternheimer_kresolved +
+                                std::to_string(output.iq) + "_ik_" +
+                                std::to_string(member.ik_full) + "_ifreq_" +
                                 std::to_string(output.ifreq) + ".dat",
                             output);
                     }
@@ -364,7 +371,7 @@ void driver::task_sternheimer_rpa()
                 lib_printf(
                     "Sternheimer fixed-q matrix-only reconstruction completed; no RPA energy was "
                     "evaluated.\n");
-            }
+            });
             mpi_comm_global_h.barrier();
             return;
         }
@@ -414,44 +421,50 @@ void driver::task_sternheimer_rpa()
                 const auto audit = compute_sternheimer_qstar_rpa_frequency(
                     response, coulomb_qstar, driver::opts.sqrt_coulomb_threshold,
                     gamma_headwing ? &headwing : nullptr);
-                if (write_reconstructed && mpi_comm_global_h.is_root())
+                if (write_reconstructed || write_kresolved)
                 {
-                    const auto &metadata = groups.at({point.iq, response.ifreq});
-                    for (const auto &member : response.qstar_responses)
-                    {
-                        const auto folded = librpa_int::fold_fractional_kpoint_to_targets(
-                            member.q, full_qpoints, 1.0e-8);
-                        SternheimerChi0V1Matrix output;
-                        output.iq = folded.target_k_index + 1;
-                        output.ifreq = response.ifreq;
-                        output.omega = response.omega;
-                        output.weight = response.weight;
-                        output.atom_naux = metadata.atom_naux;
-                        output.matrix = member.matrix;
-                        const std::string path = driver_params.prefix_sternheimer_reconstructed +
-                                                 std::to_string(output.iq) + "_ifreq_" +
-                                                 std::to_string(output.ifreq) + ".dat";
-                        write_sternheimer_chi0_v1_matrix_file(path, output);
-                    }
-                }
-                if (write_kresolved && mpi_comm_global_h.is_root())
-                {
-                    const auto &metadata = groups.at({point.iq, response.ifreq});
-                    for (const auto &member : response.kresolved_responses)
-                    {
-                        SternheimerChi0V1Matrix output;
-                        output.iq = point.iq;
-                        output.ifreq = response.ifreq;
-                        output.omega = response.omega;
-                        output.weight = response.weight;
-                        output.atom_naux = metadata.atom_naux;
-                        output.matrix = member.matrix;
-                        const std::string path = driver_params.prefix_sternheimer_kresolved +
-                                                 std::to_string(output.iq) + "_ik_" +
-                                                 std::to_string(member.ik_full) + "_ifreq_" +
-                                                 std::to_string(output.ifreq) + ".dat";
-                        write_sternheimer_chi0_v1_matrix_file(path, output);
-                    }
+                    run_root_output_collective([&]() {
+                        const auto &metadata = groups.at({point.iq, response.ifreq});
+                        if (write_reconstructed)
+                        {
+                            for (const auto &member : response.qstar_responses)
+                            {
+                                const auto folded = librpa_int::fold_fractional_kpoint_to_targets(
+                                    member.q, full_qpoints, 1.0e-8);
+                                SternheimerChi0V1Matrix output;
+                                output.iq = folded.target_k_index + 1;
+                                output.ifreq = response.ifreq;
+                                output.omega = response.omega;
+                                output.weight = response.weight;
+                                output.atom_naux = metadata.atom_naux;
+                                output.matrix = member.matrix;
+                                const std::string path =
+                                    driver_params.prefix_sternheimer_reconstructed +
+                                    std::to_string(output.iq) + "_ifreq_" +
+                                    std::to_string(output.ifreq) + ".dat";
+                                write_sternheimer_chi0_v1_matrix_file(path, output);
+                            }
+                        }
+                        if (write_kresolved)
+                        {
+                            for (const auto &member : response.kresolved_responses)
+                            {
+                                SternheimerChi0V1Matrix output;
+                                output.iq = point.iq;
+                                output.ifreq = response.ifreq;
+                                output.omega = response.omega;
+                                output.weight = response.weight;
+                                output.atom_naux = metadata.atom_naux;
+                                output.matrix = member.matrix;
+                                const std::string path = driver_params.prefix_sternheimer_kresolved +
+                                                         std::to_string(output.iq) + "_ik_" +
+                                                         std::to_string(member.ik_full) +
+                                                         "_ifreq_" +
+                                                         std::to_string(output.ifreq) + ".dat";
+                                write_sternheimer_chi0_v1_matrix_file(path, output);
+                            }
+                        }
+                    });
                 }
                 double matrix_scale = 0.0;
                 double hermiticity_residual = 0.0;

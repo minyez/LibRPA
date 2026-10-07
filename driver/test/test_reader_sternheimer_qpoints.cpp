@@ -397,6 +397,36 @@ void test_merges_coulomb_atom_pair_blocks_across_rank_shards()
                       "merged matrix second diagonal");
 }
 
+void test_accepts_empty_coulomb_rank_shard_when_other_shards_cover_blocks()
+{
+    TempDirectory temp;
+    write_dense_coulomb_v1_shard(temp.path / "v1_coulomb_full_iq_2_rank0.dat", 2, {1, 1}, 1,
+                                 {});
+    write_two_atom_coulomb_v1_shard(temp.path / "v1_coulomb_full_iq_2_rank1.dat", 2,
+                                    {{0, {2.0, 0.0}}, {1, {0.5, 0.25}}, {2, {3.0, 0.0}}});
+
+    const auto matrix =
+        driver::read_coulomb_v1_full_matrix(temp.path.string(), "v1_coulomb_full_iq_", 2);
+    require_condition(matrix.nr == 2 && matrix.nc == 2,
+                      "empty rank shard must not affect merged dimensions");
+    require_condition(std::abs(matrix(0, 1) - std::complex<double>(0.5, 0.25)) < 1.0e-15,
+                      "empty rank shard must preserve covered blocks");
+}
+
+void test_rejects_entirely_empty_coulomb_shards_after_parsing()
+{
+    TempDirectory temp;
+    write_dense_coulomb_v1_shard(temp.path / "v1_coulomb_full_iq_2_rank0.dat", 2, {1, 1}, 1,
+                                 {});
+
+    require_throws(
+        [&]() {
+            driver::validate_coulomb_v1_full_matrix_file(
+                temp.path.string(), "v1_coulomb_full_iq_", 2);
+        },
+        "missing atom-pair block across Coulomb v1 shards");
+}
+
 void test_reads_single_coulomb_v1_file()
 {
     TempDirectory temp;
@@ -600,6 +630,8 @@ int main()
     test_reads_one_sternheimer_response_from_explicit_path();
     test_rejects_invalid_sternheimer_frequency_metadata();
     test_merges_coulomb_atom_pair_blocks_across_rank_shards();
+    test_accepts_empty_coulomb_rank_shard_when_other_shards_cover_blocks();
+    test_rejects_entirely_empty_coulomb_shards_after_parsing();
     test_reads_single_coulomb_v1_file();
     test_reads_rectangular_complex_atom_blocks();
     test_reads_real_coulomb_payload();

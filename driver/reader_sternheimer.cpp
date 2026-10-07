@@ -299,7 +299,7 @@ void read_atom_sizes_and_blocks(BlockedMatrixFile &file, std::ifstream &input)
         payload_ranges.emplace_back(payload_offset, payload_offset + payload_size);
     }
     std::sort(payload_ranges.begin(), payload_ranges.end());
-    for (std::size_t index = 1; index != payload_ranges.size(); ++index)
+    for (std::size_t index = 1; index < payload_ranges.size(); ++index)
     {
         if (payload_ranges[index].first < payload_ranges[index - 1].second)
         {

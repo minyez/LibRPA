@@ -85,7 +85,7 @@
            nthreads_enable="none"
       />
       <validate name="Delta-ST correlation energy"
-                regex="Total Sternheimer EcRPA: \s+([-+]?\d*\.\d+)"
+                regex="Total Sternheimer EcRPA: \s+([-+0-9.Ee]+)"
                 comparison="cmp_float.abs_diff(1e-10)"
       />
     </testcase>

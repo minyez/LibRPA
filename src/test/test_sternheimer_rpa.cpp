@@ -49,6 +49,30 @@ void test_sternheimer_pi_and_trace_log_match_diagonal_reference()
     require_close(result.energy, expected_integrand * 0.25 / librpa_int::TWO_PI, 1e-12);
 }
 
+void test_sternheimer_trace_log_stays_finite_for_large_diagonal_response()
+{
+    constexpr int size = 1024;
+    librpa_int::ComplexMatrix pi(size, size);
+    for (int index = 0; index != size; ++index)
+    {
+        pi(index, index) = {-1.0, 0.0};
+    }
+
+    const auto actual = librpa_int::compute_rpa_trace_log_integrand(pi);
+    const auto expected = std::complex<double>(size * (std::log(2.0) - 1.0), 0.0);
+    assert(std::isfinite(actual.real()));
+    assert(std::isfinite(actual.imag()));
+    require_close(actual, expected, 1.0e-10);
+
+    librpa_int::ComplexMatrix pivoted_pi(2, 2);
+    pivoted_pi(0, 0) = {1.0, 0.0};
+    pivoted_pi(0, 1) = {-1.0, 0.0};
+    pivoted_pi(1, 0) = {-1.0, 0.0};
+    pivoted_pi(1, 1) = {-1.0, 0.0};
+    require_close(librpa_int::compute_rpa_trace_log_integrand(pivoted_pi),
+                  {0.0, librpa_int::PI}, 1.0e-12);
+}
+
 void test_sternheimer_headwing_frequency_uses_one_based_response_labels()
 {
     assert(librpa_int::sternheimer_headwing_frequency_index(1, 12) == 0);
@@ -280,6 +304,7 @@ void test_sternheimer_qavg_body_start_zero_keeps_all_positive_finite_part_channe
 int main()
 {
     test_sternheimer_pi_and_trace_log_match_diagonal_reference();
+    test_sternheimer_trace_log_stays_finite_for_large_diagonal_response();
     test_sternheimer_headwing_frequency_uses_one_based_response_labels();
     test_sternheimer_headwing_uses_response_frequency_grid();
     test_sternheimer_headwing_accepts_recomputed_frequency_roundoff();

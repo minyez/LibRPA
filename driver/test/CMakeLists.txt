@@ -32,6 +32,20 @@ target_compile_options(test_reader_2d_coulomb_head PRIVATE -UNDEBUG)
 add_test(NAME test_reader_2d_coulomb_head COMMAND $<TARGET_FILE:test_reader_2d_coulomb_head>)
 
 add_executable(
+  test_root_output_collective
+  test_root_output_collective.cpp
+  ../reader_sternheimer.cpp
+)
+target_link_libraries(test_root_output_collective PRIVATE rpa_lib)
+target_compile_definitions(test_root_output_collective PRIVATE "LIBRPA_MPI_THREAD_LEVEL=${LIBRPA_MPI_THREAD_LEVEL}")
+target_compile_options(test_root_output_collective PRIVATE -UNDEBUG)
+if(BUILD_SHARED_LIBS)
+  target_link_libraries(test_root_output_collective PRIVATE ${math_libs} ${parallel_libs})
+endif()
+add_test(NAME test_root_output_collective
+         COMMAND mpirun -np 2 $<TARGET_FILE:test_root_output_collective>)
+
+add_executable(
   test_reader_sternheimer_qpoints
   test_reader_sternheimer_qpoints.cpp
   ../reader_sternheimer.cpp

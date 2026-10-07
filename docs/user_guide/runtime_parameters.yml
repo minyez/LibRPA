@@ -75,9 +75,39 @@ blocks:
 
   - heading: Sternheimer RPA
     text: |
-      These experimental driver parameters select aggregate or partial
-      Sternheimer response inputs. Partial reconstruction consumes the
-      producer-generated v1 manifests and response files.
+      These experimental driver parameters select aggregate or partial Sternheimer response
+      inputs. This is the consumer-side v1 contract; the producer/export implementation is
+      outside this change and the format remains provisional.
+
+      A Sternheimer chi0 v1 response file is a native-endian binary file with marker -41073291.
+      Its header is: int32 iq (one-based), int32 ifreq (one-based), int32 naux, int32 value_flag
+      (0 for real double or 1 for complex<double>), int32 natoms, double omega (Hartree),
+      double weight (Hartree), int32 nblocks, then natoms int32 atom_naux values. The block
+      table stores zero-based atom-pair indices and absolute int64 payload offsets.
+      Each payload is a dense row-major complex<double> atom-pair block; the assembled matrix M
+      is in the auxiliary-basis response convention and must not be pre-normalized by Coulomb.
+      The energy consumer constructs Pi = V^(-1/2) M V^(-1/2), with the configured Coulomb
+      eigenvalue filter, before evaluating the trace-log. Coulomb v1 files use the same auxiliary
+      atom-pair block convention and are indexed by one-based canonical q-star representative.
+
+      omega and frequency weight are in Hartree; q-point weights are dimensionless BZ weights.
+      In a partial run, fn_sternheimer_partial_manifest rows are `iq ik_full ifreq response_file`
+      with one-based iq/ifreq and zero-based ik_full. The file
+      `v1_sternheimer_full_kpoints.dat` is required beside that manifest; its rows are contiguous
+      zero-based `ik_full kx ky kz` records covering the full BvK grid. If symmetry route files
+      are supplied, both start with `version 1`: fixed-q routes use one-based iq and zero-based
+      k indices, while q-star member_iq is one-based; each inverse route maps a stored member
+      back to its representative using spatial_isym, time_reversal, and fold_G exactly as recorded.
+
+      A minimal partial-mode setup is:
+        fn_sternheimer_qpoints = v1_sternheimer_qpoints.dat
+        fn_sternheimer_partial_manifest = v1_sternheimer_partial_manifest.dat
+        prefix_coul_full = v1_coulomb_full_iq_
+        prefix_sternheimer_reconstructed = v1_sternheimer_reconstructed_iq_
+      The q-point manifest must include Gamma even when use_rpa_gamma is false, because the
+      manifest describes the producer grid. An analytic head/wing replacement enabled through
+      replace_w_head with option_dielect_func=3 or 4 overrides that exclusion and includes Gamma
+      in the RPA sum; qavg head/wing additionally requires option_dielect_func=3.
     fields:
       - driver.prefix_sternheimer_chi0
       - driver.fn_sternheimer_qpoints
