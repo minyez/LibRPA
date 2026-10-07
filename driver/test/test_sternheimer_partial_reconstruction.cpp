@@ -457,6 +457,7 @@ void test_coulomb_file_indices_follow_canonical_q_star_representatives()
                                 LIBRPA_RSH_COEFF_1_M};
     context.set_available();
     context.build_periodic_mappings(pbc, pbc.Rlist);
+    context.build_kstar_member_rotations(0);
     assert(pbc.kfrac_list.size() == 4);
     assert(context.kstars.size() == 3);
     assert(context.kstars[0].members.size() == 1);
