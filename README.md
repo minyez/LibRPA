@@ -11,8 +11,9 @@ implemented in C++ with MPI/OpenMP parallelism, provides C and Fortran
 interfaces, and can be integrated with density functional theory (DFT) codes
 through both file-based and API-based workflows.
 
-**Note:** LibRPA is under active development, and its input/output interfaces
-are prone to change.
+> [!NOTE]
+> LibRPA is under active development, and its input/output interfaces
+> are prone to change.
 
 ## Features
 
@@ -64,14 +65,6 @@ cmake -B build
 cmake --build build -j4
 ```
 
-LibRI support is enabled by default and is required for *GW* and EXX
-functionality. For an RPA-only build without LibRI, configure with:
-
-```bash
-cmake -B build -DLIBRPA_USE_LIBRI=OFF
-cmake --build build -j4
-```
-
 More example build scripts are provided under [`examples/build`](examples/build).
 
 ## Usage
@@ -98,19 +91,13 @@ More details can be found in the documentation for
 
 ## Documentation
 
-Comprehensive documentation, including installation instructions, user guides,
-examples, and tutorials, is available here: <https://aesm-group.github.io/LibRPA/>
+See the [documentation](https://aesm-group.github.io/LibRPA/) for installation instructions, user
+guides, examples, and tutorials.
 
 ## How to cite
 
-If you use LibRPA in published work, please consider citing the following papers:
-
-- R. Shi, P. Lin, M.-Y. Zhang, L. He, and X. Ren,
-  *Phys. Rev. B* **109**, 035103 (2024).
-- R. Shi, M.-Y. Zhang, P. Lin, L. He, and X. Ren,
-  *Comput. Phys. Commun.* **309**, 109496 (2025).
-- M.-Y. Zhang, P. Lin, R. Shi, and X. Ren,
-  *J. Chem. Theory Comput.* **22**, 5770 (2026).
+If you use LibRPA in your work, please consider citing the relevant papers that enable the relevant feature.
+Please consult the [How to Cite](./docs/user_guide/cite.rst) page for more details.
 
 ## Licensing
 
