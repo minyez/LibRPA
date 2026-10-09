@@ -943,38 +943,12 @@ void G0W0::write_sigc_rf_output_files() const
                         make_sigc_rf_filenames(output_dir, ispin, ispinor_bra, ispinor_ket,
                                                n_spinor, as_int(iomega), global::myid_global)
                             .front();
-                    std::ofstream ofs_sigmac_r(fn, std::ios::out | std::ios::binary);
-                    if (!ofs_sigmac_r)
-                        throw LIBRPA_RUNTIME_ERROR("cannot open SigC output file: " + fn);
-
-                    std::size_t n_IJR_myid = 0;
-                    ofs_sigmac_r.write(reinterpret_cast<const char *>(&n_IJR_myid),
-                                       sizeof(n_IJR_myid));
-
                     const auto omega = tfg.get_freq_nodes()[iomega];
                     const auto &sigc_IJ_R =
                         sigc_is_f_IJ_R.at(ispin).at(ispinor_bra).at(ispinor_ket).at(omega);
-                    for (const auto &[IJ, R_sigc] : sigc_IJ_R)
-                    {
-                        const int I = IJ.first;
-                        const int J = IJ.second;
-                        const auto n_I = atbasis_wfc.get_atom_nb(I);
-                        const auto n_J = atbasis_wfc.get_atom_nb(J);
-                        for (const auto &[R, sigc] : R_sigc)
-                        {
-                            const std::size_t dims[5] = {as_size(pbc.get_R_index(R)), as_size(I),
-                                                         as_size(J), n_I, n_J};
-                            assert(sigc.size() == n_I * n_J);
-                            ++n_IJR_myid;
-                            ofs_sigmac_r.write(reinterpret_cast<const char *>(dims), sizeof(dims));
-                            ofs_sigmac_r.write(reinterpret_cast<const char *>(sigc.ptr()),
-                                               sigc.size() * sizeof(cplxdb));
-                        }
-                    }
-                    ofs_sigmac_r.seekp(0);
-                    ofs_sigmac_r.write(reinterpret_cast<const char *>(&n_IJR_myid),
-                                       sizeof(n_IJR_myid));
-                    if (!ofs_sigmac_r)
+                    int write_ok = write_rspace_matrices_binary(sigc_IJ_R, atbasis_wfc, pbc, fn);
+                    MPI_Allreduce(MPI_IN_PLACE, &write_ok, 1, MPI_INT, MPI_MIN, comm_h.comm);
+                    if (!write_ok)
                         throw LIBRPA_RUNTIME_ERROR("failed to write SigC output file: " + fn);
                 }
             }

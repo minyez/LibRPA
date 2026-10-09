@@ -230,6 +230,7 @@ module librpa_f03
       integer(c_int) :: output_gw_sigc_ks_mat_kf
       integer(c_int) :: output_exx_ks_mat_k
       integer(c_int) :: output_exx_mat_k
+      integer(c_int) :: output_exx_mat_r
       integer(c_int) :: istate_output_mat_start
       integer(c_int) :: istate_output_mat_end
       integer(c_int) :: output_gw_sigc_mat_kf
@@ -396,6 +397,8 @@ module librpa_f03
       logical :: output_exx_ks_mat_k
       !> Experimental: output the NAO-basis exact-exchange matrix in k-space as dense binary files.
       logical :: output_exx_mat_k
+      !> Experimental: output real-space NAO exact-exchange blocks as dense binary files.
+      logical :: output_exx_mat_r
       !> First zero-based KS state included when exporting KS-basis matrices.
       integer :: istate_output_mat_start
       !> Half-open KS-basis matrix export end index; negative means all remaining states.
@@ -1207,6 +1210,7 @@ contains
       call sync_opt(opts%output_gw_sigc_ks_mat_kf, opts%opts_c%output_gw_sigc_ks_mat_kf, direction)
       call sync_opt(opts%output_exx_ks_mat_k,     opts%opts_c%output_exx_ks_mat_k,     direction)
       call sync_opt(opts%output_exx_mat_k,        opts%opts_c%output_exx_mat_k,        direction)
+      call sync_opt(opts%output_exx_mat_r,        opts%opts_c%output_exx_mat_r,        direction)
       call sync_opt(opts%istate_output_mat_start, opts%opts_c%istate_output_mat_start, direction)
       call sync_opt(opts%istate_output_mat_end,   opts%opts_c%istate_output_mat_end,   direction)
       call sync_opt(opts%output_gw_sigc_mat_kf,   opts%opts_c%output_gw_sigc_mat_kf,   direction)

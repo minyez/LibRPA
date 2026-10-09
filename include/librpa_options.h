@@ -587,6 +587,21 @@ typedef struct
     //! Experimental
     LibrpaSwitch output_exx_mat_k;
 
+    //! Output real-space NAO exact-exchange blocks after symmetry restoration,
+    //! before redistribution for k-space projection. Files in output_dir:
+    //! ExxR_ispin_S_spinor_BRA_KET_I_I_J_J_R_X_Y_Z.bin (zero-based indices).
+    //! Uses the Sigma_c(R,iw) checkpoint layout: native size_t block count (1),
+    //! size_t[5] (R index in Rlist, I, J, rows, columns), then row-major complex
+    //! doubles in Hartree, including the exchange minus sign.
+    //! Only stored blocks are written, without additional
+    //! threshold filtering. MPI contributions are summed on rank zero, one
+    //! row atom at a time. Independent of the KS-state output range.
+    //! @par Default
+    //! false
+    //! @par Status
+    //! Experimental
+    LibrpaSwitch output_exx_mat_r;
+
     //! First zero-based KS state included in both dimensions when exporting the
     //! KS-basis exact-exchange and correlation self-energy matrices. Matrix
     //! construction is unaffected.

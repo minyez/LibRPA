@@ -273,6 +273,8 @@ module librpa_f03
       logical :: output_exx_ks_mat_k
       !> Experimental: output the NAO-basis exact-exchange matrix in k-space as dense binary files.
       logical :: output_exx_mat_k
+      !> Experimental: output real-space NAO exact-exchange blocks as dense binary files.
+      logical :: output_exx_mat_r
       !> First zero-based KS state included when exporting KS-basis matrices.
       integer :: istate_output_mat_start
       !> Half-open KS-basis matrix export end index; negative means all remaining states.
