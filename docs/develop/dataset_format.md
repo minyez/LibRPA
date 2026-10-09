@@ -6,9 +6,13 @@ This page documents the formats of the input data files required by the LibRPA d
 
 The standalone driver reads dataset files from `input_dir`. The default
 `input_preset = fhi-aims` keeps the historical filenames. Setting
-`input_preset = abacus` selects `stru_out.txt`, `band_out.txt`, `vxc_out.txt`,
-and the `velocity_matrix` prefix for the corresponding ABACUS outputs.
-By default, single-file inputs are named [`stru_out`](#stru-out),
+`input_preset = abacus` selects the current reader-v1 names: `stru_out.txt`,
+`band_out.txt`, `vxc_out.txt`, `bz_sample.txt`, `basis_map.txt`,
+`wfc_basis.txt`, `aux_basis.txt`, `aux_basis_s.txt`, `KS_wfc_*`, `Cs_*`,
+`Cs_shrink_*`, `sinvS_*`, `V_cut_*`, and `V_full_*`, together with the
+`velocity_matrix` prefix.
+For the historical FHI-aims and `abacus-legacy` presets, single-file inputs
+are named [`stru_out`](#stru-out),
 [`bz_sampling_out`](#bz-sampling-out), [`basis_wfc_out`](#basis-files),
 [`basis_aux_out`](#basis-files), and [`band_out`](#band-out).
 Additional optional single-file inputs use
@@ -21,13 +25,14 @@ are selected with `prefix_velocity`.
 
 The combined [`basis_out`](#basis-out) file selected by `fn_basis` is
 deprecated and is read only as a fallback when split basis files are absent.
-When `use_shrink_abfs = t`, reader-v1 datasets should also provide
-`basis_aux_shrink_out`, or the filename selected by `fn_basis_aux_shrink`, for
-the compressed auxiliary basis. The old `fn_basis_shrink` input key is still
-accepted as an alias.
+When `use_shrink_abfs = t`, historical datasets use `basis_aux_shrink_out`, or
+the filename selected by `fn_basis_aux_shrink`, for the compressed auxiliary
+basis. Current ABACUS reader-v1 datasets use `aux_basis_s.txt` through the
+same setting. The old `fn_basis_shrink` input key is still accepted as an
+alias.
 
-Multi-file inputs are selected by prefix.
-The defaults are [`Cs_data`](#cs-data) for localized RI coefficients,
+For the historical FHI-aims and `abacus-legacy` presets, multi-file inputs are
+selected by prefix. The defaults are [`Cs_data`](#cs-data) for localized RI coefficients,
 [`Cs_shrinked_data`](#cs-data) for compressed-auxiliary-basis RI coefficients,
 [`coulomb_mat`](#coulomb-mat) for bare Coulomb matrices,
 [`coulomb_cut`](#coulomb-cut) for truncated Coulomb matrices, and
@@ -35,10 +40,11 @@ The defaults are [`Cs_data`](#cs-data) for localized RI coefficients,
 These prefixes can be changed with `prefix_lri_coeff`,
 `prefix_lri_coeff_shrink`, `prefix_coul_full`, `prefix_coul_cut`, and
 `prefix_eigvecs_scf`.
-For example, `prefix_coul_full = coulomb_mat` matches files such as `coulomb_mat_0.txt`.
-For shrink reader-v1 datasets, keep the full and shrink coefficient families
-distinct, for example `prefix_lri_coeff = v1_Cs_data_` and
-`prefix_lri_coeff_shrink = v1_Cs_shrinked_data_`. The LRI reader rejects
+For example, `prefix_coul_full = coulomb_mat` matches files such as
+`coulomb_mat_0.txt`.
+For ABACUS reader-v1 shrink datasets, keep the full and shrink coefficient
+families distinct, for example `prefix_lri_coeff = Cs_` and
+`prefix_lri_coeff_shrink = Cs_shrink_`. The LRI reader rejects
 identical full/shrink prefixes and filters the other family when one prefix is
 a leading substring of the other.
 
@@ -197,9 +203,11 @@ entries. LibRPA no longer reads k-points from `stru_out`; datasets must provide
 (basis-files)=
 ## Basis files
 
-The split basis files `basis_wfc_out`, `basis_aux_out`, and
-`basis_aux_shrink_out` use the same format. They describe, respectively, the
-wave-function basis, the full auxiliary basis, and the shrink auxiliary basis.
+The historical split basis files `basis_wfc_out`, `basis_aux_out`, and
+`basis_aux_shrink_out` use the same format. Current ABACUS reader-v1 datasets
+use `wfc_basis.txt`, `aux_basis.txt`, and `aux_basis_s.txt` for the same three
+roles. They describe, respectively, the wave-function basis, the full
+auxiliary basis, and the shrink auxiliary basis.
 
 The first line contains three entries:
 
@@ -1004,10 +1012,10 @@ written in binary format using C-style ordering.
 
 When `use_shrink_abfs = t`, `prefix_shrink_sinvS` selects the transform from
 the compressed auxiliary basis back to the full auxiliary basis. The default
-legacy prefix is `shrink_sinvS_`; reader-v1 producer runs should use
-`v1_shrink_sinvS_`.
+legacy prefix is `shrink_sinvS_`; ABACUS reader-v1 producer runs should use
+`sinvS_`.
 
-The reader-v1 binary format starts with:
+The ABACUS reader-v1 binary format starts with:
 
 - `int32 marker = -30241621`
 - `int32 nblocks`

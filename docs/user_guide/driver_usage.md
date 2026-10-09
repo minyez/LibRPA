@@ -56,17 +56,21 @@ for more information about the driver and API parameters.
 By default, `input_preset = fhi-aims` (also accepted as `aims`) preserves the
 historical driver filenames,
 including `stru_out`, `basis_out`, `band_out`, `mommat_ks_kpt_*.dat`,
-`Cs_data_*`, and `coulomb_mat_*` under `input_dir`. For ABACUS output using
-the `.txt` filenames listed below, select:
+`Cs_data_*`, and `coulomb_mat_*` under `input_dir`. For current ABACUS output,
+select:
 
 ```ini
 input_preset = abacus
 ```
 
-This changes `fn_stru`, `fn_eigocc_scf`, and `fn_vxc_scf` to `stru_out.txt`,
-`band_out.txt`, and `vxc_out.txt`, and changes `prefix_velocity` from
-`mommat_ks_kpt_` to `velocity_matrix`. Other filename and prefix defaults
-remain unchanged.
+This selects the short reader-v1 names: `stru_out.txt`, `band_out.txt`,
+`vxc_out.txt`, `bz_sample.txt`, `basis_map.txt`, `wfc_basis.txt`,
+`aux_basis.txt`, `aux_basis_s.txt`, `KS_wfc_*`, `Cs_*`, `Cs_shrink_*`,
+`sinvS_*`, `V_cut_*`, and `V_full_*`. It also changes `prefix_velocity` to
+`velocity_matrix`.
+
+PyATB head/wing sidecars retain their `KS_eigenvector_*` filename contract.
+LibRPA reads those files independently of the `KS_wfc_*` ABACUS preset.
 
 For ABACUS datasets produced before
 [PR #7849](https://github.com/deepmodeling/abacus-develop/pull/7849)

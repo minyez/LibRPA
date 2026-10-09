@@ -2,18 +2,23 @@ task = rpa
 input_preset = abacus
 input_dir = ../dataset
 output_level = info
+
 version_coul_reader = 1
 version_lri_reader = 1
+
 nfreq = 6
 option_dielect_func = 3
 replace_w_head = t
 rpa_headwing_mode = qavg
 rpa_headwing_body_start = 1
+use_2d_dielectric = t
+use_pyatb = f
+use_fullcoul_eps = t
+use_fullcoul_wc = t
 use_scalapack_ecrpa = t
 parallel_routing = libri
 vq_threshold = 0
 sqrt_coulomb_threshold = 0
 use_shrink_abfs = t
 use_shrink_chi = t
-use_symmetry_rpa = t
 use_kpara_scf_eigvec = t

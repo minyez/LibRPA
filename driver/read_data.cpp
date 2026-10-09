@@ -508,6 +508,8 @@ void read_headwing_input(const string &dir_path, bool need_wing,
     const bool use_kpara_eigvec = driver::get_bool(driver::opts.use_kpara_scf_eigvec);
     const string pyatb_dir = path_as_directory(dir_path) + "pyatb_librpa_df/";
     const string pyatb_velocity = pyatb_dir + "velocity_matrix";
+    auto pyatb_ctx = driver_reader_context();
+    pyatb_ctx.params.prefix_eigvecs_scf = "KS_eigenvector";
 
     const auto &active_kfrac_list = pds->pbc.kfrac_list;
     std::vector<Vector3_Order<double>> kfrac_pyatb;
@@ -586,13 +588,14 @@ void read_headwing_input(const string &dir_path, bool need_wing,
                 : nullptr;
         const int ret_eigenvec =
             direct_headwing_kblacs_2d
-                ? read_eigenvector_kblacs_2d(
-                      pyatb_dir, mf, use_spinor_wfc, pds->scfk_blacs_ctxt,
-                      pds->desc_wfc_kb, &source_to_target_ik,
-                      LegacyTextWfcOrder::SpinBasisBand)
-                : read_eigenvector(pyatb_dir, mf, use_spinor_wfc, source_to_target_ik,
-                                   source_iks_headwing_eigvec_selected,
-                                   LegacyTextWfcOrder::SpinBasisBand);
+                ? librpa::reader::read_eigenvector_kblacs_2d(
+                      pyatb_ctx, pyatb_dir, mf, use_spinor_wfc,
+                      pds->scfk_blacs_ctxt, pds->desc_wfc_kb,
+                      &source_to_target_ik, LegacyTextWfcOrder::SpinBasisBand)
+                : librpa::reader::read_eigenvector(
+                      pyatb_ctx, pyatb_dir, mf, use_spinor_wfc,
+                      source_to_target_ik, source_iks_headwing_eigvec_selected,
+                      LegacyTextWfcOrder::SpinBasisBand);
         if (ret_eigenvec != 0)
         {
             throw std::runtime_error("Failed to read pyatb head/wing eigenvectors from " +
@@ -655,9 +658,9 @@ void read_headwing_input(const string &dir_path, bool need_wing,
         std::vector<int> full_bz_identity_map(kfrac_pyatb.size());
         for (int ik = 0; ik != static_cast<int>(full_bz_identity_map.size()); ++ik)
             full_bz_identity_map[ik] = ik;
-        const int ret_full_wfc = read_eigenvector(
-            pyatb_dir, full_bz_headwing_mf, use_spinor_wfc, full_bz_identity_map, nullptr,
-            LegacyTextWfcOrder::SpinBasisBand);
+        const int ret_full_wfc = librpa::reader::read_eigenvector(
+            pyatb_ctx, pyatb_dir, full_bz_headwing_mf, use_spinor_wfc,
+            full_bz_identity_map, nullptr, LegacyTextWfcOrder::SpinBasisBand);
         if (ret_full_wfc != 0)
         {
             throw std::runtime_error(

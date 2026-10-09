@@ -97,14 +97,31 @@ void DriverParams::apply_input_preset()
     fn_eigocc_scf = "band_out";
     fn_dielfunc = "dielecfunc_out";
     fn_vxc_scf = "vxc_out";
+    prefix_lri_coeff = "Cs_data";
+    prefix_lri_coeff_shrink = "Cs_shrinked_data";
+    prefix_shrink_sinvS = "shrink_sinvS_";
+    prefix_coul_full = "coulomb_mat";
+    prefix_coul_cut = "coulomb_cut";
+    prefix_eigvecs_scf = "KS_eigenvector";
     prefix_velocity = "mommat_ks_kpt_";
     fn_band_kpath_info = "band_kpath_info";
 
     if (input_preset == "abacus")
     {
         fn_stru = "stru_out.txt";
+        fn_bz_sampling = "bz_sample.txt";
+        fn_basis = "basis_map.txt";
+        fn_basis_wfc = "wfc_basis.txt";
+        fn_basis_aux = "aux_basis.txt";
+        fn_basis_aux_shrink = "aux_basis_s.txt";
         fn_eigocc_scf = "band_out.txt";
         fn_vxc_scf = "vxc_out.txt";
+        prefix_lri_coeff = "Cs_";
+        prefix_lri_coeff_shrink = "Cs_shrink_";
+        prefix_shrink_sinvS = "sinvS_";
+        prefix_coul_full = "V_full_";
+        prefix_coul_cut = "V_cut_";
+        prefix_eigvecs_scf = "KS_wfc_";
     }
     if (input_preset == "abacus" || input_preset == "abacus-legacy")
         prefix_velocity = "velocity_matrix";

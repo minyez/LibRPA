@@ -32,10 +32,20 @@ void test_abacus_preset()
     params.apply_input_preset();
 
     assert(params.fn_stru == "stru_out.txt");
+    assert(params.fn_bz_sampling == "bz_sample.txt");
+    assert(params.fn_basis == "basis_map.txt");
+    assert(params.fn_basis_wfc == "wfc_basis.txt");
+    assert(params.fn_basis_aux == "aux_basis.txt");
+    assert(params.fn_basis_aux_shrink == "aux_basis_s.txt");
     assert(params.fn_eigocc_scf == "band_out.txt");
     assert(params.fn_vxc_scf == "vxc_out.txt");
+    assert(params.prefix_lri_coeff == "Cs_");
+    assert(params.prefix_lri_coeff_shrink == "Cs_shrink_");
+    assert(params.prefix_shrink_sinvS == "sinvS_");
+    assert(params.prefix_coul_full == "V_full_");
+    assert(params.prefix_coul_cut == "V_cut_");
+    assert(params.prefix_eigvecs_scf == "KS_wfc_");
     assert(params.prefix_velocity == "velocity_matrix");
-    assert(params.fn_basis_wfc == "basis_wfc_out");
 
     params.input_preset = "abacus-legacy";
     params.apply_input_preset();
@@ -46,6 +56,12 @@ void test_abacus_preset()
     assert(params.fn_vxc_scf == "vxc_out");
     assert(params.prefix_velocity == "velocity_matrix");
     assert(params.fn_basis_wfc == "basis_wfc_out");
+    assert(params.prefix_lri_coeff == "Cs_data");
+    assert(params.prefix_lri_coeff_shrink == "Cs_shrinked_data");
+    assert(params.prefix_shrink_sinvS == "shrink_sinvS_");
+    assert(params.prefix_coul_full == "coulomb_mat");
+    assert(params.prefix_coul_cut == "coulomb_cut");
+    assert(params.prefix_eigvecs_scf == "KS_eigenvector");
 }
 
 void test_invalid_preset()
