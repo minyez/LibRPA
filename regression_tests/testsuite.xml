@@ -107,6 +107,11 @@
                 binary_extract="2i(128d)"
                 comparison="cmp_float.abs_diff(1e-8)"
       />
+      <validate name="EXX NAO real-space blocks (Ha)"
+                file="librpa/librpa.d/ExxR_*.bin"
+                binary_extract="(6Q32d)"
+                comparison="cmp_float.abs_diff(1e-8)"
+      />
     </testcase>
 
     <testcase name="LiH, k555 symmetry speed up with non-symmetrized input (aims input)" directory="exx_aims_LiH_ZB_sym_libri">

@@ -24,6 +24,8 @@ class Exx
         bool is_rspace_redist_for_KS_;
         bool is_rspace_redist_blacs_;
 
+        void write_rspace_matrices_binary() const;
+
         void build_KS(const std::map<int, std::map<int, std::map<int, ComplexMatrix>>> &wfc_target,
                       const std::vector<Vector3_Order<double>> &kfrac_target,
                       const AtomPairBvKRemap<atom_t> &bvk_remap);
@@ -56,6 +58,7 @@ class Exx
 
         std::string output_dir;
         bool output_exx_mat_k = false;
+        bool output_exx_mat_r = false;
 
         //! exact-exchange Hamiltonian in real space, dimension (nspins, nspinors, nspinors, I, J, R, nao_I, nao_J)
         std::map<int, std::map<int, std::map<int, std::map<atom_t, std::map<atom_t, std::map<Vector3_Order<int>, Matd>>>>>> exx_IJR;

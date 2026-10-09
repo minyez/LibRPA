@@ -4,6 +4,10 @@
 
 ### Added
 
+- Added `output_exx_mat_r` for binary real-space NAO EXX blocks, with MPI-independent
+  filenames and BCC He regression monitoring. EXX and Sigma_c share the
+  real-space block writer and checkpoint layout.
+
 - Documented the reader-v1 `librpa_2d_coulomb_head.txt` contract used by
   strict-2D complete-Wc calculations.
 - Added a small serial/MPI regression for the strict-2D production Wc path.
